@@ -6,12 +6,11 @@ api:
 entryPoints:
   web:
     address: ":80"
-    # HTTPS 리다이렉트 (TLS 준비 시 주석 해제):
-    # http:
-    #   redirections:
-    #     entryPoint:
-    #       to: websecure
-    #       scheme: https
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
   websecure:
     address: ":443"
 
@@ -24,14 +23,13 @@ providers:
     directory: /etc/traefik/dynamic
     watch: true
 
-# Let's Encrypt (HTTPS 준비 시 주석 해제):
-# certificatesResolvers:
-#   letsencrypt:
-#     acme:
-#       email: bk.choi@kakao.com
-#       storage: /letsencrypt/acme.json
-#       httpChallenge:
-#         entryPoint: web
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: bk.choi@kakao.com
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
 
 metrics:
   prometheus:
