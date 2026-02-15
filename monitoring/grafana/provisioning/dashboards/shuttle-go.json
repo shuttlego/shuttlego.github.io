@@ -10,106 +10,15 @@
   "panels": [
     {
       "type": "row",
-      "title": "사용자 활동 (DAU / MAU)",
+      "title": "요청 개요",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "collapsed": false
-    },
-    {
-      "id": 1,
-      "title": "DAU (일간 활성 사용자)",
-      "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "shuttle:dau",
-          "legendFormat": "DAU",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 50 }
-            ]
-          }
-        }
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto"
-      }
-    },
-    {
-      "id": 2,
-      "title": "MAU (월간 활성 사용자)",
-      "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "shuttle:mau",
-          "legendFormat": "MAU",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 200 }
-            ]
-          }
-        }
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto"
-      }
-    },
-    {
-      "id": 3,
-      "title": "DAU 추이",
-      "type": "timeseries",
-      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "shuttle:dau",
-          "legendFormat": "DAU",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 20,
-            "pointSize": 5,
-            "showPoints": "auto"
-          }
-        }
-      }
     },
     {
       "id": 4,
       "title": "동시 처리 요청",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -141,7 +50,7 @@
       "id": 5,
       "title": "에러율 (5분)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -171,16 +80,10 @@
       }
     },
     {
-      "type": "row",
-      "title": "요청 개요",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
-      "collapsed": false
-    },
-    {
       "id": 10,
       "title": "요청률 (RPS)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 7 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -203,13 +106,13 @@
     },
     {
       "id": 11,
-      "title": "엔드포인트별 요청률",
+      "title": "API 엔드포인트별 요청률",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 7 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total[5m]))",
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/.*\"}[5m]))",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -231,7 +134,7 @@
       "id": 12,
       "title": "HTTP 상태 코드 분포 (1시간)",
       "type": "piechart",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 7 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -249,14 +152,14 @@
     {
       "type": "row",
       "title": "레이턴시",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "collapsed": false
     },
     {
       "id": 20,
       "title": "레이턴시 (P50 / P90 / P99)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -289,13 +192,13 @@
     },
     {
       "id": 21,
-      "title": "엔드포인트별 P95 레이턴시",
+      "title": "API 엔드포인트별 P95 레이턴시",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\"}[5m])))",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -315,14 +218,14 @@
     {
       "type": "row",
       "title": "비즈니스 메트릭 (셔틀)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "collapsed": false
     },
     {
       "id": 30,
       "title": "출근 검색 수 (누적)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 25 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -346,7 +249,7 @@
       "id": 31,
       "title": "퇴근 검색 수 (누적)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 25 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -370,7 +273,7 @@
       "id": 32,
       "title": "출근 vs 퇴근 검색률",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 25 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -400,7 +303,7 @@
       "id": 33,
       "title": "카카오 API 호출",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 25 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -435,39 +338,10 @@
       }
     },
     {
-      "id": 34,
-      "title": "카카오 API 에러율",
-      "type": "gauge",
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 30 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "shuttle:kakao_error_ratio_5m or vector(0)",
-          "legendFormat": "Error Ratio",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.05 },
-              { "color": "red", "value": 0.1 }
-            ]
-          }
-        }
-      }
-    },
-    {
       "id": 35,
       "title": "카카오 API 호출 수 (누적)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 30 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 32 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -490,14 +364,14 @@
     {
       "type": "row",
       "title": "인프라 (노드 메트릭)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
       "collapsed": false
     },
     {
       "id": 40,
       "title": "CPU 사용률",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 36 },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 38 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -532,7 +406,7 @@
       "id": 41,
       "title": "메모리 사용률",
       "type": "gauge",
-      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 36 },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 38 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -564,7 +438,7 @@
       "id": 42,
       "title": "디스크 사용률",
       "type": "gauge",
-      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 36 },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 38 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -596,7 +470,7 @@
       "id": 43,
       "title": "네트워크 I/O",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 36 },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 38 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {

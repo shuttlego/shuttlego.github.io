@@ -278,8 +278,12 @@
       color: #333;
       cursor: pointer;
       min-width: 160px;
+      max-width: 200px;
       text-align: left;
       font-family: inherit;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .site-selector-trigger:hover {
       border-color: #fee500;
@@ -784,6 +788,32 @@
       pointer-events: none;
     }
 
+    /* 정렬 토글 */
+    .route-sort-bar {
+      display: none;
+      padding: 6px 16px;
+      gap: 6px;
+    }
+    .route-sort-bar.show {
+      display: flex;
+    }
+    .route-sort-btn {
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      background: #fff;
+      color: #888;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .route-sort-btn.active {
+      background: #333;
+      color: #fff;
+      border-color: #333;
+    }
+
     /* 노선 선택 리스트 (최대 5개) */
     .route-options-wrap {
       display: none;
@@ -917,6 +947,13 @@
         min-width: 0;
       }
       .site-selector-wrap select { min-width: 0; width: 100%; }
+      .site-selector-trigger {
+        max-width: none;
+        width: 100%;
+        min-width: 0;
+        font-size: 15px;
+        padding: 12px 14px;
+      }
 
       .main-content {
         position: relative;
@@ -936,7 +973,7 @@
         transition: height .25s ease, transform .25s ease;
       }
       .results-panel.sheet-peek {
-        height: 48px;
+        height: 72px;
       }
       .results-panel.sheet-half {
         height: 50vh;
@@ -1061,6 +1098,10 @@
       <div class="results-list-wrap">
         <div class="results-placeholder" id="resultsPlaceholder">검색어를 입력한 뒤 검색하면 여기에 표시됩니다.</div>
         <div class="results-list" id="resultsList" style="display: none;"></div>
+        <div class="route-sort-bar" id="routeSortBar">
+          <button type="button" class="route-sort-btn active" id="sortByDistance" data-sort="distance">거리순</button>
+          <button type="button" class="route-sort-btn" id="sortByTime" data-sort="time">시간순</button>
+        </div>
         <div class="route-options-wrap" id="routeOptionsWrap"></div>
       </div>
     </div>
@@ -1159,6 +1200,8 @@
       var lastPlace = null;
       var lastShuttleType = null;
       var routeOptionsWrap = document.getElementById('routeOptionsWrap');
+      var routeSortBar = document.getElementById('routeSortBar');
+      var currentSortMode = 'distance';
       var resultsPanel = document.getElementById('resultsPanel');
       var panToVisibleCenterRafId = null;
 
@@ -2173,31 +2216,30 @@
       var currentIsDepart = null;
       var expandedOptionIndex = -1;
 
-      function renderRouteOptions(options, placeName, isDepart) {
-        panelTitle.textContent = '노선 선택';
-        var btnBack = document.getElementById('btnBackFromRoutes');
-        if (btnBack) btnBack.style.display = '';
-        resultsPlaceholder.style.display = 'none';
-        resultsList.style.display = 'none';
-        routeOptionsWrap.innerHTML = '';
-        routeOptionsWrap.classList.add('show');
-        currentRouteOptions = options;
-        currentPlaceName = placeName;
-        currentIsDepart = isDepart;
-        expandedOptionIndex = -1;
-        if (options.length === 0) {
-          clearSearchOverlays();
-          clearShuttleOverlays();
-          var noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다. 시간을 확인해주세요.';
-          var emptyMsg = document.createElement('div');
-          emptyMsg.className = 'results-placeholder';
-          emptyMsg.style.display = 'block';
-          emptyMsg.textContent = noRouteMsg;
-          routeOptionsWrap.appendChild(emptyMsg);
-          showShuttleError(noRouteMsg);
-          if (isMobile()) setSheetState('sheet-half');
-          return;
+      function sortOptions(options, mode) {
+        var sorted = options.slice();
+        if (mode === 'time') {
+          sorted.sort(function(a, b) {
+            var ta = a.board_time || '';
+            var tb = b.board_time || '';
+            return ta.localeCompare(tb);
+          });
+        } else {
+          sorted.sort(function(a, b) {
+            return (a.distance_m || 0) - (b.distance_m || 0);
+          });
         }
+        return sorted;
+      }
+
+      function updateSortButtons() {
+        document.getElementById('sortByDistance').classList.toggle('active', currentSortMode === 'distance');
+        document.getElementById('sortByTime').classList.toggle('active', currentSortMode === 'time');
+      }
+
+      function renderRouteCards(options, placeName, isDepart) {
+        routeOptionsWrap.innerHTML = '';
+        expandedOptionIndex = -1;
         options.forEach(function(opt, idx) {
           var card = document.createElement('div');
           card.className = 'route-option-card' + (idx === 0 ? ' selected' : '');
@@ -2259,6 +2301,38 @@
           routeOptionsWrap.appendChild(card);
         });
         drawOptionOnMap(options[0], placeName, isDepart);
+      }
+
+      function renderRouteOptions(options, placeName, isDepart) {
+        panelTitle.textContent = '노선 선택';
+        var btnBack = document.getElementById('btnBackFromRoutes');
+        if (btnBack) btnBack.style.display = '';
+        resultsPlaceholder.style.display = 'none';
+        resultsList.style.display = 'none';
+        routeOptionsWrap.innerHTML = '';
+        routeOptionsWrap.classList.add('show');
+        currentRouteOptions = options;
+        currentPlaceName = placeName;
+        currentIsDepart = isDepart;
+        expandedOptionIndex = -1;
+        if (options.length === 0) {
+          routeSortBar.classList.remove('show');
+          clearSearchOverlays();
+          clearShuttleOverlays();
+          var noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다. 시간을 확인해주세요.';
+          var emptyMsg = document.createElement('div');
+          emptyMsg.className = 'results-placeholder';
+          emptyMsg.style.display = 'block';
+          emptyMsg.textContent = noRouteMsg;
+          routeOptionsWrap.appendChild(emptyMsg);
+          showShuttleError(noRouteMsg);
+          if (isMobile()) setSheetState('sheet-half');
+          return;
+        }
+        routeSortBar.classList.add('show');
+        updateSortButtons();
+        var sorted = sortOptions(options, currentSortMode);
+        renderRouteCards(sorted, placeName, isDepart);
         if (isMobile()) setSheetState('sheet-peek');
       }
 
@@ -2266,6 +2340,7 @@
         panelTitle.textContent = '검색 결과';
         var btnBack = document.getElementById('btnBackFromRoutes');
         if (btnBack) btnBack.style.display = 'none';
+        routeSortBar.classList.remove('show');
         routeOptionsWrap.classList.remove('show');
         routeOptionsWrap.innerHTML = '';
       }
@@ -2444,13 +2519,28 @@
           alert('이 브라우저는 위치 기능을 지원하지 않습니다.');
           return;
         }
-        openLocationPermissionModal(
-          '현재 위치를 표시하려면 위치 권한이 필요합니다. 확인을 누르면 브라우저에서 권한 요청이 표시됩니다.',
-          function() {
-            closeLocationPermissionModal();
+        // 이미 권한이 부여됐으면 모달 없이 바로 위치 요청
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
+            if (result.state === 'granted') {
+              requestLocationThenMove();
+            } else {
+              openLocationPermissionModal(
+                '현재 위치를 표시하려면 위치 권한이 필요합니다. 확인을 누르면 브라우저에서 권한 요청이 표시됩니다.',
+                function() {
+                  closeLocationPermissionModal();
+                  requestLocationThenMove();
+                }
+              );
+            }
+          }).catch(function() {
+            // permissions API 미지원 시 바로 위치 요청
             requestLocationThenMove();
-          }
-        );
+          });
+        } else {
+          // permissions API 미지원 시 바로 위치 요청
+          requestLocationThenMove();
+        }
       }
 
       function zoomIn() {
@@ -2494,6 +2584,25 @@
       var btnBackFromRoutes = document.getElementById('btnBackFromRoutes');
       if (btnBackFromRoutes) btnBackFromRoutes.addEventListener('click', goBackFromRouteOptions);
 
+      document.getElementById('sortByDistance').addEventListener('click', function() {
+        if (currentSortMode === 'distance') return;
+        currentSortMode = 'distance';
+        updateSortButtons();
+        if (currentRouteOptions && currentRouteOptions.length > 0) {
+          var sorted = sortOptions(currentRouteOptions, currentSortMode);
+          renderRouteCards(sorted, currentPlaceName, currentIsDepart);
+        }
+      });
+      document.getElementById('sortByTime').addEventListener('click', function() {
+        if (currentSortMode === 'time') return;
+        currentSortMode = 'time';
+        updateSortButtons();
+        if (currentRouteOptions && currentRouteOptions.length > 0) {
+          var sorted = sortOptions(currentRouteOptions, currentSortMode);
+          renderRouteCards(sorted, currentPlaceName, currentIsDepart);
+        }
+      });
+
       (function initDepartureClock() {
         setDepartureFromDate(new Date());
         updateDepartureClockDisplay();
@@ -2515,7 +2624,7 @@
       (function initBottomSheet() {
         var sheetDragArea = document.getElementById('sheetDragArea');
         if (!sheetDragArea || !resultsPanel) return;
-        var PEEK_H = 48;
+        var PEEK_H = 72;
         var states = ['sheet-peek', 'sheet-half', 'sheet-full'];
         function getHeights() {
           var vh = window.innerHeight;

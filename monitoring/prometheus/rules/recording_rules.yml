@@ -1,26 +1,4 @@
 groups:
-  # ── DAU / MAU 기록 규칙 ──────────────────────────────────
-  - name: shuttle_user_activity
-    interval: 1m
-    rules:
-      # DAU: 오늘 요청을 보낸 고유 클라이언트 IP 수
-      - record: shuttle:dau
-        expr: |
-          count(
-            count by (client_ip) (
-              increase(shuttle_user_requests_total[1d]) > 0
-            )
-          )
-
-      # MAU: 최근 30일간 요청을 보낸 고유 클라이언트 IP 수
-      - record: shuttle:mau
-        expr: |
-          count(
-            count by (client_ip) (
-              increase(shuttle_user_requests_total[30d]) > 0
-            )
-          )
-
   # ── 요청률 기록 규칙 ────────────────────────────────────
   - name: shuttle_request_rates
     interval: 1m

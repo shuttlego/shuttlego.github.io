@@ -39,6 +39,11 @@ services:
       - "traefik.http.routers.backend-dev.rule=PathPrefix(`/api`) || Path(`/health`)"
       - "traefik.http.routers.backend-dev.entrypoints=web"
       - "traefik.http.routers.backend-dev.priority=1"
+      # ── prd: 도메인 HTTP → HTTPS 리다이렉트 ──
+      - "traefik.http.routers.backend-prd-redirect.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
+      - "traefik.http.routers.backend-prd-redirect.entrypoints=web"
+      - "traefik.http.routers.backend-prd-redirect.priority=10"
+      - "traefik.http.routers.backend-prd-redirect.middlewares=redirect-to-https@file"
       # ── prd: 도메인 기반 (HTTPS) ──
       - "traefik.http.routers.backend-prd.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
       - "traefik.http.routers.backend-prd.entrypoints=websecure"
@@ -63,7 +68,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=90d"
+      - "--storage.tsdb.retention.time=3y"
       - "--web.enable-lifecycle"
     expose:
       - "9090"
@@ -97,8 +102,8 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-shuttle2024}
-      - GF_SERVER_ROOT_URL=https://${GRAFANA_DOMAIN:-grafana.shuttle-go.com}/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/shuttle-go.json
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -115,8 +120,11 @@ services:
       - "traefik.http.routers.grafana-dev.rule=PathPrefix(`/grafana`)"
       - "traefik.http.routers.grafana-dev.entrypoints=web"
       - "traefik.http.routers.grafana-dev.priority=1"
-      - "traefik.http.middlewares.strip-grafana.stripprefix.prefixes=/grafana"
-      - "traefik.http.routers.grafana-dev.middlewares=strip-grafana"
+      # ── prd: 도메인 HTTP → HTTPS 리다이렉트 ──
+      - "traefik.http.routers.grafana-prd-redirect.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
+      - "traefik.http.routers.grafana-prd-redirect.entrypoints=web"
+      - "traefik.http.routers.grafana-prd-redirect.priority=10"
+      - "traefik.http.routers.grafana-prd-redirect.middlewares=redirect-to-https@file"
       # ── prd: 도메인 기반 (HTTPS) ──
       - "traefik.http.routers.grafana-prd.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
       - "traefik.http.routers.grafana-prd.entrypoints=websecure"
