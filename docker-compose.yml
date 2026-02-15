@@ -39,14 +39,11 @@ services:
       - "traefik.http.routers.backend-dev.rule=PathPrefix(`/api`) || Path(`/health`)"
       - "traefik.http.routers.backend-dev.entrypoints=web"
       - "traefik.http.routers.backend-dev.priority=1"
-      # ── prd: 도메인 기반 ──
+      # ── prd: 도메인 기반 (HTTPS) ──
       - "traefik.http.routers.backend-prd.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
-      - "traefik.http.routers.backend-prd.entrypoints=web"
+      - "traefik.http.routers.backend-prd.entrypoints=websecure"
       - "traefik.http.routers.backend-prd.priority=10"
-      # HTTPS (TLS 준비 시 활성화)
-      # - "traefik.http.routers.backend-prd-secure.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
-      # - "traefik.http.routers.backend-prd-secure.entrypoints=websecure"
-      # - "traefik.http.routers.backend-prd-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-prd.tls.certresolver=letsencrypt"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 30s
@@ -120,14 +117,11 @@ services:
       - "traefik.http.routers.grafana-dev.priority=1"
       - "traefik.http.middlewares.strip-grafana.stripprefix.prefixes=/grafana"
       - "traefik.http.routers.grafana-dev.middlewares=strip-grafana"
-      # ── prd: 도메인 기반 ──
+      # ── prd: 도메인 기반 (HTTPS) ──
       - "traefik.http.routers.grafana-prd.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
-      - "traefik.http.routers.grafana-prd.entrypoints=web"
+      - "traefik.http.routers.grafana-prd.entrypoints=websecure"
       - "traefik.http.routers.grafana-prd.priority=10"
-      # HTTPS (TLS 준비 시 활성화)
-      # - "traefik.http.routers.grafana-prd-secure.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
-      # - "traefik.http.routers.grafana-prd-secure.entrypoints=websecure"
-      # - "traefik.http.routers.grafana-prd-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.grafana-prd.tls.certresolver=letsencrypt"
 
 volumes:
   prometheus-data:
