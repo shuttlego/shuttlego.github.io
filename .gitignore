@@ -35,3 +35,7 @@ data/
 # Tool configs
 .claude/
 .serena/
+
+# Docker / Monitoring data
+docker-compose.override.yml
+monitoring/traefik/certs/

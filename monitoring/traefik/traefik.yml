@@ -1,0 +1,46 @@
+# Traefik 정적 설정
+api:
+  dashboard: false
+  insecure: false
+
+entryPoints:
+  web:
+    address: ":80"
+    # HTTPS 리다이렉트 (TLS 준비 시 주석 해제):
+    # http:
+    #   redirections:
+    #     entryPoint:
+    #       to: websecure
+    #       scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: shuttle-go_shuttle-net
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# Let's Encrypt (HTTPS 준비 시 주석 해제):
+# certificatesResolvers:
+#   letsencrypt:
+#     acme:
+#       email: bk.choi@kakao.com
+#       storage: /letsencrypt/acme.json
+#       httpChallenge:
+#         entryPoint: web
+
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    addRoutersLabels: true
+
+log:
+  level: INFO
+
+accessLog:
+  format: json
