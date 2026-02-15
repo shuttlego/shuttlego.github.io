@@ -1,0 +1,139 @@
+services:
+  # ─── Traefik (리버스 프록시 / 인그레스) ─────────────────
+  traefik:
+    image: traefik:v3.2
+    container_name: shuttle-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./monitoring/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-certs:/letsencrypt
+    networks:
+      - shuttle-net
+    labels:
+      - "traefik.enable=true"
+
+  # ─── Flask 백엔드 API ──────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shuttle-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+    expose:
+      - "8081"
+    networks:
+      - shuttle-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.backend.loadbalancer.server.port=8081"
+      # ── dev: path 기반 (localhost, 로컬 IP 등) ──
+      - "traefik.http.routers.backend-dev.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.backend-dev.entrypoints=web"
+      - "traefik.http.routers.backend-dev.priority=1"
+      # ── prd: 도메인 기반 ──
+      - "traefik.http.routers.backend-prd.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
+      - "traefik.http.routers.backend-prd.entrypoints=web"
+      - "traefik.http.routers.backend-prd.priority=10"
+      # HTTPS (TLS 준비 시 활성화)
+      # - "traefik.http.routers.backend-prd-secure.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
+      # - "traefik.http.routers.backend-prd-secure.entrypoints=websecure"
+      # - "traefik.http.routers.backend-prd-secure.tls.certresolver=letsencrypt"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─── Prometheus ────────────────────────────────────────
+  # 외부 노출 없음 — Docker 내부 네트워크에서만 접근
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: shuttle-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+      - "--web.enable-lifecycle"
+    expose:
+      - "9090"
+    networks:
+      - shuttle-net
+
+  # ─── Node Exporter (호스트 메트릭) ─────────────────────
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: shuttle-node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    expose:
+      - "9100"
+    networks:
+      - shuttle-net
+
+  # ─── Grafana ───────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: shuttle-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-shuttle2024}
+      - GF_SERVER_ROOT_URL=https://${GRAFANA_DOMAIN:-grafana.shuttle-go.com}/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/shuttle-go.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/provisioning/dashboards/shuttle-go.json:/var/lib/grafana/dashboards/shuttle-go.json:ro
+      - grafana-data:/var/lib/grafana
+    expose:
+      - "3000"
+    networks:
+      - shuttle-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      # ── dev: path 기반 (localhost) ──
+      - "traefik.http.routers.grafana-dev.rule=PathPrefix(`/grafana`)"
+      - "traefik.http.routers.grafana-dev.entrypoints=web"
+      - "traefik.http.routers.grafana-dev.priority=1"
+      - "traefik.http.middlewares.strip-grafana.stripprefix.prefixes=/grafana"
+      - "traefik.http.routers.grafana-dev.middlewares=strip-grafana"
+      # ── prd: 도메인 기반 ──
+      - "traefik.http.routers.grafana-prd.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
+      - "traefik.http.routers.grafana-prd.entrypoints=web"
+      - "traefik.http.routers.grafana-prd.priority=10"
+      # HTTPS (TLS 준비 시 활성화)
+      # - "traefik.http.routers.grafana-prd-secure.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
+      # - "traefik.http.routers.grafana-prd-secure.entrypoints=websecure"
+      # - "traefik.http.routers.grafana-prd-secure.tls.certresolver=letsencrypt"
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  traefik-certs:
+
+networks:
+  shuttle-net:
+    driver: bridge

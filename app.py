@@ -5,11 +5,21 @@
 """
 import math
 import os
+import time as _time
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
+from prometheus_client import (
+    Counter,
+    Histogram,
+    Gauge,
+    generate_latest,
+    REGISTRY,
+    CONTENT_TYPE_LATEST,
+)
 
+import load_data
 from load_data import (
     find_nearest_route_options,
     find_nearest_stop,
@@ -18,7 +28,6 @@ from load_data import (
     get_nearest_departure_time,
     get_terminus_stop,
     load_all,
-    sites,
 )
 
 app = Flask(__name__)
@@ -36,7 +45,98 @@ KAKAO_REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY", "")
 SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 SEARCH_SIZE = 15
 
+# ── Prometheus 메트릭 정의 ──────────────────────────────────
+REQUEST_COUNT = Counter(
+    "shuttle_http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "status"],
+)
 
+REQUEST_LATENCY = Histogram(
+    "shuttle_http_request_duration_seconds",
+    "HTTP request latency in seconds",
+    ["method", "endpoint"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
+UNIQUE_USER_REQUESTS = Counter(
+    "shuttle_user_requests_total",
+    "Total requests per unique user (by client IP)",
+    ["client_ip"],
+)
+
+KAKAO_API_CALLS = Counter(
+    "shuttle_kakao_api_calls_total",
+    "Total calls to Kakao Local API",
+    ["status"],
+)
+
+SHUTTLE_SEARCH_COUNT = Counter(
+    "shuttle_search_total",
+    "Shuttle route search count",
+    ["direction"],
+)
+
+IN_PROGRESS_REQUESTS = Gauge(
+    "shuttle_in_progress_requests",
+    "Number of requests currently being processed",
+)
+
+APP_INFO = Gauge(
+    "shuttle_app_info",
+    "Application metadata",
+    ["version"],
+)
+APP_INFO.labels(version=os.environ.get("APP_VERSION", "1.0.0")).set(1)
+
+
+# ── 유틸리티 ────────────────────────────────────────────────
+def _get_client_ip() -> str:
+    """Traefik 뒤에서 실제 클라이언트 IP 추출 (X-Forwarded-For)."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+# ── 요청 전/후 훅 (메트릭 수집) ──────────────────────────────
+@app.before_request
+def _before_request():
+    request._prom_start_time = _time.time()
+    IN_PROGRESS_REQUESTS.inc()
+    client_ip = _get_client_ip()
+    UNIQUE_USER_REQUESTS.labels(client_ip=client_ip).inc()
+
+
+@app.after_request
+def _after_request(response):
+    if request.path == "/metrics":
+        IN_PROGRESS_REQUESTS.dec()
+        return response
+    latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
+    endpoint = request.path
+    method = request.method
+    status = str(response.status_code)
+    REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
+    REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
+    IN_PROGRESS_REQUESTS.dec()
+    return response
+
+
+# ── Prometheus / Health 엔드포인트 ───────────────────────────
+@app.route("/metrics")
+def metrics():
+    """Prometheus 메트릭 노출."""
+    return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
+
+
+@app.route("/health")
+def health():
+    """Traefik 헬스체크용."""
+    return jsonify({"status": "healthy"})
+
+
+# ── 비즈니스 로직 ────────────────────────────────────────────
 def haversine_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """위경도 두 점 사이 직선 거리(미터). Haversine 근사."""
     R = 6371000  # 지구 반경 m
@@ -57,12 +157,15 @@ def search_places(query: str) -> list[dict]:
     try:
         resp = requests.get(SEARCH_URL, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
+        KAKAO_API_CALLS.labels(status="success").inc()
         data = resp.json()
         return data.get("documents") or []
     except Exception:
+        KAKAO_API_CALLS.labels(status="error").inc()
         return []
 
 
+# ── API 엔드포인트 ───────────────────────────────────────────
 @app.route("/api/search")
 def api_search():
     q = request.args.get("q", "").strip()
@@ -75,7 +178,7 @@ def api_search():
 @app.route("/api/sites")
 def api_sites():
     """사업장 목록 (site_id, site_name)."""
-    return jsonify({"sites": sites})
+    return jsonify({"sites": load_data.sites})
 
 
 @app.route("/api/shuttle/depart")
@@ -91,6 +194,7 @@ def api_shuttle_depart():
     time_param = request.args.get("time", "").strip()
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+    SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
     result = find_nearest_stop(site_id, 1, lat, lng)  # type 1 = 출근
     if not result:
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
@@ -129,6 +233,7 @@ def api_shuttle_depart_options():
     time_param = request.args.get("time", "").strip()
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+    SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
     results = find_nearest_route_options(site_id, 1, lat, lng, max_routes=5)
     if not results:
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
@@ -182,6 +287,7 @@ def api_shuttle_arrive():
     time_param = request.args.get("time", "").strip()
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+    SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
     result = find_nearest_stop(site_id, 2, lat, lng)  # type 2 = 퇴근
     if not result:
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
@@ -221,6 +327,7 @@ def api_shuttle_arrive_options():
     time_param = request.args.get("time", "").strip()
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+    SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
     results = find_nearest_route_options(site_id, 2, lat, lng, max_routes=5)
     if not results:
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
