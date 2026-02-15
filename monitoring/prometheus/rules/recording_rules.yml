@@ -1,0 +1,109 @@
+groups:
+  # ── DAU / MAU 기록 규칙 ──────────────────────────────────
+  - name: shuttle_user_activity
+    interval: 1m
+    rules:
+      # DAU: 오늘 요청을 보낸 고유 클라이언트 IP 수
+      - record: shuttle:dau
+        expr: |
+          count(
+            count by (client_ip) (
+              increase(shuttle_user_requests_total[1d]) > 0
+            )
+          )
+
+      # MAU: 최근 30일간 요청을 보낸 고유 클라이언트 IP 수
+      - record: shuttle:mau
+        expr: |
+          count(
+            count by (client_ip) (
+              increase(shuttle_user_requests_total[30d]) > 0
+            )
+          )
+
+  # ── 요청률 기록 규칙 ────────────────────────────────────
+  - name: shuttle_request_rates
+    interval: 1m
+    rules:
+      # 전체 요청률 (초당, 5분 윈도우)
+      - record: shuttle:request_rate_5m
+        expr: sum(rate(shuttle_http_requests_total[5m]))
+
+      # 엔드포인트별 요청률
+      - record: shuttle:request_rate_by_endpoint_5m
+        expr: sum by (endpoint) (rate(shuttle_http_requests_total[5m]))
+
+      # 에러율 (4xx + 5xx)
+      - record: shuttle:error_rate_5m
+        expr: |
+          sum(rate(shuttle_http_requests_total{status=~"4..|5.."}[5m]))
+          /
+          (sum(rate(shuttle_http_requests_total[5m])) > 0)
+
+      # P50, P90, P99 레이턴시
+      - record: shuttle:latency_p50
+        expr: histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket[5m])))
+
+      - record: shuttle:latency_p90
+        expr: histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket[5m])))
+
+      - record: shuttle:latency_p99
+        expr: histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket[5m])))
+
+  # ── 셔틀 비즈니스 메트릭 규칙 ───────────────────────────
+  - name: shuttle_business_metrics
+    interval: 1m
+    rules:
+      # 출근 검색률
+      - record: shuttle:depart_search_rate_5m
+        expr: rate(shuttle_search_total{direction="depart"}[5m])
+
+      # 퇴근 검색률
+      - record: shuttle:arrive_search_rate_5m
+        expr: rate(shuttle_search_total{direction="arrive"}[5m])
+
+      # 카카오 API 에러 비율
+      - record: shuttle:kakao_error_ratio_5m
+        expr: |
+          rate(shuttle_kakao_api_calls_total{status="error"}[5m])
+          /
+          (rate(shuttle_kakao_api_calls_total[5m]) > 0)
+
+  # ── 알림 규칙 ───────────────────────────────────────────
+  - name: shuttle_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: shuttle:error_rate_5m > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "높은 에러율 (>5%)"
+          description: "최근 5분간 에러율 {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: shuttle:latency_p99 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "높은 P99 레이턴시 (>5s)"
+          description: "P99 레이턴시 {{ $value }}s"
+
+      - alert: BackendDown
+        expr: up{job="shuttle-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "백엔드 다운"
+          description: "shuttle-go 백엔드가 1분 이상 응답하지 않습니다"
+
+      - alert: KakaoAPIHighErrorRate
+        expr: shuttle:kakao_error_ratio_5m > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "카카오 API 에러율 >10%"
+          description: "카카오 로컬 API 에러 비율 {{ $value | humanizePercentage }}"

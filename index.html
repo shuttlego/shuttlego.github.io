@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>장소 검색 지도 · 셔틀 안내</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <title>셔틀 검색</title>
   <style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
@@ -1101,7 +1102,7 @@
           : '39fb0eced397ffdd52bc40427d8a1d91',  // prd: shuttlego.github.io 허용
         // 백엔드 API base URL
         API_BASE: isDev
-          ? 'http://' + host + ':8081'      // dev: 로컬 Flask 서버
+          ? 'http://' + host              // dev: Traefik (port 80)
           : 'https://your-api-server.com'  // prd: 클라우드 백엔드 URL
       };
       window.__SHUTTLE_ENV = ENV;
