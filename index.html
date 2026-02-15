@@ -1,0 +1,2664 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>장소 검색 지도 · 셔틀 안내</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body {
+      display: flex;
+      flex-direction: column;
+      background: #f5f5f5;
+    }
+    .header {
+      flex-shrink: 0;
+      padding: 12px 16px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .header-left {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+    }
+    .departure-clock {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      background: #fff;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+      user-select: none;
+    }
+    .departure-clock:hover {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    .departure-clock input[type="text"].departure-time-input {
+      width: 52px;
+      padding: 0;
+      margin: 0;
+      border: none;
+      background: transparent;
+      font-size: inherit;
+      font-weight: inherit;
+      color: inherit;
+      text-align: center;
+      outline: none;
+    }
+    .departure-clock input.departure-time-input::placeholder {
+      color: #999;
+    }
+
+    /* 출발 시간 선택 모달 */
+    .time-picker-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.4);
+      z-index: 100;
+    }
+    .time-picker-backdrop.show { display: block; }
+    .time-picker-modal {
+      display: none;
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      max-width: 320px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.2);
+      z-index: 101;
+      padding: 16px;
+      transition: transform .25s ease, opacity .25s ease;
+    }
+    .time-picker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .time-picker-modal .time-picker-title {
+      font-weight: 600;
+      font-size: 16px;
+      color: #333;
+      margin: 0;
+    }
+    .time-picker-wheels {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .time-picker-column {
+      flex: 1;
+      max-width: 72px;
+      height: 160px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .time-picker-column .time-picker-selection-band {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      margin-top: -20px;
+      height: 40px;
+      background: rgba(254, 229, 0, 0.22);
+      border-radius: 6px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .time-picker-column .time-picker-items {
+      position: relative;
+      z-index: 1;
+      overflow-y: auto;
+      height: 100%;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .time-picker-column .time-picker-item {
+      height: 40px;
+      line-height: 40px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 500;
+      color: #999;
+      scroll-snap-align: center;
+      scroll-snap-stop: always;
+    }
+    .time-picker-column .time-picker-item.selected {
+      color: #1a1a1a;
+      font-weight: 700;
+    }
+    .time-picker-column .time-picker-pad {
+      height: 60px;
+      flex-shrink: 0;
+      pointer-events: none;
+    }
+    .time-picker-now {
+      flex-shrink: 0;
+      padding: 5px 10px;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+      cursor: pointer;
+    }
+    .time-picker-now:hover { background: #eee; border-color: #ccc; color: #333; }
+    .time-picker-confirm {
+      width: 100%;
+      padding: 12px;
+      background: #fee500;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .time-picker-confirm:hover { background: #f5d800; }
+    .time-picker-modal.show { display: block; }
+
+    /* PC: 모달을 출발 시계 바로 아래에, 더 넓게 */
+    @media (min-width: 769px) {
+      .time-picker-modal {
+        left: auto;
+        right: auto;
+        margin-left: 0;
+        min-width: 380px;
+        max-width: 420px;
+        padding: 20px 24px;
+      }
+      .time-picker-modal .time-picker-wheels { gap: 16px; margin-bottom: 20px; }
+      .time-picker-modal .time-picker-column {
+        max-width: 96px;
+      }
+      .time-picker-modal .time-picker-column .time-picker-item { font-size: 20px; }
+    }
+    /* 모바일: 하단 시트 형태, 스크롤 관성 있게 빠르게 */
+    @media (max-width: 768px) {
+      .time-picker-modal {
+        left: 0;
+        right: 0;
+        max-width: none;
+        bottom: 0;
+        top: auto;
+        border-radius: 16px 16px 0 0;
+        padding: 20px 16px calc(env(safe-area-inset-bottom) + 16px);
+        max-height: 50vh;
+      }
+      .time-picker-column .time-picker-items {
+        scroll-snap-type: y proximity;
+        scroll-snap-stop: normal;
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: auto;
+        overflow-y: scroll;
+        touch-action: pan-y;
+      }
+    }
+
+    .header-center {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+    }
+    .search-bar {
+      display: flex;
+      max-width: 560px;
+      width: 100%;
+      gap: 8px;
+    }
+    .search-bar input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 15px;
+      outline: none;
+    }
+    .search-bar input:focus {
+      border-color: #fee500;
+      box-shadow: 0 0 0 2px rgba(254,229,0,.25);
+    }
+    .search-bar button {
+      padding: 12px 20px;
+      background: #fee500;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .search-bar button:hover { background: #f5d800; }
+
+    /* 사업장 선택 (오른쪽 위, 모달 트리거) */
+    .site-selector-wrap {
+      flex-shrink: 0;
+      position: relative;
+    }
+    .site-selector-wrap select {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      border: 0;
+    }
+    .site-selector-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 10px 14px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 14px;
+      color: #333;
+      cursor: pointer;
+      min-width: 160px;
+      text-align: left;
+      font-family: inherit;
+    }
+    .site-selector-trigger:hover {
+      border-color: #fee500;
+    }
+    .site-selector-trigger::after {
+      content: '';
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid #666;
+      flex-shrink: 0;
+    }
+
+    /* 사업장 선택 모달 */
+    .site-picker-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.4);
+      z-index: 100;
+    }
+    .site-picker-backdrop.show { display: block; }
+    .site-picker-modal {
+      display: none;
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      max-width: 320px;
+      max-height: 70vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.2);
+      z-index: 101;
+      padding: 0;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .site-picker-modal.show { display: flex; }
+    .site-picker-modal .site-picker-title {
+      flex-shrink: 0;
+      font-weight: 600;
+      font-size: 16px;
+      color: #333;
+      margin: 0;
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid #eee;
+    }
+    .site-picker-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 8px 0;
+    }
+    .site-picker-item {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      background: transparent;
+      font-size: 15px;
+      color: #333;
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .site-picker-item:hover {
+      background: #fffde7;
+    }
+    .site-picker-item.selected {
+      background: #fff9c4;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    @media (min-width: 769px) {
+      .site-picker-modal {
+        left: auto;
+        right: auto;
+        min-width: 280px;
+        max-width: 360px;
+      }
+    }
+    @media (max-width: 768px) {
+      .site-picker-modal {
+        left: 0;
+        right: 0;
+        max-width: none;
+        bottom: 0;
+        top: auto;
+        max-height: 50vh;
+        border-radius: 16px 16px 0 0;
+      }
+      .site-picker-modal .site-picker-title {
+        padding: 20px 16px 12px;
+      }
+    }
+
+    /* 위치 권한 안내 모달 */
+    .location-permission-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.4);
+      z-index: 100;
+    }
+    .location-permission-backdrop.show { display: block; }
+    .location-permission-modal {
+      display: none;
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      max-width: 320px;
+      margin: 0 auto;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.2);
+      z-index: 101;
+      padding: 20px;
+    }
+    .location-permission-modal.show { display: block; }
+    .location-permission-modal .location-permission-message {
+      margin: 0 0 20px;
+      font-size: 15px;
+      line-height: 1.5;
+      color: #333;
+    }
+    .location-permission-modal .location-permission-confirm {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #1976d2;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .location-permission-modal .location-permission-confirm:hover {
+      background: #1565c0;
+    }
+
+    /* 본문: 검색 결과(왼쪽) | 지도(오른쪽) */
+    .main-content {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    .map-wrap {
+      flex: 1;
+      min-height: 200px;
+      position: relative;
+      min-width: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 280px;
+    }
+
+    /* 셔틀 안내 메시지 (지도 상단, 노선·탑승장소 강조) */
+    .shuttle-message {
+      display: none;
+      position: absolute;
+      left: 50%;
+      top: 16px;
+      transform: translateX(-50%);
+      max-width: 90%;
+      padding: 14px 20px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.15);
+      z-index: 15;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+    .shuttle-message.show { display: block; }
+    .shuttle-message.dimmed { opacity: 0.35; transition: opacity 0.15s; }
+    .shuttle-message .hl {
+      font-weight: 700;
+      color: #1565c0;
+    }
+    .departure-clock .time-tag,
+    .shuttle-message .time-tag,
+    .shuttle-point-label .time-tag {
+      color: #0d47a1;
+      font-weight: 600;
+    }
+    .shuttle-point-label .getoff-tag {
+      color: #c62828;
+      font-weight: 600;
+      margin-left: 2px;
+    }
+    .shuttle-point-label .shuttle-point-name {
+      white-space: nowrap;
+    }
+    .shuttle-point-label .time-tag,
+    .shuttle-point-label .getoff-tag {
+      display: block;
+      margin-top: 4px;
+      margin-left: 0;
+    }
+
+    /* 노선 없음 에러 메시지 (기존 안내 위에 임시 표시) */
+    .shuttle-error-overlay {
+      display: none;
+      position: absolute;
+      left: 50%;
+      top: 16px;
+      transform: translateX(-50%);
+      max-width: 90%;
+      padding: 14px 20px;
+      background: #c62828;
+      color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.2);
+      z-index: 16;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+    .shuttle-error-overlay.show { display: block; }
+    @media (max-width: 768px) {
+      .shuttle-error-overlay { max-width: 85%; font-size: 14px; padding: 10px 14px; }
+    }
+
+    /* 셔틀 지도: 핀은 정확한 위치에(래퍼 중앙=앵커), 장소명은 가급적 중앙·한 줄 */
+    .shuttle-point-wrap {
+      position: relative;
+      width: 260px;
+      height: 90px;
+      z-index: 2;
+    }
+    .shuttle-point-pin {
+      width: 24px;
+      height: 24px;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%234285F4" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle cx="12" cy="9.5" r="2.5" fill="%23fff"/></svg>') center/contain no-repeat;
+      transform-origin: 50% 50%;
+      transition: transform 0.15s ease;
+      transform: scale(var(--pin-scale, 1));
+    }
+    .shuttle-label-anchor {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      padding-bottom: 16px;
+    }
+    .shuttle-point-label {
+      background: #fff;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 2px solid #000;
+      box-shadow: 0 1px 4px rgba(0,0,0,.15);
+      font-size: 15px;
+      font-weight: 500;
+      text-align: center;
+      white-space: nowrap;
+      transition: transform 0.15s ease;
+    }
+
+    .results-panel {
+      width: 320px;
+      max-width: 40vw;
+      flex-shrink: 0;
+      background: #fff;
+      box-shadow: 2px 0 12px rgba(0,0,0,.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-title-row {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+    }
+    .results-panel .panel-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #333;
+      flex: 1;
+      min-width: 0;
+    }
+    .btn-back-from-routes {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      background: #f0f0f0;
+      color: #333;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-back-from-routes:hover {
+      background: #e0e0e0;
+    }
+    .results-list-wrap {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior-y: contain;
+    }
+    .results-placeholder {
+      padding: 24px 16px;
+      color: #999;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .results-list {
+      display: flex;
+      flex-direction: column;
+      padding: 8px 0;
+    }
+    .result-card {
+      flex-shrink: 0;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+      border-left: 3px solid transparent;
+    }
+    .result-card:hover {
+      background: #fffde7;
+    }
+    .result-card.highlight {
+      background: #fffde7;
+      border-left-color: #fee500;
+    }
+    .result-card.selected {
+      background: #fff9c4;
+      border-left-color: #fbc02d;
+    }
+    .result-card .name {
+      font-weight: 600;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .result-card .addr {
+      font-size: 13px;
+      color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-actions {
+      display: none;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+      gap: 8px;
+    }
+    .result-card.selected .card-actions { display: flex; }
+    .card-actions button {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .card-actions .btn-depart { background: #e3f2fd; color: #1565c0; }
+    .card-actions .btn-arrive { background: #e8f5e9; color: #2e7d32; }
+
+    .map-controls {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn-zoom,
+    .btn-location {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: none;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s, box-shadow .15s;
+    }
+    .btn-zoom:hover,
+    .btn-location:hover {
+      background: #f5f5f5;
+      box-shadow: 0 2px 12px rgba(0,0,0,.2);
+    }
+    .btn-zoom svg,
+    .btn-location svg { width: 24px; height: 24px; }
+
+    .pin-marker {
+      width: 32px;
+      height: 32px;
+      margin-left: -16px;
+      margin-bottom: -32px;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%234285F4" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle cx="12" cy="9.5" r="2.5" fill="%23fff"/></svg>') center/contain no-repeat;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+      transform-origin: 16px 32px;
+      transform: scale(var(--pin-scale, 1));
+    }
+    .pin-marker.hover, .pin-marker.selected {
+      transform: scale(var(--pin-scale, 1)) scale(1.4);
+    }
+
+    /* 말풍선 (마커 클릭 시) */
+    .bubble-container {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 500;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,.15));
+    }
+    .bubble-container .bubble-tail-svg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+    .bubble-container .bubble-box {
+      position: absolute;
+      pointer-events: auto;
+      padding: 12px 14px;
+      background: #fff;
+      border-radius: 10px;
+      min-width: 180px;
+      cursor: default;
+      touch-action: manipulation;
+    }
+    .bubble-container .bubble-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .bubble-container .bubble-name { font-weight: 600; flex: 1; min-width: 0; }
+    .bubble-container .bubble-close {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #666;
+      cursor: pointer;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .bubble-container .bubble-close:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .bubble-container .bubble-close svg {
+      width: 18px;
+      height: 18px;
+    }
+    .bubble-container .bubble-addr { font-size: 12px; color: #666; margin-bottom: 10px; }
+    .bubble-container .bubble-actions { display: flex; gap: 8px; }
+    .bubble-container .bubble-actions button {
+      flex: 1;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .bubble-container .btn-depart { background: #e3f2fd; color: #1565c0; }
+    .bubble-container .btn-arrive { background: #e8f5e9; color: #2e7d32; }
+
+    /* 현재 위치 마커 (지도 위 아이콘) */
+    .current-location-marker {
+      width: 28px;
+      height: 28px;
+      margin-left: -14px;
+      margin-top: -14px;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%231a73e8" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle cx="12" cy="9.5" r="2.5" fill="%23fff"/></svg>') center/contain no-repeat;
+      pointer-events: none;
+    }
+
+    /* 노선 선택 리스트 (최대 5개) */
+    .route-options-wrap {
+      display: none;
+      flex-direction: column;
+      padding: 8px 0;
+    }
+    .route-options-wrap.show {
+      display: flex;
+    }
+    .route-option-card {
+      flex-shrink: 0;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      border-radius: 10px;
+      border: 2px solid #e0e0e0;
+      background: #fff;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .route-option-card:hover {
+      background: #f5f5f5;
+      border-color: #fee500;
+    }
+    .route-option-card.selected {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    .route-option-card .route-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #333;
+    }
+    .route-option-card .route-meta {
+      font-size: 13px;
+      color: #1e5a8e;
+      margin-top: 4px;
+    }
+    .route-option-card .route-detail {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.4;
+      margin-top: 6px;
+    }
+    .route-option-card .card-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .route-option-card .card-main .card-title-wrap {
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+    .route-option-card .btn-route-detail {
+      flex-shrink: 0;
+      padding: 4px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #555;
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .route-option-card .btn-route-detail:hover {
+      background: #e8e8e8;
+      border-color: #ccc;
+    }
+    .route-option-card.expanded .btn-route-detail {
+      background: #fee500;
+      border-color: #e6d000;
+      color: #333;
+    }
+    .route-detail-panel {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+    .route-option-card.expanded .route-detail-panel {
+      display: block;
+    }
+    .route-detail-panel .detail-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #555;
+      margin-bottom: 8px;
+    }
+    .route-detail-panel .departure-times {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      font-size: 13px;
+      color: #333;
+    }
+    .route-detail-panel .departure-times .time-item {
+      padding: 2px 0;
+    }
+    .route-detail-panel .departure-times .time-item.current {
+      font-weight: 700;
+      color: #000;
+    }
+    .route-detail-panel .route-extra-info {
+      font-size: 12px;
+      color: #888;
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    /* 모바일: 레이아웃 전환 + 하단 시트 */
+    @media (max-width: 768px) {
+      .header {
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .header-left {
+        order: 2;
+        flex: 1;
+        min-width: 0;
+      }
+      .header-center {
+        order: 1;
+        flex: 1 1 100%;
+        max-width: none;
+      }
+      .search-bar { max-width: none; }
+      .site-selector-wrap {
+        order: 3;
+        flex: 1;
+        min-width: 0;
+      }
+      .site-selector-wrap select { min-width: 0; width: 100%; }
+
+      .main-content {
+        position: relative;
+      }
+      .results-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: none;
+        height: 50vh;
+        max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+        z-index: 20;
+        transition: height .25s ease, transform .25s ease;
+      }
+      .results-panel.sheet-peek {
+        height: 48px;
+      }
+      .results-panel.sheet-half {
+        height: 50vh;
+      }
+      .results-panel.sheet-full {
+        height: 85vh;
+      }
+      .results-panel.sheet-dragging {
+        transition: none;
+      }
+      .bottom-sheet-handle {
+        display: block;
+        flex-shrink: 0;
+        width: 40px;
+        height: 4px;
+        margin: 10px auto 8px;
+        background: #ccc;
+        border-radius: 2px;
+        cursor: grab;
+        touch-action: none;
+      }
+      .panel-title-row {
+        padding: 8px 16px 12px;
+      }
+      .results-list-wrap {
+        flex: 1;
+        min-height: 0;
+      }
+      .map-controls {
+        right: 12px;
+        bottom: 64px;
+      }
+      .btn-zoom {
+        display: none;
+      }
+      .btn-location {
+        width: 44px;
+        height: 44px;
+      }
+    }
+    @media (max-width: 768px) {
+      .sheet-drag-area {
+        flex-shrink: 0;
+        min-height: 52px;
+        cursor: grab;
+        touch-action: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .sheet-drag-area:active { cursor: grabbing; }
+    }
+    @media (min-width: 769px) {
+      .bottom-sheet-handle { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <label class="departure-clock" id="departureClock" title="클릭하여 출발 시각 입력 (HH:mm)">
+        <span id="departureClockWrap"><span class="time-tag" id="departureClockText">00:00</span> 출발</span>
+        <input type="text" id="departureTimeInput" class="departure-time-input" placeholder="00:00" maxlength="5" style="display: none;" />
+      </label>
+    </div>
+    <div class="header-center">
+      <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
+        <button type="button" id="searchBtn">검색</button>
+      </div>
+    </div>
+    <div class="site-selector-wrap">
+      <select id="siteSelect" title="사업장 선택" aria-hidden="true">
+        <option value="1">삼성전자(수원)</option>
+      </select>
+      <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
+        삼성전자(수원)
+      </button>
+    </div>
+  </header>
+
+  <div class="time-picker-backdrop" id="timePickerBackdrop" aria-hidden="true"></div>
+  <div class="time-picker-modal" id="timePickerModal" role="dialog" aria-label="출발 시간 선택" style="top: 56px;">
+    <div class="time-picker-header">
+      <h2 class="time-picker-title">출발 시간</h2>
+      <button type="button" class="time-picker-now" id="timePickerNow">현재 시간</button>
+    </div>
+    <div class="time-picker-wheels">
+      <div class="time-picker-column">
+        <div class="time-picker-selection-band" aria-hidden="true"></div>
+        <div class="time-picker-items" id="timePickerHourList"></div>
+      </div>
+      <div class="time-picker-column">
+        <div class="time-picker-selection-band" aria-hidden="true"></div>
+        <div class="time-picker-items" id="timePickerMinuteList"></div>
+      </div>
+    </div>
+    <button type="button" class="time-picker-confirm" id="timePickerConfirm">확인</button>
+  </div>
+
+  <div class="site-picker-backdrop" id="sitePickerBackdrop" aria-hidden="true"></div>
+  <div class="site-picker-modal" id="sitePickerModal" role="dialog" aria-label="사업장 선택">
+    <h2 class="site-picker-title">사업장 선택</h2>
+    <div class="site-picker-list" id="sitePickerList" role="listbox"></div>
+  </div>
+
+  <div class="location-permission-backdrop" id="locationPermissionBackdrop" aria-hidden="true"></div>
+  <div class="location-permission-modal" id="locationPermissionModal" role="dialog" aria-label="위치 권한">
+    <p class="location-permission-message" id="locationPermissionMessage"></p>
+    <button type="button" class="location-permission-confirm" id="locationPermissionConfirm">확인</button>
+  </div>
+
+  <main class="main-content">
+    <div class="results-panel sheet-peek" id="resultsPanel">
+      <div class="sheet-drag-area" id="sheetDragArea">
+        <div class="bottom-sheet-handle" id="bottomSheetHandle" aria-hidden="true"></div>
+        <div class="panel-title-row">
+          <div class="panel-title" id="panelTitle">검색 결과</div>
+          <button type="button" class="btn-back-from-routes" id="btnBackFromRoutes" style="display: none;">뒤로 가기</button>
+        </div>
+      </div>
+      <div class="results-list-wrap">
+        <div class="results-placeholder" id="resultsPlaceholder">검색어를 입력한 뒤 검색하면 여기에 표시됩니다.</div>
+        <div class="results-list" id="resultsList" style="display: none;"></div>
+        <div class="route-options-wrap" id="routeOptionsWrap"></div>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="shuttle-message" id="shuttleMessage"></div>
+      <div class="shuttle-error-overlay" id="shuttleErrorOverlay"></div>
+      <div class="map-controls">
+        <button type="button" class="btn-zoom" id="btnZoomIn" title="확대">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+        <button type="button" class="btn-zoom" id="btnZoomOut" title="축소">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+        <button type="button" class="btn-location" id="btnLocation" title="내 위치">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="12" r="3"/>
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ── 환경 설정 (dev / prd) ──────────────────────────────
+    (function() {
+      var host = location.hostname;
+      var isDev = (host === 'localhost' || host === '127.0.0.1' || host === '192.168.219.104');
+      var ENV = {
+        // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
+        KAKAO_JS_KEY: isDev
+          ? '22400d4577672b2419e494c2e292d9c0'   // dev: localhost 허용
+          : '__KAKAO_JS_KEY_PRD__',  // prd: shuttlego.github.io 허용
+        // 백엔드 API base URL
+        API_BASE: isDev
+          ? 'http://' + host + ':8081'      // dev: 로컬 Flask 서버
+          : 'https://your-api-server.com'  // prd: 클라우드 백엔드 URL
+      };
+      window.__SHUTTLE_ENV = ENV;
+
+      // 카카오 지도 SDK 동적 로드
+      var script = document.createElement('script');
+      script.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=' + ENV.KAKAO_JS_KEY + '&autoload=false';
+      script.onload = function() {
+        kakao.maps.load(function() {
+          if (window.__initShuttleApp) window.__initShuttleApp();
+        });
+      };
+      document.head.appendChild(script);
+    })();
+  </script>
+  <script>
+    window.__initShuttleApp = function() {
+      var ENV = window.__SHUTTLE_ENV;
+      var API_BASE = ENV.API_BASE;
+      var mapContainer = document.getElementById('map');
+      var searchInput = document.getElementById('searchInput');
+      var searchBtn = document.getElementById('searchBtn');
+      var resultsPlaceholder = document.getElementById('resultsPlaceholder');
+      var resultsList = document.getElementById('resultsList');
+      var panelTitle = document.getElementById('panelTitle');
+      var btnLocation = document.getElementById('btnLocation');
+      var siteSelect = document.getElementById('siteSelect');
+      var siteSelectTrigger = document.getElementById('siteSelectTrigger');
+      var sitePickerBackdrop = document.getElementById('sitePickerBackdrop');
+      var sitePickerModal = document.getElementById('sitePickerModal');
+      var sitePickerList = document.getElementById('sitePickerList');
+      var shuttleMessage = document.getElementById('shuttleMessage');
+
+      var map = null;
+      var overlays = [];
+      var markerElements = [];
+      var places = [];
+      var selectedSiteId = 1;
+      var selectedPlaceIndex = -1;
+      var bubbleOverlay = null;
+      var shuttleLine = null;
+      var shuttlePointOverlays = [];
+      var shuttlePointContents = [];
+      var shuttlePositions = [];
+      var hoverPlaceOverlay = null;
+      var currentLocationOverlay = null;
+      var mapClickIgnore = false;
+      var mapTouchStart = null;
+      var bubbleOpenedAt = 0;
+      var bubbleClosedByOutsideAt = 0;
+      var shuttleErrorHideTimer = null;
+      var shuttleLabelAdjustTimer = null;
+      var departureTime = { h: 0, m: 0 };
+      var lastPlace = null;
+      var lastShuttleType = null;
+      var routeOptionsWrap = document.getElementById('routeOptionsWrap');
+      var resultsPanel = document.getElementById('resultsPanel');
+      var panToVisibleCenterRafId = null;
+
+      function isMobile() {
+        return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+      }
+      function setSheetState(state) {
+        if (!resultsPanel) return;
+        resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
+        if (state) resultsPanel.classList.add(state);
+        if (isMobile() && state) setTimeout(adjustMapForSheet, 80);
+      }
+
+      function adjustMapForSheet() {
+        if (!isMobile() || !map) return;
+        if (overlays.length === 0) return;
+        var sheetHeight = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
+        if (isNaN(sheetHeight)) return;
+        var bounds = new kakao.maps.LatLngBounds();
+        overlays.forEach(function(o) { bounds.extend(o.getPosition()); });
+        map.setBounds(bounds);
+        map.panBy(0, Math.round(sheetHeight / 2));
+      }
+
+      function pad2(n) { return (n < 10 ? '0' : '') + n; }
+      function getDepartureTimeStr() { return pad2(departureTime.h) + ':' + pad2(departureTime.m); }
+      function setDepartureFromDate(d) {
+        departureTime.h = d.getHours();
+        departureTime.m = d.getMinutes();
+      }
+      function updateDepartureClockDisplay() {
+        var el = document.getElementById('departureClockText');
+        if (el) el.textContent = getDepartureTimeStr();
+      }
+      function parseTimeInput(val) {
+        var s = (val || '').trim();
+        if (!/^\d{1,2}:\d{1,2}$/.test(s)) return null;
+        var parts = s.split(':');
+        var h = parseInt(parts[0], 10);
+        var m = parseInt(parts[1], 10);
+        if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+        return { h: h, m: m };
+      }
+      var timePickerBackdrop = document.getElementById('timePickerBackdrop');
+      var timePickerModal = document.getElementById('timePickerModal');
+      var timePickerHourList = document.getElementById('timePickerHourList');
+      var timePickerMinuteList = document.getElementById('timePickerMinuteList');
+      var timePickerConfirm = document.getElementById('timePickerConfirm');
+      var timePickerNow = document.getElementById('timePickerNow');
+      var locationPermissionBackdrop = document.getElementById('locationPermissionBackdrop');
+      var locationPermissionModal = document.getElementById('locationPermissionModal');
+      var locationPermissionMessage = document.getElementById('locationPermissionMessage');
+      var locationPermissionConfirm = document.getElementById('locationPermissionConfirm');
+      var ITEM_HEIGHT = 40;
+      var PAD_HEIGHT = 60;
+      var WHEEL_HEIGHT = 160;
+
+      function buildTimePickerWheels() {
+        if (!timePickerHourList || !timePickerMinuteList) return;
+        function pad(n, len) { var s = String(n); while (s.length < len) s = '0' + s; return s; }
+        timePickerHourList.innerHTML = '';
+        var padTop = document.createElement('div');
+        padTop.className = 'time-picker-pad';
+        timePickerHourList.appendChild(padTop);
+        for (var h = 0; h < 24; h++) {
+          var el = document.createElement('div');
+          el.className = 'time-picker-item';
+          el.setAttribute('data-value', h);
+          el.textContent = pad(h, 2);
+          timePickerHourList.appendChild(el);
+        }
+        var padBottom = document.createElement('div');
+        padBottom.className = 'time-picker-pad';
+        timePickerHourList.appendChild(padBottom);
+
+        timePickerMinuteList.innerHTML = '';
+        var padTopM = document.createElement('div');
+        padTopM.className = 'time-picker-pad';
+        timePickerMinuteList.appendChild(padTopM);
+        for (var m = 0; m < 60; m++) {
+          var el = document.createElement('div');
+          el.className = 'time-picker-item';
+          el.setAttribute('data-value', m);
+          el.textContent = pad(m, 2);
+          timePickerMinuteList.appendChild(el);
+        }
+        var padBottomM = document.createElement('div');
+        padBottomM.className = 'time-picker-pad';
+        timePickerMinuteList.appendChild(padBottomM);
+      }
+      function getTimePickerScrollIndex(el, maxIndex) {
+        if (!el) return 0;
+        var scrollTop = el.scrollTop;
+        var index = Math.round(scrollTop / ITEM_HEIGHT);
+        return Math.max(0, Math.min(maxIndex, index));
+      }
+      function updateTimePickerSelectedClasses() {
+        var h = getTimePickerScrollIndex(timePickerHourList, 23);
+        var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
+        if (timePickerHourList) {
+          timePickerHourList.querySelectorAll('.time-picker-item').forEach(function(item, i) {
+            item.classList.toggle('selected', i === h);
+          });
+        }
+        if (timePickerMinuteList) {
+          timePickerMinuteList.querySelectorAll('.time-picker-item').forEach(function(item, i) {
+            item.classList.toggle('selected', i === m);
+          });
+        }
+      }
+      function openTimePickerModal() {
+        if (!timePickerBackdrop || !timePickerModal) return;
+        buildTimePickerWheels();
+        var clockEl = document.getElementById('departureClock');
+        if (isMobile()) {
+          timePickerModal.style.top = '';
+          timePickerModal.style.left = '';
+          timePickerModal.style.right = '';
+          timePickerModal.style.bottom = '0';
+        } else {
+          if (clockEl) {
+            var rect = clockEl.getBoundingClientRect();
+            timePickerModal.style.top = (rect.bottom + 4) + 'px';
+            timePickerModal.style.left = rect.left + 'px';
+            timePickerModal.style.right = 'auto';
+            timePickerModal.style.bottom = 'auto';
+          }
+        }
+        timePickerBackdrop.classList.add('show');
+        timePickerModal.classList.add('show');
+        requestAnimationFrame(function() {
+          timePickerHourList.scrollTop = departureTime.h * ITEM_HEIGHT;
+          timePickerMinuteList.scrollTop = departureTime.m * ITEM_HEIGHT;
+          updateTimePickerSelectedClasses();
+        });
+      }
+      function closeTimePickerModal() {
+        if (timePickerBackdrop) timePickerBackdrop.classList.remove('show');
+        if (timePickerModal) timePickerModal.classList.remove('show');
+      }
+      function setTimePickerToNow() {
+        var now = new Date();
+        var h = now.getHours();
+        var m = now.getMinutes();
+        if (timePickerHourList) timePickerHourList.scrollTop = h * ITEM_HEIGHT;
+        if (timePickerMinuteList) timePickerMinuteList.scrollTop = m * ITEM_HEIGHT;
+        updateTimePickerSelectedClasses();
+      }
+      function applyTimePicker() {
+        var h = getTimePickerScrollIndex(timePickerHourList, 23);
+        var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
+        departureTime.h = h;
+        departureTime.m = m;
+        closeTimePickerModal();
+        updateDepartureClockDisplay();
+        // 노선 선택 화면에 있을 때만 시간 변경 시 노선 다시 검색. 장소 검색 결과 화면에서는 시간만 갱신.
+        if (routeOptionsWrap && routeOptionsWrap.classList.contains('show')) {
+          refreshLastShuttleResult();
+        }
+      }
+      function refreshLastShuttleResult() {
+        if (!lastPlace || !lastShuttleType) return;
+        if (lastShuttleType === 'depart') runDepartWithPlace(lastPlace);
+        else runArriveWithPlace(lastPlace);
+      }
+
+      function updateSiteTriggerText() {
+        if (!siteSelectTrigger || !siteSelect) return;
+        var opt = siteSelect.options[siteSelect.selectedIndex];
+        siteSelectTrigger.textContent = opt ? opt.text : '';
+      }
+      function openSitePickerModal() {
+        if (!sitePickerBackdrop || !sitePickerModal || !sitePickerList) return;
+        var trigger = siteSelectTrigger;
+        if (isMobile()) {
+          sitePickerModal.style.top = '';
+          sitePickerModal.style.left = '';
+          sitePickerModal.style.right = '';
+          sitePickerModal.style.bottom = '0';
+        } else {
+          if (trigger) {
+            var rect = trigger.getBoundingClientRect();
+            sitePickerModal.style.top = (rect.bottom + 4) + 'px';
+            sitePickerModal.style.right = (window.innerWidth - rect.right) + 'px';
+            sitePickerModal.style.left = 'auto';
+            sitePickerModal.style.bottom = 'auto';
+          }
+        }
+        sitePickerList.innerHTML = '';
+        var options = siteSelect ? siteSelect.options : [];
+        var selectedValue = siteSelect ? siteSelect.value : '';
+        for (var i = 0; i < options.length; i++) {
+          var opt = options[i];
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'site-picker-item' + (opt.value === selectedValue ? ' selected' : '');
+          btn.textContent = opt.text;
+          btn.setAttribute('data-value', opt.value);
+          btn.setAttribute('role', 'option');
+          btn.setAttribute('aria-selected', opt.value === selectedValue ? 'true' : 'false');
+          btn.addEventListener('click', function() {
+            var val = this.getAttribute('data-value');
+            if (siteSelect && val !== siteSelect.value) {
+              siteSelect.value = val;
+              selectedSiteId = parseInt(val, 10);
+              siteSelect.dispatchEvent(new Event('change'));
+            }
+            updateSiteTriggerText();
+            closeSitePickerModal();
+          });
+          sitePickerList.appendChild(btn);
+        }
+        sitePickerBackdrop.classList.add('show');
+        sitePickerModal.classList.add('show');
+        if (trigger) trigger.setAttribute('aria-expanded', 'true');
+      }
+      function closeSitePickerModal() {
+        if (sitePickerBackdrop) sitePickerBackdrop.classList.remove('show');
+        if (sitePickerModal) sitePickerModal.classList.remove('show');
+        if (siteSelectTrigger) siteSelectTrigger.setAttribute('aria-expanded', 'false');
+      }
+
+      function updatePinScale() {
+        if (!map || !mapContainer) return;
+        var level = map.getLevel();
+        var scale = Math.max(0.75, Math.min(1.5, 1.5 - level * 0.05));
+        mapContainer.style.setProperty('--pin-scale', String(scale));
+      }
+
+      function initMap() {
+        var center = new kakao.maps.LatLng(37.5665, 126.978);
+        var options = { center: center, level: 5 };
+        map = new kakao.maps.Map(mapContainer, options);
+        updatePinScale();
+        kakao.maps.event.addListener(map, 'dragstart', function() {
+          closeBubble();
+        });
+        kakao.maps.event.addListener(map, 'zoom_changed', function() {
+          closeBubble();
+          updatePinScale();
+          if (shuttlePointOverlays && shuttlePointOverlays.length > 0) {
+            clearTimeout(shuttleLabelAdjustTimer);
+            shuttleLabelAdjustTimer = setTimeout(function() {
+              shuttleLabelAdjustTimer = null;
+              adjustShuttleLabels();
+            }, 180);
+          }
+        });
+        kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
+          var lat = mouseEvent.latLng.getLat();
+          var lng = mouseEvent.latLng.getLng();
+          setTimeout(function() {
+            if (mapClickIgnore) {
+              mapClickIgnore = false;
+              return;
+            }
+            if (bubbleOverlay) {
+              closeBubble();
+              return;
+            }
+            if (bubbleClosedByOutsideAt && (Date.now() - bubbleClosedByOutsideAt) < 150) {
+              bubbleClosedByOutsideAt = 0;
+              return;
+            }
+            showBubbleAtPosition(lat, lng);
+          }, 0);
+        });
+        if (isMobile()) {
+          mapContainer.addEventListener('touchstart', onMapTouchStart, { passive: true });
+          mapContainer.addEventListener('touchend', onMapTouchEnd, { passive: false });
+        }
+        document.addEventListener('click', closeBubbleIfOutside);
+        document.addEventListener('touchend', closeBubbleIfOutside, { passive: true });
+      }
+
+      function onMapTouchStart(e) {
+        if (!e.touches || e.touches.length === 0) return;
+        mapTouchStart = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          time: Date.now()
+        };
+      }
+
+      function onMapTouchEnd(e) {
+        if (!mapTouchStart || !e.changedTouches || e.changedTouches.length === 0) return;
+        var t = e.changedTouches[0];
+        var duration = Date.now() - mapTouchStart.time;
+        var dx = t.clientX - mapTouchStart.x;
+        var dy = t.clientY - mapTouchStart.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        mapTouchStart = null;
+        if (duration > 300 || dist > 15) return;
+        var rect = mapContainer.getBoundingClientRect();
+        var x = t.clientX - rect.left;
+        var y = t.clientY - rect.top;
+        var proj = map.getProjection();
+        if (!proj || typeof proj.coordsFromContainerPoint !== 'function') return;
+        var pt = new kakao.maps.Point(x, y);
+        var latLng = proj.coordsFromContainerPoint(pt);
+        if (latLng && typeof latLng.getLat === 'function' && typeof latLng.getLng === 'function') {
+          e.preventDefault();
+          mapClickIgnore = true;
+          if (bubbleOverlay) {
+            closeBubble();
+            return;
+          }
+          showBubbleAtPosition(latLng.getLat(), latLng.getLng());
+        }
+      }
+
+      function loadSites() {
+        fetch(API_BASE + '/api/sites')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var list = data.sites || [];
+            siteSelect.innerHTML = '';
+            if (list.length === 0) {
+              siteSelect.appendChild(new Option('삼성전자(수원)', '1'));
+            } else {
+              list.forEach(function(site) {
+                siteSelect.appendChild(new Option(site.site_name, String(site.site_id)));
+              });
+            }
+            if (siteSelect.querySelector('option[value="1"]')) {
+              siteSelect.value = '1';
+            }
+            updateSiteTriggerText();
+          })
+          .catch(function() {
+            siteSelect.innerHTML = '';
+            siteSelect.appendChild(new Option('삼성전자(수원)', '1'));
+            siteSelect.value = '1';
+            updateSiteTriggerText();
+          });
+      }
+
+      siteSelect.addEventListener('change', function() {
+        selectedSiteId = parseInt(siteSelect.value, 10);
+      });
+      if (siteSelectTrigger) siteSelectTrigger.addEventListener('click', openSitePickerModal);
+      if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
+      if (sitePickerModal) sitePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      updateSiteTriggerText();
+
+      function clearSearchOverlays() {
+        overlays.forEach(function(o) { o.setMap(null); });
+        overlays = [];
+        markerElements = [];
+        hideHoverMarker();
+      }
+
+      function clearShuttleOverlays() {
+        clearTimeout(shuttleLabelAdjustTimer);
+        shuttleLabelAdjustTimer = null;
+        if (shuttleLine) {
+          shuttleLine.setMap(null);
+          shuttleLine = null;
+        }
+        shuttlePointOverlays.forEach(function(o) { o.setMap(null); });
+        shuttlePointOverlays = [];
+        shuttlePointContents = [];
+        shuttlePositions = [];
+      }
+
+      function addMarker(lat, lng, index) {
+        var pos = new kakao.maps.LatLng(lat, lng);
+        var el = document.createElement('div');
+        el.className = 'pin-marker';
+        el.setAttribute('data-index', index);
+        el.addEventListener('mouseenter', function() { onMarkerHover(index, true); });
+        el.addEventListener('mouseleave', function() { onMarkerHover(index, false); });
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          mapClickIgnore = true;
+          showBubble(index);
+        });
+        var overlay = new kakao.maps.CustomOverlay({
+          position: pos,
+          content: el,
+          yAnchor: 1
+        });
+        overlay.setMap(map);
+        overlays.push(overlay);
+        markerElements.push(el);
+        return pos;
+      }
+
+      function onMarkerHover(index, enter) {
+        if (selectedPlaceIndex >= 0) return;
+        if (enter) {
+          markerElements.forEach(function(m, i) {
+            m.classList.toggle('hover', i === index);
+          });
+          var cards = resultsList.querySelectorAll('.result-card');
+          cards.forEach(function(c, i) {
+            c.classList.toggle('highlight', i === index);
+          });
+          var card = cards[index];
+          if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else {
+          markerElements.forEach(function(m) { m.classList.remove('hover'); });
+          resultsList.querySelectorAll('.result-card').forEach(function(c) { c.classList.remove('highlight'); });
+        }
+      }
+
+      function onListCardHover(index, enter) {
+        if (enter && places[index] && map) {
+          setMapDimmed(true, index);
+          if (overlays.length === 0) showHoverMarker(index);
+        } else {
+          setMapDimmed(false);
+          hideHoverMarker();
+        }
+      }
+
+      function setMapDimmed(dimmed, highlightIndex) {
+        if (dimmed) {
+          markerElements.forEach(function(m, i) {
+            m.style.opacity = (i === highlightIndex) ? '1' : '0.35';
+            m.classList.toggle('hover', i === highlightIndex);
+          });
+          shuttlePointContents.forEach(function(el) {
+            if (el && el.style) el.style.opacity = '0.35';
+          });
+          if (shuttleLine) shuttleLine.setOptions({ strokeOpacity: 0.25 });
+          shuttleMessage.classList.add('dimmed');
+        } else {
+          markerElements.forEach(function(m) {
+            m.style.opacity = '';
+            m.classList.remove('hover');
+          });
+          shuttlePointContents.forEach(function(el) {
+            if (el && el.style) el.style.opacity = '';
+          });
+          if (shuttleLine) shuttleLine.setOptions({ strokeOpacity: 0.9 });
+          shuttleMessage.classList.remove('dimmed');
+        }
+      }
+
+      function showHoverMarker(index) {
+        hideHoverMarker();
+        var place = places[index];
+        if (!place) return;
+        var lat = parseFloat(place.y);
+        var lng = parseFloat(place.x);
+        var el = document.createElement('div');
+        el.className = 'pin-marker hover';
+        var overlay = new kakao.maps.CustomOverlay({
+          position: new kakao.maps.LatLng(lat, lng),
+          content: el,
+          yAnchor: 1
+        });
+        overlay.setMap(map);
+        hoverPlaceOverlay = overlay;
+      }
+
+      function hideHoverMarker() {
+        if (hoverPlaceOverlay) {
+          hoverPlaceOverlay.setMap(null);
+          hoverPlaceOverlay = null;
+        }
+      }
+
+      function closeBubble() {
+        if (bubbleOverlay) {
+          if (bubbleOverlay.parentNode) bubbleOverlay.parentNode.removeChild(bubbleOverlay);
+          bubbleOverlay = null;
+        }
+      }
+
+      function closeBubbleIfOutside(e) {
+        if (!bubbleOverlay) return;
+        if (Date.now() - bubbleOpenedAt < 200) return;
+        if (bubbleOverlay.contains(e.target)) return;
+        bubbleClosedByOutsideAt = Date.now();
+        closeBubble();
+      }
+
+      function showBubble(index) {
+        closeBubble();
+        var place = places[index];
+        if (!place) return;
+        var lat = parseFloat(place.y);
+        var lng = parseFloat(place.x);
+        showBubbleWithPlace(place, lat, lng);
+      }
+
+      function showBubbleAtPosition(lat, lng) {
+        closeBubble();
+        var place = {
+          place_name: '선택한 위치',
+          address_name: '',
+          y: lat,
+          x: lng
+        };
+        showBubbleWithPlace(place, lat, lng);
+      }
+
+      function showBubbleWithPlace(place, lat, lng) {
+        closeBubble();
+        var pos = new kakao.maps.LatLng(lat, lng);
+        var proj = map.getProjection();
+        var clickX, clickY;
+        if (proj && typeof proj.containerPointFromCoords === 'function') {
+          var clickPt = proj.containerPointFromCoords(pos);
+          clickX = clickPt.x;
+          clickY = clickPt.y;
+        } else {
+          clickX = mapContainer.clientWidth / 2;
+          clickY = mapContainer.clientHeight / 2;
+        }
+        var mapW = mapContainer.clientWidth;
+        var mapH = mapContainer.clientHeight;
+
+        // 박스 생성
+        var box = document.createElement('div');
+        box.className = 'bubble-box';
+        box.innerHTML =
+          '<div class="bubble-header">' +
+          '<span class="bubble-name">' + escapeHtml(place.place_name || '') + '</span>' +
+          '<button type="button" class="bubble-close" title="닫기" aria-label="닫기">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+          '</button></div>' +
+          '<div class="bubble-addr">' + escapeHtml(place.address_name || '') + '</div>' +
+          '<div class="bubble-actions">' +
+          '<button type="button" class="btn-depart">출발</button>' +
+          '<button type="button" class="btn-arrive">도착</button>' +
+          '</div>';
+
+        // 컨테이너 생성 및 임시 추가 (크기 측정)
+        var container = document.createElement('div');
+        container.className = 'bubble-container';
+        container.appendChild(box);
+        mapContainer.appendChild(container);
+
+        var boxW = box.offsetWidth;
+        var boxH = box.offsetHeight;
+
+        // 뷰포트 내 최적 위치 계산
+        var pad = 8;
+        var tailMinGap = 14;
+        var boxLeft = clickX - boxW / 2;
+        var boxTop = clickY - boxH - tailMinGap;
+
+        // 수평 클램핑
+        if (boxLeft < pad) boxLeft = pad;
+        if (boxLeft + boxW > mapW - pad) boxLeft = mapW - pad - boxW;
+
+        // 상단 벗어나면 아래로
+        if (boxTop < pad) {
+          boxTop = clickY + tailMinGap;
+        }
+
+        // 하단 벗어나면 클램핑
+        if (boxTop + boxH > mapH - pad) {
+          boxTop = mapH - pad - boxH;
+        }
+
+        box.style.left = Math.round(boxLeft) + 'px';
+        box.style.top = Math.round(boxTop) + 'px';
+
+        // SVG 꼬리 생성
+        var boxRect = { left: boxLeft, top: boxTop, width: boxW, height: boxH };
+        var tailBase = getBubbleTailBase(boxRect, clickX, clickY, 14);
+        if (tailBase) {
+          var svgNS = 'http://www.w3.org/2000/svg';
+          var svg = document.createElementNS(svgNS, 'svg');
+          svg.setAttribute('class', 'bubble-tail-svg');
+          var poly = document.createElementNS(svgNS, 'polygon');
+          poly.setAttribute('points',
+            tailBase.p1.x + ',' + tailBase.p1.y + ' ' +
+            clickX + ',' + clickY + ' ' +
+            tailBase.p2.x + ',' + tailBase.p2.y
+          );
+          poly.setAttribute('fill', '#fff');
+          svg.appendChild(poly);
+          container.insertBefore(svg, box);
+        }
+
+        // 이벤트 핸들러
+        function closeBubbleIfNotButtons(e) {
+          e.stopPropagation();
+          if (e.target.closest('.bubble-actions button')) return;
+          e.preventDefault();
+          closeBubble();
+        }
+        box.addEventListener('click', closeBubbleIfNotButtons);
+        box.addEventListener('touchend', closeBubbleIfNotButtons, { passive: false });
+        box.querySelector('.bubble-close').addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          closeBubble();
+        });
+        box.querySelector('.bubble-close').addEventListener('touchend', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          closeBubble();
+        });
+        box.querySelector('.btn-depart').addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          closeBubble();
+          runDepartWithPlace(place);
+        });
+        box.querySelector('.btn-arrive').addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          closeBubble();
+          runArriveWithPlace(place);
+        });
+
+        bubbleOverlay = container;
+        bubbleOpenedAt = Date.now();
+      }
+
+      function getBubbleTailBase(boxRect, tipX, tipY, baseWidth) {
+        var cx = boxRect.left + boxRect.width / 2;
+        var cy = boxRect.top + boxRect.height / 2;
+        var dx = tipX - cx;
+        var dy = tipY - cy;
+        var hw = boxRect.width / 2;
+        var hh = boxRect.height / 2;
+        var halfBase = baseWidth / 2;
+
+        // 클릭 지점이 박스 내부이면 꼬리 불필요
+        if (Math.abs(dx) <= hw + 4 && Math.abs(dy) <= hh + 4) return null;
+
+        var scaleX = Math.abs(dx) > 0.001 ? hw / Math.abs(dx) : 99999;
+        var scaleY = Math.abs(dy) > 0.001 ? hh / Math.abs(dy) : 99999;
+
+        if (scaleX < scaleY) {
+          // 좌우 변에서 꼬리 시작
+          var edgeX = dx > 0 ? boxRect.left + boxRect.width : boxRect.left;
+          var edgeY = cy + dy * scaleX;
+          edgeY = Math.max(boxRect.top + halfBase + 8, Math.min(boxRect.top + boxRect.height - halfBase - 8, edgeY));
+          var inset = dx > 0 ? -2 : 2;
+          return {
+            p1: { x: edgeX + inset, y: edgeY - halfBase },
+            p2: { x: edgeX + inset, y: edgeY + halfBase }
+          };
+        } else {
+          // 상하 변에서 꼬리 시작
+          var edgeY2 = dy > 0 ? boxRect.top + boxRect.height : boxRect.top;
+          var edgeX2 = cx + dx * scaleY;
+          edgeX2 = Math.max(boxRect.left + halfBase + 8, Math.min(boxRect.left + boxRect.width - halfBase - 8, edgeX2));
+          var inset2 = dy > 0 ? -2 : 2;
+          return {
+            p1: { x: edgeX2 - halfBase, y: edgeY2 + inset2 },
+            p2: { x: edgeX2 + halfBase, y: edgeY2 + inset2 }
+          };
+        }
+      }
+
+      function selectPlace(index) {
+        selectedPlaceIndex = index;
+        resultsList.querySelectorAll('.result-card').forEach(function(c, i) {
+          c.classList.toggle('selected', i === index);
+        });
+        markerElements.forEach(function(m, i) {
+          m.classList.toggle('selected', i === index);
+          m.classList.remove('hover');
+        });
+        resultsList.querySelectorAll('.result-card').forEach(function(c) {
+          c.classList.remove('highlight');
+        });
+      }
+
+      function deselectPlace() {
+        selectedPlaceIndex = -1;
+        resultsList.querySelectorAll('.result-card').forEach(function(c) {
+          c.classList.remove('selected');
+        });
+        markerElements.forEach(function(m) {
+          m.classList.remove('selected', 'hover');
+        });
+      }
+
+      function fitBounds() {
+        if (overlays.length === 0) return;
+        var bounds = new kakao.maps.LatLngBounds();
+        overlays.forEach(function(o) { bounds.extend(o.getPosition()); });
+        map.setBounds(bounds);
+      }
+
+      function panTo(lat, lng) {
+        var place = new kakao.maps.LatLng(lat, lng);
+        if (isMobile() && resultsPanel && mapContainer) {
+          var sheetHeight = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
+          if (!isNaN(sheetHeight) && sheetHeight > 0) {
+            if (panToVisibleCenterRafId != null) {
+              cancelAnimationFrame(panToVisibleCenterRafId);
+              panToVisibleCenterRafId = null;
+            }
+            var mapWidth = mapContainer.clientWidth || 0;
+            var mapHeight = mapContainer.clientHeight || 0;
+            map.setCenter(place);
+            panToVisibleCenterRafId = requestAnimationFrame(function() {
+              panToVisibleCenterRafId = null;
+              var proj = map.getProjection();
+              if (!proj) return;
+              var targetCenterPixelY = mapHeight / 2 + sheetHeight / 2;
+              var pt = new kakao.maps.Point(mapWidth / 2, targetCenterPixelY);
+              var newCenter = null;
+              if (typeof proj.coordsFromContainerPoint === 'function') {
+                newCenter = proj.coordsFromContainerPoint(pt);
+              } else if (typeof proj.coordsFromPoint === 'function') {
+                newCenter = proj.coordsFromPoint(pt);
+              }
+              if (newCenter && typeof newCenter.getLat === 'function' && typeof newCenter.getLng === 'function') {
+                map.setCenter(newCenter);
+              }
+            });
+          } else {
+            map.panTo(place);
+          }
+        } else {
+          map.panTo(place);
+        }
+      }
+
+      function escapeHtml(s) {
+        var div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      function formatDistance(m) {
+        if (m == null || isNaN(m)) return '-';
+        var num = Number(m);
+        if (num >= 1000) return (num / 1000).toFixed(2) + 'km';
+        return Math.round(num) + 'm';
+      }
+
+      function renderResults(list) {
+        showPlaceResultsView();
+        deselectPlace();
+        resultsPlaceholder.style.display = 'none';
+        resultsList.style.display = 'flex';
+        resultsList.innerHTML = '';
+        list.forEach(function(place, i) {
+          var y = parseFloat(place.y);
+          var x = parseFloat(place.x);
+          var card = document.createElement('div');
+          card.className = 'result-card';
+          card.setAttribute('data-index', i);
+          card.innerHTML =
+            '<div class="name">' + escapeHtml(place.place_name || '') + '</div>' +
+            '<div class="addr">' + escapeHtml(place.address_name || '') + '</div>' +
+            '<div class="card-actions">' +
+            '<button type="button" class="btn-depart">출발</button>' +
+            '<button type="button" class="btn-arrive">도착</button>' +
+            '</div>';
+          card.addEventListener('click', function(e) {
+            if (e.target.closest('.card-actions')) return;
+            closeBubble();
+            selectPlace(i);
+            panTo(y, x);
+          });
+          card.addEventListener('mouseenter', function() { onListCardHover(i, true); });
+          card.addEventListener('mouseleave', function() { onListCardHover(i, false); });
+          card.querySelector('.btn-depart').addEventListener('click', function(e) {
+            e.stopPropagation();
+            runDepart(i);
+          });
+          card.querySelector('.btn-arrive').addEventListener('click', function(e) {
+            e.stopPropagation();
+            runArrive(i);
+          });
+          resultsList.appendChild(card);
+        });
+      }
+
+      function showShuttleResult(html) {
+        hideShuttleErrorOverlay();
+        shuttleMessage.innerHTML = html;
+        shuttleMessage.classList.remove('dimmed');
+        shuttleMessage.classList.add('show');
+      }
+
+      function showShuttleError(message) {
+        var errorEl = document.getElementById('shuttleErrorOverlay');
+        if (!errorEl) return;
+        if (shuttleErrorHideTimer) {
+          clearTimeout(shuttleErrorHideTimer);
+          shuttleErrorHideTimer = null;
+        }
+        errorEl.innerHTML = escapeHtml(message || '해당 노선이 없습니다.');
+        errorEl.classList.add('show');
+        shuttleErrorHideTimer = setTimeout(function() {
+          errorEl.classList.remove('show');
+          shuttleErrorHideTimer = null;
+        }, 3000);
+      }
+
+      function hideShuttleErrorOverlay() {
+        if (shuttleErrorHideTimer) {
+          clearTimeout(shuttleErrorHideTimer);
+          shuttleErrorHideTimer = null;
+        }
+        var errorEl = document.getElementById('shuttleErrorOverlay');
+        if (errorEl) errorEl.classList.remove('show');
+      }
+
+      function drawOptionOnMap(option, placeName, isDepart) {
+        clearSearchOverlays();
+        clearShuttleOverlays();
+        var positions = option.positions;
+        var path = positions.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
+        var timeStr = (option.board_time != null && option.board_time !== '') ? option.board_time : getDepartureTimeStr();
+        var labels = isDepart
+          ? [placeName, option.nearest_stop_name, option.terminus_name]
+          : [option.start_stop_name, option.getoff_stop_name, placeName];
+        positions.forEach(function(p, i) {
+          var pos = new kakao.maps.LatLng(p.lat, p.lng);
+          var pinEl = document.createElement('div');
+          pinEl.className = 'shuttle-point-pin';
+          var pinOverlay = new kakao.maps.CustomOverlay({
+            position: pos,
+            content: pinEl,
+            xAnchor: 0.5,
+            yAnchor: 0.5
+          });
+          pinOverlay.setZIndex(1);
+          pinOverlay.setMap(map);
+          shuttlePointOverlays.push(pinOverlay);
+          var namePart = '<span class="shuttle-point-name">' + escapeHtml(labels[i]) + '</span>';
+          var tagPart = '';
+          if (isDepart && i === 1) tagPart = '<span class="time-tag">(' + timeStr + '분 탑승)</span>';
+          if (!isDepart && i === 0) tagPart = '<span class="time-tag">(' + timeStr + '분 탑승)</span>';
+          if (!isDepart && i === 1) {
+            var seq = (option.getoff_stop_sequence != null) ? option.getoff_stop_sequence : '';
+            tagPart = '<span class="getoff-tag">(' + (seq ? seq + '번째 정류장 ' : '') + '하차)</span>';
+          }
+          var labelAnchor = document.createElement('div');
+          labelAnchor.className = 'shuttle-label-anchor';
+          labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + '">' + namePart + tagPart + '</div>';
+          var labelOverlay = new kakao.maps.CustomOverlay({
+            position: pos,
+            content: labelAnchor,
+            xAnchor: 0.5,
+            yAnchor: 1.0
+          });
+          labelOverlay.setZIndex(10);
+          labelOverlay.setMap(map);
+          shuttlePointOverlays.push(labelOverlay);
+          shuttlePointContents.push(labelAnchor);
+        });
+        var lineColor = '#000';
+        var lineOpts = {
+          path: path,
+          strokeWeight: 5,
+          strokeColor: lineColor,
+          strokeOpacity: 0.9
+        };
+        if (typeof kakao.maps.StrokeStyles !== 'undefined') {
+          lineOpts.strokeStyle = kakao.maps.StrokeStyles.SHORTDASH;
+        }
+        shuttleLine = new kakao.maps.Polyline(lineOpts);
+        shuttleLine.setMap(map);
+        shuttlePositions = positions.slice();
+        var bounds = new kakao.maps.LatLngBounds();
+        path.forEach(function(p) { bounds.extend(p); });
+        var sw = bounds.getSouthWest();
+        var ne = bounds.getNorthEast();
+        var latSpan = ne.getLat() - sw.getLat();
+        var lngSpan = ne.getLng() - sw.getLng();
+        var pad = 0.18;
+        var padTop = 0.28;
+        if (latSpan < 0.002) latSpan = 0.01;
+        if (lngSpan < 0.002) lngSpan = 0.01;
+        bounds.extend(new kakao.maps.LatLng(sw.getLat() - latSpan * pad, sw.getLng()));
+        bounds.extend(new kakao.maps.LatLng(ne.getLat() + latSpan * padTop, ne.getLng()));
+        bounds.extend(new kakao.maps.LatLng(sw.getLat(), sw.getLng() - lngSpan * pad));
+        bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
+        map.setBounds(bounds);
+        clearTimeout(shuttleLabelAdjustTimer);
+        shuttleLabelAdjustTimer = setTimeout(function() {
+          shuttleLabelAdjustTimer = null;
+          adjustShuttleLabels();
+        }, isMobile() ? 350 : 220);
+        if (!isMobile()) {
+          var msgHtml = isDepart
+            ? escapeHtml(placeName) + '에서 출근하기 위해서는 <span class="time-tag">' + timeStr + '분</span>에 <span class="hl">' + escapeHtml(option.nearest_stop_name) + '</span> 정류장에서 <span class="hl">' + escapeHtml(option.route_name) + '</span> 출근 버스(노선)를 탑승하세요.'
+            : escapeHtml(placeName) + '(으)로 가기 위해서는 <span class="hl">' + escapeHtml(option.route_name) + '</span> 퇴근 버스를 <span class="time-tag">' + timeStr + '분</span>에 <span class="hl">' + escapeHtml(option.start_stop_name) + '</span>에서 탑승하고 <span class="hl">' + escapeHtml(option.getoff_stop_name) + '</span>에서 하차하세요.';
+          showShuttleResult(msgHtml);
+        } else {
+          shuttleMessage.classList.remove('show');
+        }
+      }
+
+      function drawRouteDetailOnMap(option, placeName, isDepart) {
+        clearSearchOverlays();
+        clearShuttleOverlays();
+        var routeStops = option.route_stops || [];
+        if (routeStops.length === 0) return;
+        var path = routeStops.map(function(s) { return new kakao.maps.LatLng(s.lat, s.lng); });
+        routeStops.forEach(function(s, i) {
+          var pos = new kakao.maps.LatLng(s.lat, s.lng);
+          var pinEl = document.createElement('div');
+          pinEl.className = 'shuttle-point-pin';
+          var pinOverlay = new kakao.maps.CustomOverlay({
+            position: pos,
+            content: pinEl,
+            xAnchor: 0.5,
+            yAnchor: 0.5
+          });
+          pinOverlay.setZIndex(1);
+          pinOverlay.setMap(map);
+          shuttlePointOverlays.push(pinOverlay);
+          var labelAnchor = document.createElement('div');
+          labelAnchor.className = 'shuttle-label-anchor';
+          labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + '">' +
+            '<span class="shuttle-point-name">' + escapeHtml(s.sequence + '. ' + s.stop_name) + '</span></div>';
+          var labelOverlay = new kakao.maps.CustomOverlay({
+            position: pos,
+            content: labelAnchor,
+            xAnchor: 0.5,
+            yAnchor: 1.0
+          });
+          labelOverlay.setZIndex(10);
+          labelOverlay.setMap(map);
+          shuttlePointOverlays.push(labelOverlay);
+          shuttlePointContents.push(labelAnchor);
+        });
+        shuttlePositions = routeStops.map(function(s) { return { lat: s.lat, lng: s.lng }; });
+        var lineOpts = {
+          path: path,
+          strokeWeight: 5,
+          strokeColor: '#000',
+          strokeOpacity: 0.9
+        };
+        if (typeof kakao.maps.StrokeStyles !== 'undefined') {
+          lineOpts.strokeStyle = kakao.maps.StrokeStyles.SHORTDASH;
+        }
+        shuttleLine = new kakao.maps.Polyline(lineOpts);
+        shuttleLine.setMap(map);
+        var bounds = new kakao.maps.LatLngBounds();
+        path.forEach(function(p) { bounds.extend(p); });
+        var sw = bounds.getSouthWest();
+        var ne = bounds.getNorthEast();
+        var latSpan = ne.getLat() - sw.getLat();
+        var lngSpan = ne.getLng() - sw.getLng();
+        var pad = 0.12;
+        if (latSpan < 0.002) latSpan = 0.01;
+        if (lngSpan < 0.002) lngSpan = 0.01;
+        bounds.extend(new kakao.maps.LatLng(sw.getLat() - latSpan * pad, sw.getLng()));
+        bounds.extend(new kakao.maps.LatLng(ne.getLat() + latSpan * pad, ne.getLng()));
+        bounds.extend(new kakao.maps.LatLng(sw.getLat(), sw.getLng() - lngSpan * pad));
+        bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
+        map.setBounds(bounds);
+        shuttleMessage.classList.remove('show');
+        clearTimeout(shuttleLabelAdjustTimer);
+        shuttleLabelAdjustTimer = setTimeout(function() {
+          shuttleLabelAdjustTimer = null;
+          adjustShuttleLabels();
+        }, isMobile() ? 350 : 220);
+      }
+
+      function adjustShuttleLabels() {
+        if (!shuttlePointContents || shuttlePointContents.length === 0 || !shuttlePositions || shuttlePositions.length === 0) return;
+        var labels = shuttlePointContents.map(function(anchor) { return anchor.querySelector('.shuttle-point-label'); });
+        if (labels.some(function(el) { return !el; })) return;
+        var n = labels.length;
+        labels.forEach(function(el) { el.style.transform = ''; });
+        labels[0].offsetHeight;
+        var rects = labels.map(function(el) { return el.getBoundingClientRect(); });
+        var gap = 4;
+        var maxDeltaPx = 200;
+        var indices = [];
+        for (var i = 0; i < n; i++) indices.push(i);
+        var northFirst = indices.slice().sort(function(a, b) {
+          return (shuttlePositions[b].lat - shuttlePositions[a].lat);
+        });
+        var naturalTop = [];
+        var heights = [];
+        for (var i = 0; i < n; i++) {
+          naturalTop[i] = rects[i].top;
+          heights[i] = rects[i].height;
+        }
+        var desiredTop = [];
+        for (var i = 0; i < n; i++) desiredTop[i] = naturalTop[i];
+        for (var i = 0; i < northFirst.length; i++) {
+          var idx = northFirst[i];
+          if (i === 0) {
+            desiredTop[idx] = naturalTop[idx];
+          } else {
+            var prevIdx = northFirst[i - 1];
+            var prevBottom = desiredTop[prevIdx] + heights[prevIdx];
+            desiredTop[idx] = Math.max(naturalTop[idx], prevBottom + gap);
+          }
+        }
+        for (var i = 0; i < n; i++) {
+          var deltaY = desiredTop[i] - naturalTop[i];
+          if (Math.abs(deltaY) > 0.5) {
+            deltaY = Math.max(-maxDeltaPx, Math.min(maxDeltaPx, deltaY));
+            labels[i].style.transform = 'translateY(' + deltaY + 'px)';
+          }
+        }
+      }
+
+      function resetShuttleLabelTransforms() {
+        if (!shuttlePointContents || shuttlePointContents.length === 0) return;
+        shuttlePointContents.forEach(function(anchor) {
+          var el = anchor.querySelector('.shuttle-point-label');
+          if (el) el.style.transform = '';
+        });
+      }
+
+      var currentRouteOptions = null;
+      var currentPlaceName = null;
+      var currentIsDepart = null;
+      var expandedOptionIndex = -1;
+
+      function renderRouteOptions(options, placeName, isDepart) {
+        panelTitle.textContent = '노선 선택';
+        var btnBack = document.getElementById('btnBackFromRoutes');
+        if (btnBack) btnBack.style.display = '';
+        resultsPlaceholder.style.display = 'none';
+        resultsList.style.display = 'none';
+        routeOptionsWrap.innerHTML = '';
+        routeOptionsWrap.classList.add('show');
+        currentRouteOptions = options;
+        currentPlaceName = placeName;
+        currentIsDepart = isDepart;
+        expandedOptionIndex = -1;
+        if (options.length === 0) {
+          clearSearchOverlays();
+          clearShuttleOverlays();
+          var noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다. 시간을 확인해주세요.';
+          var emptyMsg = document.createElement('div');
+          emptyMsg.className = 'results-placeholder';
+          emptyMsg.style.display = 'block';
+          emptyMsg.textContent = noRouteMsg;
+          routeOptionsWrap.appendChild(emptyMsg);
+          showShuttleError(noRouteMsg);
+          if (isMobile()) setSheetState('sheet-half');
+          return;
+        }
+        options.forEach(function(opt, idx) {
+          var card = document.createElement('div');
+          card.className = 'route-option-card' + (idx === 0 ? ' selected' : '');
+          var timeStr = (opt.board_time != null && opt.board_time !== '') ? opt.board_time : getDepartureTimeStr();
+          var pathDetail = isDepart
+            ? escapeHtml(placeName) + ' → ' + escapeHtml(opt.nearest_stop_name) + ' → ' + escapeHtml(opt.terminus_name)
+            : escapeHtml(opt.start_stop_name) + ' → ' + escapeHtml(opt.getoff_stop_name) + ' 하차 → ' + escapeHtml(placeName);
+          var distStr = formatDistance(opt.distance_m);
+          var metaLine = distStr + ' · ' + timeStr + '분 탑승';
+          var allTimes = opt.all_departure_times || [];
+          var timesHtml = allTimes.map(function(t) {
+            var isCurrent = (t === timeStr);
+            return '<span class="time-item' + (isCurrent ? ' current' : '') + '">' + escapeHtml(t) + '</span>';
+          }).join('');
+          card.innerHTML =
+            '<div class="card-main">' +
+              '<div class="card-title-wrap">' +
+                '<div class="route-name">' + escapeHtml(opt.route_name) + '</div>' +
+                '<div class="route-meta">' + escapeHtml(metaLine) + '</div>' +
+              '</div>' +
+              '<button type="button" class="btn-route-detail" data-idx="' + idx + '">노선 상세</button>' +
+            '</div>' +
+            '<div class="route-detail">' + pathDetail + '</div>' +
+            '<div class="route-detail-panel">' +
+              '<div class="detail-title">출발 시간</div>' +
+              '<div class="departure-times">' + (timesHtml || '-') + '</div>' +
+              (opt.notes ? '<div class="route-extra-info">' + escapeHtml(opt.notes) + '</div>' : '') +
+              (opt.operator ? '<div class="route-extra-info">' + escapeHtml(opt.operator) + '</div>' : '') +
+            '</div>';
+          var btnDetail = card.querySelector('.btn-route-detail');
+          card.addEventListener('click', function(e) {
+            if (e.target.closest('.btn-route-detail')) return;
+            routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) { c.classList.remove('selected'); });
+            card.classList.add('selected');
+            if (expandedOptionIndex >= 0) {
+              expandedOptionIndex = -1;
+              routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) { c.classList.remove('expanded'); });
+            }
+            drawOptionOnMap(opt, placeName, isDepart);
+          });
+          btnDetail.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (expandedOptionIndex === idx) {
+              expandedOptionIndex = -1;
+              card.classList.remove('expanded');
+              routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) { c.classList.remove('selected'); });
+              card.classList.add('selected');
+              drawOptionOnMap(opt, placeName, isDepart);
+              return;
+            }
+            routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) {
+              c.classList.remove('expanded');
+              if (c !== card) c.classList.remove('selected');
+            });
+            card.classList.add('expanded', 'selected');
+            expandedOptionIndex = idx;
+            drawRouteDetailOnMap(opt, placeName, isDepart);
+          });
+          routeOptionsWrap.appendChild(card);
+        });
+        drawOptionOnMap(options[0], placeName, isDepart);
+        if (isMobile()) setSheetState('sheet-peek');
+      }
+
+      function showPlaceResultsView() {
+        panelTitle.textContent = '검색 결과';
+        var btnBack = document.getElementById('btnBackFromRoutes');
+        if (btnBack) btnBack.style.display = 'none';
+        routeOptionsWrap.classList.remove('show');
+        routeOptionsWrap.innerHTML = '';
+      }
+
+      function goBackFromRouteOptions() {
+        clearShuttleOverlays();
+        shuttleMessage.classList.remove('show');
+        deselectPlace();
+        if (places.length > 0) {
+          places.forEach(function(p, i) {
+            var lat = parseFloat(p.y);
+            var lng = parseFloat(p.x);
+            addMarker(lat, lng, i);
+          });
+          fitBounds();
+        }
+        showPlaceResultsView();
+        if (places.length > 0) {
+          resultsList.style.display = 'flex';
+          resultsPlaceholder.style.display = 'none';
+        } else {
+          resultsPlaceholder.style.display = 'block';
+          resultsPlaceholder.textContent = '검색어를 입력한 뒤 검색하면 여기에 표시됩니다.';
+          resultsList.style.display = 'none';
+        }
+      }
+
+      function runDepart(placeIndex) {
+        var place = places[placeIndex];
+        if (!place) return;
+        runDepartWithPlace(place);
+      }
+
+      function runDepartWithPlace(place) {
+        lastPlace = place;
+        lastShuttleType = 'depart';
+        var lat = parseFloat(place.y);
+        var lng = parseFloat(place.x);
+        var name = place.place_name || '선택한 장소';
+        var url = API_BASE + '/api/shuttle/depart/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr());
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error) {
+              showShuttleError(data.error);
+              return;
+            }
+            var options = data.options || [];
+            renderRouteOptions(options, name, true);
+          })
+          .catch(function() {
+            alert('출근 노선 조회에 실패했습니다.');
+          });
+      }
+
+      function runArrive(placeIndex) {
+        var place = places[placeIndex];
+        if (!place) return;
+        runArriveWithPlace(place);
+      }
+
+      function runArriveWithPlace(place) {
+        lastPlace = place;
+        lastShuttleType = 'arrive';
+        var lat = parseFloat(place.y);
+        var lng = parseFloat(place.x);
+        var name = place.place_name || '선택한 장소';
+        var url = API_BASE + '/api/shuttle/arrive/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr());
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error) {
+              showShuttleError(data.error);
+              return;
+            }
+            var options = data.options || [];
+            renderRouteOptions(options, name, false);
+          })
+          .catch(function() {
+            alert('퇴근 노선 조회에 실패했습니다.');
+          });
+      }
+
+      function showEmptyResults() {
+        resultsPlaceholder.style.display = 'block';
+        resultsPlaceholder.textContent = '검색 결과가 없습니다.';
+        resultsList.style.display = 'none';
+        resultsList.innerHTML = '';
+      }
+
+      function doSearch() {
+        var q = searchInput.value.trim();
+        if (!q) return;
+        shuttleMessage.classList.remove('show');
+        clearShuttleOverlays();
+        fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q))
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            places = data.documents || [];
+            clearSearchOverlays();
+            if (places.length === 0) {
+              showPlaceResultsView();
+              showEmptyResults();
+              return;
+            }
+            places.forEach(function(p, i) {
+              var lat = parseFloat(p.y);
+              var lng = parseFloat(p.x);
+              addMarker(lat, lng, i);
+            });
+            fitBounds();
+            renderResults(places);
+            if (isMobile()) setSheetState('sheet-half');
+          })
+          .catch(function() {
+            showPlaceResultsView();
+            showEmptyResults();
+          });
+      }
+
+      var locationPermissionOnConfirm = null;
+      function openLocationPermissionModal(message, onConfirm) {
+        if (!locationPermissionMessage || !locationPermissionBackdrop || !locationPermissionModal) return;
+        locationPermissionMessage.textContent = message;
+        locationPermissionOnConfirm = onConfirm || null;
+        locationPermissionBackdrop.classList.add('show');
+        locationPermissionModal.classList.add('show');
+      }
+      function closeLocationPermissionModal() {
+        locationPermissionOnConfirm = null;
+        if (locationPermissionBackdrop) locationPermissionBackdrop.classList.remove('show');
+        if (locationPermissionModal) locationPermissionModal.classList.remove('show');
+      }
+      function requestLocationThenMove() {
+        var opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            var lat = pos.coords.latitude;
+            var lng = pos.coords.longitude;
+            if (currentLocationOverlay) {
+              currentLocationOverlay.setMap(null);
+              currentLocationOverlay = null;
+            }
+            var el = document.createElement('div');
+            el.className = 'current-location-marker';
+            currentLocationOverlay = new kakao.maps.CustomOverlay({
+              position: new kakao.maps.LatLng(lat, lng),
+              content: el,
+              yAnchor: 0.5,
+              xAnchor: 0.5
+            });
+            currentLocationOverlay.setMap(map);
+            map.setCenter(new kakao.maps.LatLng(lat, lng));
+            map.setLevel(3);
+          },
+          function(err) {
+            var msg;
+            if (err.code === 1) {
+              msg = '위치 권한이 거부되었습니다. PC: 브라우저 주소창 왼쪽 자물쇠(또는 아이콘)에서 이 사이트의 위치 권한을 허용해 주세요. 모바일: 기기 설정에서 브라우저 앱 > 이 웹사이트 > 위치 권한을 허용해 주세요.';
+              openLocationPermissionModal(msg);
+            } else if (err.code === 2) {
+              msg = '위치 정보를 사용할 수 없습니다. 네트워크나 GPS를 확인해 주세요.';
+              openLocationPermissionModal(msg);
+            } else if (err.code === 3) {
+              msg = '시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
+              openLocationPermissionModal(msg);
+            } else {
+              openLocationPermissionModal('위치를 가져올 수 없습니다. 위치 권한을 확인해 주세요.');
+            }
+          },
+          opts
+        );
+      }
+      function moveToCurrentLocation() {
+        if (!navigator.geolocation) {
+          alert('이 브라우저는 위치 기능을 지원하지 않습니다.');
+          return;
+        }
+        openLocationPermissionModal(
+          '현재 위치를 표시하려면 위치 권한이 필요합니다. 확인을 누르면 브라우저에서 권한 요청이 표시됩니다.',
+          function() {
+            closeLocationPermissionModal();
+            requestLocationThenMove();
+          }
+        );
+      }
+
+      function zoomIn() {
+        if (!map) return;
+        var level = map.getLevel();
+        map.setLevel(Math.max(1, level - 1), { animate: true });
+      }
+      function zoomOut() {
+        if (!map) return;
+        var level = map.getLevel();
+        map.setLevel(Math.min(14, level + 1), { animate: true });
+      }
+
+      searchBtn.addEventListener('click', doSearch);
+      searchInput.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (e.isComposing) {
+          searchInput.addEventListener('compositionend', function onCompEnd() {
+            searchInput.removeEventListener('compositionend', onCompEnd);
+            searchInput.blur();
+            doSearch();
+          }, { once: true });
+        } else {
+          searchInput.blur();
+          doSearch();
+        }
+      });
+      document.getElementById('btnZoomIn').addEventListener('click', zoomIn);
+      document.getElementById('btnZoomOut').addEventListener('click', zoomOut);
+      btnLocation.addEventListener('click', moveToCurrentLocation);
+      if (locationPermissionConfirm) {
+        locationPermissionConfirm.addEventListener('click', function() {
+          if (locationPermissionOnConfirm) locationPermissionOnConfirm();
+          closeLocationPermissionModal();
+        });
+      }
+      if (locationPermissionBackdrop) {
+        locationPermissionBackdrop.addEventListener('click', closeLocationPermissionModal);
+      }
+      var btnBackFromRoutes = document.getElementById('btnBackFromRoutes');
+      if (btnBackFromRoutes) btnBackFromRoutes.addEventListener('click', goBackFromRouteOptions);
+
+      (function initDepartureClock() {
+        setDepartureFromDate(new Date());
+        updateDepartureClockDisplay();
+        var clockWrap = document.getElementById('departureClock');
+        if (clockWrap) {
+          clockWrap.addEventListener('click', function(e) {
+            e.preventDefault();
+            openTimePickerModal();
+          });
+        }
+        if (timePickerConfirm) timePickerConfirm.addEventListener('click', applyTimePicker);
+        if (timePickerNow) timePickerNow.addEventListener('click', setTimePickerToNow);
+        if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', closeTimePickerModal);
+        if (timePickerModal) timePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+        if (timePickerHourList) timePickerHourList.addEventListener('scroll', updateTimePickerSelectedClasses);
+        if (timePickerMinuteList) timePickerMinuteList.addEventListener('scroll', updateTimePickerSelectedClasses);
+      })();
+
+      (function initBottomSheet() {
+        var sheetDragArea = document.getElementById('sheetDragArea');
+        if (!sheetDragArea || !resultsPanel) return;
+        var PEEK_H = 48;
+        var states = ['sheet-peek', 'sheet-half', 'sheet-full'];
+        function getHeights() {
+          var vh = window.innerHeight;
+          return { peek: PEEK_H, half: Math.round(vh * 0.5), full: Math.round(vh * 0.85) };
+        }
+        function getCurrentState() {
+          for (var i = 0; i < states.length; i++) {
+            if (resultsPanel.classList.contains(states[i])) return i;
+          }
+          return 1;
+        }
+        function setStateIndex(i) {
+          resultsPanel.classList.remove('sheet-dragging');
+          resultsPanel.style.height = '';
+          setSheetState(states[i]);
+        }
+        function getPanelHeightPx() {
+          var h = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
+          return isNaN(h) ? window.innerHeight * 0.5 : h;
+        }
+        var DRAG_THRESHOLD = 25;
+        var startY = 0, startHeightPx = 0, dragStartStateIndex = 1, dragging = false;
+
+        function beginSheetDrag(initialY) {
+          dragStartStateIndex = getCurrentState();
+          startHeightPx = getPanelHeightPx();
+          resultsPanel.classList.add('sheet-dragging');
+          resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
+          resultsPanel.style.height = startHeightPx + 'px';
+          startY = initialY;
+          dragging = true;
+        }
+        function onMove(clientY) {
+          if (!dragging) return;
+          var heights = getHeights();
+          var maxH = heights.full;
+          var newH = startHeightPx + (startY - clientY);
+          newH = Math.max(heights.peek, Math.min(maxH, newH));
+          resultsPanel.style.height = newH + 'px';
+        }
+        function onEnd(clientY) {
+          if (!dragging) return;
+          dragging = false;
+          var deltaY = startY - clientY;
+          var nextIndex = dragStartStateIndex;
+          if (deltaY > DRAG_THRESHOLD) {
+            nextIndex = Math.min(2, dragStartStateIndex + 1);
+          } else if (deltaY < -DRAG_THRESHOLD) {
+            nextIndex = Math.max(0, dragStartStateIndex - 1);
+          }
+          resultsPanel.classList.remove('sheet-dragging');
+          setStateIndex(nextIndex);
+        }
+
+        sheetDragArea.addEventListener('touchstart', function(e) {
+          if (!e.touches.length) return;
+          beginSheetDrag(e.touches[0].clientY);
+        }, { passive: true });
+        sheetDragArea.addEventListener('touchmove', function(e) {
+          if (e.touches.length && dragging) onMove(e.touches[0].clientY);
+        }, { passive: true });
+        sheetDragArea.addEventListener('touchend', function(e) {
+          if (!e.changedTouches.length) return;
+          onEnd(e.changedTouches[0].clientY);
+        }, { passive: true });
+
+        var sheetDragActive = false;
+        sheetDragArea.addEventListener('mousedown', function(e) {
+          beginSheetDrag(e.clientY);
+          sheetDragActive = true;
+        });
+        document.addEventListener('mousemove', function(e) {
+          if (sheetDragActive && dragging) onMove(e.clientY);
+        });
+        document.addEventListener('mouseup', function(e) {
+          if (!sheetDragActive) return;
+          if (dragging) onEnd(e.clientY);
+          sheetDragActive = false;
+        });
+
+        var listWrap = resultsPanel.querySelector('.results-list-wrap');
+        if (listWrap) {
+          var listTouchStartY = 0, listTouchStartScroll = 0, listGestureMode = null;
+          var MOVE_THRESHOLD = 10;
+          listWrap.addEventListener('touchstart', function(e) {
+            if (!e.touches.length) return;
+            listTouchStartY = e.touches[0].clientY;
+            listTouchStartScroll = listWrap.scrollTop;
+            listGestureMode = null;
+          }, { passive: true });
+          listWrap.addEventListener('touchmove', function(e) {
+            if (!e.touches.length) return;
+            var currentY = e.touches[0].clientY;
+            var deltaY = listTouchStartY - currentY;
+            if (listGestureMode === null) {
+              if (deltaY > MOVE_THRESHOLD) {
+                if (getCurrentState() < 2) {
+                  listGestureMode = 'sheet';
+                  beginSheetDrag(listTouchStartY);
+                } else {
+                  listGestureMode = 'list';
+                }
+              } else if (deltaY < -MOVE_THRESHOLD) {
+                if (listTouchStartScroll > 0) {
+                  listGestureMode = 'list';
+                } else {
+                  listGestureMode = 'sheet';
+                  beginSheetDrag(listTouchStartY);
+                }
+              }
+            }
+            if (listGestureMode === 'sheet') {
+              e.preventDefault();
+              onMove(currentY);
+            }
+          }, { passive: false });
+          listWrap.addEventListener('touchend', function(e) {
+            if (listGestureMode === 'sheet' && e.changedTouches.length) {
+              onEnd(e.changedTouches[0].clientY);
+            }
+            listGestureMode = null;
+          }, { passive: true });
+          listWrap.addEventListener('touchcancel', function() {
+            listGestureMode = null;
+          }, { passive: true });
+        }
+      })();
+
+      if (typeof kakao !== 'undefined' && kakao.maps) {
+        initMap();
+        loadSites();
+        if (isMobile()) {
+          setSheetState('sheet-peek');
+          resultsPanel.addEventListener('touchstart', function(e) {
+            if (resultsPanel.classList.contains('sheet-peek')) {
+              e.stopImmediatePropagation();
+              setSheetState('sheet-half');
+            }
+          }, true);
+        }
+      } else {
+        mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
+      }
+    };
+  </script>
+</body>
+</html>
