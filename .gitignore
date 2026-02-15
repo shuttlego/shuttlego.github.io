@@ -1,0 +1,37 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+*.egg-info/
+*.egg
+# 패키지가 루트에 풀리지 않도록 (pip install은 venv 사용)
+openpyxl/
+et_xmlfile/
+*.dist-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+data/
+
+# Tool configs
+.claude/
+.serena/
