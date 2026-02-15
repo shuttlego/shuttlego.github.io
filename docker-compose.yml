@@ -120,13 +120,21 @@ services:
       - "traefik.http.routers.grafana-dev.rule=PathPrefix(`/grafana`)"
       - "traefik.http.routers.grafana-dev.entrypoints=web"
       - "traefik.http.routers.grafana-dev.priority=1"
+      # ── prd: 루트(/) → /grafana/ 리다이렉트 ──
+      - "traefik.http.routers.grafana-prd-root.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`) && Path(`/`)"
+      - "traefik.http.routers.grafana-prd-root.entrypoints=websecure"
+      - "traefik.http.routers.grafana-prd-root.priority=20"
+      - "traefik.http.routers.grafana-prd-root.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.grafana-prd-root.middlewares=redirect-to-grafana"
+      - "traefik.http.middlewares.redirect-to-grafana.redirectregex.regex=^https?://[^/]+/?$$"
+      - "traefik.http.middlewares.redirect-to-grafana.redirectregex.replacement=/grafana/"
       # ── prd: 도메인 HTTP → HTTPS 리다이렉트 ──
       - "traefik.http.routers.grafana-prd-redirect.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
       - "traefik.http.routers.grafana-prd-redirect.entrypoints=web"
       - "traefik.http.routers.grafana-prd-redirect.priority=10"
       - "traefik.http.routers.grafana-prd-redirect.middlewares=redirect-to-https@file"
       # ── prd: 도메인 기반 (HTTPS) ──
-      - "traefik.http.routers.grafana-prd.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`)"
+      - "traefik.http.routers.grafana-prd.rule=Host(`${GRAFANA_DOMAIN:-grafana.shuttle-go.com}`) && PathPrefix(`/grafana`)"
       - "traefik.http.routers.grafana-prd.entrypoints=websecure"
       - "traefik.http.routers.grafana-prd.priority=10"
       - "traefik.http.routers.grafana-prd.tls.certresolver=letsencrypt"
