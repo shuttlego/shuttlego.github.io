@@ -59,12 +59,6 @@ REQUEST_LATENCY = Histogram(
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
 
-UNIQUE_USER_REQUESTS = Counter(
-    "shuttle_user_requests_total",
-    "Total requests per unique user (by client IP)",
-    ["client_ip"],
-)
-
 KAKAO_API_CALLS = Counter(
     "shuttle_kakao_api_calls_total",
     "Total calls to Kakao Local API",
@@ -90,22 +84,11 @@ APP_INFO = Gauge(
 APP_INFO.labels(version=os.environ.get("APP_VERSION", "1.0.0")).set(1)
 
 
-# ── 유틸리티 ────────────────────────────────────────────────
-def _get_client_ip() -> str:
-    """Traefik 뒤에서 실제 클라이언트 IP 추출 (X-Forwarded-For)."""
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.remote_addr or "unknown"
-
-
 # ── 요청 전/후 훅 (메트릭 수집) ──────────────────────────────
 @app.before_request
 def _before_request():
     request._prom_start_time = _time.time()
     IN_PROGRESS_REQUESTS.inc()
-    client_ip = _get_client_ip()
-    UNIQUE_USER_REQUESTS.labels(client_ip=client_ip).inc()
 
 
 @app.after_request
