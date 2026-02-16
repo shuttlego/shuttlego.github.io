@@ -1,8 +1,9 @@
 """
 셔틀 안내 백엔드 API.
-검색은 카카오 로컬 REST API, data 폴더 CSV는 시작 시 전부 로드.
+검색은 카카오 로컬 REST API, 노선 데이터는 SQLite(data/data.db) 기반.
 프론트엔드는 별도 호스팅 (GitHub Pages 등).
 """
+
 import math
 import os
 import time as _time
@@ -22,19 +23,15 @@ from prometheus_client import (
 import load_data
 from load_data import (
     find_nearest_route_options,
-    find_nearest_stop,
-    get_all_departure_times,
-    get_first_stop,
     get_nearest_departure_time,
-    get_terminus_stop,
-    load_all,
+    get_route_detail,
+    get_sites,
+    init_db,
 )
 
 app = Flask(__name__)
 
 # ── CORS: 프론트엔드 도메인 허용 ──────────────────────────
-# CORS_ORIGINS 환경변수로 허용 origin을 설정 (쉼표 구분).
-# 예) CORS_ORIGINS=http://localhost:5500,https://shuttlego.github.io
 _cors_origins = os.environ.get(
     "CORS_ORIGINS",
     "http://localhost:5500,http://localhost:3000,http://127.0.0.1:5500",
@@ -44,6 +41,9 @@ CORS(app, origins=[o.strip() for o in _cors_origins.split(",") if o.strip()])
 KAKAO_REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY", "")
 SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 SEARCH_SIZE = 15
+
+# ── route_type 하위 호환 매핑 ──────────────────────────────
+_ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
 
 # ── Prometheus 메트릭 정의 ──────────────────────────────────
 REQUEST_COUNT = Counter(
@@ -121,8 +121,7 @@ def health():
 
 # ── 비즈니스 로직 ────────────────────────────────────────────
 def haversine_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """위경도 두 점 사이 직선 거리(미터). Haversine 근사."""
-    R = 6371000  # 지구 반경 m
+    R = 6371000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlam = math.radians(lng2 - lng1)
@@ -132,7 +131,6 @@ def haversine_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> 
 
 
 def search_places(query: str) -> list[dict]:
-    """카카오 로컬 API 키워드 검색. 최대 15건 반환."""
     if not KAKAO_REST_API_KEY:
         return []
     headers = {"Authorization": f"KakaoAK {KAKAO_REST_API_KEY}"}
@@ -141,11 +139,17 @@ def search_places(query: str) -> list[dict]:
         resp = requests.get(SEARCH_URL, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
         KAKAO_API_CALLS.labels(status="success").inc()
-        data = resp.json()
-        return data.get("documents") or []
+        return resp.json().get("documents") or []
     except Exception:
         KAKAO_API_CALLS.labels(status="error").inc()
         return []
+
+
+def _resolve_route_type(raw: str | None, default: str) -> str:
+    """route_type 파라미터 해석. 숫자('1','2','5') 또는 문자열 모두 지원."""
+    if not raw:
+        return default
+    return _ROUTE_TYPE_COMPAT.get(raw, raw)
 
 
 # ── API 엔드포인트 ───────────────────────────────────────────
@@ -154,144 +158,134 @@ def api_search():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"documents": []})
-    documents = search_places(q)
-    return jsonify({"documents": documents})
+    return jsonify({"documents": search_places(q)})
 
 
 @app.route("/api/sites")
 def api_sites():
-    """사업장 목록 (site_id, site_name)."""
-    return jsonify({"sites": load_data.sites})
-
-
-@app.route("/api/shuttle/depart")
-def api_shuttle_depart():
-    """
-    출근: 목적지(사업장)로 가기. place_lat, place_lng에서 가장 가까운 출근(type=1) 정류장 찾기.
-    반환: 출발지(선택 장소), 탑승 정류장, 종착지(노선 terminus) 3점 + 메시지.
-    """
-    site_id = request.args.get("site_id", type=int, default=1)
-    lat = request.args.get("lat", type=float)
-    lng = request.args.get("lng", type=float)
-    place_name = request.args.get("place_name", default="선택한 장소")
-    time_param = request.args.get("time", "").strip()
-    if lat is None or lng is None:
-        return jsonify({"error": "lat, lng required"}), 400
-    SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
-    result = find_nearest_stop(site_id, 1, lat, lng)  # type 1 = 출근
-    if not result:
-        return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
-    route, nearest_stop, route_stops = result
-    terminus = get_terminus_stop(route_stops)
-    if not terminus:
-        return jsonify({"error": "노선 종착지 없음"}), 404
-    board_time = get_nearest_departure_time(route["route_id"], time_param) if time_param else None
-    positions = [
-        {"lat": lat, "lng": lng, "label": "출발"},
-        {"lat": nearest_stop["lat"], "lng": nearest_stop["lng"], "label": nearest_stop["stop_name"]},
-        {"lat": terminus["lat"], "lng": terminus["lng"], "label": "종착"},
-    ]
-    message = f"{place_name}에서 출근하기 위해서는 {nearest_stop['stop_name']} 정류장에서 {route['route_name']} 출근 버스(노선)를 탑승하세요."
-    payload = {
-        "positions": positions,
-        "message": message,
-        "route_name": route["route_name"],
-        "nearest_stop_name": nearest_stop["stop_name"],
-        "terminus_name": terminus["stop_name"],
-    }
-    if board_time is not None:
-        payload["board_time"] = board_time
-    return jsonify(payload)
+    return jsonify({"sites": get_sites()})
 
 
 @app.route("/api/shuttle/depart/options")
 def api_shuttle_depart_options():
-    """
-    출근 노선 후보 최대 5개. 각 옵션은 단일 출근 API와 동일한 형태.
-    """
-    site_id = request.args.get("site_id", type=int, default=1)
+    """출근 노선 후보 최대 5개."""
+    site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
     place_name = request.args.get("place_name", default="선택한 장소")
     time_param = request.args.get("time", "").strip()
+    day_type = request.args.get("day_type", default="weekday")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+
     SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
-    results = find_nearest_route_options(site_id, 1, lat, lng, max_routes=5)
+
+    results = find_nearest_route_options(
+        site_id=site_id,
+        route_type="commute_in",
+        lat=lat,
+        lon=lng,
+        day_type=day_type,
+        max_routes=5,
+    )
     if not results:
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
+
     options = []
-    for route, nearest_stop, route_stops in results:
-        terminus = get_terminus_stop(route_stops)
-        if not terminus:
-            continue
-        board_time = get_nearest_departure_time(route["route_id"], time_param) if time_param else None
+    for r in results:
+        ns = r["nearest_stop"]
+        route_stops = r["route_stops"]
+        terminus = route_stops[-1] if route_stops else None
+
+        board_time = (
+            get_nearest_departure_time(r["all_departure_times"], time_param)
+            if time_param
+            else None
+        )
         if time_param and board_time is None:
             continue
+
         positions = [
             {"lat": lat, "lng": lng, "label": "출발"},
-            {"lat": nearest_stop["lat"], "lng": nearest_stop["lng"], "label": nearest_stop["stop_name"]},
-            {"lat": terminus["lat"], "lng": terminus["lng"], "label": "종착"},
+            {"lat": ns["lat"], "lng": ns["lon"], "label": ns["name"]},
         ]
-        message = f"{place_name}에서 출근하기 위해서는 {nearest_stop['stop_name']} 정류장에서 {route['route_name']} 출근 버스(노선)를 탑승하세요."
-        distance_m = haversine_distance_m(lat, lng, nearest_stop["lat"], nearest_stop["lng"])
+        if terminus:
+            positions.append({"lat": terminus["lat"], "lng": terminus["lng"], "label": "종착"})
+
+        message = (
+            f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
+            f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
+        )
+
         payload = {
             "positions": positions,
             "message": message,
-            "route_name": route["route_name"],
-            "route_id": route["route_id"],
-            "operator": route.get("operator", ""),
-            "notes": route.get("notes", ""),
-            "nearest_stop_name": nearest_stop["stop_name"],
-            "terminus_name": terminus["stop_name"],
-            "distance_m": round(distance_m),
-            "all_departure_times": get_all_departure_times(route["route_id"]),
-            "route_stops": [
-                {"sequence": s["sequence"], "stop_name": s["stop_name"], "lat": s["lat"], "lng": s["lng"]}
-                for s in route_stops
-            ],
+            "route_name": r["route_name"],
+            "route_id": r["route_id"],
+            "operator": ", ".join(r["companies"]),
+            "nearest_stop_name": ns["name"],
+            "terminus_name": terminus["stop_name"] if terminus else "",
+            "distance_m": r["distance_m"],
+            "all_departure_times": r["all_departure_times"],
+            "route_stops": route_stops,
         }
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
+
     return jsonify({"options": options})
 
 
-@app.route("/api/shuttle/arrive")
-def api_shuttle_arrive():
-    """
-    퇴근: 선택한 장소로 가기. 해당 사업장 퇴근(type=2) 노선 중 가장 가까운 하차 정류장 찾기.
-    반환: 기점(노선 sequence=1), 하차 정류장, 도착지(선택 장소) 3점 + 메시지.
-    """
-    site_id = request.args.get("site_id", type=int, default=1)
+@app.route("/api/shuttle/depart")
+def api_shuttle_depart():
+    """출근: 가장 가까운 1개 노선."""
+    site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
     place_name = request.args.get("place_name", default="선택한 장소")
     time_param = request.args.get("time", "").strip()
+    day_type = request.args.get("day_type", default="weekday")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
-    SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
-    result = find_nearest_stop(site_id, 2, lat, lng)  # type 2 = 퇴근
-    if not result:
-        return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
-    route, nearest_stop, route_stops = result
-    first = get_first_stop(route_stops)
-    if not first:
-        return jsonify({"error": "노선 기점 없음"}), 404
-    board_time = get_nearest_departure_time(route["route_id"], time_param) if time_param else None
+
+    SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
+
+    results = find_nearest_route_options(
+        site_id=site_id, route_type="commute_in", lat=lat, lon=lng,
+        day_type=day_type, max_routes=1,
+    )
+    if not results:
+        return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
+
+    r = results[0]
+    ns = r["nearest_stop"]
+    route_stops = r["route_stops"]
+    terminus = route_stops[-1] if route_stops else None
+
+    board_time = (
+        get_nearest_departure_time(r["all_departure_times"], time_param)
+        if time_param
+        else None
+    )
+
     positions = [
-        {"lat": first["lat"], "lng": first["lng"], "label": first["stop_name"]},
-        {"lat": nearest_stop["lat"], "lng": nearest_stop["lng"], "label": nearest_stop["stop_name"]},
-        {"lat": lat, "lng": lng, "label": "도착"},
+        {"lat": lat, "lng": lng, "label": "출발"},
+        {"lat": ns["lat"], "lng": ns["lon"], "label": ns["name"]},
     ]
-    message = f"{place_name}(으)로 가기 위해서는 {route['route_name']} 퇴근 버스를 {first['stop_name']}에서 탑승하고 {nearest_stop['stop_name']}에서 하차하세요."
+    if terminus:
+        positions.append({"lat": terminus["lat"], "lng": terminus["lng"], "label": "종착"})
+
+    message = (
+        f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
+        f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
+    )
+
     payload = {
         "positions": positions,
         "message": message,
-        "route_name": route["route_name"],
-        "start_stop_name": first["stop_name"],
-        "getoff_stop_name": nearest_stop["stop_name"],
-        "getoff_stop_sequence": nearest_stop["sequence"],
+        "route_name": r["route_name"],
+        "nearest_stop_name": ns["name"],
+        "terminus_name": terminus["stop_name"] if terminus else "",
     }
     if board_time is not None:
         payload["board_time"] = board_time
@@ -300,60 +294,141 @@ def api_shuttle_arrive():
 
 @app.route("/api/shuttle/arrive/options")
 def api_shuttle_arrive_options():
-    """
-    퇴근 노선 후보 최대 5개. 각 옵션은 단일 퇴근 API와 동일한 형태.
-    """
-    site_id = request.args.get("site_id", type=int, default=1)
+    """퇴근 노선 후보 최대 5개."""
+    site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
     place_name = request.args.get("place_name", default="선택한 장소")
     time_param = request.args.get("time", "").strip()
+    day_type = request.args.get("day_type", default="weekday")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+
     SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
-    results = find_nearest_route_options(site_id, 2, lat, lng, max_routes=5)
+
+    results = find_nearest_route_options(
+        site_id=site_id,
+        route_type="commute_out",
+        lat=lat,
+        lon=lng,
+        day_type=day_type,
+        max_routes=5,
+    )
     if not results:
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
+
     options = []
-    for route, nearest_stop, route_stops in results:
-        first = get_first_stop(route_stops)
-        if not first:
-            continue
-        board_time = get_nearest_departure_time(route["route_id"], time_param) if time_param else None
+    for r in results:
+        ns = r["nearest_stop"]
+        route_stops = r["route_stops"]
+        first = route_stops[0] if route_stops else None
+
+        board_time = (
+            get_nearest_departure_time(r["all_departure_times"], time_param)
+            if time_param
+            else None
+        )
         if time_param and board_time is None:
             continue
-        positions = [
-            {"lat": first["lat"], "lng": first["lng"], "label": first["stop_name"]},
-            {"lat": nearest_stop["lat"], "lng": nearest_stop["lng"], "label": nearest_stop["stop_name"]},
-            {"lat": lat, "lng": lng, "label": "도착"},
-        ]
-        message = f"{place_name}(으)로 가기 위해서는 {route['route_name']} 퇴근 버스를 {first['stop_name']}에서 탑승하고 {nearest_stop['stop_name']}에서 하차하세요."
-        distance_m = haversine_distance_m(lat, lng, nearest_stop["lat"], nearest_stop["lng"])
+
+        positions = []
+        if first:
+            positions.append({"lat": first["lat"], "lng": first["lng"], "label": first["stop_name"]})
+        positions.append({"lat": ns["lat"], "lng": ns["lon"], "label": ns["name"]})
+        positions.append({"lat": lat, "lng": lng, "label": "도착"})
+
+        message = (
+            f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
+            f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
+        )
+        distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
+
         payload = {
             "positions": positions,
             "message": message,
-            "route_name": route["route_name"],
-            "route_id": route["route_id"],
-            "operator": route.get("operator", ""),
-            "notes": route.get("notes", ""),
-            "start_stop_name": first["stop_name"],
-            "getoff_stop_name": nearest_stop["stop_name"],
-            "getoff_stop_sequence": nearest_stop["sequence"],
+            "route_name": r["route_name"],
+            "route_id": r["route_id"],
+            "operator": ", ".join(r["companies"]),
+            "start_stop_name": first["stop_name"] if first else "",
+            "getoff_stop_name": ns["name"],
             "distance_m": round(distance_m),
-            "all_departure_times": get_all_departure_times(route["route_id"]),
-            "route_stops": [
-                {"sequence": s["sequence"], "stop_name": s["stop_name"], "lat": s["lat"], "lng": s["lng"]}
-                for s in route_stops
-            ],
+            "all_departure_times": r["all_departure_times"],
+            "route_stops": route_stops,
         }
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
+
     return jsonify({"options": options})
 
 
-# 시작 시 data 로드 (import 시 1회)
-load_all()
+@app.route("/api/shuttle/arrive")
+def api_shuttle_arrive():
+    """퇴근: 가장 가까운 1개 노선."""
+    site_id = request.args.get("site_id", default="0000011")
+    lat = request.args.get("lat", type=float)
+    lng = request.args.get("lng", type=float)
+    place_name = request.args.get("place_name", default="선택한 장소")
+    time_param = request.args.get("time", "").strip()
+    day_type = request.args.get("day_type", default="weekday")
+    if lat is None or lng is None:
+        return jsonify({"error": "lat, lng required"}), 400
+
+    SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
+
+    results = find_nearest_route_options(
+        site_id=site_id, route_type="commute_out", lat=lat, lon=lng,
+        day_type=day_type, max_routes=1,
+    )
+    if not results:
+        return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
+
+    r = results[0]
+    ns = r["nearest_stop"]
+    route_stops = r["route_stops"]
+    first = route_stops[0] if route_stops else None
+
+    board_time = (
+        get_nearest_departure_time(r["all_departure_times"], time_param)
+        if time_param
+        else None
+    )
+
+    positions = []
+    if first:
+        positions.append({"lat": first["lat"], "lng": first["lng"], "label": first["stop_name"]})
+    positions.append({"lat": ns["lat"], "lng": ns["lon"], "label": ns["name"]})
+    positions.append({"lat": lat, "lng": lng, "label": "도착"})
+
+    message = (
+        f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
+        f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
+    )
+
+    payload = {
+        "positions": positions,
+        "message": message,
+        "route_name": r["route_name"],
+        "start_stop_name": first["stop_name"] if first else "",
+        "getoff_stop_name": ns["name"],
+    }
+    if board_time is not None:
+        payload["board_time"] = board_time
+    return jsonify(payload)
+
+
+@app.route("/api/route/<int:route_id>/detail")
+def api_route_detail(route_id: int):
+    """특정 route의 전체 시간표 + 경유지."""
+    day_type = request.args.get("day_type", default="weekday")
+    detail = get_route_detail(route_id, day_type)
+    if not detail:
+        return jsonify({"error": "노선을 찾을 수 없습니다."}), 404
+    return jsonify(detail)
+
+
+# ── 시작 시 DB 초기화 ─────────────────────────────────────────
+init_db()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True, port=8081)
