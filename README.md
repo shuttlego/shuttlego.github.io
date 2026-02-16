@@ -45,35 +45,55 @@ APP_VERSION=1.0.0
 
 > `.env` 파일은 `.gitignore`에 포함되어 있어 git에 올라가지 않습니다.
 
-### 3. 실행
+### 3. 실행 (run_dev.py)
+
+`run_dev.py`를 사용하면 Docker Compose(백엔드·Traefik·Prometheus·Grafana)와 프론트엔드 정적 서버를 한 번에 관리할 수 있습니다.
 
 ```bash
+# 전체 시작 — Docker Compose 빌드·(재)시작 + 프론트엔드(:8080) 서버
+python run_dev.py
+
+# 프론트엔드 서버만 시작 — Docker 컨테이너가 이미 떠 있을 때
+python run_dev.py --frontend
+
+# 전체 종료 — Docker Compose down + 프론트엔드 서버 정리
+python run_dev.py --down
+```
+
+- 이미 동작 중인 컨테이너가 있으면 자동으로 재시작합니다.
+- 백엔드 health check(`/health`)가 통과할 때까지 대기한 뒤 프론트엔드를 띄웁니다.
+- `Ctrl+C`를 누르면 프론트엔드 서버만 종료되고 Docker 컨테이너는 유지됩니다.
+
+### 4. 수동 실행
+
+Docker Compose와 프론트엔드를 각각 따로 실행할 수도 있습니다.
+
+```bash
+# 백엔드 (Docker Compose)
 docker compose up -d
+
+# 프론트엔드 (별도 터미널)
+python3 -m http.server 8080 --bind 0.0.0.0
 ```
 
 첫 실행 시 이미지 빌드 + 다운로드에 1~2분 걸립니다. 이후부터는 몇 초 안에 시작됩니다.
 
-### 4. 확인
+### 5. 확인
 
 | 서비스 | URL | 설명 |
 |--------|-----|------|
+| 프론트엔드 | http://localhost:8080 | 셔틀 검색 화면 |
 | 백엔드 API | http://localhost/api/sites | 사업장 목록 JSON |
 | 헬스체크 | http://localhost/health | `{"status":"healthy"}` |
 | Grafana | http://localhost/grafana/ | 모니터링 대시보드 |
 
-### 5. 프론트엔드 (로컬 개발)
-
-별도 터미널에서:
-
-```bash
-python3 -m http.server 8080 --bind 0.0.0.0
-```
-
-브라우저에서 http://localhost:8080 접속.
-
 ### 6. 종료
 
 ```bash
+# run_dev.py 사용 시
+python run_dev.py --down
+
+# 수동 종료
 docker compose down
 ```
 
