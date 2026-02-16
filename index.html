@@ -532,7 +532,8 @@
       display: inline-flex;
       flex-direction: column;
       align-items: center;
-      padding-bottom: 16px;
+      padding-bottom: 18px;
+      pointer-events: none;
     }
     .shuttle-point-label {
       background: #fff;
@@ -544,7 +545,6 @@
       font-weight: 500;
       text-align: center;
       white-space: nowrap;
-      transition: transform 0.15s ease;
     }
 
     .results-panel {
@@ -1442,13 +1442,6 @@
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
           closeBubble();
           updatePinScale();
-          if (shuttlePointOverlays && shuttlePointOverlays.length > 0) {
-            clearTimeout(shuttleLabelAdjustTimer);
-            shuttleLabelAdjustTimer = setTimeout(function() {
-              shuttleLabelAdjustTimer = null;
-              adjustShuttleLabels();
-            }, 180);
-          }
         });
         kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
           var lat = mouseEvent.latLng.getLat();
@@ -1460,6 +1453,8 @@
             }
             if (bubbleOverlay) {
               closeBubble();
+              deselectPlace();
+              setMapDimmed(false);
               return;
             }
             if (bubbleClosedByOutsideAt && (Date.now() - bubbleClosedByOutsideAt) < 150) {
@@ -1495,6 +1490,9 @@
         var dist = Math.sqrt(dx * dx + dy * dy);
         mapTouchStart = null;
         if (duration > 300 || dist > 15) return;
+        // 핀 마커 위를 탭한 경우 — 핀의 click 이벤트에 위임
+        var touchTarget = document.elementFromPoint(t.clientX, t.clientY);
+        if (touchTarget && touchTarget.closest('.pin-marker')) return;
         var rect = mapContainer.getBoundingClientRect();
         var x = t.clientX - rect.left;
         var y = t.clientY - rect.top;
@@ -1507,6 +1505,8 @@
           mapClickIgnore = true;
           if (bubbleOverlay) {
             closeBubble();
+            deselectPlace();
+            setMapDimmed(false);
             return;
           }
           showBubbleAtPosition(latLng.getLat(), latLng.getLng());
@@ -1572,12 +1572,34 @@
         var el = document.createElement('div');
         el.className = 'pin-marker';
         el.setAttribute('data-index', index);
-        el.addEventListener('mouseenter', function() { onMarkerHover(index, true); });
-        el.addEventListener('mouseleave', function() { onMarkerHover(index, false); });
+        el.addEventListener('mouseenter', function() {
+          if (selectedPlaceIndex >= 0) return;
+          onMarkerHover(index, true);
+          if (!isMobile()) showBubble(index);
+        });
+        el.addEventListener('mouseleave', function() {
+          if (selectedPlaceIndex >= 0) return;
+          onMarkerHover(index, false);
+          if (!isMobile()) closeBubble();
+        });
         el.addEventListener('click', function(e) {
           e.stopPropagation();
           mapClickIgnore = true;
-          showBubble(index);
+          if (isMobile()) {
+            closeBubble();
+            selectPlace(index);
+            setMapDimmed(true, index);
+            // 시트를 내리되 adjustMapForSheet는 건너뜀 (panTo를 보존)
+            resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
+            resultsPanel.classList.add('sheet-peek');
+            var place = places[index];
+            if (place) panTo(parseFloat(place.y), parseFloat(place.x));
+            setTimeout(function() { showBubble(index); }, 60);
+          } else {
+            selectPlace(index);
+            setMapDimmed(true, index);
+            showBubble(index);
+          }
         });
         var overlay = new kakao.maps.CustomOverlay({
           position: pos,
@@ -1679,6 +1701,8 @@
         if (bubbleOverlay.contains(e.target)) return;
         bubbleClosedByOutsideAt = Date.now();
         closeBubble();
+        deselectPlace();
+        setMapDimmed(false);
       }
 
       function showBubble(index) {
@@ -1741,19 +1765,26 @@
         var boxW = box.offsetWidth;
         var boxH = box.offsetHeight;
 
+        // 핀 상단 위치 계산 (꼬리 끝이 핀 바로 위에 위치)
+        var pinScale = parseFloat(mapContainer.style.getPropertyValue('--pin-scale')) || 1;
+        var pinTopOffset = Math.round(34 * pinScale);
+        var tailTipX = clickX;
+        var tailTipY = clickY - pinTopOffset;
+
         // 뷰포트 내 최적 위치 계산
         var pad = 8;
-        var tailMinGap = 14;
-        var boxLeft = clickX - boxW / 2;
-        var boxTop = clickY - boxH - tailMinGap;
+        var tailLen = 10;
+        var boxLeft = tailTipX - boxW / 2;
+        var boxTop = tailTipY - boxH - tailLen;
 
         // 수평 클램핑
         if (boxLeft < pad) boxLeft = pad;
         if (boxLeft + boxW > mapW - pad) boxLeft = mapW - pad - boxW;
 
-        // 상단 벗어나면 아래로
+        // 상단 벗어나면 아래로 (핀 아래에 표시)
         if (boxTop < pad) {
-          boxTop = clickY + tailMinGap;
+          tailTipY = clickY + tailLen;
+          boxTop = tailTipY + tailLen;
         }
 
         // 하단 벗어나면 클램핑
@@ -1766,7 +1797,7 @@
 
         // SVG 꼬리 생성
         var boxRect = { left: boxLeft, top: boxTop, width: boxW, height: boxH };
-        var tailBase = getBubbleTailBase(boxRect, clickX, clickY, 14);
+        var tailBase = getBubbleTailBase(boxRect, tailTipX, tailTipY, 14);
         if (tailBase) {
           var svgNS = 'http://www.w3.org/2000/svg';
           var svg = document.createElementNS(svgNS, 'svg');
@@ -1774,7 +1805,7 @@
           var poly = document.createElementNS(svgNS, 'polygon');
           poly.setAttribute('points',
             tailBase.p1.x + ',' + tailBase.p1.y + ' ' +
-            clickX + ',' + clickY + ' ' +
+            tailTipX + ',' + tailTipY + ' ' +
             tailBase.p2.x + ',' + tailBase.p2.y
           );
           poly.setAttribute('fill', '#fff');
@@ -1783,23 +1814,28 @@
         }
 
         // 이벤트 핸들러
+        function dismissBubble() {
+          closeBubble();
+          deselectPlace();
+          setMapDimmed(false);
+        }
         function closeBubbleIfNotButtons(e) {
           e.stopPropagation();
           if (e.target.closest('.bubble-actions button')) return;
           e.preventDefault();
-          closeBubble();
+          dismissBubble();
         }
         box.addEventListener('click', closeBubbleIfNotButtons);
         box.addEventListener('touchend', closeBubbleIfNotButtons, { passive: false });
         box.querySelector('.bubble-close').addEventListener('click', function(e) {
           e.stopPropagation();
           e.preventDefault();
-          closeBubble();
+          dismissBubble();
         });
         box.querySelector('.bubble-close').addEventListener('touchend', function(e) {
           e.stopPropagation();
           e.preventDefault();
-          closeBubble();
+          dismissBubble();
         });
         box.querySelector('.btn-depart').addEventListener('click', function(e) {
           e.stopPropagation();
@@ -1865,6 +1901,9 @@
           m.classList.toggle('selected', i === index);
           m.classList.remove('hover');
         });
+        overlays.forEach(function(o, i) {
+          o.setZIndex(i === index ? 100 : 0);
+        });
         resultsList.querySelectorAll('.result-card').forEach(function(c) {
           c.classList.remove('highlight');
         });
@@ -1877,6 +1916,9 @@
         });
         markerElements.forEach(function(m) {
           m.classList.remove('selected', 'hover');
+        });
+        overlays.forEach(function(o) {
+          o.setZIndex(0);
         });
       }
 
@@ -2015,6 +2057,10 @@
         var labels = isDepart
           ? [placeName, option.nearest_stop_name, option.terminus_name]
           : [option.start_stop_name, option.getoff_stop_name, placeName];
+        // z-index 우선순위 (값이 클수록 앞에 표시)
+        // 출근: 탑승(i=1) > 출발지(i=0) > 하차(i=2)
+        // 퇴근: 하차(i=1) > 탑승(i=0) > 목적지(i=2)
+        var zOrder = isDepart ? [2, 3, 1] : [2, 3, 1];
         positions.forEach(function(p, i) {
           var pos = new kakao.maps.LatLng(p.lat, p.lng);
           var pinEl = document.createElement('div');
@@ -2025,7 +2071,7 @@
             xAnchor: 0.5,
             yAnchor: 0.5
           });
-          pinOverlay.setZIndex(1);
+          pinOverlay.setZIndex(zOrder[i]);
           pinOverlay.setMap(map);
           shuttlePointOverlays.push(pinOverlay);
           var namePart = '<span class="shuttle-point-name">' + escapeHtml(labels[i]) + '</span>';
@@ -2045,7 +2091,7 @@
             xAnchor: 0.5,
             yAnchor: 1.0
           });
-          labelOverlay.setZIndex(10);
+          labelOverlay.setZIndex(zOrder[i] + 10);
           labelOverlay.setMap(map);
           shuttlePointOverlays.push(labelOverlay);
           shuttlePointContents.push(labelAnchor);
@@ -2078,11 +2124,6 @@
         bounds.extend(new kakao.maps.LatLng(sw.getLat(), sw.getLng() - lngSpan * pad));
         bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
         map.setBounds(bounds);
-        clearTimeout(shuttleLabelAdjustTimer);
-        shuttleLabelAdjustTimer = setTimeout(function() {
-          shuttleLabelAdjustTimer = null;
-          adjustShuttleLabels();
-        }, isMobile() ? 350 : 220);
         if (!isMobile()) {
           var msgHtml = isDepart
             ? escapeHtml(placeName) + '에서 출근하기 위해서는 <span class="time-tag">' + timeStr + '분</span>에 <span class="hl">' + escapeHtml(option.nearest_stop_name) + '</span> 정류장에서 <span class="hl">' + escapeHtml(option.route_name) + '</span> 출근 버스(노선)를 탑승하세요.'
@@ -2098,31 +2139,34 @@
         clearShuttleOverlays();
         var routeStops = option.route_stops || [];
         if (routeStops.length === 0) return;
+        var totalStops = routeStops.length;
         var path = routeStops.map(function(s) { return new kakao.maps.LatLng(s.lat, s.lng); });
         routeStops.forEach(function(s, i) {
           var pos = new kakao.maps.LatLng(s.lat, s.lng);
           var pinEl = document.createElement('div');
           pinEl.className = 'shuttle-point-pin';
+          var pinZIndex = totalStops - i;
           var pinOverlay = new kakao.maps.CustomOverlay({
             position: pos,
             content: pinEl,
             xAnchor: 0.5,
             yAnchor: 0.5
           });
-          pinOverlay.setZIndex(1);
+          pinOverlay.setZIndex(pinZIndex);
           pinOverlay.setMap(map);
           shuttlePointOverlays.push(pinOverlay);
           var labelAnchor = document.createElement('div');
           labelAnchor.className = 'shuttle-label-anchor';
           labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + '">' +
             '<span class="shuttle-point-name">' + escapeHtml(s.sequence + '. ' + s.stop_name) + '</span></div>';
+          var labelZIndex = totalStops - i + totalStops;
           var labelOverlay = new kakao.maps.CustomOverlay({
             position: pos,
             content: labelAnchor,
             xAnchor: 0.5,
             yAnchor: 1.0
           });
-          labelOverlay.setZIndex(10);
+          labelOverlay.setZIndex(labelZIndex);
           labelOverlay.setMap(map);
           shuttlePointOverlays.push(labelOverlay);
           shuttlePointContents.push(labelAnchor);
@@ -2154,53 +2198,15 @@
         bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
         map.setBounds(bounds);
         shuttleMessage.classList.remove('show');
-        clearTimeout(shuttleLabelAdjustTimer);
-        shuttleLabelAdjustTimer = setTimeout(function() {
-          shuttleLabelAdjustTimer = null;
-          adjustShuttleLabels();
-        }, isMobile() ? 350 : 220);
       }
 
       function adjustShuttleLabels() {
-        if (!shuttlePointContents || shuttlePointContents.length === 0 || !shuttlePositions || shuttlePositions.length === 0) return;
-        var labels = shuttlePointContents.map(function(anchor) { return anchor.querySelector('.shuttle-point-label'); });
-        if (labels.some(function(el) { return !el; })) return;
-        var n = labels.length;
-        labels.forEach(function(el) { el.style.transform = ''; });
-        labels[0].offsetHeight;
-        var rects = labels.map(function(el) { return el.getBoundingClientRect(); });
-        var gap = 4;
-        var maxDeltaPx = 200;
-        var indices = [];
-        for (var i = 0; i < n; i++) indices.push(i);
-        var northFirst = indices.slice().sort(function(a, b) {
-          return (shuttlePositions[b].lat - shuttlePositions[a].lat);
+        /* Labels stay fixed above their pins; overlapping is allowed */
+        if (!shuttlePointContents || shuttlePointContents.length === 0) return;
+        shuttlePointContents.forEach(function(anchor) {
+          var el = anchor.querySelector('.shuttle-point-label');
+          if (el) el.style.transform = '';
         });
-        var naturalTop = [];
-        var heights = [];
-        for (var i = 0; i < n; i++) {
-          naturalTop[i] = rects[i].top;
-          heights[i] = rects[i].height;
-        }
-        var desiredTop = [];
-        for (var i = 0; i < n; i++) desiredTop[i] = naturalTop[i];
-        for (var i = 0; i < northFirst.length; i++) {
-          var idx = northFirst[i];
-          if (i === 0) {
-            desiredTop[idx] = naturalTop[idx];
-          } else {
-            var prevIdx = northFirst[i - 1];
-            var prevBottom = desiredTop[prevIdx] + heights[prevIdx];
-            desiredTop[idx] = Math.max(naturalTop[idx], prevBottom + gap);
-          }
-        }
-        for (var i = 0; i < n; i++) {
-          var deltaY = desiredTop[i] - naturalTop[i];
-          if (Math.abs(deltaY) > 0.5) {
-            deltaY = Math.max(-maxDeltaPx, Math.min(maxDeltaPx, deltaY));
-            labels[i].style.transform = 'translateY(' + deltaY + 'px)';
-          }
-        }
       }
 
       function resetShuttleLabelTransforms() {
@@ -2640,6 +2646,11 @@
           resultsPanel.classList.remove('sheet-dragging');
           resultsPanel.style.height = '';
           setSheetState(states[i]);
+          if (i === 0) {
+            deselectPlace();
+            setMapDimmed(false);
+            closeBubble();
+          }
         }
         function getPanelHeightPx() {
           var h = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
