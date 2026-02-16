@@ -105,52 +105,17 @@ docker compose down -v
 
 ---
 
-## Scripts
+## 데이터 빌드
 
-`scripts/` 디렉토리에는 셔틀 노선 데이터를 가공하는 유틸리티 스크립트가 있습니다.
+### build_db.py
 
-### xlsx_to_csv.py
+Raw HTML 파일(`data/raw/`)과 사업장 목록(`data/sites.csv`)을 파싱하여 SQLite DB(`data/data.db`)를 생성합니다.
 
-엑셀 파일(`data/raw/*.xlsx`)을 파싱하여 CSV로 변환합니다.
-
-- **입력**: `data/raw/` 안의 엑셀 파일 (출근/퇴근 시트)
-- **출력**:
-  - `data/routes.csv` — 노선 정보 (노선명, 방향, 운영사 등)
-  - `data/departure_times.csv` — 노선별 출발 시각
-  - `data/tmp_stops.csv` — 정류장 목록 (위경도는 비어 있음)
+- **입력**: `data/raw/` 안의 HTML 파일 + `data/sites.csv`
+- **출력**: `data/data.db`
 
 ```bash
-python scripts/xlsx_to_csv.py
+python build_db.py
 ```
 
-### extract_geo_info.py
-
-HTML 파일(`data/raw_geo/`)에서 정류장 좌표(위경도)를 추출합니다.
-
-- **입력**: `data/raw_geo/` 안의 HTML 파일 (지도 `showMap()` 호출 포함)
-- **출력**:
-  - `data/tmp_geo_info.csv` — 정류장명 + 위경도
-  - `data/geo_route_info.csv` — 노선별 정류장 순서
-
-```bash
-python scripts/extract_geo_info.py
-```
-
-### fill_stop_geo.py
-
-정류장 목록에 위경도 좌표를 채워 넣습니다. `extract_geo_info.py`의 결과와 카카오 API를 활용합니다.
-
-- **입력**: `data/tmp_stops.csv` + `data/tmp_geo_info.csv`
-- **출력**: `data/stops.csv` — 위경도가 채워진 최종 정류장 데이터
-
-```bash
-python scripts/fill_stop_geo.py
-```
-
-### 데이터 가공 순서
-
-새로운 엑셀 데이터를 반영할 때는 순서대로 실행합니다:
-
-```
-xlsx_to_csv.py → extract_geo_info.py → fill_stop_geo.py
-```
+새로운 노선 데이터를 반영할 때 이 스크립트 하나만 실행하면 됩니다.

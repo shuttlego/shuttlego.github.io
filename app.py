@@ -23,6 +23,7 @@ from prometheus_client import (
 import load_data
 from load_data import (
     find_nearest_route_options,
+    get_db_updated_at,
     get_nearest_departure_time,
     get_route_detail,
     get_sites,
@@ -163,7 +164,7 @@ def api_search():
 
 @app.route("/api/sites")
 def api_sites():
-    return jsonify({"sites": get_sites()})
+    return jsonify({"sites": get_sites(), "db_updated_at": get_db_updated_at()})
 
 
 @app.route("/api/shuttle/depart/options")

@@ -4,7 +4,9 @@ data/data.db 를 read-only로 열어 검색 쿼리를 수행한다.
 """
 
 import math
+import os
 import sqlite3
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -48,6 +50,17 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 def get_sites() -> list[dict]:
     rows = _db().execute("SELECT site_id, name FROM site ORDER BY site_id").fetchall()
     return [{"site_id": r["site_id"], "site_name": r["name"]} for r in rows]
+
+
+def get_db_updated_at() -> str:
+    """DB 파일의 마지막 수정 시각을 KST 문자열로 반환."""
+    try:
+        mtime = os.path.getmtime(DB_PATH)
+        kst = timezone(timedelta(hours=9))
+        dt = datetime.fromtimestamp(mtime, tz=kst)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except OSError:
+        return ""
 
 
 def _find_nearby_stops(lat: float, lon: float, max_stops: int = 50) -> list[tuple[int, str, float, float, float]]:
