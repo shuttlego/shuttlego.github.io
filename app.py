@@ -175,8 +175,13 @@ def api_shuttle_depart_options():
     place_name = request.args.get("place_name", default="선택한 장소")
     time_param = request.args.get("time", "").strip()
     day_type = request.args.get("day_type", default="weekday")
+    exclude_raw = request.args.get("exclude_route_ids", "").strip()
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+
+    exclude_ids = []
+    if exclude_raw:
+        exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
 
@@ -187,15 +192,24 @@ def api_shuttle_depart_options():
         lon=lng,
         day_type=day_type,
         max_routes=5,
+        exclude_route_ids=exclude_ids or None,
     )
     if not results:
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
+    all_last_times = []  # 시간 필터로 빈 결과 시 마지막 출발시간 추적용
     for r in results:
         ns = r["nearest_stop"]
         route_stops = r["route_stops"]
         terminus = route_stops[-1] if route_stops else None
+
+        # 탑승 정류장과 하차(종착) 정류장이 동일하면 무의미하므로 제외
+        if terminus and ns["name"] == terminus["stop_name"]:
+            continue
+
+        if time_param:
+            all_last_times.extend(r["all_departure_times"])
 
         board_time = (
             get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -233,7 +247,10 @@ def api_shuttle_depart_options():
             payload["board_time"] = board_time
         options.append(payload)
 
-    return jsonify({"options": options})
+    resp = {"options": options}
+    if not options and all_last_times:
+        resp["last_departure_time"] = sorted(set(all_last_times))[-1]
+    return jsonify(resp)
 
 
 @app.route("/api/shuttle/depart")
@@ -301,8 +318,13 @@ def api_shuttle_arrive_options():
     place_name = request.args.get("place_name", default="선택한 장소")
     time_param = request.args.get("time", "").strip()
     day_type = request.args.get("day_type", default="weekday")
+    exclude_raw = request.args.get("exclude_route_ids", "").strip()
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+
+    exclude_ids = []
+    if exclude_raw:
+        exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
 
@@ -313,15 +335,24 @@ def api_shuttle_arrive_options():
         lon=lng,
         day_type=day_type,
         max_routes=5,
+        exclude_route_ids=exclude_ids or None,
     )
     if not results:
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
+    all_last_times = []
     for r in results:
         ns = r["nearest_stop"]
         route_stops = r["route_stops"]
         first = route_stops[0] if route_stops else None
+
+        # 탑승(출발) 정류장과 하차 정류장이 동일하면 무의미하므로 제외
+        if first and first["stop_name"] == ns["name"]:
+            continue
+
+        if time_param:
+            all_last_times.extend(r["all_departure_times"])
 
         board_time = (
             get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -359,7 +390,10 @@ def api_shuttle_arrive_options():
             payload["board_time"] = board_time
         options.append(payload)
 
-    return jsonify({"options": options})
+    resp = {"options": options}
+    if not options and all_last_times:
+        resp["last_departure_time"] = sorted(set(all_last_times))[-1]
+    return jsonify(resp)
 
 
 @app.route("/api/shuttle/arrive")

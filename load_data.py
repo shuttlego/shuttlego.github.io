@@ -127,10 +127,12 @@ def find_nearest_route_options(
     lon: float,
     day_type: str = "weekday",
     max_routes: int = 5,
+    exclude_route_ids: list[int] | None = None,
 ) -> list[dict]:
     """
     가까운 정류장 기반 유니크 노선 최대 max_routes개 반환.
     노선 수가 부족하면 탐색 범위를 점진 확장하여 max_routes개를 확보한다.
+    exclude_route_ids가 주어지면 해당 노선을 결과에서 제외한다.
 
     반환 각 요소:
     {
@@ -145,8 +147,9 @@ def find_nearest_route_options(
     }
     """
     db = _db()
+    excluded = set(exclude_route_ids) if exclude_route_ids else set()
 
-    # 점진 확장: 50 → 100 → 200개 정류장으로 넓혀가며 max_routes개 노선 확보
+    # 점진 확장: 50 → 150 → 500개 정류장으로 넓혀가며 max_routes개 노선 확보
     route_best: dict[int, tuple[float, int, str]] = {}
     stop_dist: dict[int, tuple[str, float, float, float]] = {}
     searched_stop_ids: set[int] = set()
@@ -170,6 +173,8 @@ def find_nearest_route_options(
                 db, new_stop_ids, stop_dist, site_id, route_type, day_type
             )
             for rid, (dist, sid, rname) in new_routes.items():
+                if rid in excluded:
+                    continue
                 if rid not in route_best or dist < route_best[rid][0]:
                     route_best[rid] = (dist, sid, rname)
 

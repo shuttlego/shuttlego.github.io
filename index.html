@@ -998,6 +998,27 @@
     .route-stop-item.highlight {
       color: #000;
     }
+    .btn-load-more-routes {
+      display: block;
+      width: 100%;
+      padding: 12px 0;
+      margin-top: 10px;
+      border: 1px dashed #bbb;
+      border-radius: 10px;
+      background: #fafafa;
+      color: #555;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+    .btn-load-more-routes:active {
+      background: #f0f0f0;
+    }
+    .btn-load-more-routes:disabled {
+      color: #aaa;
+      cursor: default;
+    }
 
     /* 모바일: 레이아웃 전환 + 하단 시트 */
     @media (max-width: 768px) {
@@ -1772,6 +1793,7 @@
 
       siteSelect.addEventListener('change', function() {
         selectedSiteId = siteSelect.value;
+        refreshLastShuttleResult();
       });
       if (siteSelectTrigger) siteSelectTrigger.addEventListener('click', openSitePickerModal);
       if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
@@ -1942,7 +1964,7 @@
         if (!place) return;
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
-        showBubbleWithPlace(place, lat, lng);
+        showBubbleWithPlace(place, lat, lng, true);
       }
 
       function showBubbleAtPosition(lat, lng) {
@@ -1953,10 +1975,10 @@
           y: lat,
           x: lng
         };
-        showBubbleWithPlace(place, lat, lng);
+        showBubbleWithPlace(place, lat, lng, false);
       }
 
-      function showBubbleWithPlace(place, lat, lng) {
+      function showBubbleWithPlace(place, lat, lng, hasPin) {
         closeBubble();
         var pos = new kakao.maps.LatLng(lat, lng);
         var proj = map.getProjection();
@@ -1996,9 +2018,12 @@
         var boxW = box.offsetWidth;
         var boxH = box.offsetHeight;
 
-        // 핀 상단 위치 계산 (꼬리 끝이 핀 바로 위에 위치)
-        var pinScale = parseFloat(mapContainer.style.getPropertyValue('--pin-scale')) || 1;
-        var pinTopOffset = Math.round(34 * pinScale);
+        // 핀 상단 위치 계산 (꼬리 끝이 핀 바로 위에 위치, 핀 없으면 클릭 지점 그대로)
+        var pinTopOffset = 0;
+        if (hasPin) {
+          var pinScale = parseFloat(mapContainer.style.getPropertyValue('--pin-scale')) || 1;
+          pinTopOffset = Math.round(34 * pinScale);
+        }
         var tailTipX = clickX;
         var tailTipY = clickY - pinTopOffset;
 
@@ -2262,12 +2287,13 @@
           clearTimeout(shuttleErrorHideTimer);
           shuttleErrorHideTimer = null;
         }
-        errorEl.innerHTML = escapeHtml(message || '해당 노선이 없습니다.');
+        errorEl.innerHTML = escapeHtml(message || '해당 노선이 없습니다.').replace(/\n/g, '<br>');
         errorEl.classList.add('show');
+        var duration = message && message.indexOf('\n') >= 0 ? 5000 : 3000;
         shuttleErrorHideTimer = setTimeout(function() {
           errorEl.classList.remove('show');
           shuttleErrorHideTimer = null;
-        }, 3000);
+        }, duration);
       }
 
       function hideShuttleErrorOverlay() {
@@ -2477,6 +2503,9 @@
       function renderRouteCards(options, placeName, isDepart) {
         routeOptionsWrap.innerHTML = '';
         expandedOptionIndex = -1;
+        // "더 가져오기" 버튼 제거 (재렌더 시)
+        var existingBtn = routeOptionsWrap.querySelector('.btn-load-more-routes');
+        if (existingBtn) existingBtn.remove();
         options.forEach(function(opt, idx) {
           var card = document.createElement('div');
           card.className = 'route-option-card' + (idx === 0 ? ' selected' : '');
@@ -2557,10 +2586,60 @@
           });
           routeOptionsWrap.appendChild(card);
         });
+        // 마지막 배치가 5개(max_routes)이면 "더 가져오기" 버튼 표시
+        var lastBatchSize = options._lastBatchSize != null ? options._lastBatchSize : options.length;
+        if (lastBatchSize >= 5) {
+          var loadMoreBtn = document.createElement('button');
+          loadMoreBtn.type = 'button';
+          loadMoreBtn.className = 'btn-load-more-routes';
+          loadMoreBtn.textContent = '노선 더 가져오기 (최대 5개)';
+          loadMoreBtn.addEventListener('click', function() { loadMoreRoutes(loadMoreBtn); });
+          routeOptionsWrap.appendChild(loadMoreBtn);
+        }
         drawOptionOnMap(options[0], placeName, isDepart);
       }
 
-      function renderRouteOptions(options, placeName, isDepart) {
+      function loadMoreRoutes(btn) {
+        if (!currentRouteOptions || !lastPlace) return;
+        btn.disabled = true;
+        btn.textContent = '불러오는 중...';
+        var lat = parseFloat(lastPlace.y);
+        var lng = parseFloat(lastPlace.x);
+        var name = currentPlaceName || lastPlace.place_name || '선택한 장소';
+        var isDepart = currentIsDepart;
+        var endpoint = isDepart ? '/api/shuttle/depart/options' : '/api/shuttle/arrive/options';
+        var excludeIds = currentRouteOptions.map(function(o) { return o.route_id; }).join(',');
+        var url = API_BASE + endpoint +
+          '?site_id=' + selectedSiteId +
+          '&lat=' + lat + '&lng=' + lng +
+          '&place_name=' + encodeURIComponent(name) +
+          '&time=' + encodeURIComponent(getDepartureTimeStr()) +
+          '&day_type=' + encodeURIComponent(selectedDayType) +
+          '&exclude_route_ids=' + encodeURIComponent(excludeIds);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var newOptions = (data.options || []);
+            if (newOptions.length === 0) {
+              btn.textContent = '추가 노선 없음';
+              btn.disabled = true;
+              return;
+            }
+            // 기존 옵션에 새 옵션 합산
+            currentRouteOptions = currentRouteOptions.concat(newOptions);
+            currentRouteOptions._lastBatchSize = newOptions.length;
+            // 현재 정렬 모드에 맞춰 전체 재정렬 후 렌더
+            var sorted = sortOptions(currentRouteOptions, currentSortMode);
+            sorted._lastBatchSize = newOptions.length;
+            renderRouteCards(sorted, currentPlaceName, currentIsDepart);
+          })
+          .catch(function() {
+            btn.textContent = '노선 더 가져오기 (최대 5개)';
+            btn.disabled = false;
+          });
+      }
+
+      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime) {
         panelTitle.textContent = '노선 선택';
         var btnBack = document.getElementById('btnBackFromRoutes');
         if (btnBack) btnBack.style.display = '';
@@ -2569,6 +2648,7 @@
         routeOptionsWrap.innerHTML = '';
         routeOptionsWrap.classList.add('show');
         currentRouteOptions = options;
+        currentRouteOptions._lastBatchSize = options.length;
         currentPlaceName = placeName;
         currentIsDepart = isDepart;
         expandedOptionIndex = -1;
@@ -2576,10 +2656,15 @@
           routeSortBar.classList.remove('show');
           clearSearchOverlays();
           clearShuttleOverlays();
-          var noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다. 시간을 확인해주세요.';
+          var dirLabel = isDepart ? '출근' : '퇴근';
+          var noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다.';
+          if (lastDepartureTime) {
+            noRouteMsg += '\n이 장소 근방 ' + dirLabel + ' 셔틀의 마지막 출발 시간은 ' + lastDepartureTime + ' 입니다.';
+          }
           var emptyMsg = document.createElement('div');
           emptyMsg.className = 'results-placeholder';
           emptyMsg.style.display = 'block';
+          emptyMsg.style.whiteSpace = 'pre-line';
           emptyMsg.textContent = noRouteMsg;
           routeOptionsWrap.appendChild(emptyMsg);
           showShuttleError(noRouteMsg);
@@ -2589,6 +2674,7 @@
         routeSortBar.classList.add('show');
         updateSortButtons();
         var sorted = sortOptions(options, currentSortMode);
+        sorted._lastBatchSize = options.length;
         renderRouteCards(sorted, placeName, isDepart);
         if (isMobile()) setSheetState('sheet-peek');
       }
@@ -2646,7 +2732,7 @@
               return;
             }
             var options = data.options || [];
-            renderRouteOptions(options, name, true);
+            renderRouteOptions(options, name, true, data.last_departure_time || '');
           })
           .catch(function() {
             alert('출근 노선 조회에 실패했습니다.');
@@ -2674,7 +2760,7 @@
               return;
             }
             var options = data.options || [];
-            renderRouteOptions(options, name, false);
+            renderRouteOptions(options, name, false, data.last_departure_time || '');
           })
           .catch(function() {
             alert('퇴근 노선 조회에 실패했습니다.');
@@ -2847,6 +2933,7 @@
         updateSortButtons();
         if (currentRouteOptions && currentRouteOptions.length > 0) {
           var sorted = sortOptions(currentRouteOptions, currentSortMode);
+          sorted._lastBatchSize = currentRouteOptions._lastBatchSize;
           renderRouteCards(sorted, currentPlaceName, currentIsDepart);
         }
       });
@@ -2856,6 +2943,7 @@
         updateSortButtons();
         if (currentRouteOptions && currentRouteOptions.length > 0) {
           var sorted = sortOptions(currentRouteOptions, currentSortMode);
+          sorted._lastBatchSize = currentRouteOptions._lastBatchSize;
           renderRouteCards(sorted, currentPlaceName, currentIsDepart);
         }
       });
