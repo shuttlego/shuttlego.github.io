@@ -1,162 +1,311 @@
 """
-시작 시 data 폴더 CSV 4개를 읽어 메모리에 보관.
+SQLite 기반 데이터 접근 레이어.
+data/data.db 를 read-only로 열어 검색 쿼리를 수행한다.
 """
-import csv
+
 import math
+import sqlite3
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+DB_PATH = DATA_DIR / "data.db"
 
-sites: list[dict] = []
-routes: list[dict] = []
-departure_times: dict[int, list[str]] = {}  # route_id -> [time, ...]
-stops: dict[int, list[dict]] = {}  # route_id -> [{sequence, stop_name, lat, lng}, ...]
+_conn: sqlite3.Connection | None = None
 
 
-def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    R = 6371
+def init_db(db_path: str | None = None) -> None:
+    """SQLite DB 연결. 앱 시작 시 1회 호출."""
+    global _conn
+    path = db_path or str(DB_PATH)
+    _conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, check_same_thread=False)
+    _conn.row_factory = sqlite3.Row
+    _conn.execute("PRAGMA query_only=ON")
+
+
+def _db() -> sqlite3.Connection:
+    if _conn is None:
+        init_db()
+    return _conn
+
+
+# ── 유틸리티 ───────────────────────────────────────────────────
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
     dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def load_all() -> None:
-    global sites, routes, departure_times, stops
-    sites = []
-    routes = []
-    departure_times = {}
-    stops = {}
-
-    with open(DATA_DIR / "sites.csv", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            sites.append({"site_id": int(row["site_id"]), "site_name": row["site_name"]})
-
-    with open(DATA_DIR / "routes.csv", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            routes.append({
-                "route_id": int(row["route_id"]),
-                "site_id": int(row["site_id"]),
-                "route_name": row["route_name"],
-                "type": int(row["type"]),
-                "operator": row.get("operator", ""),
-                "notes": row.get("notes", ""),
-            })
-
-    with open(DATA_DIR / "departure_times.csv", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            rid = int(row["route_id"])
-            if rid not in departure_times:
-                departure_times[rid] = []
-            departure_times[rid].append(row["time"].strip())
-
-    with open(DATA_DIR / "stops.csv", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            rid = int(row["route_id"])
-            if rid not in stops:
-                stops[rid] = []
-            lat_s, lng_s = (row.get("lat") or "").strip(), (row.get("lng") or "").strip()
-            try:
-                lat = float(lat_s) if lat_s else None
-                lng = float(lng_s) if lng_s else None
-            except ValueError:
-                lat, lng = None, None
-            stops[rid].append({
-                "sequence": int(row["sequence"]),
-                "stop_name": row["stop_name"],
-                "lat": lat,
-                "lng": lng,
-            })
-    for rid in stops:
-        stops[rid].sort(key=lambda s: s["sequence"])
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    return _haversine_km(lat1, lon1, lat2, lon2) * 1000.0
 
 
-def get_routes_by_site_and_type(site_id: int, route_type: int) -> list[dict]:
-    """site_id, type(1=출근, 2=퇴근)에 해당하는 노선 목록."""
-    return [r for r in routes if r["site_id"] == site_id and r["type"] == route_type]
+# ── 공개 API ──────────────────────────────────────────────────
+def get_sites() -> list[dict]:
+    rows = _db().execute("SELECT site_id, name FROM site ORDER BY site_id").fetchall()
+    return [{"site_id": r["site_id"], "site_name": r["name"]} for r in rows]
 
 
-def find_nearest_stop(site_id: int, route_type: int, lat: float, lng: float) -> tuple[dict, dict, dict] | None:
+def _find_nearby_stops(lat: float, lon: float, max_stops: int = 50) -> list[tuple[int, str, float, float, float]]:
     """
-    해당 사업장의 출근(1) 또는 퇴근(2) 노선들의 정류장 중 (lat,lng)에서 가장 가까운 정류장을 찾음.
-    반환: (route, stop, route_stops) 또는 None.
+    RTree 기반 근접 정류장 검색.
+    바운딩 박스를 점진 확장하여 max_stops개 이상 후보 확보 후 거리순 정렬.
+    반환: [(stop_id, name, lat, lon, distance_m), ...]
     """
-    candidate_routes = get_routes_by_site_and_type(site_id, route_type)
-    best = None
-    best_dist = float("inf")
-    for r in candidate_routes:
+    db = _db()
+    delta = 0.01  # 약 1.1km
+    for _ in range(8):  # 최대 약 2.56도 확장
+        rows = db.execute(
+            """
+            SELECT s.stop_id, s.name, s.lat, s.lon
+            FROM stop_rtree r
+            JOIN stop s ON s.stop_id = r.stop_id
+            WHERE r.min_lat >= ? AND r.max_lat <= ?
+              AND r.min_lon >= ? AND r.max_lon <= ?
+            """,
+            (lat - delta, lat + delta, lon - delta, lon + delta),
+        ).fetchall()
+        if len(rows) >= max_stops:
+            break
+        delta *= 2
+
+    results = []
+    for r in rows:
+        d = _haversine_m(lat, lon, r["lat"], r["lon"])
+        results.append((r["stop_id"], r["name"], r["lat"], r["lon"], d))
+    results.sort(key=lambda x: x[4])
+    return results[:max_stops]
+
+
+def _find_routes_from_stops(
+    db: sqlite3.Connection,
+    stop_ids: list[int],
+    stop_dist: dict[int, tuple[str, float, float, float]],
+    site_id: str,
+    route_type: str,
+    day_type: str,
+) -> dict[int, tuple[float, int, str]]:
+    """
+    정류장 목록에서 해당 조건의 노선을 찾아 route별 최소 거리 반환.
+    반환: {route_id: (min_dist, best_stop_id, route_name)}
+    """
+    if not stop_ids:
+        return {}
+    placeholders = ",".join("?" * len(stop_ids))
+    query = f"""
+        SELECT DISTINCT r.route_id, r.route_name, r.route_type,
+               vs.stop_id
+        FROM variant_stop vs
+        JOIN service_variant sv ON sv.variant_id = vs.variant_id
+        JOIN route r ON r.route_id = sv.route_id
+        WHERE vs.stop_id IN ({placeholders})
+          AND r.site_id = ?
+          AND r.route_type = ?
+          AND sv.day_type = ?
+    """
+    params = stop_ids + [site_id, route_type, day_type]
+    rows = db.execute(query, params).fetchall()
+
+    route_best: dict[int, tuple[float, int, str]] = {}
+    for r in rows:
         rid = r["route_id"]
-        for stop in stops.get(rid, []):
-            if stop["lat"] is None or stop["lng"] is None:
-                continue
-            d = _haversine_km(lat, lng, stop["lat"], stop["lng"])
-            if d < best_dist:
-                best_dist = d
-                best = (r, stop, stops[rid])
-    return best
+        sid = r["stop_id"]
+        dist = stop_dist[sid][3]
+        if rid not in route_best or dist < route_best[rid][0]:
+            route_best[rid] = (dist, sid, r["route_name"])
+    return route_best
 
 
 def find_nearest_route_options(
-    site_id: int,
-    route_type: int,
+    site_id: str,
+    route_type: str,
     lat: float,
-    lng: float,
-    max_routes: int = 3,
-) -> list[tuple[dict, dict, list[dict]]]:
+    lon: float,
+    day_type: str = "weekday",
+    max_routes: int = 5,
+) -> list[dict]:
     """
-    가까운 정류장 순으로 노선당 첫 등장만 채택해, 유니크 노선 최대 max_routes개 반환.
-    각 요소: (route, nearest_stop, route_stops).
-    """
-    candidate_routes = get_routes_by_site_and_type(site_id, route_type)
-    candidates: list[tuple[float, dict, dict]] = []
-    for r in candidate_routes:
-        rid = r["route_id"]
-        for stop in stops.get(rid, []):
-            if stop["lat"] is None or stop["lng"] is None:
-                continue
-            d = _haversine_km(lat, lng, stop["lat"], stop["lng"])
-            candidates.append((d, stop, r))
-    candidates.sort(key=lambda x: x[0])
+    가까운 정류장 기반 유니크 노선 최대 max_routes개 반환.
+    노선 수가 부족하면 탐색 범위를 점진 확장하여 max_routes개를 확보한다.
 
-    seen_route_ids: set[int] = set()
-    results: list[tuple[dict, dict, list[dict]]] = []
-    for _d, stop, route in candidates:
-        rid = route["route_id"]
-        if rid in seen_route_ids:
-            continue
-        seen_route_ids.add(rid)
-        results.append((route, stop, stops[rid]))
-        if len(results) >= max_routes:
+    반환 각 요소:
+    {
+        "route_id": int,
+        "route_name": str,
+        "route_type": str,
+        "nearest_stop": {"stop_id": int, "name": str, "lat": float, "lon": float},
+        "distance_m": float,
+        "all_departure_times": [str, ...],
+        "companies": [str, ...],
+        "route_stops": [{"sequence": int, "stop_name": str, "lat": float, "lon": float}, ...],
+    }
+    """
+    db = _db()
+
+    # 점진 확장: 50 → 100 → 200개 정류장으로 넓혀가며 max_routes개 노선 확보
+    route_best: dict[int, tuple[float, int, str]] = {}
+    stop_dist: dict[int, tuple[str, float, float, float]] = {}
+    searched_stop_ids: set[int] = set()
+
+    for max_stops in (50, 150, 500):
+        nearby = _find_nearby_stops(lat, lon, max_stops=max_stops)
+        if not nearby:
+            return []
+
+        # 이전 라운드에서 이미 검색한 정류장 제외 (증분 검색)
+        new_stop_ids = []
+        for sid, name, slat, slon, dist in nearby:
+            if sid not in searched_stop_ids:
+                stop_dist[sid] = (name, slat, slon, dist)
+                new_stop_ids.append(sid)
+                searched_stop_ids.add(sid)
+
+        # 새 정류장에서만 노선 검색 (이미 찾은 노선과 합산)
+        if new_stop_ids:
+            new_routes = _find_routes_from_stops(
+                db, new_stop_ids, stop_dist, site_id, route_type, day_type
+            )
+            for rid, (dist, sid, rname) in new_routes.items():
+                if rid not in route_best or dist < route_best[rid][0]:
+                    route_best[rid] = (dist, sid, rname)
+
+        if len(route_best) >= max_routes:
             break
+
+    # 거리순 정렬, 상위 max_routes
+    sorted_routes = sorted(route_best.items(), key=lambda x: x[1][0])[:max_routes]
+
+    results = []
+    for route_id, (dist, best_stop_id, route_name) in sorted_routes:
+        sname, slat, slon, sdist = stop_dist[best_stop_id]
+
+        # 전체 출발시간 + 업체 목록
+        variants = db.execute(
+            """
+            SELECT departure_time, company, bus_count
+            FROM service_variant
+            WHERE route_id = ? AND day_type = ?
+            ORDER BY departure_time
+            """,
+            (route_id, day_type),
+        ).fetchall()
+
+        all_times = sorted(set(v["departure_time"] for v in variants))
+        companies = sorted(set(v["company"] for v in variants if v["company"]))
+
+        # 대표 경유지 (첫 variant의 stops)
+        first_variant = db.execute(
+            "SELECT variant_id FROM service_variant WHERE route_id = ? AND day_type = ? LIMIT 1",
+            (route_id, day_type),
+        ).fetchone()
+
+        route_stops = []
+        if first_variant:
+            stops_rows = db.execute(
+                """
+                SELECT vs.seq, s.name, s.lat, s.lon
+                FROM variant_stop vs
+                JOIN stop s ON s.stop_id = vs.stop_id
+                WHERE vs.variant_id = ?
+                ORDER BY vs.seq
+                """,
+                (first_variant["variant_id"],),
+            ).fetchall()
+            route_stops = [
+                {"sequence": sr["seq"], "stop_name": sr["name"], "lat": sr["lat"], "lng": sr["lon"]}
+                for sr in stops_rows
+            ]
+
+        results.append(
+            {
+                "route_id": route_id,
+                "route_name": route_name,
+                "route_type": route_type,
+                "nearest_stop": {
+                    "stop_id": best_stop_id,
+                    "name": sname,
+                    "lat": slat,
+                    "lon": slon,
+                },
+                "distance_m": round(sdist),
+                "all_departure_times": all_times,
+                "companies": companies,
+                "route_stops": route_stops,
+            }
+        )
+
     return results
 
 
-def get_terminus_stop(route_stops: list[dict]) -> dict | None:
-    """sequence 최대인 정류장 (종착지)."""
-    if not route_stops:
+def get_route_detail(route_id: int, day_type: str = "weekday") -> dict | None:
+    """특정 route의 전체 출발시간표 + 전체 경유지 반환."""
+    db = _db()
+    route = db.execute(
+        "SELECT route_id, site_id, route_name, route_type FROM route WHERE route_id = ?",
+        (route_id,),
+    ).fetchone()
+    if not route:
         return None
-    return max(route_stops, key=lambda s: s["sequence"])
+
+    variants = db.execute(
+        """
+        SELECT variant_id, departure_time, company, bus_count
+        FROM service_variant
+        WHERE route_id = ? AND day_type = ?
+        ORDER BY departure_time
+        """,
+        (route_id, day_type),
+    ).fetchall()
+
+    timetable = [
+        {
+            "departure_time": v["departure_time"],
+            "company": v["company"],
+            "bus_count": v["bus_count"],
+        }
+        for v in variants
+    ]
+
+    # 대표 경유지
+    route_stops = []
+    if variants:
+        stops_rows = db.execute(
+            """
+            SELECT vs.seq, s.name, s.lat, s.lon
+            FROM variant_stop vs
+            JOIN stop s ON s.stop_id = vs.stop_id
+            WHERE vs.variant_id = ?
+            ORDER BY vs.seq
+            """,
+            (variants[0]["variant_id"],),
+        ).fetchall()
+        route_stops = [
+            {"sequence": sr["seq"], "stop_name": sr["name"], "lat": sr["lat"], "lng": sr["lon"]}
+            for sr in stops_rows
+        ]
+
+    return {
+        "route_id": route["route_id"],
+        "site_id": route["site_id"],
+        "route_name": route["route_name"],
+        "route_type": route["route_type"],
+        "timetable": timetable,
+        "route_stops": route_stops,
+    }
 
 
-def get_first_stop(route_stops: list[dict]) -> dict | None:
-    """sequence 최소인 정류장 (기점)."""
-    if not route_stops:
-        return None
-    return min(route_stops, key=lambda s: s["sequence"])
-
-
+# ── 시간 관련 유틸 (기존 호환) ──────────────────────────────────
 def _time_to_minutes(t: str) -> int:
-    """'HH:mm' -> 분 단위 (0~1439)."""
+    """'HH:MM' → 분 단위 (0~1439)."""
     parts = t.strip().split(":")
     if len(parts) != 2:
         return -1
     try:
-        h, m = int(parts[0], 10), int(parts[1], 10)
+        h, m = int(parts[0]), int(parts[1])
         if 0 <= h <= 23 and 0 <= m <= 59:
             return h * 60 + m
     except ValueError:
@@ -165,46 +314,31 @@ def _time_to_minutes(t: str) -> int:
 
 
 def _parse_time_or_range(t: str) -> tuple[int, int]:
-    """
-    'HH:MM' 또는 'HH:MM ~ HH:MM' -> (시작분, 종료분). 단일이면 (m, m).
-    파싱 실패 시 (-1, -1).
-    """
     t = t.strip()
     if "~" in t:
         parts = t.split("~", 1)
-        if len(parts) != 2:
-            return (-1, -1)
         start_m = _time_to_minutes(parts[0].strip())
         end_m = _time_to_minutes(parts[1].strip())
         if start_m < 0 or end_m < 0:
             return (-1, -1)
         return (start_m, end_m)
     m = _time_to_minutes(t)
-    if m < 0:
-        return (-1, -1)
-    return (m, m)
+    return (m, m) if m >= 0 else (-1, -1)
 
 
-def _departure_sort_key(t: str) -> int:
-    """정렬용: 시작 시각(분)."""
-    start_m, _ = _parse_time_or_range(t)
-    return start_m if start_m >= 0 else 9999
-
-
-def get_nearest_departure_time(route_id: int, time_str: str) -> str | None:
-    """
-    사용자 시각 time_str(HH:mm) 기준으로 해당 노선의 가장 가까운 미래 출발 시각을 반환.
-    단일 시각 또는 범위('HH:MM ~ HH:MM') 모두 처리. 사용자 시각이 범위 안에 있으면 그 범위 반환.
-    없으면(당일 마지막 배차 이후면) None을 반환.
-    """
-    times = departure_times.get(route_id)
+def get_nearest_departure_time(times: list[str], time_str: str) -> str | None:
+    """시각 리스트에서 time_str 이후 가장 가까운 출발 시각 반환."""
     if not times:
         return None
     user_m = _time_to_minutes(time_str)
     if user_m < 0:
         return None
-    sorted_times = sorted(times, key=_departure_sort_key)
-    for t in sorted_times:
+
+    def sort_key(t: str) -> int:
+        s, _ = _parse_time_or_range(t)
+        return s if s >= 0 else 9999
+
+    for t in sorted(times, key=sort_key):
         start_m, end_m = _parse_time_or_range(t)
         if start_m < 0:
             continue
@@ -213,11 +347,3 @@ def get_nearest_departure_time(route_id: int, time_str: str) -> str | None:
         if start_m >= user_m:
             return t
     return None
-
-
-def get_all_departure_times(route_id: int) -> list[str]:
-    """노선의 전체 출발 시각 목록을 시작 시각 순 정렬하여 반환. 단일/범위 모두 포함."""
-    times = departure_times.get(route_id)
-    if not times:
-        return []
-    return sorted(times, key=_departure_sort_key)

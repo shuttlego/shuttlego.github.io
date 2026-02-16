@@ -25,42 +25,48 @@
       gap: 16px;
     }
     .header-left {
-      flex-shrink: 0;
+      flex-shrink: 1;
+      min-width: 0;
       display: flex;
       align-items: center;
     }
-    .departure-clock {
+    /* 출발시간/요일 통합 트리거 */
+    .departure-trigger {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 12px;
+      padding: 0 12px;
+      height: 42px;
       border-radius: 8px;
       border: 1px solid #e0e0e0;
       background: #fff;
       cursor: pointer;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
       color: #333;
       user-select: none;
+      font-family: inherit;
+      white-space: nowrap;
+      overflow: hidden;
+      min-width: 0;
     }
-    .departure-clock:hover {
+    .departure-trigger:hover {
       border-color: #fee500;
       background: #fffde7;
     }
-    .departure-clock input[type="text"].departure-time-input {
-      width: 52px;
-      padding: 0;
-      margin: 0;
-      border: none;
-      background: transparent;
-      font-size: inherit;
-      font-weight: inherit;
-      color: inherit;
-      text-align: center;
-      outline: none;
+    .departure-trigger .trigger-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
     }
-    .departure-clock input.departure-time-input::placeholder {
-      color: #999;
+    .departure-trigger .trigger-arrow {
+      flex-shrink: 0;
+      margin-left: auto;
+      width: 0; height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 4px solid #666;
     }
 
     /* 출발 시간 선택 모달 */
@@ -184,8 +190,8 @@
         left: auto;
         right: auto;
         margin-left: 0;
-        min-width: 380px;
-        max-width: 420px;
+        min-width: 420px;
+        max-width: 480px;
         padding: 20px 24px;
       }
       .time-picker-modal .time-picker-wheels { gap: 16px; margin-bottom: 20px; }
@@ -193,6 +199,11 @@
         max-width: 96px;
       }
       .time-picker-modal .time-picker-column .time-picker-item { font-size: 20px; }
+      .time-picker-modal .day-type-column {
+        width: 150px;
+        max-width: none !important;
+      }
+      .time-picker-modal .day-type-column .time-picker-item { font-size: 15px !important; }
     }
     /* 모바일: 하단 시트 형태, 스크롤 관성 있게 빠르게 */
     @media (max-width: 768px) {
@@ -266,36 +277,39 @@
       border: 0;
     }
     .site-selector-trigger {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      justify-content: space-between;
       gap: 6px;
-      padding: 10px 14px;
+      padding: 0 12px;
+      height: 42px;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
       background: #fff;
       font-size: 14px;
       color: #333;
       cursor: pointer;
-      min-width: 160px;
-      max-width: 200px;
       text-align: left;
       font-family: inherit;
-      overflow: hidden;
-      text-overflow: ellipsis;
       white-space: nowrap;
+      overflow: hidden;
+      max-width: 200px;
     }
     .site-selector-trigger:hover {
       border-color: #fee500;
     }
-    .site-selector-trigger::after {
-      content: '';
-      width: 0;
-      height: 0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-top: 5px solid #666;
+    .site-selector-trigger .site-trigger-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      flex: 1;
+    }
+    .site-selector-trigger .site-trigger-arrow {
       flex-shrink: 0;
+      width: 0; height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 4px solid #666;
     }
 
     /* 사업장 선택 모달 */
@@ -380,6 +394,55 @@
       .site-picker-modal .site-picker-title {
         padding: 20px 16px 12px;
       }
+    }
+
+    /* 요일 선택 스크롤 휠 */
+    .day-type-column {
+      flex: none !important;
+      max-width: none !important;
+      width: 140px;
+    }
+    .day-type-column .time-picker-item {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      height: 56px !important;
+      font-size: 14px !important;
+      line-height: 1.2 !important;
+      padding: 2px 8px;
+      box-sizing: border-box;
+    }
+    .day-type-column .day-type-label {
+      font-weight: 700;
+      font-size: 13px;
+      color: inherit;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .day-type-column .day-type-desc {
+      font-weight: 400;
+      font-size: 10px;
+      color: #aaa;
+      margin-top: 1px;
+      white-space: normal;
+      word-break: keep-all;
+      text-align: center;
+      line-height: 1.3;
+      max-width: 100%;
+    }
+    .day-type-column .time-picker-item.selected .day-type-desc {
+      color: #666;
+    }
+    .day-type-column .time-picker-selection-band {
+      margin-top: -28px !important;
+      height: 56px !important;
+    }
+    .day-type-column .time-picker-pad {
+      height: 52px !important;
     }
 
     /* 위치 권한 안내 모달 */
@@ -470,7 +533,6 @@
       font-weight: 700;
       color: #1565c0;
     }
-    .departure-clock .time-tag,
     .shuttle-message .time-tag,
     .shuttle-point-label .time-tag {
       color: #0d47a1;
@@ -923,6 +985,19 @@
       margin-top: 6px;
       line-height: 1.4;
     }
+    .route-stops-divider {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 12px 0;
+    }
+    .route-stops-list {
+      font-size: 13px;
+      color: #444;
+      line-height: 1.7;
+    }
+    .route-stop-item.highlight {
+      color: #000;
+    }
 
     /* 모바일: 레이아웃 전환 + 하단 시트 */
     @media (max-width: 768px) {
@@ -932,8 +1007,11 @@
       }
       .header-left {
         order: 2;
-        flex: 1;
+        flex: 1 1 0;
         min-width: 0;
+      }
+      .departure-trigger {
+        width: 100%;
       }
       .header-center {
         order: 1;
@@ -943,16 +1021,14 @@
       .search-bar { max-width: none; }
       .site-selector-wrap {
         order: 3;
-        flex: 1;
+        flex: 1 1 0;
         min-width: 0;
       }
       .site-selector-wrap select { min-width: 0; width: 100%; }
       .site-selector-trigger {
-        max-width: none;
+        display: flex;
         width: 100%;
-        min-width: 0;
-        font-size: 15px;
-        padding: 12px 14px;
+        max-width: none;
       }
 
       .main-content {
@@ -1034,10 +1110,10 @@
 <body>
   <header class="header">
     <div class="header-left">
-      <label class="departure-clock" id="departureClock" title="클릭하여 출발 시각 입력 (HH:mm)">
-        <span id="departureClockWrap"><span class="time-tag" id="departureClockText">00:00</span> 출발</span>
-        <input type="text" id="departureTimeInput" class="departure-time-input" placeholder="00:00" maxlength="5" style="display: none;" />
-      </label>
+      <button type="button" class="departure-trigger" id="departureTrigger" title="요일/출발시간 선택">
+        <span class="trigger-text" id="departureTriggerText">평일 00:00 출발</span>
+        <span class="trigger-arrow"></span>
+      </button>
     </div>
     <div class="header-center">
       <div class="search-bar">
@@ -1047,21 +1123,26 @@
     </div>
     <div class="site-selector-wrap">
       <select id="siteSelect" title="사업장 선택" aria-hidden="true">
-        <option value="1">삼성전자(수원)</option>
+        <option value="0000013">삼성전자(수원)</option>
       </select>
       <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
-        삼성전자(수원)
+        <span class="site-trigger-text">삼성전자(수원)</span>
+        <span class="site-trigger-arrow"></span>
       </button>
     </div>
   </header>
 
   <div class="time-picker-backdrop" id="timePickerBackdrop" aria-hidden="true"></div>
-  <div class="time-picker-modal" id="timePickerModal" role="dialog" aria-label="출발 시간 선택" style="top: 56px;">
+  <div class="time-picker-modal" id="timePickerModal" role="dialog" aria-label="요일/출발 시간 선택" style="top: 56px;">
     <div class="time-picker-header">
-      <h2 class="time-picker-title">출발 시간</h2>
+      <h2 class="time-picker-title">요일 / 출발 시간</h2>
       <button type="button" class="time-picker-now" id="timePickerNow">현재 시간</button>
     </div>
     <div class="time-picker-wheels">
+      <div class="time-picker-column day-type-column">
+        <div class="time-picker-selection-band" aria-hidden="true"></div>
+        <div class="time-picker-items" id="dayTypeList"></div>
+      </div>
       <div class="time-picker-column">
         <div class="time-picker-selection-band" aria-hidden="true"></div>
         <div class="time-picker-items" id="timePickerHourList"></div>
@@ -1135,7 +1216,7 @@
     // ── 환경 설정 (dev / prd) ──────────────────────────────
     (function() {
       var host = location.hostname;
-      var isDev = (host === 'localhost' || host === '127.0.0.1' || host === '192.168.219.104');
+      var isDev = (host === 'localhost' || host === '127.0.0.1' || host === '192.168.219.104' || host == '192.168.123.103');
       var ENV = {
         // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
         KAKAO_JS_KEY: isDev
@@ -1175,13 +1256,17 @@
       var sitePickerBackdrop = document.getElementById('sitePickerBackdrop');
       var sitePickerModal = document.getElementById('sitePickerModal');
       var sitePickerList = document.getElementById('sitePickerList');
+      var departureTrigger = document.getElementById('departureTrigger');
+      var departureTriggerText = document.getElementById('departureTriggerText');
+      var dayTypeList = document.getElementById('dayTypeList');
       var shuttleMessage = document.getElementById('shuttleMessage');
 
       var map = null;
       var overlays = [];
       var markerElements = [];
       var places = [];
-      var selectedSiteId = 1;
+      var selectedSiteId = '0000013';
+      var selectedDayType = 'weekday';
       var selectedPlaceIndex = -1;
       var bubbleOverlay = null;
       var shuttleLine = null;
@@ -1232,10 +1317,58 @@
         departureTime.h = d.getHours();
         departureTime.m = d.getMinutes();
       }
-      function updateDepartureClockDisplay() {
-        var el = document.getElementById('departureClockText');
-        if (el) el.textContent = getDepartureTimeStr();
+      function updateDepartureTriggerText() {
+        if (!departureTriggerText) return;
+        var timeStr = getDepartureTimeStr();
+        var dayLabel = DAY_TYPE_LABEL_MAP[selectedDayType] || '평일';
+        var shortLabel = DAY_TYPE_SHORT_MAP[selectedDayType] || '평일';
+        // 공간에 따라 축약: 1) "요일 HH:MM 출발" 2) "요일 HH:MM" 3) "(축약) HH:MM"
+        // 컨테이너 너비로 판단하기 어려우므로 CSS text-overflow에 의존하되,
+        // data 속성에 단계별 텍스트를 넣어 ResizeObserver로 전환
+        departureTriggerText.setAttribute('data-full', dayLabel + ' ' + timeStr + '분 출발');
+        departureTriggerText.setAttribute('data-mid', shortLabel + ' ' + timeStr + '분 출발');
+        departureTriggerText.setAttribute('data-compact', shortLabel + ' ' + timeStr + '분');
+        departureTriggerText.setAttribute('data-short', shortLabel + ' ' + timeStr);
+        fitDepartureTrigger();
       }
+      function fitDepartureTrigger() {
+        if (!departureTriggerText || !departureTrigger) return;
+        var levels = [
+          departureTriggerText.getAttribute('data-full') || '',
+          departureTriggerText.getAttribute('data-mid') || '',
+          departureTriggerText.getAttribute('data-compact') || '',
+          departureTriggerText.getAttribute('data-short') || ''
+        ];
+
+        // 데스크톱에서는 버튼이 컨텐츠에 맞게 줄어드므로 항상 full
+        if (!isMobile()) {
+          departureTriggerText.textContent = levels[0];
+          return;
+        }
+
+        // 모바일: 부모(.header-left)의 너비를 기준으로 측정
+        var parent = departureTrigger.parentElement;
+        if (!parent) { departureTriggerText.textContent = levels[0]; return; }
+        var arrowWidth = 16; // arrow + gap
+        var padding = 24; // 좌우 패딩
+        var maxW = parent.clientWidth - arrowWidth - padding - 2; // border
+
+        var canvas = fitDepartureTrigger._canvas || (fitDepartureTrigger._canvas = document.createElement('canvas'));
+        var ctx = canvas.getContext('2d');
+        var style = window.getComputedStyle(departureTriggerText);
+        ctx.font = style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily;
+
+        var chosen = levels[levels.length - 1];
+        for (var i = 0; i < levels.length; i++) {
+          if (ctx.measureText(levels[i]).width <= maxW) {
+            chosen = levels[i];
+            break;
+          }
+        }
+        departureTriggerText.textContent = chosen;
+      }
+      // 이전 코드 호환 wrapper
+      function updateDepartureClockDisplay() { updateDepartureTriggerText(); }
       function parseTimeInput(val) {
         var s = (val || '').trim();
         if (!/^\d{1,2}:\d{1,2}$/.test(s)) return null;
@@ -1256,6 +1389,7 @@
       var locationPermissionMessage = document.getElementById('locationPermissionMessage');
       var locationPermissionConfirm = document.getElementById('locationPermissionConfirm');
       var ITEM_HEIGHT = 40;
+      var DAY_TYPE_ITEM_HEIGHT = 56;
       var PAD_HEIGHT = 60;
       var WHEEL_HEIGHT = 160;
 
@@ -1315,15 +1449,17 @@
       function openTimePickerModal() {
         if (!timePickerBackdrop || !timePickerModal) return;
         buildTimePickerWheels();
-        var clockEl = document.getElementById('departureClock');
+        pendingDayType = selectedDayType;
+        buildDayTypeWheel();
+        var triggerEl = departureTrigger;
         if (isMobile()) {
           timePickerModal.style.top = '';
           timePickerModal.style.left = '';
           timePickerModal.style.right = '';
           timePickerModal.style.bottom = '0';
         } else {
-          if (clockEl) {
-            var rect = clockEl.getBoundingClientRect();
+          if (triggerEl) {
+            var rect = triggerEl.getBoundingClientRect();
             timePickerModal.style.top = (rect.bottom + 4) + 'px';
             timePickerModal.style.left = rect.left + 'px';
             timePickerModal.style.right = 'auto';
@@ -1333,8 +1469,10 @@
         timePickerBackdrop.classList.add('show');
         timePickerModal.classList.add('show');
         requestAnimationFrame(function() {
+          scrollDayTypeToValue(pendingDayType);
           timePickerHourList.scrollTop = departureTime.h * ITEM_HEIGHT;
           timePickerMinuteList.scrollTop = departureTime.m * ITEM_HEIGHT;
+          updateDayTypeSelectedClasses();
           updateTimePickerSelectedClasses();
         });
       }
@@ -1349,16 +1487,22 @@
         if (timePickerHourList) timePickerHourList.scrollTop = h * ITEM_HEIGHT;
         if (timePickerMinuteList) timePickerMinuteList.scrollTop = m * ITEM_HEIGHT;
         updateTimePickerSelectedClasses();
+        // 요일도 현재로 리셋
+        pendingDayType = detectDayType();
+        scrollDayTypeToValue(pendingDayType);
+        updateDayTypeSelectedClasses();
       }
       function applyTimePicker() {
         var h = getTimePickerScrollIndex(timePickerHourList, 23);
         var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
         departureTime.h = h;
         departureTime.m = m;
+        var dayChanged = (pendingDayType !== selectedDayType);
+        selectedDayType = pendingDayType;
         closeTimePickerModal();
-        updateDepartureClockDisplay();
-        // 노선 선택 화면에 있을 때만 시간 변경 시 노선 다시 검색. 장소 검색 결과 화면에서는 시간만 갱신.
-        if (routeOptionsWrap && routeOptionsWrap.classList.contains('show')) {
+        updateDepartureTriggerText();
+        // 요일 또는 시간이 변경되었을 때 노선 다시 검색
+        if (dayChanged || (routeOptionsWrap && routeOptionsWrap.classList.contains('show'))) {
           refreshLastShuttleResult();
         }
       }
@@ -1368,10 +1512,95 @@
         else runArriveWithPlace(lastPlace);
       }
 
+      // ── 요일 선택 (통합 모달 내 칩) ─────────────────────────
+      var DAY_TYPE_OPTIONS = [
+        { value: 'weekday', label: '평일', shortLabel: '평일', desc: '월~금' },
+        { value: 'monday', label: '월요일', shortLabel: '월', desc: '월요일에 배차 시간이 다른 경우' },
+        { value: 'saturday', label: '토요일', shortLabel: '토', desc: '토요일' },
+        { value: 'holiday', label: '휴일', shortLabel: '휴일', desc: '일요일/공휴일' },
+        { value: 'familyday', label: 'D-day / 패밀리데이', shortLabel: 'D/F', desc: '매월 21일이 있는 주의 금요일' }
+      ];
+      var DAY_TYPE_LABEL_MAP = {};
+      var DAY_TYPE_SHORT_MAP = {};
+      DAY_TYPE_OPTIONS.forEach(function(o) { DAY_TYPE_LABEL_MAP[o.value] = o.label; DAY_TYPE_SHORT_MAP[o.value] = o.shortLabel; });
+
+      // 모달 내에서만 임시 선택 상태를 유지 (확인 전)
+      var pendingDayType = 'weekday';
+
+      function isFamilyDay(date) {
+        var y = date.getFullYear(), m = date.getMonth();
+        var day21 = new Date(y, m, 21);
+        var dow21 = day21.getDay(); // 0=일 ... 6=토
+        var mondayOffset = (dow21 + 6) % 7;
+        var mondayDate = 21 - mondayOffset;
+        var friday = new Date(y, m, mondayDate + 4);
+        return date.getDate() === friday.getDate() && date.getMonth() === friday.getMonth();
+      }
+
+      function detectDayType() {
+        var now = new Date();
+        var dow = now.getDay();
+        if (dow === 0) return 'holiday';
+        if (dow === 6) return 'saturday';
+        if (dow === 1) return 'monday';
+        if (dow === 5 && isFamilyDay(now)) return 'familyday';
+        return 'weekday';
+      }
+
+      function buildDayTypeWheel() {
+        if (!dayTypeList) return;
+        dayTypeList.innerHTML = '';
+        var padTop = document.createElement('div');
+        padTop.className = 'time-picker-pad';
+        dayTypeList.appendChild(padTop);
+        DAY_TYPE_OPTIONS.forEach(function(opt, i) {
+          var el = document.createElement('div');
+          el.className = 'time-picker-item';
+          el.setAttribute('data-value', opt.value);
+          el.setAttribute('data-index', i);
+          var labelSpan = document.createElement('span');
+          labelSpan.className = 'day-type-label';
+          labelSpan.textContent = opt.label;
+          var descSpan = document.createElement('span');
+          descSpan.className = 'day-type-desc';
+          descSpan.textContent = opt.desc;
+          el.appendChild(labelSpan);
+          el.appendChild(descSpan);
+          dayTypeList.appendChild(el);
+        });
+        var padBottom = document.createElement('div');
+        padBottom.className = 'time-picker-pad';
+        dayTypeList.appendChild(padBottom);
+      }
+      function getDayTypeScrollIndex() {
+        if (!dayTypeList) return 0;
+        var index = Math.round(dayTypeList.scrollTop / DAY_TYPE_ITEM_HEIGHT);
+        return Math.max(0, Math.min(DAY_TYPE_OPTIONS.length - 1, index));
+      }
+      function updateDayTypeSelectedClasses() {
+        var idx = getDayTypeScrollIndex();
+        if (dayTypeList) {
+          dayTypeList.querySelectorAll('.time-picker-item').forEach(function(item, i) {
+            item.classList.toggle('selected', i === idx);
+          });
+        }
+        pendingDayType = DAY_TYPE_OPTIONS[idx].value;
+      }
+      function scrollDayTypeToValue(value) {
+        if (!dayTypeList) return;
+        var idx = 0;
+        DAY_TYPE_OPTIONS.forEach(function(opt, i) { if (opt.value === value) idx = i; });
+        dayTypeList.scrollTop = idx * DAY_TYPE_ITEM_HEIGHT;
+      }
+
+      // 초기화: 요일 자동 감지
+      selectedDayType = detectDayType();
+
       function updateSiteTriggerText() {
         if (!siteSelectTrigger || !siteSelect) return;
         var opt = siteSelect.options[siteSelect.selectedIndex];
-        siteSelectTrigger.textContent = opt ? opt.text : '';
+        var siteTriggerTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
+        if (siteTriggerTextEl) siteTriggerTextEl.textContent = opt ? opt.text : '';
       }
       function openSitePickerModal() {
         if (!sitePickerBackdrop || !sitePickerModal || !sitePickerList) return;
@@ -1406,7 +1635,7 @@
             var val = this.getAttribute('data-value');
             if (siteSelect && val !== siteSelect.value) {
               siteSelect.value = val;
-              selectedSiteId = parseInt(val, 10);
+              selectedSiteId = val;
               siteSelect.dispatchEvent(new Event('change'));
             }
             updateSiteTriggerText();
@@ -1520,27 +1749,29 @@
             var list = data.sites || [];
             siteSelect.innerHTML = '';
             if (list.length === 0) {
-              siteSelect.appendChild(new Option('삼성전자(수원)', '1'));
+              siteSelect.appendChild(new Option('삼성전자(수원)', '0000013'));
             } else {
               list.forEach(function(site) {
                 siteSelect.appendChild(new Option(site.site_name, String(site.site_id)));
               });
             }
-            if (siteSelect.querySelector('option[value="1"]')) {
-              siteSelect.value = '1';
+            if (siteSelect.querySelector('option[value="0000013"]')) {
+              siteSelect.value = '0000013';
             }
+            selectedSiteId = siteSelect.value;
             updateSiteTriggerText();
           })
           .catch(function() {
             siteSelect.innerHTML = '';
-            siteSelect.appendChild(new Option('삼성전자(수원)', '1'));
-            siteSelect.value = '1';
+            siteSelect.appendChild(new Option('삼성전자(기흥/화성)', '0000011'));
+            siteSelect.value = '0000013';
+            selectedSiteId = '0000013';
             updateSiteTriggerText();
           });
       }
 
       siteSelect.addEventListener('change', function() {
-        selectedSiteId = parseInt(siteSelect.value, 10);
+        selectedSiteId = siteSelect.value;
       });
       if (siteSelectTrigger) siteSelectTrigger.addEventListener('click', openSitePickerModal);
       if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
@@ -2260,6 +2491,23 @@
             var isCurrent = (t === timeStr);
             return '<span class="time-item' + (isCurrent ? ' current' : '') + '">' + escapeHtml(t) + '</span>';
           }).join('');
+          // 탑승/하차 정류장 이름 결정
+          var boardStopName = isDepart ? (opt.nearest_stop_name || '') : (opt.start_stop_name || '');
+          var alightStopName = isDepart ? (opt.terminus_name || '') : (opt.getoff_stop_name || '');
+          // 노선 전체 정류장 목록 HTML
+          var routeStops = opt.route_stops || [];
+          var stopsHtml = routeStops.map(function(s) {
+            var name = s.stop_name || '';
+            var isBoardStop = (name === boardStopName);
+            var isAlightStop = (name === alightStopName);
+            var label = isBoardStop ? ' (탑승)' : (isAlightStop ? ' (하차)' : '');
+            var bold = (isBoardStop || isAlightStop);
+            return '<div class="route-stop-item' + (bold ? ' highlight' : '') + '">' +
+              (bold ? '<b>' : '') +
+              escapeHtml(s.sequence + '. ' + name) + label +
+              (bold ? '</b>' : '') +
+            '</div>';
+          }).join('');
           card.innerHTML =
             '<div class="card-main">' +
               '<div class="card-title-wrap">' +
@@ -2274,6 +2522,9 @@
               '<div class="departure-times">' + (timesHtml || '-') + '</div>' +
               (opt.notes ? '<div class="route-extra-info">' + escapeHtml(opt.notes) + '</div>' : '') +
               (opt.operator ? '<div class="route-extra-info">' + escapeHtml(opt.operator) + '</div>' : '') +
+              '<hr class="route-stops-divider">' +
+              '<div class="detail-title">노선 경유지</div>' +
+              '<div class="route-stops-list">' + (stopsHtml || '-') + '</div>' +
             '</div>';
           var btnDetail = card.querySelector('.btn-route-detail');
           card.addEventListener('click', function(e) {
@@ -2386,7 +2637,7 @@
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
         var name = place.place_name || '선택한 장소';
-        var url = API_BASE + '/api/shuttle/depart/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr());
+        var url = API_BASE + '/api/shuttle/depart/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr()) + '&day_type=' + encodeURIComponent(selectedDayType);
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -2414,7 +2665,7 @@
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
         var name = place.place_name || '선택한 장소';
-        var url = API_BASE + '/api/shuttle/arrive/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr());
+        var url = API_BASE + '/api/shuttle/arrive/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr()) + '&day_type=' + encodeURIComponent(selectedDayType);
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -2611,10 +2862,9 @@
 
       (function initDepartureClock() {
         setDepartureFromDate(new Date());
-        updateDepartureClockDisplay();
-        var clockWrap = document.getElementById('departureClock');
-        if (clockWrap) {
-          clockWrap.addEventListener('click', function(e) {
+        updateDepartureTriggerText();
+        if (departureTrigger) {
+          departureTrigger.addEventListener('click', function(e) {
             e.preventDefault();
             openTimePickerModal();
           });
@@ -2623,8 +2873,11 @@
         if (timePickerNow) timePickerNow.addEventListener('click', setTimePickerToNow);
         if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', closeTimePickerModal);
         if (timePickerModal) timePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+        if (dayTypeList) dayTypeList.addEventListener('scroll', updateDayTypeSelectedClasses);
         if (timePickerHourList) timePickerHourList.addEventListener('scroll', updateTimePickerSelectedClasses);
         if (timePickerMinuteList) timePickerMinuteList.addEventListener('scroll', updateTimePickerSelectedClasses);
+        // 리사이즈 시 trigger 텍스트 재측정
+        window.addEventListener('resize', function() { fitDepartureTrigger(); });
       })();
 
       (function initBottomSheet() {
