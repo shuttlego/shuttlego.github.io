@@ -998,6 +998,12 @@
     .route-stop-item.highlight {
       color: #000;
     }
+    .route-db-updated {
+      font-size: 11px;
+      color: #888;
+      text-align: right;
+      margin-top: 8px;
+    }
     .btn-load-more-routes {
       display: block;
       width: 100%;
@@ -1288,6 +1294,7 @@
       var places = [];
       var selectedSiteId = '0000013';
       var selectedDayType = 'weekday';
+      var dbUpdatedAt = '';
       var selectedPlaceIndex = -1;
       var bubbleOverlay = null;
       var shuttleLine = null;
@@ -1768,6 +1775,7 @@
           .then(function(r) { return r.json(); })
           .then(function(data) {
             var list = data.sites || [];
+            dbUpdatedAt = data.db_updated_at || '';
             siteSelect.innerHTML = '';
             if (list.length === 0) {
               siteSelect.appendChild(new Option('삼성전자(수원)', '0000013'));
@@ -2554,6 +2562,7 @@
               '<hr class="route-stops-divider">' +
               '<div class="detail-title">노선 경유지</div>' +
               '<div class="route-stops-list">' + (stopsHtml || '-') + '</div>' +
+              (dbUpdatedAt ? '<div class="route-db-updated">마지막 업데이트: ' + escapeHtml(dbUpdatedAt) + '</div>' : '') +
             '</div>';
           var btnDetail = card.querySelector('.btn-route-detail');
           card.addEventListener('click', function(e) {
