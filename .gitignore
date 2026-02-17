@@ -42,3 +42,6 @@ data/
 # Docker / Monitoring data
 docker-compose.override.yml
 monitoring/traefik/certs/
+
+# Android
+android/
