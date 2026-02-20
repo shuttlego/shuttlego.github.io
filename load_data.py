@@ -63,25 +63,60 @@ def get_db_updated_at() -> str:
         return ""
 
 
-def _find_nearby_stops(lat: float, lon: float, max_stops: int = 50) -> list[tuple[int, str, float, float, float]]:
+def _find_nearby_stops(
+    lat: float,
+    lon: float,
+    max_stops: int = 50,
+    site_id: str | None = None,
+    route_type: str | None = None,
+    day_type: str | None = None,
+) -> list[tuple[int, str, float, float, float]]:
     """
     RTree 기반 근접 정류장 검색.
     바운딩 박스를 점진 확장하여 max_stops개 이상 후보 확보 후 거리순 정렬.
+    site_id/route_type/day_type이 주어지면 해당 범위의 정류장만 후보로 사용한다.
     반환: [(stop_id, name, lat, lon, distance_m), ...]
     """
     db = _db()
     delta = 0.01  # 약 1.1km
+    use_scope = site_id is not None and route_type is not None and day_type is not None
     for _ in range(8):  # 최대 약 2.56도 확장
-        rows = db.execute(
-            """
-            SELECT s.stop_id, s.name, s.lat, s.lon
-            FROM stop_rtree r
-            JOIN stop s ON s.stop_id = r.stop_id
-            WHERE r.min_lat >= ? AND r.max_lat <= ?
-              AND r.min_lon >= ? AND r.max_lon <= ?
-            """,
-            (lat - delta, lat + delta, lon - delta, lon + delta),
-        ).fetchall()
+        if use_scope:
+            rows = db.execute(
+                """
+                SELECT DISTINCT s.stop_id, s.name, s.lat, s.lon
+                FROM route ro
+                JOIN service_variant sv ON sv.route_id = ro.route_id
+                JOIN variant_stop vs ON vs.variant_id = sv.variant_id
+                JOIN stop s ON s.stop_id = vs.stop_id
+                JOIN stop_rtree r ON r.stop_id = s.stop_id
+                WHERE ro.site_id = ?
+                  AND ro.route_type = ?
+                  AND sv.day_type = ?
+                  AND r.min_lat >= ? AND r.max_lat <= ?
+                  AND r.min_lon >= ? AND r.max_lon <= ?
+                """,
+                (
+                    site_id,
+                    route_type,
+                    day_type,
+                    lat - delta,
+                    lat + delta,
+                    lon - delta,
+                    lon + delta,
+                ),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                """
+                SELECT s.stop_id, s.name, s.lat, s.lon
+                FROM stop_rtree r
+                JOIN stop s ON s.stop_id = r.stop_id
+                WHERE r.min_lat >= ? AND r.max_lat <= ?
+                  AND r.min_lon >= ? AND r.max_lon <= ?
+                """,
+                (lat - delta, lat + delta, lon - delta, lon + delta),
+            ).fetchall()
         if len(rows) >= max_stops:
             break
         delta *= 2
@@ -168,7 +203,15 @@ def find_nearest_route_options(
     searched_stop_ids: set[int] = set()
 
     for max_stops in (50, 150, 500):
-        nearby = _find_nearby_stops(lat, lon, max_stops=max_stops)
+        # 전역 정류장이 아닌, 요청 범위(site/route/day)의 정류장에서만 근접 후보를 고른다.
+        nearby = _find_nearby_stops(
+            lat,
+            lon,
+            max_stops=max_stops,
+            site_id=site_id,
+            route_type=route_type,
+            day_type=day_type,
+        )
         if not nearby:
             return []
 

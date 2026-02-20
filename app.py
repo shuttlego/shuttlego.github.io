@@ -92,6 +92,7 @@ _issue_submit_recent_hash: dict[str, float] = {}
 
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
+_OPTIONS_CANDIDATE_LIMIT = 100
 
 # ── Prometheus 메트릭 정의 ──────────────────────────────────
 REQUEST_COUNT = Counter(
@@ -809,7 +810,9 @@ def api_shuttle_depart_options():
         lat=lat,
         lon=lng,
         day_type=day_type,
-        max_routes=5,
+        # 후처리(탑승/하차 동일 정류장 제외, 시간 필터) 이후에도
+        # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
+        max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
     )
     if not results:
@@ -864,6 +867,8 @@ def api_shuttle_depart_options():
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
+        if len(options) >= 5:
+            break
 
     resp = {"options": options}
     if not options and all_last_times:
@@ -952,7 +957,9 @@ def api_shuttle_arrive_options():
         lat=lat,
         lon=lng,
         day_type=day_type,
-        max_routes=5,
+        # 후처리(탑승/하차 동일 정류장 제외, 시간 필터) 이후에도
+        # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
+        max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
     )
     if not results:
@@ -1007,6 +1014,8 @@ def api_shuttle_arrive_options():
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
+        if len(options) >= 5:
+            break
 
     resp = {"options": options}
     if not options and all_last_times:
