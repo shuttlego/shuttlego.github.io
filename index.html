@@ -653,7 +653,7 @@
     .issue-support-email {
       display: block;
       margin-top: 10px;
-      text-align: right;
+      text-align: center;
       font-size: 12px;
       color: #9a9a9a;
     }
@@ -1677,6 +1677,10 @@
             <textarea id="issueBodyInput" placeholder="불편했던 내용, 재현 방법, 원하는 개선점을 적어주세요." required></textarea>
             <p class="issue-form-help">작성 내용은 모든 사용자에게 공개됩니다.</p>
           </div>
+          <div class="issue-form-group">
+            <label for="issueNicknameInput">닉네임 (선택)</label>
+            <input type="text" id="issueNicknameInput" maxlength="40" placeholder="예: 셔틀러버" />
+          </div>
           <div class="issue-form-actions">
             <button type="button" class="issue-form-btn" id="issueFormCancelBtn">취소</button>
             <button type="submit" class="issue-form-btn primary" id="issueFormSubmitBtn">등록</button>
@@ -1815,6 +1819,7 @@
       var issueFormSubmitBtn = document.getElementById('issueFormSubmitBtn');
       var issueTitleInput = document.getElementById('issueTitleInput');
       var issueBodyInput = document.getElementById('issueBodyInput');
+      var issueNicknameInput = document.getElementById('issueNicknameInput');
 
       var map = null;
       var overlays = [];
@@ -2423,6 +2428,8 @@
         if (!issueTitleInput || !issueBodyInput) return;
         var title = issueTitleInput.value.trim();
         var body = issueBodyInput.value.trim();
+        var nickname = issueNicknameInput ? issueNicknameInput.value.trim() : '';
+        var issueTitle = nickname ? (title + ' - ' + nickname) : title;
         if (!title) {
           setIssueFeedback('error', '제목을 입력해 주세요.');
           return;
@@ -2439,7 +2446,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: title,
+            title: issueTitle,
             body: body
           })
         })
