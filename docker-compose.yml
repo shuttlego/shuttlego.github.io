@@ -5,8 +5,8 @@ services:
     container_name: shuttle-traefik
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "${BACKEND_HTTP_PORT:-80}:80"
+      - "${BACKEND_HTTPS_PORT:-443}:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./monitoring/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
@@ -35,10 +35,25 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.backend.loadbalancer.server.port=8081"
-      # ── dev: path 기반 (localhost, 로컬 IP 등) ──
+      # ── dev: path 기반 (HTTP) ──
       - "traefik.http.routers.backend-dev.rule=PathPrefix(`/api`) || Path(`/health`)"
       - "traefik.http.routers.backend-dev.entrypoints=web"
       - "traefik.http.routers.backend-dev.priority=1"
+      # ── dev: path 기반 (HTTPS, localhost 테스트용) ──
+      - "traefik.http.routers.backend-dev-secure.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.backend-dev-secure.entrypoints=websecure"
+      - "traefik.http.routers.backend-dev-secure.priority=1"
+      - "traefik.http.routers.backend-dev-secure.tls=true"
+      # ── dev: 도메인 기반 (HTTP → HTTPS) ──
+      - "traefik.http.routers.backend-dev-domain-redirect.rule=Host(`${API_DEV_DOMAIN:-api-dev.shuttle-go.com}`) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.backend-dev-domain-redirect.entrypoints=web"
+      - "traefik.http.routers.backend-dev-domain-redirect.priority=20"
+      - "traefik.http.routers.backend-dev-domain-redirect.middlewares=redirect-to-https@file"
+      # ── dev: 도메인 기반 (HTTPS) ──
+      - "traefik.http.routers.backend-dev-domain.rule=Host(`${API_DEV_DOMAIN:-api-dev.shuttle-go.com}`) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.backend-dev-domain.entrypoints=websecure"
+      - "traefik.http.routers.backend-dev-domain.priority=20"
+      - "traefik.http.routers.backend-dev-domain.tls.certresolver=letsencrypt"
       # ── prd: 도메인 HTTP → HTTPS 리다이렉트 ──
       - "traefik.http.routers.backend-prd-redirect.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
       - "traefik.http.routers.backend-prd-redirect.entrypoints=web"
