@@ -13,21 +13,39 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 DB_PATH = DATA_DIR / "data.db"
 
 _conn: sqlite3.Connection | None = None
+_has_stop_scope: bool | None = None
 
 
 def init_db(db_path: str | None = None) -> None:
     """SQLite DB 연결. 앱 시작 시 1회 호출."""
-    global _conn
+    global _conn, _has_stop_scope
     path = db_path or str(DB_PATH)
     _conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, check_same_thread=False)
     _conn.row_factory = sqlite3.Row
     _conn.execute("PRAGMA query_only=ON")
+    _has_stop_scope = bool(
+        _conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_scope' LIMIT 1"
+        ).fetchone()
+    )
 
 
 def _db() -> sqlite3.Connection:
     if _conn is None:
         init_db()
     return _conn
+
+
+def _supports_stop_scope() -> bool:
+    global _has_stop_scope
+    if _has_stop_scope is None:
+        db = _db()
+        _has_stop_scope = bool(
+            db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_scope' LIMIT 1"
+            ).fetchone()
+        )
+    return bool(_has_stop_scope)
 
 
 # ── 유틸리티 ───────────────────────────────────────────────────
@@ -80,8 +98,33 @@ def _find_nearby_stops(
     db = _db()
     delta = 0.01  # 약 1.1km
     use_scope = site_id is not None and route_type is not None and day_type is not None
+    use_scope_table = use_scope and _supports_stop_scope()
     for _ in range(8):  # 최대 약 2.56도 확장
-        if use_scope:
+        if use_scope_table:
+            rows = db.execute(
+                """
+                SELECT DISTINCT s.stop_id, s.name, s.lat, s.lon
+                FROM stop_scope ss
+                JOIN stop_rtree r ON r.stop_id = ss.stop_id
+                JOIN stop s ON s.stop_id = ss.stop_id
+                WHERE ss.site_id = ?
+                  AND ss.route_type = ?
+                  AND ss.day_type = ?
+                  AND r.min_lat >= ? AND r.max_lat <= ?
+                  AND r.min_lon >= ? AND r.max_lon <= ?
+                """,
+                (
+                    site_id,
+                    route_type,
+                    day_type,
+                    lat - delta,
+                    lat + delta,
+                    lon - delta,
+                    lon + delta,
+                ),
+            ).fetchall()
+        elif use_scope:
+            # stop_scope 없는 구버전 DB 호환용 폴백
             rows = db.execute(
                 """
                 SELECT DISTINCT s.stop_id, s.name, s.lat, s.lon
