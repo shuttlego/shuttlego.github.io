@@ -179,6 +179,33 @@ def haversine_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> 
     return R * c
 
 
+def _nearest_route_stop_for_user(
+    route_stops: list[dict],
+    user_lat: float,
+    user_lng: float,
+    *,
+    exclude_first: bool = False,
+    exclude_last: bool = False,
+) -> dict | None:
+    """노선 정류장 목록에서 사용자 좌표 기준 가장 가까운 정류장을 반환."""
+    if not route_stops:
+        return None
+    start = 1 if exclude_first else 0
+    end = len(route_stops) - (1 if exclude_last else 0)
+    if end <= start:
+        return None
+    candidates = route_stops[start:end]
+    best = min(
+        candidates,
+        key=lambda s: haversine_distance_m(user_lat, user_lng, s["lat"], s["lng"]),
+    )
+    return {
+        "name": best["stop_name"],
+        "lat": best["lat"],
+        "lon": best["lng"],
+    }
+
+
 def search_places(query: str) -> list[dict]:
     if not KAKAO_REST_API_KEY:
         return []
@@ -821,13 +848,20 @@ def api_shuttle_depart_options():
     options = []
     all_last_times = []  # 시간 필터로 빈 결과 시 마지막 출발시간 추적용
     for r in results:
-        ns = r["nearest_stop"]
+        ns = {
+            "name": r["nearest_stop"]["name"],
+            "lat": r["nearest_stop"]["lat"],
+            "lon": r["nearest_stop"]["lon"],
+        }
         route_stops = r["route_stops"]
         terminus = route_stops[-1] if route_stops else None
 
-        # 탑승 정류장과 하차(종착) 정류장이 동일하면 무의미하므로 제외
+        # 탑승 정류장과 하차(종착) 정류장이 동일하면 같은 노선 내에서 대체 탑승 정류장 탐색
         if terminus and ns["name"] == terminus["stop_name"]:
-            continue
+            alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_last=True)
+            if not alt:
+                continue
+            ns = alt
 
         if time_param:
             all_last_times.extend(r["all_departure_times"])
@@ -860,7 +894,7 @@ def api_shuttle_depart_options():
             "operator": ", ".join(r["companies"]),
             "nearest_stop_name": ns["name"],
             "terminus_name": terminus["stop_name"] if terminus else "",
-            "distance_m": r["distance_m"],
+            "distance_m": round(haversine_distance_m(lat, lng, ns["lat"], ns["lon"])),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
         }
@@ -898,9 +932,17 @@ def api_shuttle_depart():
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
 
     r = results[0]
-    ns = r["nearest_stop"]
+    ns = {
+        "name": r["nearest_stop"]["name"],
+        "lat": r["nearest_stop"]["lat"],
+        "lon": r["nearest_stop"]["lon"],
+    }
     route_stops = r["route_stops"]
     terminus = route_stops[-1] if route_stops else None
+    if terminus and ns["name"] == terminus["stop_name"]:
+        alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_last=True)
+        if alt:
+            ns = alt
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -968,13 +1010,20 @@ def api_shuttle_arrive_options():
     options = []
     all_last_times = []
     for r in results:
-        ns = r["nearest_stop"]
+        ns = {
+            "name": r["nearest_stop"]["name"],
+            "lat": r["nearest_stop"]["lat"],
+            "lon": r["nearest_stop"]["lon"],
+        }
         route_stops = r["route_stops"]
         first = route_stops[0] if route_stops else None
 
-        # 탑승(출발) 정류장과 하차 정류장이 동일하면 무의미하므로 제외
+        # 탑승(출발) 정류장과 하차 정류장이 동일하면 같은 노선 내에서 대체 하차 정류장 탐색
         if first and first["stop_name"] == ns["name"]:
-            continue
+            alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_first=True)
+            if not alt:
+                continue
+            ns = alt
 
         if time_param:
             all_last_times.extend(r["all_departure_times"])
@@ -1045,9 +1094,17 @@ def api_shuttle_arrive():
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
 
     r = results[0]
-    ns = r["nearest_stop"]
+    ns = {
+        "name": r["nearest_stop"]["name"],
+        "lat": r["nearest_stop"]["lat"],
+        "lon": r["nearest_stop"]["lon"],
+    }
     route_stops = r["route_stops"]
     first = route_stops[0] if route_stops else None
+    if first and first["stop_name"] == ns["name"]:
+        alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_first=True)
+        if alt:
+            ns = alt
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)

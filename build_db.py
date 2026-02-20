@@ -70,6 +70,14 @@ CREATE TABLE IF NOT EXISTS variant_stop (
     PRIMARY KEY(variant_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS stop_scope (
+    stop_id INTEGER NOT NULL REFERENCES stop(stop_id),
+    site_id TEXT NOT NULL REFERENCES site(site_id),
+    route_type TEXT NOT NULL CHECK(route_type IN ('commute_in','commute_out','shuttle')),
+    day_type TEXT NOT NULL CHECK(day_type IN ('weekday','saturday','holiday','monday','familyday')),
+    PRIMARY KEY(stop_id, site_id, route_type, day_type)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS stop_rtree USING rtree(
     stop_id, min_lat, max_lat, min_lon, max_lon
 );
@@ -77,6 +85,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS stop_rtree USING rtree(
 CREATE INDEX IF NOT EXISTS idx_route_site_type ON route(site_id, route_type);
 CREATE INDEX IF NOT EXISTS idx_variant_route_day ON service_variant(route_id, day_type);
 CREATE INDEX IF NOT EXISTS idx_variant_stop_stop ON variant_stop(stop_id);
+CREATE INDEX IF NOT EXISTS idx_stop_scope_site_type_day ON stop_scope(site_id, route_type, day_type, stop_id);
+CREATE INDEX IF NOT EXISTS idx_stop_scope_stop ON stop_scope(stop_id);
 """
 
 
@@ -336,6 +346,23 @@ def build_database() -> None:
         "INSERT INTO stop_rtree (stop_id, min_lat, max_lat, min_lon, max_lon) "
         "SELECT stop_id, lat, lat, lon, lon FROM stop"
     )
+
+    # 4) stop_scope 동기화
+    # 정류장별로 (site_id, route_type, day_type) 소속 관계를 물리화한다.
+    conn.execute("DELETE FROM stop_scope")
+    conn.execute(
+        """
+        INSERT INTO stop_scope (stop_id, site_id, route_type, day_type)
+        SELECT DISTINCT
+            vs.stop_id,
+            r.site_id,
+            r.route_type,
+            sv.day_type
+        FROM variant_stop vs
+        JOIN service_variant sv ON sv.variant_id = vs.variant_id
+        JOIN route r ON r.route_id = sv.route_id
+        """
+    )
     conn.commit()
 
     # 통계
@@ -345,6 +372,7 @@ def build_database() -> None:
     stop_count = conn.execute("SELECT COUNT(*) FROM stop").fetchone()[0]
     vs_count = conn.execute("SELECT COUNT(*) FROM variant_stop").fetchone()[0]
     rtree_count = conn.execute("SELECT COUNT(*) FROM stop_rtree").fetchone()[0]
+    stop_scope_count = conn.execute("SELECT COUNT(*) FROM stop_scope").fetchone()[0]
 
     print(f"\n=== Build Complete ===")
     print(f"  Sites:            {site_count}")
@@ -352,6 +380,7 @@ def build_database() -> None:
     print(f"  Service Variants: {variant_count}")
     print(f"  Stops:            {stop_count}")
     print(f"  Variant Stops:    {vs_count}")
+    print(f"  Stop Scopes:      {stop_scope_count}")
     print(f"  RTree entries:    {rtree_count}")
     print(f"  DB file:          {DB_PATH}")
 
