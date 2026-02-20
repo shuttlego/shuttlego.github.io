@@ -1278,6 +1278,8 @@
       display: none;
       padding: 6px 16px;
       gap: 6px;
+      align-items: center;
+      position: relative;
     }
     .route-sort-bar.show {
       display: flex;
@@ -1297,6 +1299,84 @@
       background: #333;
       color: #fff;
       border-color: #333;
+    }
+    .route-sort-spacer {
+      flex: 1;
+      min-width: 8px;
+    }
+    .route-distance-trigger {
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      background: #fff;
+      color: #555;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .route-distance-trigger.active {
+      border-color: #bbb;
+      background: #f7f7f7;
+    }
+    .route-distance-popover {
+      display: none;
+      position: absolute;
+      right: 16px;
+      top: calc(100% + 6px);
+      width: 220px;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 8px 18px rgba(0,0,0,.14);
+      z-index: 12;
+    }
+    .route-distance-popover.show {
+      display: block;
+    }
+    .route-distance-title {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 6px;
+    }
+    .route-distance-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 8px;
+      text-align: right;
+    }
+    .route-distance-slider {
+      width: 100%;
+      margin: 0;
+    }
+    .route-distance-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 10px;
+    }
+    .route-distance-confirm {
+      padding: 5px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      color: #333;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .route-distance-confirm:hover {
+      background: #f5f5f5;
+      border-color: #ccc;
+    }
+    @media (max-width: 768px) {
+      .route-distance-popover {
+        right: 8px;
+        width: min(240px, calc(100vw - 40px));
+      }
     }
 
     /* 노선 선택 리스트 (최대 5개) */
@@ -1546,7 +1626,7 @@
       }
       .map-controls {
         right: 12px;
-        bottom: 64px;
+        bottom: calc(env(safe-area-inset-bottom) + 88px);
       }
       .btn-zoom {
         display: none;
@@ -1710,6 +1790,16 @@
         <div class="route-sort-bar" id="routeSortBar">
           <button type="button" class="route-sort-btn active" id="sortByDistance" data-sort="distance">거리순</button>
           <button type="button" class="route-sort-btn" id="sortByTime" data-sort="time">시간순</button>
+          <div class="route-sort-spacer"></div>
+          <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">최대 5 km 이내</button>
+          <div class="route-distance-popover" id="maxDistancePopover" role="dialog" aria-hidden="true">
+            <div class="route-distance-title">최대 정류장 거리</div>
+            <div class="route-distance-value"><span id="maxDistanceValue">5</span> km</div>
+            <input type="range" class="route-distance-slider" id="maxDistanceSlider" min="0" max="30" step="0.5" value="5" />
+            <div class="route-distance-actions">
+              <button type="button" class="route-distance-confirm" id="maxDistanceConfirm">확인</button>
+            </div>
+          </div>
         </div>
         <div class="route-options-wrap" id="routeOptionsWrap"></div>
       </div>
@@ -1854,6 +1944,13 @@
       var routeOptionsWrap = document.getElementById('routeOptionsWrap');
       var routeSortBar = document.getElementById('routeSortBar');
       var currentSortMode = 'distance';
+      var maxDistanceTrigger = document.getElementById('maxDistanceTrigger');
+      var maxDistancePopover = document.getElementById('maxDistancePopover');
+      var maxDistanceSlider = document.getElementById('maxDistanceSlider');
+      var maxDistanceValue = document.getElementById('maxDistanceValue');
+      var maxDistanceConfirm = document.getElementById('maxDistanceConfirm');
+      var maxDistanceKm = 5;
+      var maxDistancePendingKm = 5;
       var resultsPanel = document.getElementById('resultsPanel');
       var panToVisibleCenterRafId = null;
       var ISSUE_PAGE_SIZE = 10;
@@ -1861,19 +1958,21 @@
       var issueHasNextPage = false;
       var issueCurrentState = 'all';
       var issueCurrentView = 'list';
+      if (maxDistanceSlider) {
+        var initMaxDistance = parseFloat(maxDistanceSlider.value);
+        if (isFinite(initMaxDistance)) {
+          maxDistanceKm = initMaxDistance;
+          maxDistancePendingKm = initMaxDistance;
+        }
+      }
 
       function isMobile() {
         return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
       }
       function updateMapControlsPosition() {
         if (!mapControls) return;
-        if (!isMobile() || !resultsPanel) {
-          mapControls.style.bottom = '';
-          return;
-        }
-        var sheetHeight = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
-        if (isNaN(sheetHeight)) sheetHeight = 72;
-        mapControls.style.bottom = (sheetHeight + 12) + 'px';
+        // 위치는 CSS에서 고정 관리한다(모달 상태와 무관).
+        mapControls.style.bottom = '';
       }
       function setSheetState(state) {
         if (!resultsPanel) return;
@@ -2095,10 +2194,11 @@
           refreshLastShuttleResult();
         }
       }
-      function refreshLastShuttleResult() {
+      function refreshLastShuttleResult(opts) {
+        opts = opts || {};
         if (!lastPlace || !lastShuttleType) return;
-        if (lastShuttleType === 'depart') runDepartWithPlace(lastPlace);
-        else runArriveWithPlace(lastPlace);
+        if (lastShuttleType === 'depart') runDepartWithPlace(lastPlace, opts);
+        else runArriveWithPlace(lastPlace, opts);
       }
 
       // ── 요일 선택 (통합 모달 내 칩) ─────────────────────────
@@ -2660,6 +2760,7 @@
       document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
+        closeMaxDistancePopover();
       });
 
       function clearSearchOverlays() {
@@ -3344,6 +3445,76 @@
       var currentIsDepart = null;
       var expandedOptionIndex = -1;
 
+      function formatMaxDistanceKm(value) {
+        var rounded = Math.round(value);
+        if (Math.abs(value - rounded) < 0.001) return String(rounded);
+        return value.toFixed(1);
+      }
+
+      function updateMaxDistanceUi() {
+        var appliedDisplay = formatMaxDistanceKm(maxDistanceKm);
+        var pendingDisplay = formatMaxDistanceKm(maxDistancePendingKm);
+        if (maxDistanceTrigger) maxDistanceTrigger.textContent = '최대 ' + appliedDisplay + ' km 이내';
+        if (maxDistanceValue) maxDistanceValue.textContent = pendingDisplay;
+      }
+
+      function openMaxDistancePopover() {
+        if (!maxDistancePopover || !maxDistanceTrigger) return;
+        maxDistancePendingKm = maxDistanceKm;
+        if (maxDistanceSlider) maxDistanceSlider.value = String(maxDistancePendingKm);
+        updateMaxDistanceUi();
+        maxDistancePopover.classList.add('show');
+        maxDistancePopover.setAttribute('aria-hidden', 'false');
+        maxDistanceTrigger.classList.add('active');
+        maxDistanceTrigger.setAttribute('aria-expanded', 'true');
+      }
+
+      function closeMaxDistancePopover() {
+        if (!maxDistancePopover || !maxDistanceTrigger) return;
+        maxDistancePopover.classList.remove('show');
+        maxDistancePopover.setAttribute('aria-hidden', 'true');
+        maxDistanceTrigger.classList.remove('active');
+        maxDistanceTrigger.setAttribute('aria-expanded', 'false');
+      }
+
+      function toggleMaxDistancePopover() {
+        if (!maxDistancePopover) return;
+        if (maxDistancePopover.classList.contains('show')) closeMaxDistancePopover();
+        else openMaxDistancePopover();
+      }
+
+      function isMaxDistanceControlTarget(target) {
+        if (!target || typeof target.closest !== 'function') return false;
+        return !!(
+          target.closest('#maxDistancePopover') ||
+          target.closest('#maxDistanceTrigger')
+        );
+      }
+
+      function applyMaxDistanceFilter() {
+        var changed = Math.abs(maxDistanceKm - maxDistancePendingKm) > 0.001;
+        maxDistanceKm = maxDistancePendingKm;
+        updateMaxDistanceUi();
+        closeMaxDistancePopover();
+        if (changed && routeOptionsWrap && routeOptionsWrap.classList.contains('show') && lastPlace && lastShuttleType) {
+          refreshLastShuttleResult({ preserveSheetState: isMobile() });
+        }
+      }
+
+      function buildRouteOptionsUrl(endpoint, lat, lng, placeName, excludeRouteIds) {
+        var url = API_BASE + endpoint +
+          '?site_id=' + selectedSiteId +
+          '&lat=' + lat + '&lng=' + lng +
+          '&place_name=' + encodeURIComponent(placeName) +
+          '&time=' + encodeURIComponent(getDepartureTimeStr()) +
+          '&day_type=' + encodeURIComponent(selectedDayType) +
+          '&max_distance_km=' + encodeURIComponent(String(maxDistanceKm));
+        if (excludeRouteIds) {
+          url += '&exclude_route_ids=' + encodeURIComponent(excludeRouteIds);
+        }
+        return url;
+      }
+
       function sortOptions(options, mode) {
         var sorted = options.slice();
         if (mode === 'time') {
@@ -3475,13 +3646,7 @@
         var isDepart = currentIsDepart;
         var endpoint = isDepart ? '/api/shuttle/depart/options' : '/api/shuttle/arrive/options';
         var excludeIds = currentRouteOptions.map(function(o) { return o.route_id; }).join(',');
-        var url = API_BASE + endpoint +
-          '?site_id=' + selectedSiteId +
-          '&lat=' + lat + '&lng=' + lng +
-          '&place_name=' + encodeURIComponent(name) +
-          '&time=' + encodeURIComponent(getDepartureTimeStr()) +
-          '&day_type=' + encodeURIComponent(selectedDayType) +
-          '&exclude_route_ids=' + encodeURIComponent(excludeIds);
+        var url = buildRouteOptionsUrl(endpoint, lat, lng, name, excludeIds);
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -3505,7 +3670,8 @@
           });
       }
 
-      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime) {
+      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState) {
+        var shouldPreserveSheetState = !!preserveSheetState;
         panelTitle.textContent = '노선 선택';
         var btnBack = document.getElementById('btnBackFromRoutes');
         if (btnBack) btnBack.style.display = '';
@@ -3518,8 +3684,10 @@
         currentPlaceName = placeName;
         currentIsDepart = isDepart;
         expandedOptionIndex = -1;
+        routeSortBar.classList.add('show');
+        updateSortButtons();
         if (options.length === 0) {
-          routeSortBar.classList.remove('show');
+          closeMaxDistancePopover();
           clearSearchOverlays();
           clearShuttleOverlays();
           var dirLabel = isDepart ? '출근' : '퇴근';
@@ -3534,15 +3702,13 @@
           emptyMsg.textContent = noRouteMsg;
           routeOptionsWrap.appendChild(emptyMsg);
           showShuttleError(noRouteMsg);
-          if (isMobile()) setSheetState('sheet-half');
+          if (isMobile() && !shouldPreserveSheetState) setSheetState('sheet-half');
           return;
         }
-        routeSortBar.classList.add('show');
-        updateSortButtons();
         var sorted = sortOptions(options, currentSortMode);
         sorted._lastBatchSize = options.length;
         renderRouteCards(sorted, placeName, isDepart);
-        if (isMobile()) setSheetState('sheet-peek');
+        if (isMobile() && !shouldPreserveSheetState) setSheetState('sheet-peek');
       }
 
       function showPlaceResultsView() {
@@ -3550,6 +3716,7 @@
         var btnBack = document.getElementById('btnBackFromRoutes');
         if (btnBack) btnBack.style.display = 'none';
         routeSortBar.classList.remove('show');
+        closeMaxDistancePopover();
         routeOptionsWrap.classList.remove('show');
         routeOptionsWrap.innerHTML = '';
       }
@@ -3583,13 +3750,14 @@
         runDepartWithPlace(place);
       }
 
-      function runDepartWithPlace(place) {
+      function runDepartWithPlace(place, opts) {
+        opts = opts || {};
         lastPlace = place;
         lastShuttleType = 'depart';
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
         var name = place.place_name || '선택한 장소';
-        var url = API_BASE + '/api/shuttle/depart/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr()) + '&day_type=' + encodeURIComponent(selectedDayType);
+        var url = buildRouteOptionsUrl('/api/shuttle/depart/options', lat, lng, name, '');
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -3598,7 +3766,7 @@
               return;
             }
             var options = data.options || [];
-            renderRouteOptions(options, name, true, data.last_departure_time || '');
+            renderRouteOptions(options, name, true, data.last_departure_time || '', opts.preserveSheetState);
           })
           .catch(function() {
             alert('출근 노선 조회에 실패했습니다.');
@@ -3611,13 +3779,14 @@
         runArriveWithPlace(place);
       }
 
-      function runArriveWithPlace(place) {
+      function runArriveWithPlace(place, opts) {
+        opts = opts || {};
         lastPlace = place;
         lastShuttleType = 'arrive';
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
         var name = place.place_name || '선택한 장소';
-        var url = API_BASE + '/api/shuttle/arrive/options?site_id=' + selectedSiteId + '&lat=' + lat + '&lng=' + lng + '&place_name=' + encodeURIComponent(name) + '&time=' + encodeURIComponent(getDepartureTimeStr()) + '&day_type=' + encodeURIComponent(selectedDayType);
+        var url = buildRouteOptionsUrl('/api/shuttle/arrive/options', lat, lng, name, '');
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -3626,7 +3795,7 @@
               return;
             }
             var options = data.options || [];
-            renderRouteOptions(options, name, false, data.last_departure_time || '');
+            renderRouteOptions(options, name, false, data.last_departure_time || '', opts.preserveSheetState);
           })
           .catch(function() {
             alert('퇴근 노선 조회에 실패했습니다.');
@@ -3813,6 +3982,38 @@
           renderRouteCards(sorted, currentPlaceName, currentIsDepart);
         }
       });
+      if (maxDistanceTrigger) {
+        maxDistanceTrigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleMaxDistancePopover();
+        });
+      }
+      if (maxDistancePopover) {
+        maxDistancePopover.addEventListener('click', function(e) {
+          e.stopPropagation();
+        });
+      }
+      if (maxDistanceSlider) {
+        maxDistanceSlider.addEventListener('input', function() {
+          var next = parseFloat(maxDistanceSlider.value);
+          if (!isFinite(next)) return;
+          maxDistancePendingKm = next;
+          updateMaxDistanceUi();
+        });
+      }
+      if (maxDistanceConfirm) {
+        maxDistanceConfirm.addEventListener('click', function() {
+          applyMaxDistanceFilter();
+        });
+      }
+      document.addEventListener('click', function(e) {
+        if (!maxDistancePopover || !maxDistancePopover.classList.contains('show')) return;
+        if (maxDistancePopover.contains(e.target)) return;
+        if (maxDistanceTrigger && maxDistanceTrigger.contains(e.target)) return;
+        closeMaxDistancePopover();
+      });
+      updateMaxDistanceUi();
 
       (function initDepartureClock() {
         setDepartureFromDate(new Date());
@@ -3931,12 +4132,17 @@
           var MOVE_THRESHOLD = 10;
           listWrap.addEventListener('touchstart', function(e) {
             if (!e.touches.length) return;
+            if (isMaxDistanceControlTarget(e.target)) {
+              listGestureMode = 'control';
+              return;
+            }
             listTouchStartY = e.touches[0].clientY;
             listTouchStartScroll = listWrap.scrollTop;
             listGestureMode = null;
           }, { passive: true });
           listWrap.addEventListener('touchmove', function(e) {
             if (!e.touches.length) return;
+            if (listGestureMode === 'control' || isMaxDistanceControlTarget(e.target)) return;
             var currentY = e.touches[0].clientY;
             var deltaY = listTouchStartY - currentY;
             if (listGestureMode === null) {
@@ -3979,12 +4185,6 @@
         updateMapControlsPosition();
         if (isMobile()) {
           setSheetState('sheet-peek');
-          resultsPanel.addEventListener('touchstart', function(e) {
-            if (resultsPanel.classList.contains('sheet-peek')) {
-              e.stopImmediatePropagation();
-              setSheetState('sheet-half');
-            }
-          }, true);
         }
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
