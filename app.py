@@ -93,6 +93,8 @@ _issue_submit_recent_hash: dict[str, float] = {}
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
 _OPTIONS_CANDIDATE_LIMIT = 100
+_DEFAULT_MAX_DISTANCE_KM = 5.0
+_MAX_DISTANCE_KM = 30.0
 
 # ── Prometheus 메트릭 정의 ──────────────────────────────────
 REQUEST_COUNT = Counter(
@@ -226,6 +228,19 @@ def _resolve_route_type(raw: str | None, default: str) -> str:
     if not raw:
         return default
     return _ROUTE_TYPE_COMPAT.get(raw, raw)
+
+
+def _parse_max_distance_km(raw: str | None) -> float:
+    """최대 정류장 거리(km) 파라미터 파싱/검증."""
+    if raw is None or raw.strip() == "":
+        return _DEFAULT_MAX_DISTANCE_KM
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError("max_distance_km은 0~30 범위의 숫자여야 합니다.") from exc
+    if not math.isfinite(value) or value < 0 or value > _MAX_DISTANCE_KM:
+        raise ValueError("max_distance_km은 0~30 범위여야 합니다.")
+    return value
 
 
 class GitHubConfigError(RuntimeError):
@@ -822,8 +837,14 @@ def api_shuttle_depart_options():
     time_param = request.args.get("time", "").strip()
     day_type = request.args.get("day_type", default="weekday")
     exclude_raw = request.args.get("exclude_route_ids", "").strip()
+    max_distance_raw = request.args.get("max_distance_km")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+    try:
+        max_distance_km = _parse_max_distance_km(max_distance_raw)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    max_distance_m = max_distance_km * 1000.0
 
     exclude_ids = []
     if exclude_raw:
@@ -863,6 +884,10 @@ def api_shuttle_depart_options():
                 continue
             ns = alt
 
+        distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
+        if distance_m > max_distance_m:
+            continue
+
         if time_param:
             all_last_times.extend(r["all_departure_times"])
 
@@ -894,7 +919,7 @@ def api_shuttle_depart_options():
             "operator": ", ".join(r["companies"]),
             "nearest_stop_name": ns["name"],
             "terminus_name": terminus["stop_name"] if terminus else "",
-            "distance_m": round(haversine_distance_m(lat, lng, ns["lat"], ns["lon"])),
+            "distance_m": round(distance_m),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
         }
@@ -984,8 +1009,14 @@ def api_shuttle_arrive_options():
     time_param = request.args.get("time", "").strip()
     day_type = request.args.get("day_type", default="weekday")
     exclude_raw = request.args.get("exclude_route_ids", "").strip()
+    max_distance_raw = request.args.get("max_distance_km")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
+    try:
+        max_distance_km = _parse_max_distance_km(max_distance_raw)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    max_distance_m = max_distance_km * 1000.0
 
     exclude_ids = []
     if exclude_raw:
@@ -1025,17 +1056,6 @@ def api_shuttle_arrive_options():
                 continue
             ns = alt
 
-        if time_param:
-            all_last_times.extend(r["all_departure_times"])
-
-        board_time = (
-            get_nearest_departure_time(r["all_departure_times"], time_param)
-            if time_param
-            else None
-        )
-        if time_param and board_time is None:
-            continue
-
         positions = []
         if first:
             positions.append({"lat": first["lat"], "lng": first["lng"], "label": first["stop_name"]})
@@ -1047,6 +1067,19 @@ def api_shuttle_arrive_options():
             f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
         )
         distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
+        if distance_m > max_distance_m:
+            continue
+
+        if time_param:
+            all_last_times.extend(r["all_departure_times"])
+
+        board_time = (
+            get_nearest_departure_time(r["all_departure_times"], time_param)
+            if time_param
+            else None
+        )
+        if time_param and board_time is None:
+            continue
 
         payload = {
             "positions": positions,
