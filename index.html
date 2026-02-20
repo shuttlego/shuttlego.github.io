@@ -329,6 +329,11 @@
     .site-selector-trigger:hover {
       border-color: #fee500;
     }
+    .site-selector-trigger:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      border-color: #e0e0e0;
+    }
     .site-selector-trigger .site-trigger-text {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1820,6 +1825,7 @@
       var issueTitleInput = document.getElementById('issueTitleInput');
       var issueBodyInput = document.getElementById('issueBodyInput');
       var issueNicknameInput = document.getElementById('issueNicknameInput');
+      var mapControls = document.querySelector('.map-controls');
 
       var map = null;
       var overlays = [];
@@ -1859,10 +1865,21 @@
       function isMobile() {
         return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
       }
+      function updateMapControlsPosition() {
+        if (!mapControls) return;
+        if (!isMobile() || !resultsPanel) {
+          mapControls.style.bottom = '';
+          return;
+        }
+        var sheetHeight = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
+        if (isNaN(sheetHeight)) sheetHeight = 72;
+        mapControls.style.bottom = (sheetHeight + 12) + 'px';
+      }
       function setSheetState(state) {
         if (!resultsPanel) return;
         resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
         if (state) resultsPanel.classList.add(state);
+        updateMapControlsPosition();
         if (isMobile() && state) setTimeout(adjustMapForSheet, 80);
       }
 
@@ -2174,8 +2191,14 @@
         var siteTriggerTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
         if (siteTriggerTextEl) siteTriggerTextEl.textContent = opt ? opt.text : '';
       }
+      function setSiteSelectorEnabled(enabled) {
+        if (!siteSelectTrigger) return;
+        siteSelectTrigger.disabled = !enabled;
+        siteSelectTrigger.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+      }
       function openSitePickerModal() {
         if (!sitePickerBackdrop || !sitePickerModal || !sitePickerList) return;
+        if (siteSelectTrigger && siteSelectTrigger.disabled) return;
         var trigger = siteSelectTrigger;
         if (isMobile()) {
           sitePickerModal.style.top = '';
@@ -2563,6 +2586,7 @@
       }
 
       function loadSites() {
+        setSiteSelectorEnabled(false);
         fetch(API_BASE + '/api/sites')
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -2581,13 +2605,15 @@
             }
             selectedSiteId = siteSelect.value;
             updateSiteTriggerText();
+            setSiteSelectorEnabled(true);
           })
           .catch(function() {
             siteSelect.innerHTML = '';
             siteSelect.appendChild(new Option('삼성전자(기흥/화성)', '0000011'));
-            siteSelect.value = '0000013';
-            selectedSiteId = '0000013';
+            siteSelect.value = '0000011';
+            selectedSiteId = '0000011';
             updateSiteTriggerText();
+            setSiteSelectorEnabled(true);
           });
       }
 
@@ -2599,6 +2625,7 @@
       if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
       if (sitePickerModal) sitePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
       updateSiteTriggerText();
+      setSiteSelectorEnabled(false);
 
       if (issueModalTrigger) issueModalTrigger.addEventListener('click', openIssueModal);
       if (issueModalCloseBtn) issueModalCloseBtn.addEventListener('click', closeIssueModal);
@@ -3856,6 +3883,7 @@
           var newH = startHeightPx + (startY - clientY);
           newH = Math.max(heights.peek, Math.min(maxH, newH));
           resultsPanel.style.height = newH + 'px';
+          updateMapControlsPosition();
         }
         function onEnd(clientY) {
           if (!dragging) return;
@@ -3948,6 +3976,7 @@
       if (typeof kakao !== 'undefined' && kakao.maps) {
         initMap();
         loadSites();
+        updateMapControlsPosition();
         if (isMobile()) {
           setSheetState('sheet-peek');
           resultsPanel.addEventListener('touchstart', function(e) {
@@ -3960,6 +3989,7 @@
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
       }
+      window.addEventListener('resize', updateMapControlsPosition);
     };
   </script>
 </body>
