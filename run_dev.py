@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_FILE = os.path.join(PROJECT_DIR, ".env")
@@ -27,6 +28,7 @@ DEFAULT_FRONTEND_PORT = 8080
 DEFAULT_BACKEND_HTTP_PORT = 80
 DEFAULT_BACKEND_HTTPS_PORT = 443
 COMPOSE_TIMEOUT = 60  # 컨테이너 healthy 대기 최대 초
+HEALTH_POLL_INTERVAL_SEC = 1.0
 FRONTEND_PORT = DEFAULT_FRONTEND_PORT
 BACKEND_HTTP_PORT = DEFAULT_BACKEND_HTTP_PORT
 BACKEND_HTTPS_PORT = DEFAULT_BACKEND_HTTPS_PORT
@@ -128,6 +130,34 @@ def configure_runtime_ports(validate_conflict: bool = True) -> None:
 
 # ── Docker Compose ────────────────────────────────────────
 
+def wait_backend_healthy(timeout_sec: int) -> bool:
+    log(
+        "백엔드 health check 대기 … "
+        f"(최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
+    )
+    deadline = time.monotonic() + timeout_sec
+    while True:
+        poll_started = time.monotonic()
+        try:
+            with urllib.request.urlopen(HEALTH_URL, timeout=HEALTH_POLL_INTERVAL_SEC) as resp:
+                if resp.status == 200:
+                    log("백엔드 정상 (healthy)")
+                    return True
+        except Exception:
+            pass
+
+        now = time.monotonic()
+        if now >= deadline:
+            return False
+        sleep_for = min(
+            HEALTH_POLL_INTERVAL_SEC,
+            max(0.0, HEALTH_POLL_INTERVAL_SEC - (now - poll_started)),
+            deadline - now,
+        )
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+
+
 def compose_down() -> None:
     log("Docker Compose 종료 중 …")
     run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -150,22 +180,9 @@ def compose_up() -> None:
         err("docker compose up 실패")
         sys.exit(1)
 
-    # backend healthy 대기
-    log(f"백엔드 health check 대기 … ({HEALTH_URL})")
-    deadline = time.time() + COMPOSE_TIMEOUT
-    while time.time() < deadline:
-        try:
-            import urllib.request
-            with urllib.request.urlopen(HEALTH_URL, timeout=3) as resp:
-                if resp.status == 200:
-                    log("백엔드 정상 (healthy)")
-                    return
-        except Exception:
-            pass
-        time.sleep(1)
-
-    err(f"{COMPOSE_TIMEOUT}초 내에 백엔드가 응답하지 않았습니다")
-    sys.exit(1)
+    if not wait_backend_healthy(COMPOSE_TIMEOUT):
+        err(f"{COMPOSE_TIMEOUT}초 내에 백엔드가 응답하지 않았습니다")
+        sys.exit(1)
 
 
 # ── 프론트엔드 정적 서버 ──────────────────────────────────
