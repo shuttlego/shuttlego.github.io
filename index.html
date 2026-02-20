@@ -98,6 +98,12 @@
       gap: 12px;
       margin-bottom: 12px;
     }
+    .time-picker-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
     .time-picker-modal .time-picker-title {
       font-weight: 600;
       font-size: 16px;
@@ -159,18 +165,27 @@
       flex-shrink: 0;
       pointer-events: none;
     }
-    .time-picker-now {
+    .time-picker-now,
+    .time-picker-five {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
+      min-width: 72px;
+      height: 30px;
       padding: 5px 10px;
       background: #f5f5f5;
       border: 1px solid #e0e0e0;
       border-radius: 6px;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
+      line-height: 1;
       color: #555;
       cursor: pointer;
+      font-family: inherit;
     }
-    .time-picker-now:hover { background: #eee; border-color: #ccc; color: #333; }
+    .time-picker-now:hover,
+    .time-picker-five:hover { background: #eee; border-color: #ccc; color: #333; }
     .time-picker-confirm {
       width: 100%;
       padding: 12px;
@@ -240,6 +255,7 @@
     }
     .search-bar input {
       flex: 1;
+      min-width: 0;
       padding: 12px 16px;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
@@ -258,8 +274,24 @@
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .search-bar button:hover { background: #f5d800; }
+    .search-bar .issue-open-btn {
+      min-width: 44px;
+      width: 44px;
+      padding: 0;
+      border: 1px solid #e0e0e0;
+      background: #fff;
+      color: #333;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+    .search-bar .issue-open-btn:hover {
+      border-color: #fee500;
+      background: #fffde7;
+    }
 
     /* 사업장 선택 (오른쪽 위, 모달 트리거) */
     .site-selector-wrap {
@@ -491,6 +523,392 @@
     }
     .location-permission-modal .location-permission-confirm:hover {
       background: #1565c0;
+    }
+
+    /* 이슈/건의 모달 */
+    .issue-modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 110;
+    }
+    .issue-modal-backdrop.show { display: block; }
+    .issue-modal {
+      display: none;
+      position: fixed;
+      left: 50%;
+      top: 72px;
+      transform: translateX(-50%);
+      width: min(720px, calc(100vw - 32px));
+      max-height: 82vh;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 12px 36px rgba(0,0,0,.2);
+      z-index: 111;
+      overflow: hidden;
+      flex-direction: column;
+    }
+    .issue-modal.show { display: flex; }
+    .issue-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid #eee;
+      flex-shrink: 0;
+    }
+    .issue-modal-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: #222;
+    }
+    .issue-modal-header-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .issue-compose-btn {
+      border: 1px solid #fee500;
+      background: #fffde7;
+      color: #4b3f00;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .issue-compose-btn:hover {
+      background: #fff9c4;
+    }
+    .issue-close-btn {
+      width: 32px;
+      height: 32px;
+      border: 1px solid #e2e2e2;
+      border-radius: 8px;
+      background: #fff;
+      color: #444;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: inherit;
+    }
+    .issue-close-btn:hover {
+      background: #f7f7f7;
+    }
+    .issue-modal-body {
+      padding: 14px 16px 16px;
+      overflow-y: auto;
+      min-height: 0;
+      flex: 1;
+    }
+    .issue-view {
+      display: none;
+    }
+    .issue-view.show {
+      display: block;
+    }
+    .issue-feedback {
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+      border: 1px solid transparent;
+      display: none;
+    }
+    .issue-feedback.show {
+      display: block;
+    }
+    .issue-feedback.info {
+      background: #f5f5f5;
+      border-color: #e0e0e0;
+      color: #555;
+    }
+    .issue-feedback.success {
+      background: #e8f5e9;
+      border-color: #c8e6c9;
+      color: #2e7d32;
+    }
+    .issue-feedback.error {
+      background: #ffebee;
+      border-color: #ffcdd2;
+      color: #c62828;
+    }
+    .issue-list-controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .issue-support-email {
+      display: block;
+      margin-top: 10px;
+      text-align: right;
+      font-size: 12px;
+      color: #9a9a9a;
+    }
+    .issue-state-filter {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+      background: #fff;
+      font-family: inherit;
+    }
+    .issue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .issue-empty {
+      border: 1px dashed #ddd;
+      border-radius: 10px;
+      padding: 24px 14px;
+      color: #888;
+      text-align: center;
+      font-size: 14px;
+    }
+    .issue-card {
+      border: 1px solid #ebebeb;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+    .issue-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #777;
+    }
+    .issue-status-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .2px;
+    }
+    .issue-status-badge.open {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .issue-status-badge.closed {
+      background: #eceff1;
+      color: #455a64;
+    }
+    .issue-card-number {
+      color: #666;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    .issue-card-title {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #222;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .issue-card-body {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .issue-card-footer {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .issue-detail-btn,
+    .issue-external-link {
+      border: none;
+      background: transparent;
+      color: #1976d2;
+      cursor: pointer;
+      padding: 0;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      text-decoration: none;
+    }
+    .issue-detail-btn:hover,
+    .issue-external-link:hover {
+      text-decoration: underline;
+    }
+    .issue-pagination {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .issue-page-btn {
+      min-width: 66px;
+      padding: 7px 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    .issue-page-btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+    .issue-page-info {
+      min-width: 72px;
+      text-align: center;
+      font-size: 13px;
+      color: #555;
+    }
+    .issue-back-btn {
+      border: none;
+      background: transparent;
+      color: #1976d2;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 10px;
+      font-family: inherit;
+    }
+    .issue-detail-title {
+      margin: 0 0 8px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #222;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .issue-detail-body {
+      padding: 12px;
+      border: 1px solid #ececec;
+      border-radius: 10px;
+      background: #fcfcfc;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #444;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .issue-comments-title {
+      margin: 14px 0 8px;
+      font-size: 13px;
+      color: #555;
+      font-weight: 700;
+    }
+    .issue-comments-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .issue-comment-item {
+      border: 1px solid #eee;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+    }
+    .issue-comment-meta {
+      font-size: 12px;
+      color: #777;
+      margin-bottom: 6px;
+    }
+    .issue-comment-body {
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      color: #444;
+      word-break: break-word;
+    }
+    .issue-form-group {
+      margin-bottom: 12px;
+    }
+    .issue-form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #333;
+    }
+    .issue-form-group input,
+    .issue-form-group textarea {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .issue-form-group textarea {
+      min-height: 140px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .issue-form-help {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #777;
+      line-height: 1.4;
+    }
+    .issue-form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .issue-form-btn {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      color: #333;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .issue-form-btn.primary {
+      background: #fee500;
+      border-color: #fee500;
+      color: #2d2d2d;
+    }
+    .issue-form-btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+    @media (max-width: 768px) {
+      .issue-modal {
+        left: 0;
+        right: 0;
+        width: 100%;
+        top: auto;
+        bottom: 0;
+        transform: none;
+        max-height: 82vh;
+        border-radius: 16px 16px 0 0;
+      }
     }
 
     /* 본문: 검색 결과(왼쪽) | 지도(오른쪽) */
@@ -1045,7 +1463,23 @@
         flex: 1 1 100%;
         max-width: none;
       }
-      .search-bar { max-width: none; }
+      .search-bar {
+        max-width: none;
+        gap: 6px;
+      }
+      .search-bar input {
+        min-width: 0;
+        padding: 11px 12px;
+        font-size: 14px;
+      }
+      .search-bar button {
+        padding: 11px 12px;
+      }
+      .search-bar .issue-open-btn {
+        width: 40px;
+        min-width: 40px;
+        font-size: 12px;
+      }
       .site-selector-wrap {
         order: 3;
         flex: 1 1 0;
@@ -1146,6 +1580,7 @@
       <div class="search-bar">
         <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
         <button type="button" id="searchBtn">검색</button>
+        <button type="button" class="issue-open-btn" id="issueModalTrigger" title="제보/이슈 보기">이슈</button>
       </div>
     </div>
     <div class="site-selector-wrap">
@@ -1163,7 +1598,10 @@
   <div class="time-picker-modal" id="timePickerModal" role="dialog" aria-label="요일/출발 시간 선택" style="top: 56px;">
     <div class="time-picker-header">
       <h2 class="time-picker-title">요일 / 출발 시간</h2>
-      <button type="button" class="time-picker-now" id="timePickerNow">현재 시간</button>
+      <div class="time-picker-actions">
+        <button type="button" class="time-picker-five" id="timePickerFive">05:00</button>
+        <button type="button" class="time-picker-now" id="timePickerNow">현재 시간</button>
+      </div>
     </div>
     <div class="time-picker-wheels">
       <div class="time-picker-column day-type-column">
@@ -1192,6 +1630,60 @@
   <div class="location-permission-modal" id="locationPermissionModal" role="dialog" aria-label="위치 권한">
     <p class="location-permission-message" id="locationPermissionMessage"></p>
     <button type="button" class="location-permission-confirm" id="locationPermissionConfirm">확인</button>
+  </div>
+
+  <div class="issue-modal-backdrop" id="issueModalBackdrop" aria-hidden="true"></div>
+  <div class="issue-modal" id="issueModal" role="dialog" aria-label="이슈/건의">
+    <div class="issue-modal-header">
+      <h2 class="issue-modal-title" id="issueModalTitle">이슈 / 건의</h2>
+      <div class="issue-modal-header-actions">
+        <button type="button" class="issue-compose-btn" id="issueComposeBtn">+건의하기</button>
+        <button type="button" class="issue-close-btn" id="issueModalCloseBtn" aria-label="닫기">×</button>
+      </div>
+    </div>
+    <div class="issue-modal-body">
+      <div class="issue-feedback" id="issueFeedback"></div>
+
+      <section class="issue-view show" id="issueListView" aria-label="이슈 목록">
+        <div class="issue-list-controls">
+          <select class="issue-state-filter" id="issueStateFilter" aria-label="이슈 상태 필터">
+            <option value="all">전체</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+        <div class="issue-list" id="issueList"></div>
+        <div class="issue-pagination" id="issuePagination">
+          <button type="button" class="issue-page-btn" id="issuePrevPageBtn">이전</button>
+          <span class="issue-page-info" id="issuePageInfo">1페이지</span>
+          <button type="button" class="issue-page-btn" id="issueNextPageBtn">다음</button>
+        </div>
+        <span class="issue-support-email">support@shuttle-go.com</span>
+      </section>
+
+      <section class="issue-view" id="issueDetailView" aria-label="이슈 상세">
+        <button type="button" class="issue-back-btn" id="issueDetailBackBtn">← 목록으로</button>
+        <div id="issueDetailContent"></div>
+      </section>
+
+      <section class="issue-view" id="issueFormView" aria-label="건의 등록">
+        <form id="issueCreateForm">
+          <div class="issue-form-group">
+            <label for="issueTitleInput">제목</label>
+            <input type="text" id="issueTitleInput" maxlength="120" placeholder="예: 노선 시간표가 실제와 달라요" required />
+          </div>
+          <div class="issue-form-group">
+            <label for="issueBodyInput">내용</label>
+            <textarea id="issueBodyInput" placeholder="불편했던 내용, 재현 방법, 원하는 개선점을 적어주세요." required></textarea>
+            <p class="issue-form-help">작성 내용은 모든 사용자에게 공개됩니다.</p>
+          </div>
+          <div class="issue-form-actions">
+            <button type="button" class="issue-form-btn" id="issueFormCancelBtn">취소</button>
+            <button type="submit" class="issue-form-btn primary" id="issueFormSubmitBtn">등록</button>
+          </div>
+        </form>
+      </section>
+    </div>
   </div>
 
   <main class="main-content">
@@ -1239,11 +1731,26 @@
     </div>
   </main>
 
+  <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
     (function() {
       var host = location.hostname;
-      var isDev = (host === 'localhost' || host === '127.0.0.1' || host === '192.168.219.104' || host == '192.168.123.103');
+      var isDev = (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host.indexOf('192.168.') === 0
+      );
+      var devConfig = window.__SHUTTLE_DEV_CONFIG || {};
+      function resolveDevApiBase() {
+        var useHttps = (location.protocol === 'https:');
+        var scheme = useHttps ? 'https' : 'http';
+        var defaultPort = useHttps ? 443 : 80;
+        var port = Number(useHttps ? devConfig.API_HTTPS_PORT : devConfig.API_HTTP_PORT);
+        if (!port) port = defaultPort;
+        if (!isFinite(port) || port < 1 || port > 65535) port = defaultPort;
+        return (port === defaultPort) ? (scheme + '://' + host) : (scheme + '://' + host + ':' + port);
+      }
       var ENV = {
         // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
         KAKAO_JS_KEY: isDev
@@ -1251,7 +1758,7 @@
           : '39fb0eced397ffdd52bc40427d8a1d91',  // prd: shuttlego.github.io 허용
         // 백엔드 API base URL
         API_BASE: isDev
-          ? 'http://' + host              // dev: Traefik (port 80)
+          ? resolveDevApiBase()           // dev: Traefik (BACKEND_HTTP_PORT)
           : 'https://api.shuttle-go.com'  // prd: Traefik HTTPS
       };
       window.__SHUTTLE_ENV = ENV;
@@ -1287,6 +1794,27 @@
       var departureTriggerText = document.getElementById('departureTriggerText');
       var dayTypeList = document.getElementById('dayTypeList');
       var shuttleMessage = document.getElementById('shuttleMessage');
+      var issueModalTrigger = document.getElementById('issueModalTrigger');
+      var issueModalBackdrop = document.getElementById('issueModalBackdrop');
+      var issueModal = document.getElementById('issueModal');
+      var issueModalCloseBtn = document.getElementById('issueModalCloseBtn');
+      var issueComposeBtn = document.getElementById('issueComposeBtn');
+      var issueFeedback = document.getElementById('issueFeedback');
+      var issueListView = document.getElementById('issueListView');
+      var issueDetailView = document.getElementById('issueDetailView');
+      var issueFormView = document.getElementById('issueFormView');
+      var issueListEl = document.getElementById('issueList');
+      var issueStateFilter = document.getElementById('issueStateFilter');
+      var issuePrevPageBtn = document.getElementById('issuePrevPageBtn');
+      var issueNextPageBtn = document.getElementById('issueNextPageBtn');
+      var issuePageInfo = document.getElementById('issuePageInfo');
+      var issueDetailBackBtn = document.getElementById('issueDetailBackBtn');
+      var issueDetailContent = document.getElementById('issueDetailContent');
+      var issueCreateForm = document.getElementById('issueCreateForm');
+      var issueFormCancelBtn = document.getElementById('issueFormCancelBtn');
+      var issueFormSubmitBtn = document.getElementById('issueFormSubmitBtn');
+      var issueTitleInput = document.getElementById('issueTitleInput');
+      var issueBodyInput = document.getElementById('issueBodyInput');
 
       var map = null;
       var overlays = [];
@@ -1317,6 +1845,11 @@
       var currentSortMode = 'distance';
       var resultsPanel = document.getElementById('resultsPanel');
       var panToVisibleCenterRafId = null;
+      var ISSUE_PAGE_SIZE = 10;
+      var issueCurrentPage = 1;
+      var issueHasNextPage = false;
+      var issueCurrentState = 'all';
+      var issueCurrentView = 'list';
 
       function isMobile() {
         return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
@@ -1411,6 +1944,7 @@
       var timePickerHourList = document.getElementById('timePickerHourList');
       var timePickerMinuteList = document.getElementById('timePickerMinuteList');
       var timePickerConfirm = document.getElementById('timePickerConfirm');
+      var timePickerFive = document.getElementById('timePickerFive');
       var timePickerNow = document.getElementById('timePickerNow');
       var locationPermissionBackdrop = document.getElementById('locationPermissionBackdrop');
       var locationPermissionModal = document.getElementById('locationPermissionModal');
@@ -1515,10 +2049,15 @@
         if (timePickerHourList) timePickerHourList.scrollTop = h * ITEM_HEIGHT;
         if (timePickerMinuteList) timePickerMinuteList.scrollTop = m * ITEM_HEIGHT;
         updateTimePickerSelectedClasses();
-        // 요일도 현재로 리셋
-        pendingDayType = detectDayType();
+        // 요일 기본값은 항상 평일
+        pendingDayType = 'weekday';
         scrollDayTypeToValue(pendingDayType);
         updateDayTypeSelectedClasses();
+      }
+      function setTimePickerToFive() {
+        if (timePickerHourList) timePickerHourList.scrollTop = 5 * ITEM_HEIGHT;
+        if (timePickerMinuteList) timePickerMinuteList.scrollTop = 0;
+        updateTimePickerSelectedClasses();
       }
       function applyTimePicker() {
         var h = getTimePickerScrollIndex(timePickerHourList, 23);
@@ -1621,8 +2160,8 @@
         dayTypeList.scrollTop = idx * DAY_TYPE_ITEM_HEIGHT;
       }
 
-      // 초기화: 요일 자동 감지
-      selectedDayType = detectDayType();
+      // 초기화: 요일 기본값은 평일
+      selectedDayType = 'weekday';
 
       function updateSiteTriggerText() {
         if (!siteSelectTrigger || !siteSelect) return;
@@ -1679,6 +2218,252 @@
         if (sitePickerBackdrop) sitePickerBackdrop.classList.remove('show');
         if (sitePickerModal) sitePickerModal.classList.remove('show');
         if (siteSelectTrigger) siteSelectTrigger.setAttribute('aria-expanded', 'false');
+      }
+
+      function setIssueFeedback(type, message) {
+        if (!issueFeedback) return;
+        if (!message) {
+          issueFeedback.className = 'issue-feedback';
+          issueFeedback.textContent = '';
+          return;
+        }
+        issueFeedback.className = 'issue-feedback show ' + (type || 'info');
+        issueFeedback.textContent = message;
+      }
+
+      function formatIssueDate(iso) {
+        if (!iso) return '-';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '-';
+        return d.getFullYear() + '.' + pad2(d.getMonth() + 1) + '.' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+
+      function setIssueView(view) {
+        issueCurrentView = view;
+        if (issueListView) issueListView.classList.toggle('show', view === 'list');
+        if (issueDetailView) issueDetailView.classList.toggle('show', view === 'detail');
+        if (issueFormView) issueFormView.classList.toggle('show', view === 'form');
+        if (issueComposeBtn) issueComposeBtn.style.display = (view === 'list') ? '' : 'none';
+      }
+
+      function renderIssuePagination(pagination) {
+        var page = pagination && pagination.page ? pagination.page : 1;
+        var hasPrev = !!(pagination && pagination.has_prev);
+        var hasNext = !!(pagination && pagination.has_next);
+        var totalCount = pagination ? pagination.total_count : null;
+        issueCurrentPage = page;
+        issueHasNextPage = hasNext;
+        if (issuePrevPageBtn) issuePrevPageBtn.disabled = !hasPrev;
+        if (issueNextPageBtn) issueNextPageBtn.disabled = !hasNext;
+        if (issuePageInfo) {
+          if (typeof totalCount === 'number' && totalCount >= 0) {
+            var totalPages = Math.max(1, Math.ceil(totalCount / ISSUE_PAGE_SIZE));
+            issuePageInfo.textContent = page + ' / ' + totalPages + '페이지';
+          } else {
+            issuePageInfo.textContent = page + '페이지';
+          }
+        }
+      }
+
+      function renderIssueList(issues) {
+        if (!issueListEl) return;
+        issueListEl.innerHTML = '';
+        if (!issues || issues.length === 0) {
+          issueListEl.innerHTML = '<div class="issue-empty">등록된 이슈가 없습니다.</div>';
+          return;
+        }
+
+        issues.forEach(function(issue) {
+          var status = (issue.state || 'open').toLowerCase();
+          var statusClass = status === 'closed' ? 'closed' : 'open';
+          var statusLabel = status === 'closed' ? 'CLOSED' : 'OPEN';
+          var bodyPreview = (issue.body || '').trim();
+          if (bodyPreview.length > 180) bodyPreview = bodyPreview.slice(0, 180) + '...';
+          var card = document.createElement('article');
+          card.className = 'issue-card';
+          card.innerHTML =
+            '<div class="issue-card-top">' +
+              '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
+              '<span class="issue-card-number">#' + issue.number + '</span></div>' +
+              '<div>' + formatIssueDate(issue.updated_at || issue.created_at) + '</div>' +
+            '</div>' +
+            '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
+            '<div class="issue-card-body">' + (bodyPreview ? escapeHtml(bodyPreview).replace(/\n/g, '<br>') : '-') + '</div>' +
+            '<div class="issue-card-footer">' +
+              '<button type="button" class="issue-detail-btn" data-number="' + issue.number + '">내용/댓글 보기</button>' +
+              '<div>댓글 ' + (issue.comments || 0) + '개</div>' +
+            '</div>';
+          issueListEl.appendChild(card);
+        });
+
+        issueListEl.querySelectorAll('.issue-detail-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var no = this.getAttribute('data-number');
+            if (!no) return;
+            openIssueDetail(parseInt(no, 10));
+          });
+        });
+      }
+
+      function loadIssues(page, preserveFeedback) {
+        if (!issueListEl) return;
+        var targetPage = page || 1;
+        if (!preserveFeedback) setIssueFeedback('info', '이슈 목록을 불러오는 중입니다...');
+        issueListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
+
+        var url = API_BASE + '/api/issues?state=' + encodeURIComponent(issueCurrentState) +
+          '&page=' + targetPage +
+          '&per_page=' + ISSUE_PAGE_SIZE;
+
+        fetch(url)
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '이슈 목록 조회에 실패했습니다.');
+            }
+            var data = result.data || {};
+            var issues = data.issues || [];
+            var pagination = data.pagination || {};
+            renderIssueList(issues);
+            renderIssuePagination(pagination);
+            if (!preserveFeedback) setIssueFeedback('', '');
+          })
+          .catch(function(err) {
+            issueListEl.innerHTML = '<div class="issue-empty">목록을 불러오지 못했습니다.</div>';
+            renderIssuePagination({ page: targetPage, has_prev: targetPage > 1, has_next: false });
+            setIssueFeedback('error', err.message || '이슈 목록 조회에 실패했습니다.');
+          });
+      }
+
+      function openIssueDetail(issueNumber) {
+        if (!issueDetailContent || !issueNumber) return;
+        setIssueView('detail');
+        issueDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
+
+        fetch(API_BASE + '/api/issues/' + issueNumber)
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '이슈 상세 조회에 실패했습니다.');
+            }
+            var payload = result.data || {};
+            var issue = payload.issue || {};
+            var comments = payload.comments || [];
+            var status = (issue.state || 'open').toLowerCase();
+            var statusClass = status === 'closed' ? 'closed' : 'open';
+            var statusLabel = status === 'closed' ? 'CLOSED' : 'OPEN';
+            var commentsHtml = '';
+            if (!comments.length) {
+              commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
+            } else {
+              commentsHtml = comments.map(function(comment) {
+                return (
+                  '<div class="issue-comment-item">' +
+                    '<div class="issue-comment-meta">' +
+                      '<strong>' + escapeHtml(comment.user || 'unknown') + '</strong>' +
+                      ' · ' + formatIssueDate(comment.created_at) +
+                    '</div>' +
+                    '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
+                  '</div>'
+                );
+              }).join('');
+            }
+
+            issueDetailContent.innerHTML =
+              '<div class="issue-card-top">' +
+                '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span><span class="issue-card-number">#' + issue.number + '</span></div>' +
+                '<div>' + formatIssueDate(issue.updated_at || issue.created_at) + '</div>' +
+              '</div>' +
+              '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
+              '<div class="issue-detail-body">' + (issue.body ? escapeHtml(issue.body).replace(/\n/g, '<br>') : '-') + '</div>' +
+              '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
+              '<div class="issue-comments-list">' + commentsHtml + '</div>';
+          })
+          .catch(function(err) {
+            issueDetailContent.innerHTML = '<div class="issue-empty">' + escapeHtml(err.message || '상세 조회에 실패했습니다.') + '</div>';
+          });
+      }
+
+      function openIssueCreateView() {
+        setIssueView('form');
+        if (issueTitleInput) issueTitleInput.focus();
+      }
+
+      function backToIssueList() {
+        setIssueView('list');
+        setIssueFeedback('', '');
+      }
+
+      function openIssueModal() {
+        if (!issueModalBackdrop || !issueModal) return;
+        issueCurrentPage = 1;
+        issueCurrentState = issueStateFilter ? issueStateFilter.value : 'all';
+        setIssueView('list');
+        issueModalBackdrop.classList.add('show');
+        issueModal.classList.add('show');
+        loadIssues(1, false);
+      }
+
+      function closeIssueModal() {
+        if (issueModalBackdrop) issueModalBackdrop.classList.remove('show');
+        if (issueModal) issueModal.classList.remove('show');
+        setIssueFeedback('', '');
+      }
+
+      function submitIssueForm(e) {
+        e.preventDefault();
+        if (!issueTitleInput || !issueBodyInput) return;
+        var title = issueTitleInput.value.trim();
+        var body = issueBodyInput.value.trim();
+        if (!title) {
+          setIssueFeedback('error', '제목을 입력해 주세요.');
+          return;
+        }
+        if (!body) {
+          setIssueFeedback('error', '내용을 입력해 주세요.');
+          return;
+        }
+
+        if (issueFormSubmitBtn) issueFormSubmitBtn.disabled = true;
+        setIssueFeedback('info', '건의를 등록하는 중입니다...');
+
+        fetch(API_BASE + '/api/issues', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: title,
+            body: body
+          })
+        })
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '건의 등록에 실패했습니다.');
+            }
+            if (issueCreateForm) issueCreateForm.reset();
+            setIssueView('list');
+            setIssueFeedback('success', '건의가 등록되었습니다.');
+            issueCurrentPage = 1;
+            loadIssues(1, true);
+          })
+          .catch(function(err) {
+            setIssueFeedback('error', err.message || '건의 등록에 실패했습니다.');
+          })
+          .finally(function() {
+            if (issueFormSubmitBtn) issueFormSubmitBtn.disabled = false;
+          });
       }
 
       function updatePinScale() {
@@ -1807,6 +2592,41 @@
       if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
       if (sitePickerModal) sitePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
       updateSiteTriggerText();
+
+      if (issueModalTrigger) issueModalTrigger.addEventListener('click', openIssueModal);
+      if (issueModalCloseBtn) issueModalCloseBtn.addEventListener('click', closeIssueModal);
+      if (issueModalBackdrop) issueModalBackdrop.addEventListener('click', closeIssueModal);
+      if (issueModal) issueModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      if (issueComposeBtn) issueComposeBtn.addEventListener('click', openIssueCreateView);
+      if (issueDetailBackBtn) issueDetailBackBtn.addEventListener('click', backToIssueList);
+      if (issueFormCancelBtn) issueFormCancelBtn.addEventListener('click', function() {
+        setIssueView('list');
+        setIssueFeedback('', '');
+      });
+      if (issueCreateForm) issueCreateForm.addEventListener('submit', submitIssueForm);
+      if (issueStateFilter) {
+        issueStateFilter.addEventListener('change', function() {
+          issueCurrentState = issueStateFilter.value;
+          issueCurrentPage = 1;
+          loadIssues(1, false);
+        });
+      }
+      if (issuePrevPageBtn) {
+        issuePrevPageBtn.addEventListener('click', function() {
+          if (issueCurrentPage <= 1) return;
+          loadIssues(issueCurrentPage - 1, false);
+        });
+      }
+      if (issueNextPageBtn) {
+        issueNextPageBtn.addEventListener('click', function() {
+          if (!issueHasNextPage) return;
+          loadIssues(issueCurrentPage + 1, false);
+        });
+      }
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
+      });
 
       function clearSearchOverlays() {
         overlays.forEach(function(o) { o.setMap(null); });
@@ -1976,6 +2796,9 @@
       }
 
       function showBubbleAtPosition(lat, lng) {
+        if (searchInput && document.activeElement === searchInput) {
+          searchInput.blur();
+        }
         closeBubble();
         var place = {
           place_name: '선택한 위치',
@@ -2967,6 +3790,7 @@
           });
         }
         if (timePickerConfirm) timePickerConfirm.addEventListener('click', applyTimePicker);
+        if (timePickerFive) timePickerFive.addEventListener('click', setTimePickerToFive);
         if (timePickerNow) timePickerNow.addEventListener('click', setTimePickerToNow);
         if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', closeTimePickerModal);
         if (timePickerModal) timePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
