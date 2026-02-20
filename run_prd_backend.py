@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""shuttle-go 프로덕션 백엔드 실행 스크립트
+"""shuttle-go 프로덕션 백엔드 스택 실행 스크립트
 
-Docker Compose로 backend 서비스만 빌드/실행한다.
+Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, grafana)을
+빌드/실행한다. 컨테이너가 올라오면 스크립트는 즉시 종료된다.
 
 사용법:
-    python run_prd_backend.py                  # backend 빌드 + 시작
-    python run_prd_backend.py --down           # backend 컨테이너 종료/삭제
+    python run_prd_backend.py                  # 전체 스택 빌드 + 시작
+    python run_prd_backend.py --down           # 전체 스택 종료
     python run_prd_backend.py --timeout 120    # health check 타임아웃 변경(초)
 """
 
@@ -90,21 +91,23 @@ def wait_backend_healthy(timeout_sec: int) -> bool:
     return False
 
 
-def compose_backend_down() -> None:
-    log("backend 컨테이너 종료/삭제 중 …")
-    run(
-        f"docker compose rm -sf {BACKEND_SERVICE}",
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    log("backend 종료/삭제 완료")
+def compose_down() -> None:
+    log("Docker Compose 전체 종료 중 …")
+    run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log("Docker Compose 전체 종료 완료")
 
 
-def compose_backend_up(timeout_sec: int) -> None:
-    log("backend 빌드 & 시작 …")
-    ret = run(f"docker compose up -d --build {BACKEND_SERVICE}")
+def compose_up(timeout_sec: int) -> None:
+    # 기존 스택이 떠 있으면 clean restart
+    result = run("docker compose ps -q", capture_output=True, text=True)
+    if result.stdout.strip():
+        log("기존 컨테이너 감지 → 재시작합니다 …")
+        run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    log("Docker Compose 전체 빌드 & 시작 …")
+    ret = run("docker compose up -d --build")
     if ret.returncode != 0:
-        err("backend 시작 실패 (docker compose up -d --build backend)")
+        err("docker compose up -d --build 실패")
         sys.exit(1)
 
     if not wait_backend_healthy(timeout_sec):
@@ -112,15 +115,16 @@ def compose_backend_up(timeout_sec: int) -> None:
 
     print()
     log("═══════════════════════════════════════════")
-    log("  backend 서비스 실행 완료")
-    log("  확인: docker compose ps backend")
+    log("  Docker Compose 서비스 실행 완료")
+    log("  확인: docker compose ps")
     log("═══════════════════════════════════════════")
+    run("docker compose ps")
     print()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="shuttle-go 프로덕션 백엔드 실행")
-    parser.add_argument("--down", action="store_true", help="backend 컨테이너 종료/삭제")
+    parser = argparse.ArgumentParser(description="shuttle-go 프로덕션 백엔드 스택 실행")
+    parser.add_argument("--down", action="store_true", help="Docker Compose 전체 종료")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -134,10 +138,10 @@ def main() -> None:
         sys.exit(1)
 
     if args.down:
-        compose_backend_down()
+        compose_down()
         return
 
-    compose_backend_up(args.timeout)
+    compose_up(args.timeout)
 
 
 if __name__ == "__main__":
