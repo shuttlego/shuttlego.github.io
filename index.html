@@ -293,6 +293,219 @@
       background: #fffde7;
     }
 
+    /* 노선 선택 화면 전용 헤더 */
+    .route-mode-header {
+      display: none;
+      width: 100%;
+      max-width: 642px;
+      min-width: 0;
+      margin: 0 auto;
+      grid-template-columns: minmax(0, 600px) auto;
+      column-gap: 12px;
+      row-gap: 0;
+      align-items: center;
+    }
+    .header.route-mode {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .header.route-mode .header-center {
+      display: none;
+    }
+    .header.route-mode .route-mode-header {
+      display: grid;
+      order: 1;
+      flex: 1 0 100%;
+      width: 100%;
+      max-width: 642px;
+      margin: 0 auto;
+    }
+    .header.route-mode .header-left {
+      order: 2;
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .header.route-mode .site-selector-wrap {
+      order: 2;
+      display: block;
+      margin-left: auto;
+    }
+    .route-mode-topline {
+      display: contents;
+    }
+    .route-mode-left {
+      grid-column: 1;
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .route-mode-row-label {
+      flex-shrink: 0;
+      width: 32px;
+      color: #666;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
+      text-align: left;
+    }
+    .route-mode-actions {
+      grid-column: 2;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+    }
+    .route-mode-back-btn {
+      height: 42px;
+      min-width: 48px;
+      padding: 0 10px;
+      border: 1px solid #d8d8d8;
+      border-radius: 8px;
+      background: #efefef;
+      color: #333;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+    .route-mode-back-btn:hover {
+      background: #e5e5e5;
+      border-color: #cfcfcf;
+    }
+    .route-mode-issue-btn {
+      height: 42px;
+      min-width: 44px;
+      width: 44px;
+      padding: 0;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      color: #333;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .route-mode-issue-btn:hover {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    .header.route-mode .route-mode-issue-btn {
+      display: none;
+    }
+    .route-mode-secondline {
+      grid-column: 1;
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .route-mode-place-label {
+      display: flex;
+      align-items: center;
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      color: #222;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .route-endpoint-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      color: #333;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+    }
+    .route-endpoint-trigger:hover {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    .route-endpoint-trigger:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      border-color: #e0e0e0;
+      background: #f8f8f8;
+    }
+    .route-endpoint-trigger .endpoint-trigger-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .route-endpoint-trigger .endpoint-trigger-arrow {
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 4px solid #666;
+      flex-shrink: 0;
+    }
+    .route-mode-hidden {
+      display: none !important;
+    }
+
+    @media (min-width: 769px) {
+      .header.route-mode {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-rows: auto;
+        align-items: start;
+        justify-content: stretch;
+        column-gap: 16px;
+      }
+      .header.route-mode .route-mode-header {
+        grid-column: 2;
+        grid-row: 1;
+        width: 100%;
+        max-width: 642px;
+        justify-self: center;
+        margin: 0;
+      }
+      .header.route-mode .header-left {
+        grid-column: 1;
+        grid-row: 1;
+        justify-self: start;
+        align-self: start;
+        flex: 0 0 auto;
+        width: auto;
+      }
+      .header.route-mode .site-selector-wrap {
+        grid-column: 3;
+        grid-row: 1;
+        justify-self: end;
+        align-self: start;
+        margin-left: 0;
+      }
+    }
+
     /* 사업장 선택 (오른쪽 위, 모달 트리거) */
     .site-selector-wrap {
       flex-shrink: 0;
@@ -429,6 +642,192 @@
         border-radius: 16px 16px 0 0;
       }
       .site-picker-modal .site-picker-title {
+        padding: 20px 16px 12px;
+      }
+    }
+
+    /* 노선 endpoint 선택 모달 */
+    .endpoint-picker-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.4);
+      z-index: 108;
+    }
+    .endpoint-picker-backdrop.show { display: block; }
+    .endpoint-picker-modal {
+      display: none;
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      max-width: 360px;
+      max-height: 70vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.2);
+      z-index: 109;
+      padding: 0;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .endpoint-picker-modal.show { display: flex; }
+    .endpoint-picker-title-row {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0;
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid #eee;
+    }
+    .endpoint-picker-title {
+      font-weight: 700;
+      font-size: 16px;
+      color: #222;
+      margin: 0;
+      padding: 0;
+    }
+    .endpoint-picker-confirm-btn {
+      flex-shrink: 0;
+      height: 30px;
+      padding: 0 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      color: #333;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .endpoint-picker-confirm-btn:hover {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    .endpoint-picker-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0;
+    }
+    .endpoint-picker-list-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px 6px;
+      background: #fff;
+      border-bottom: 1px solid #f2f2f2;
+    }
+    .endpoint-picker-all-toggle {
+      border: 1px solid #ddd;
+      border-radius: 999px;
+      background: #fff;
+      color: #333;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .endpoint-picker-all-toggle:hover {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    .endpoint-picker-all-toggle.selected {
+      border-color: #e0c500;
+      background: #fff9c4;
+      color: #1a1a1a;
+    }
+    .endpoint-picker-list-count-label {
+      flex-shrink: 0;
+      min-width: 42px;
+      text-align: right;
+      font-size: 11px;
+      font-weight: 700;
+      color: #777;
+    }
+    .endpoint-picker-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border: none;
+      background: transparent;
+      color: #333;
+      text-align: left;
+      padding: 12px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .endpoint-picker-item .endpoint-item-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .endpoint-picker-item .endpoint-item-check {
+      width: 14px;
+      text-align: center;
+      color: #2e7d32;
+      font-size: 12px;
+      font-weight: 800;
+      visibility: hidden;
+      flex-shrink: 0;
+    }
+    .endpoint-picker-item.selected .endpoint-item-check {
+      visibility: visible;
+    }
+    .endpoint-picker-item:hover {
+      background: #fffde7;
+    }
+    .endpoint-picker-item.selected {
+      background: #fff9c4;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .endpoint-picker-item .endpoint-item-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .endpoint-picker-item .endpoint-item-meta {
+      flex-shrink: 0;
+      color: #666;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .endpoint-picker-item.selected .endpoint-item-meta {
+      color: #333;
+    }
+    @media (min-width: 769px) {
+      .endpoint-picker-modal {
+        left: auto;
+        right: auto;
+        min-width: 320px;
+      }
+    }
+    @media (max-width: 768px) {
+      .endpoint-picker-modal {
+        left: 0;
+        right: 0;
+        max-width: none;
+        bottom: 0;
+        top: auto;
+        max-height: 56vh;
+        border-radius: 16px 16px 0 0;
+      }
+      .endpoint-picker-title-row {
         padding: 20px 16px 12px;
       }
     }
@@ -827,6 +1226,37 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+    }
+    .issue-comment-compose {
+      margin-top: 12px;
+      border: 1px solid #ececec;
+      border-radius: 10px;
+      background: #fafafa;
+      padding: 10px;
+    }
+    .issue-comment-compose-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .issue-comment-compose textarea {
+      width: 100%;
+      min-height: 92px;
+      resize: vertical;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      font-family: inherit;
+      box-sizing: border-box;
+      background: #fff;
+    }
+    .issue-comment-compose-actions {
+      margin-top: 8px;
+      display: flex;
+      justify-content: flex-end;
     }
     .issue-comment-item {
       border: 1px solid #eee;
@@ -1535,6 +1965,16 @@
         flex-wrap: wrap;
         gap: 10px;
       }
+      .header.route-mode {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 12px;
+      }
+      .header.route-mode .route-mode-header {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+      }
       .header-left {
         order: 2;
         flex: 1 1 0;
@@ -1570,11 +2010,41 @@
         flex: 1 1 0;
         min-width: 0;
       }
+      .header.route-mode .header-left {
+        order: 2;
+        flex: 1 1 0;
+      }
+      .header.route-mode .site-selector-wrap {
+        order: 2;
+        flex: 0 0 auto;
+      }
       .site-selector-wrap select { min-width: 0; width: 100%; }
       .site-selector-trigger {
         display: flex;
         width: 100%;
         max-width: none;
+      }
+      .header.route-mode .site-selector-trigger {
+        width: auto;
+        max-width: 52vw;
+      }
+      .route-mode-back-btn {
+        height: 40px;
+        width: 48px;
+        min-width: 48px;
+        padding: 0;
+      }
+      .route-mode-issue-btn {
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+        font-size: 12px;
+      }
+      .route-mode-place-label,
+      .route-endpoint-trigger {
+        min-height: 40px;
+        font-size: 13px;
+        padding: 9px 10px;
       }
 
       .main-content {
@@ -1677,6 +2147,30 @@
         <span class="site-trigger-arrow"></span>
       </button>
     </div>
+    <div class="route-mode-header" id="routeModeHeader" aria-hidden="true">
+      <div class="route-mode-topline">
+        <div class="route-mode-left">
+          <span class="route-mode-row-label">출발</span>
+          <div class="route-mode-place-label" id="routeTopPlaceLabel"></div>
+          <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeTopEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
+            <span class="endpoint-trigger-text" id="routeTopEndpointTriggerText">선택</span>
+            <span class="endpoint-trigger-arrow"></span>
+          </button>
+        </div>
+        <div class="route-mode-actions">
+          <button type="button" class="route-mode-back-btn" id="routeHeaderBackBtn">뒤로</button>
+          <button type="button" class="route-mode-issue-btn" id="routeIssueModalTrigger" title="제보/이슈 보기">이슈</button>
+        </div>
+      </div>
+      <div class="route-mode-secondline">
+        <span class="route-mode-row-label">도착</span>
+        <div class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel"></div>
+        <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeBottomEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
+          <span class="endpoint-trigger-text" id="routeBottomEndpointTriggerText">선택</span>
+          <span class="endpoint-trigger-arrow"></span>
+        </button>
+      </div>
+    </div>
   </header>
 
   <div class="time-picker-backdrop" id="timePickerBackdrop" aria-hidden="true"></div>
@@ -1709,6 +2203,15 @@
   <div class="site-picker-modal" id="sitePickerModal" role="dialog" aria-label="사업장 선택">
     <h2 class="site-picker-title">사업장 선택</h2>
     <div class="site-picker-list" id="sitePickerList" role="listbox"></div>
+  </div>
+
+  <div class="endpoint-picker-backdrop" id="endpointPickerBackdrop" aria-hidden="true"></div>
+  <div class="endpoint-picker-modal" id="endpointPickerModal" role="dialog" aria-label="노선 endpoint 선택">
+    <div class="endpoint-picker-title-row">
+      <h2 class="endpoint-picker-title" id="endpointPickerTitle">선택</h2>
+      <button type="button" class="endpoint-picker-confirm-btn" id="endpointPickerConfirmBtn">확인</button>
+    </div>
+    <div class="endpoint-picker-list" id="endpointPickerList" role="listbox"></div>
   </div>
 
   <div class="location-permission-backdrop" id="locationPermissionBackdrop" aria-hidden="true"></div>
@@ -1883,6 +2386,7 @@
       var resultsPlaceholder = document.getElementById('resultsPlaceholder');
       var resultsList = document.getElementById('resultsList');
       var panelTitle = document.getElementById('panelTitle');
+      var headerEl = document.querySelector('.header');
       var btnLocation = document.getElementById('btnLocation');
       var siteSelect = document.getElementById('siteSelect');
       var siteSelectTrigger = document.getElementById('siteSelectTrigger');
@@ -1894,6 +2398,7 @@
       var dayTypeList = document.getElementById('dayTypeList');
       var shuttleMessage = document.getElementById('shuttleMessage');
       var issueModalTrigger = document.getElementById('issueModalTrigger');
+      var routeIssueModalTrigger = document.getElementById('routeIssueModalTrigger');
       var issueModalBackdrop = document.getElementById('issueModalBackdrop');
       var issueModal = document.getElementById('issueModal');
       var issueModalCloseBtn = document.getElementById('issueModalCloseBtn');
@@ -1916,6 +2421,19 @@
       var issueBodyInput = document.getElementById('issueBodyInput');
       var issueNicknameInput = document.getElementById('issueNicknameInput');
       var mapControls = document.querySelector('.map-controls');
+      var routeModeHeader = document.getElementById('routeModeHeader');
+      var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
+      var routeBottomPlaceLabel = document.getElementById('routeBottomPlaceLabel');
+      var routeTopEndpointTrigger = document.getElementById('routeTopEndpointTrigger');
+      var routeBottomEndpointTrigger = document.getElementById('routeBottomEndpointTrigger');
+      var routeTopEndpointTriggerText = document.getElementById('routeTopEndpointTriggerText');
+      var routeBottomEndpointTriggerText = document.getElementById('routeBottomEndpointTriggerText');
+      var routeHeaderBackBtn = document.getElementById('routeHeaderBackBtn');
+      var endpointPickerBackdrop = document.getElementById('endpointPickerBackdrop');
+      var endpointPickerModal = document.getElementById('endpointPickerModal');
+      var endpointPickerTitle = document.getElementById('endpointPickerTitle');
+      var endpointPickerConfirmBtn = document.getElementById('endpointPickerConfirmBtn');
+      var endpointPickerList = document.getElementById('endpointPickerList');
 
       var map = null;
       var overlays = [];
@@ -1958,6 +2476,14 @@
       var issueHasNextPage = false;
       var issueCurrentState = 'all';
       var issueCurrentView = 'list';
+      var routeModeDirection = null;
+      var routeModePlaceName = '';
+      var endpointOptions = [];
+      var selectedEndpoints = new Set();
+      var endpointDraftEndpoints = null;
+      var endpointSelectionByContext = {};
+      var endpointContextKey = '';
+      var routeRequestSerial = 0;
       if (maxDistanceSlider) {
         var initMaxDistance = parseFloat(maxDistanceSlider.value);
         if (isFinite(initMaxDistance)) {
@@ -1991,6 +2517,320 @@
         overlays.forEach(function(o) { bounds.extend(o.getPosition()); });
         map.setBounds(bounds);
         map.panBy(0, Math.round(sheetHeight / 2));
+      }
+
+      function cloneStringSet(src) {
+        var out = new Set();
+        if (!src || typeof src.forEach !== 'function') return out;
+        src.forEach(function(v) { out.add(v); });
+        return out;
+      }
+
+      function getEndpointKindLabel(direction) {
+        return direction === 'depart' ? '출근 종착지' : '퇴근 출발지';
+      }
+
+      function getEndpointContextKey(direction) {
+        return selectedSiteId + '|' + selectedDayType + '|' + direction;
+      }
+
+      function isAllEndpointsSelected(selectionSet) {
+        var setRef = selectionSet || selectedEndpoints;
+        return endpointOptions.length > 0 && setRef.size === endpointOptions.length;
+      }
+
+      function areStringSetsEqual(a, b) {
+        if (a === b) return true;
+        if (!a || !b) return false;
+        if (a.size !== b.size) return false;
+        var ok = true;
+        a.forEach(function(v) {
+          if (!b.has(v)) ok = false;
+        });
+        return ok;
+      }
+
+      function getSelectedEndpointRouteCount() {
+        if (endpointOptions.length === 0 || selectedEndpoints.size === 0) return 0;
+        var sum = 0;
+        endpointOptions.forEach(function(opt) {
+          if (selectedEndpoints.has(opt.endpoint_name)) {
+            sum += (opt.route_count || 0);
+          }
+        });
+        return sum;
+      }
+
+      function getSelectedEndpointNamesSorted() {
+        var names = [];
+        selectedEndpoints.forEach(function(name) { names.push(name); });
+        names.sort(function(a, b) { return a.localeCompare(b, 'ko'); });
+        return names;
+      }
+
+      function getEndpointTriggerSummaryText() {
+        if (endpointOptions.length === 0) return '선택 옵션 없음';
+        if (selectedEndpoints.size === 0) return '선택 없음';
+        var selectedOptions = endpointOptions.filter(function(opt) {
+          return selectedEndpoints.has(opt.endpoint_name);
+        });
+        if (selectedOptions.length === 0) return '선택 없음';
+        selectedOptions.sort(function(a, b) {
+          var diff = (b.route_count || 0) - (a.route_count || 0);
+          if (diff !== 0) return diff;
+          return a.endpoint_name.localeCompare(b.endpoint_name, 'ko');
+        });
+        var head = selectedOptions[0].endpoint_name;
+        if (!head) return '선택 없음';
+        if (selectedOptions.length === 1) return head;
+        return head + ' 외 ' + (selectedOptions.length - 1) + '개';
+      }
+
+      function setEndpointTriggerEnabled(enabled) {
+        if (routeTopEndpointTrigger) routeTopEndpointTrigger.disabled = !enabled;
+        if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.disabled = !enabled;
+      }
+
+      function updateEndpointTriggerText() {
+        var text = getEndpointTriggerSummaryText();
+        if (routeTopEndpointTriggerText) routeTopEndpointTriggerText.textContent = text;
+        if (routeBottomEndpointTriggerText) routeBottomEndpointTriggerText.textContent = text;
+      }
+
+      function persistCurrentEndpointSelection() {
+        if (!endpointContextKey) return;
+        endpointSelectionByContext[endpointContextKey] = {
+          selected: cloneStringSet(selectedEndpoints)
+        };
+      }
+
+      function applyEndpointPickerSelection() {
+        if (!endpointDraftEndpoints) return false;
+        var changed = !areStringSetsEqual(selectedEndpoints, endpointDraftEndpoints);
+        if (changed) {
+          selectedEndpoints = cloneStringSet(endpointDraftEndpoints);
+          persistCurrentEndpointSelection();
+          updateEndpointTriggerText();
+        }
+        endpointDraftEndpoints = null;
+        return changed;
+      }
+
+      function closeEndpointPickerModal(opts) {
+        opts = opts || {};
+        var shouldApplySelection = opts.applySelection !== false;
+        var shouldRefreshOnApply = opts.refreshOnApply !== false;
+        var changed = false;
+        if (shouldApplySelection) {
+          changed = applyEndpointPickerSelection();
+        } else {
+          endpointDraftEndpoints = null;
+        }
+
+        if (endpointPickerBackdrop) endpointPickerBackdrop.classList.remove('show');
+        if (endpointPickerModal) endpointPickerModal.classList.remove('show');
+        if (routeTopEndpointTrigger) routeTopEndpointTrigger.setAttribute('aria-expanded', 'false');
+        if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.setAttribute('aria-expanded', 'false');
+        if (changed && shouldRefreshOnApply) refreshForEndpointSelectionChange();
+      }
+
+      function refreshForEndpointSelectionChange() {
+        if (!routeModeDirection || !lastPlace) return;
+        refreshLastShuttleResult({ preserveSheetState: isMobile() });
+      }
+
+      function renderEndpointPickerList() {
+        if (!endpointPickerList) return;
+        endpointPickerList.innerHTML = '';
+        var activeSelection = endpointDraftEndpoints || selectedEndpoints;
+
+        var listHeader = document.createElement('div');
+        listHeader.className = 'endpoint-picker-list-header';
+
+        var allBtn = document.createElement('button');
+        allBtn.type = 'button';
+        allBtn.className = 'endpoint-picker-all-toggle' + (isAllEndpointsSelected(activeSelection) ? ' selected' : '');
+        allBtn.textContent = '전체 선택';
+        allBtn.addEventListener('click', function() {
+          if (isAllEndpointsSelected(activeSelection)) {
+            endpointDraftEndpoints = new Set();
+          } else {
+            var all = new Set();
+            endpointOptions.forEach(function(opt) { all.add(opt.endpoint_name); });
+            endpointDraftEndpoints = all;
+          }
+          renderEndpointPickerList();
+        });
+        listHeader.appendChild(allBtn);
+
+        var countLabel = document.createElement('span');
+        countLabel.className = 'endpoint-picker-list-count-label';
+        countLabel.textContent = '노선 수';
+        listHeader.appendChild(countLabel);
+
+        endpointPickerList.appendChild(listHeader);
+
+        endpointOptions.forEach(function(opt) {
+          var selected = activeSelection.has(opt.endpoint_name);
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'endpoint-picker-item' + (selected ? ' selected' : '');
+          btn.setAttribute('role', 'option');
+          btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+          btn.innerHTML =
+            '<span class="endpoint-item-main">' +
+              '<span class="endpoint-item-check">v</span>' +
+              '<span class="endpoint-item-label">' + escapeHtml(opt.endpoint_name) + '</span>' +
+            '</span>' +
+            '<span class="endpoint-item-meta">' + (opt.route_count || 0) + '</span>';
+          btn.addEventListener('click', function() {
+            if (!endpointDraftEndpoints) endpointDraftEndpoints = cloneStringSet(activeSelection);
+            if (endpointDraftEndpoints.has(opt.endpoint_name)) endpointDraftEndpoints.delete(opt.endpoint_name);
+            else endpointDraftEndpoints.add(opt.endpoint_name);
+            renderEndpointPickerList();
+          });
+          endpointPickerList.appendChild(btn);
+        });
+      }
+
+      function getActiveEndpointTriggerElement() {
+        if (!routeTopEndpointTrigger || !routeBottomEndpointTrigger) return null;
+        if (!routeTopEndpointTrigger.classList.contains('route-mode-hidden')) return routeTopEndpointTrigger;
+        if (!routeBottomEndpointTrigger.classList.contains('route-mode-hidden')) return routeBottomEndpointTrigger;
+        return null;
+      }
+
+      function openEndpointPickerModal() {
+        if (!routeModeDirection || !endpointPickerBackdrop || !endpointPickerModal || !endpointPickerList) return;
+        var kindLabel = getEndpointKindLabel(routeModeDirection);
+        if (endpointPickerTitle) endpointPickerTitle.textContent = kindLabel + ' 선택';
+        endpointDraftEndpoints = cloneStringSet(selectedEndpoints);
+        renderEndpointPickerList();
+
+        var trigger = getActiveEndpointTriggerElement();
+        if (isMobile()) {
+          endpointPickerModal.style.top = '';
+          endpointPickerModal.style.left = '';
+          endpointPickerModal.style.right = '';
+          endpointPickerModal.style.bottom = '0';
+        } else if (trigger) {
+          var rect = trigger.getBoundingClientRect();
+          endpointPickerModal.style.top = (rect.bottom + 4) + 'px';
+          endpointPickerModal.style.left = rect.left + 'px';
+          endpointPickerModal.style.right = 'auto';
+          endpointPickerModal.style.bottom = 'auto';
+        }
+
+        endpointPickerBackdrop.classList.add('show');
+        endpointPickerModal.classList.add('show');
+        if (routeTopEndpointTrigger) routeTopEndpointTrigger.setAttribute('aria-expanded', 'true');
+        if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.setAttribute('aria-expanded', 'true');
+      }
+
+      function updateRouteModeHeader() {
+        if (!routeModeHeader) return;
+        var placeText = routeModePlaceName || '선택한 위치';
+        if (routeTopPlaceLabel) routeTopPlaceLabel.textContent = placeText;
+        if (routeBottomPlaceLabel) routeBottomPlaceLabel.textContent = placeText;
+        updateEndpointTriggerText();
+
+        if (routeModeDirection === 'depart') {
+          if (routeTopPlaceLabel) routeTopPlaceLabel.classList.remove('route-mode-hidden');
+          if (routeTopEndpointTrigger) routeTopEndpointTrigger.classList.add('route-mode-hidden');
+          if (routeBottomPlaceLabel) routeBottomPlaceLabel.classList.add('route-mode-hidden');
+          if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.classList.remove('route-mode-hidden');
+        } else if (routeModeDirection === 'arrive') {
+          if (routeTopPlaceLabel) routeTopPlaceLabel.classList.add('route-mode-hidden');
+          if (routeTopEndpointTrigger) routeTopEndpointTrigger.classList.remove('route-mode-hidden');
+          if (routeBottomPlaceLabel) routeBottomPlaceLabel.classList.remove('route-mode-hidden');
+          if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.classList.add('route-mode-hidden');
+        } else {
+          if (routeTopPlaceLabel) routeTopPlaceLabel.classList.remove('route-mode-hidden');
+          if (routeTopEndpointTrigger) routeTopEndpointTrigger.classList.add('route-mode-hidden');
+          if (routeBottomPlaceLabel) routeBottomPlaceLabel.classList.add('route-mode-hidden');
+          if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.classList.add('route-mode-hidden');
+        }
+      }
+
+      function setRouteMode(active, direction, placeName) {
+        if (active) {
+          routeModeDirection = direction || routeModeDirection || 'depart';
+          routeModePlaceName = placeName || routeModePlaceName || '선택한 위치';
+          if (headerEl) headerEl.classList.add('route-mode');
+          if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'false');
+          updateRouteModeHeader();
+          return;
+        }
+        routeModeDirection = null;
+        routeModePlaceName = '';
+        endpointOptions = [];
+        selectedEndpoints = new Set();
+        endpointDraftEndpoints = null;
+        endpointContextKey = '';
+        if (headerEl) headerEl.classList.remove('route-mode');
+        if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'true');
+        closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
+      }
+
+      function loadEndpointOptions(direction) {
+        var contextKey = getEndpointContextKey(direction);
+        endpointContextKey = contextKey;
+        var kindLabel = getEndpointKindLabel(direction);
+        if (routeTopEndpointTriggerText) routeTopEndpointTriggerText.textContent = kindLabel + ' 불러오는 중...';
+        if (routeBottomEndpointTriggerText) routeBottomEndpointTriggerText.textContent = kindLabel + ' 불러오는 중...';
+        setEndpointTriggerEnabled(false);
+
+        var url = API_BASE + '/api/shuttle/endpoint-options' +
+          '?site_id=' + encodeURIComponent(selectedSiteId) +
+          '&day_type=' + encodeURIComponent(selectedDayType);
+
+        return fetch(url)
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || (kindLabel + ' 옵션을 불러오지 못했습니다.'));
+            }
+
+            var payload = result.data || {};
+            var rawOptions = direction === 'depart'
+              ? (payload.depart_terminus_options || [])
+              : (payload.arrive_start_options || []);
+
+            endpointOptions = rawOptions
+              .map(function(item) {
+                return {
+                  endpoint_name: String(item.endpoint_name || ''),
+                  route_count: Number(item.route_count || 0)
+                };
+              })
+              .filter(function(item) { return item.endpoint_name.length > 0; })
+              .sort(function(a, b) { return a.endpoint_name.localeCompare(b.endpoint_name, 'ko'); });
+
+            var prevState = endpointSelectionByContext[contextKey];
+            var available = new Set(endpointOptions.map(function(item) { return item.endpoint_name; }));
+            var nextSelected = new Set();
+            if (prevState && prevState.selected && typeof prevState.selected.forEach === 'function') {
+              prevState.selected.forEach(function(name) {
+                if (available.has(name)) nextSelected.add(name);
+              });
+            } else {
+              endpointOptions.forEach(function(item) { nextSelected.add(item.endpoint_name); });
+            }
+
+            selectedEndpoints = nextSelected;
+            endpointDraftEndpoints = null;
+            persistCurrentEndpointSelection();
+            updateEndpointTriggerText();
+            updateRouteModeHeader();
+            return endpointOptions;
+          })
+          .finally(function() {
+            setEndpointTriggerEnabled(true);
+          });
       }
 
       function pad2(n) { return (n < 10 ? '0' : '') + n; }
@@ -2413,7 +3253,7 @@
             '<div class="issue-card-top">' +
               '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
               '<span class="issue-card-number">#' + issue.number + '</span></div>' +
-              '<div>' + formatIssueDate(issue.updated_at || issue.created_at) + '</div>' +
+              '<div>' + formatIssueDate(issue.created_at) + '</div>' +
             '</div>' +
             '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
             '<div class="issue-card-body">' + (bodyPreview ? escapeHtml(bodyPreview).replace(/\n/g, '<br>') : '-') + '</div>' +
@@ -2454,7 +3294,9 @@
               throw new Error(result.data.error || '이슈 목록 조회에 실패했습니다.');
             }
             var data = result.data || {};
-            var issues = data.issues || [];
+            var issues = (data.issues || []).slice().sort(function(a, b) {
+              return Number(b.number || 0) - Number(a.number || 0);
+            });
             var pagination = data.pagination || {};
             renderIssueList(issues);
             renderIssuePagination(pagination);
@@ -2493,11 +3335,15 @@
               commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
             } else {
               commentsHtml = comments.map(function(comment) {
+                var rawUser = String(comment.user || 'unknown');
+                var isBotAuthor = !!comment.is_bot || rawUser.trim().toLowerCase().endsWith('[bot]');
+                var metaText = isBotAuthor
+                  ? formatIssueDate(comment.created_at)
+                  : ('<strong>' + escapeHtml(rawUser) + '</strong>' + ' · ' + formatIssueDate(comment.created_at));
                 return (
                   '<div class="issue-comment-item">' +
                     '<div class="issue-comment-meta">' +
-                      '<strong>' + escapeHtml(comment.user || 'unknown') + '</strong>' +
-                      ' · ' + formatIssueDate(comment.created_at) +
+                      metaText +
                     '</div>' +
                     '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
                   '</div>'
@@ -2508,12 +3354,61 @@
             issueDetailContent.innerHTML =
               '<div class="issue-card-top">' +
                 '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span><span class="issue-card-number">#' + issue.number + '</span></div>' +
-                '<div>' + formatIssueDate(issue.updated_at || issue.created_at) + '</div>' +
+                '<div>' + formatIssueDate(issue.created_at) + '</div>' +
               '</div>' +
               '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
               '<div class="issue-detail-body">' + (issue.body ? escapeHtml(issue.body).replace(/\n/g, '<br>') : '-') + '</div>' +
               '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
-              '<div class="issue-comments-list">' + commentsHtml + '</div>';
+              '<div class="issue-comments-list">' + commentsHtml + '</div>' +
+              '<div class="issue-comment-compose">' +
+                '<div class="issue-comment-compose-title">댓글 작성</div>' +
+                '<textarea id="issueDetailCommentBody" placeholder="댓글을 입력해 주세요."></textarea>' +
+                '<div class="issue-comment-compose-actions">' +
+                  '<button type="button" class="issue-form-btn primary" id="issueDetailCommentSubmit">댓글 등록</button>' +
+                '</div>' +
+              '</div>';
+
+            var detailCommentBody = document.getElementById('issueDetailCommentBody');
+            var detailCommentSubmit = document.getElementById('issueDetailCommentSubmit');
+            if (detailCommentBody && detailCommentSubmit) {
+              detailCommentSubmit.addEventListener('click', function() {
+                var bodyText = detailCommentBody.value.trim();
+                if (!bodyText) {
+                  setIssueFeedback('error', '댓글 내용을 입력해 주세요.');
+                  detailCommentBody.focus();
+                  return;
+                }
+
+                detailCommentSubmit.disabled = true;
+                setIssueFeedback('info', '댓글을 등록하는 중입니다...');
+
+                fetch(API_BASE + '/api/issues/' + issue.number + '/comments', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ body: bodyText })
+                })
+                  .then(function(r) {
+                    return r.json().catch(function() { return {}; }).then(function(data) {
+                      return { ok: r.ok, data: data };
+                    });
+                  })
+                  .then(function(postResult) {
+                    if (!postResult.ok) {
+                      throw new Error(postResult.data.error || '댓글 등록에 실패했습니다.');
+                    }
+                    setIssueFeedback('success', '댓글이 등록되었습니다.');
+                    openIssueDetail(issue.number);
+                  })
+                  .catch(function(postErr) {
+                    setIssueFeedback('error', postErr.message || '댓글 등록에 실패했습니다.');
+                  })
+                  .finally(function() {
+                    if (detailCommentSubmit && detailCommentSubmit.isConnected) {
+                      detailCommentSubmit.disabled = false;
+                    }
+                  });
+              });
+            }
           })
           .catch(function(err) {
             issueDetailContent.innerHTML = '<div class="issue-empty">' + escapeHtml(err.message || '상세 조회에 실패했습니다.') + '</div>';
@@ -2727,7 +3622,30 @@
       updateSiteTriggerText();
       setSiteSelectorEnabled(false);
 
+      if (routeTopEndpointTrigger) {
+        routeTopEndpointTrigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          openEndpointPickerModal();
+        });
+      }
+      if (routeBottomEndpointTrigger) {
+        routeBottomEndpointTrigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          openEndpointPickerModal();
+        });
+      }
+      if (endpointPickerBackdrop) endpointPickerBackdrop.addEventListener('click', closeEndpointPickerModal);
+      if (endpointPickerModal) endpointPickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      if (endpointPickerConfirmBtn) {
+        endpointPickerConfirmBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          closeEndpointPickerModal();
+        });
+      }
+      if (routeHeaderBackBtn) routeHeaderBackBtn.addEventListener('click', goBackFromRouteOptions);
+
       if (issueModalTrigger) issueModalTrigger.addEventListener('click', openIssueModal);
+      if (routeIssueModalTrigger) routeIssueModalTrigger.addEventListener('click', openIssueModal);
       if (issueModalCloseBtn) issueModalCloseBtn.addEventListener('click', closeIssueModal);
       if (issueModalBackdrop) issueModalBackdrop.addEventListener('click', closeIssueModal);
       if (issueModal) issueModal.addEventListener('click', function(e) { e.stopPropagation(); });
@@ -2760,6 +3678,7 @@
       document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
+        closeEndpointPickerModal();
         closeMaxDistancePopover();
       });
 
@@ -3508,7 +4427,16 @@
           '&place_name=' + encodeURIComponent(placeName) +
           '&time=' + encodeURIComponent(getDepartureTimeStr()) +
           '&day_type=' + encodeURIComponent(selectedDayType) +
-          '&max_distance_km=' + encodeURIComponent(String(maxDistanceKm));
+          '&max_distance_km=' + encodeURIComponent(String(maxDistanceKm)) +
+          '&use_endpoint_filter=1';
+
+        var selectedNames = getSelectedEndpointNamesSorted();
+        if (selectedNames.length === 0) {
+          url += '&selected_endpoints=';
+        } else if (!isAllEndpointsSelected()) {
+          url += '&selected_endpoints=' + encodeURIComponent(selectedNames.join(','));
+        }
+
         if (excludeRouteIds) {
           url += '&exclude_route_ids=' + encodeURIComponent(excludeRouteIds);
         }
@@ -3638,6 +4566,11 @@
 
       function loadMoreRoutes(btn) {
         if (!currentRouteOptions || !lastPlace) return;
+        if (selectedEndpoints.size === 0) {
+          btn.textContent = '선택된 옵션 없음';
+          btn.disabled = true;
+          return;
+        }
         btn.disabled = true;
         btn.textContent = '불러오는 중...';
         var lat = parseFloat(lastPlace.y);
@@ -3670,8 +4603,9 @@
           });
       }
 
-      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState) {
+      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage) {
         var shouldPreserveSheetState = !!preserveSheetState;
+        setRouteMode(true, isDepart ? 'depart' : 'arrive', placeName);
         panelTitle.textContent = '노선 선택';
         var btnBack = document.getElementById('btnBackFromRoutes');
         if (btnBack) btnBack.style.display = '';
@@ -3690,10 +4624,15 @@
           closeMaxDistancePopover();
           clearSearchOverlays();
           clearShuttleOverlays();
-          var dirLabel = isDepart ? '출근' : '퇴근';
-          var noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다.';
-          if (lastDepartureTime) {
-            noRouteMsg += '\n이 장소 근방 ' + dirLabel + ' 셔틀의 마지막 출발 시간은 ' + lastDepartureTime + ' 입니다.';
+          shuttleMessage.classList.remove('show');
+          shuttleMessage.innerHTML = '';
+          var noRouteMsg = emptyMessage || '';
+          if (!noRouteMsg) {
+            var dirLabel = isDepart ? '출근' : '퇴근';
+            noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다.';
+            if (lastDepartureTime) {
+              noRouteMsg += '\n이 장소 근방 ' + dirLabel + ' 셔틀의 마지막 출발 시간은 ' + lastDepartureTime + ' 입니다.';
+            }
           }
           var emptyMsg = document.createElement('div');
           emptyMsg.className = 'results-placeholder';
@@ -3712,6 +4651,8 @@
       }
 
       function showPlaceResultsView() {
+        routeRequestSerial += 1;
+        setRouteMode(false);
         panelTitle.textContent = '검색 결과';
         var btnBack = document.getElementById('btnBackFromRoutes');
         if (btnBack) btnBack.style.display = 'none';
@@ -3722,6 +4663,10 @@
       }
 
       function goBackFromRouteOptions() {
+        routeRequestSerial += 1;
+        closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
+        lastPlace = null;
+        lastShuttleType = null;
         clearShuttleOverlays();
         shuttleMessage.classList.remove('show');
         deselectPlace();
@@ -3751,26 +4696,7 @@
       }
 
       function runDepartWithPlace(place, opts) {
-        opts = opts || {};
-        lastPlace = place;
-        lastShuttleType = 'depart';
-        var lat = parseFloat(place.y);
-        var lng = parseFloat(place.x);
-        var name = place.place_name || '선택한 장소';
-        var url = buildRouteOptionsUrl('/api/shuttle/depart/options', lat, lng, name, '');
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.error) {
-              showShuttleError(data.error);
-              return;
-            }
-            var options = data.options || [];
-            renderRouteOptions(options, name, true, data.last_departure_time || '', opts.preserveSheetState);
-          })
-          .catch(function() {
-            alert('출근 노선 조회에 실패했습니다.');
-          });
+        runRouteSearchWithPlace(place, 'depart', opts);
       }
 
       function runArrive(placeIndex) {
@@ -3780,25 +4706,56 @@
       }
 
       function runArriveWithPlace(place, opts) {
+        runRouteSearchWithPlace(place, 'arrive', opts);
+      }
+
+      function runRouteSearchWithPlace(place, direction, opts) {
         opts = opts || {};
         lastPlace = place;
-        lastShuttleType = 'arrive';
+        lastShuttleType = direction;
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
-        var name = place.place_name || '선택한 장소';
-        var url = buildRouteOptionsUrl('/api/shuttle/arrive/options', lat, lng, name, '');
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.error) {
-              showShuttleError(data.error);
-              return;
+        var name = place.place_name || '선택한 위치';
+        var isDepart = direction === 'depart';
+        var emptyBySelectionMsg = isDepart
+          ? '선택한 출근 종착지 옵션이 없습니다.'
+          : '선택한 퇴근 출발지 옵션이 없습니다.';
+        setRouteMode(true, direction, name);
+        var requestId = ++routeRequestSerial;
+
+        loadEndpointOptions(direction)
+          .then(function() {
+            if (requestId !== routeRequestSerial) return null;
+            if (selectedEndpoints.size === 0) {
+              renderRouteOptions([], name, isDepart, '', opts.preserveSheetState, emptyBySelectionMsg);
+              return null;
             }
-            var options = data.options || [];
-            renderRouteOptions(options, name, false, data.last_departure_time || '', opts.preserveSheetState);
+            var endpoint = isDepart ? '/api/shuttle/depart/options' : '/api/shuttle/arrive/options';
+            var url = buildRouteOptionsUrl(endpoint, lat, lng, name, '');
+            return fetch(url)
+              .then(function(r) {
+                return r.json().catch(function() { return {}; }).then(function(data) {
+                  return { ok: r.ok, data: data };
+                });
+              })
+              .then(function(result) {
+                if (requestId !== routeRequestSerial) return;
+                var data = result.data || {};
+                if (!result.ok && data.options == null) {
+                  showShuttleError(data.error || (isDepart ? '출근 노선 조회에 실패했습니다.' : '퇴근 노선 조회에 실패했습니다.'));
+                  return;
+                }
+                if (data.error) {
+                  showShuttleError(data.error);
+                  return;
+                }
+                var options = data.options || [];
+                renderRouteOptions(options, name, isDepart, data.last_departure_time || '', opts.preserveSheetState);
+              });
           })
-          .catch(function() {
-            alert('퇴근 노선 조회에 실패했습니다.');
+          .catch(function(err) {
+            if (requestId !== routeRequestSerial) return;
+            showShuttleError(err && err.message ? err.message : '노선 조회에 실패했습니다.');
           });
       }
 
@@ -4012,6 +4969,13 @@
         if (maxDistancePopover.contains(e.target)) return;
         if (maxDistanceTrigger && maxDistanceTrigger.contains(e.target)) return;
         closeMaxDistancePopover();
+      });
+      document.addEventListener('click', function(e) {
+        if (!endpointPickerModal || !endpointPickerModal.classList.contains('show')) return;
+        if (endpointPickerModal.contains(e.target)) return;
+        var activeEndpointTrigger = getActiveEndpointTriggerElement();
+        if (activeEndpointTrigger && activeEndpointTrigger.contains(e.target)) return;
+        closeEndpointPickerModal();
       });
       updateMaxDistanceUi();
 
