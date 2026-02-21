@@ -14,15 +14,21 @@
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
+import urllib.request
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_FILE = os.path.join(PROJECT_DIR, ".env")
 BACKEND_SERVICE = "backend"
 DEFAULT_TIMEOUT = 60
+DEFAULT_BACKEND_HTTP_PORT = 80
 HEALTH_POLL_INTERVAL_SEC = 1.0
+BACKEND_HTTP_PORT = DEFAULT_BACKEND_HTTP_PORT
+HEALTH_URL = ""
 
 
 def log(msg: str) -> None:
@@ -37,6 +43,58 @@ def run(cmd: str, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, shell=True, cwd=PROJECT_DIR, **kwargs)
 
 
+def load_env_file(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not os.path.exists(path):
+        return values
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("export "):
+                stripped = stripped[len("export ") :].strip()
+            if "=" not in stripped:
+                continue
+            key, raw_value = stripped.split("=", 1)
+            key = key.strip()
+            value = raw_value.strip()
+            if (
+                len(value) >= 2
+                and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'"))
+            ):
+                value = value[1:-1]
+            values[key] = value
+    return values
+
+
+def get_env_int(env_map: dict[str, str], key: str, default: int) -> int:
+    raw = os.environ.get(key, env_map.get(key, str(default))).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        err(f"{key} 값이 정수가 아닙니다: {raw}")
+        sys.exit(1)
+    if value < 1 or value > 65535:
+        err(f"{key} 값은 1~65535 범위여야 합니다: {value}")
+        sys.exit(1)
+    return value
+
+
+def local_url(path: str, port: int, scheme: str = "http") -> str:
+    default_port = 80 if scheme == "http" else 443
+    if port == default_port:
+        return f"{scheme}://localhost{path}"
+    return f"{scheme}://localhost:{port}{path}"
+
+
+def configure_runtime_health_url() -> None:
+    global BACKEND_HTTP_PORT, HEALTH_URL
+    env_map = load_env_file(ENV_FILE)
+    BACKEND_HTTP_PORT = get_env_int(env_map, "BACKEND_HTTP_PORT", DEFAULT_BACKEND_HTTP_PORT)
+    HEALTH_URL = local_url("/health", BACKEND_HTTP_PORT, scheme="http")
+
+
 def get_backend_container_id() -> str:
     result = run(
         f"docker compose ps -q {BACKEND_SERVICE}",
@@ -48,47 +106,57 @@ def get_backend_container_id() -> str:
     return result.stdout.strip()
 
 
-def get_backend_health_status(container_id: str) -> str:
-    if not container_id:
-        return "not_found"
-    inspect_cmd = (
-        "docker inspect --format "
-        "'{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "
-        f"{container_id}"
-    )
-    result = run(inspect_cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return "unknown"
-    status = result.stdout.strip()
-    return status or "unknown"
-
-
 def tail_backend_logs(lines: int = 80) -> None:
     log(f"backend 최근 로그({lines}줄):")
     run(f"docker compose logs --tail={lines} {BACKEND_SERVICE}")
 
 
+def _is_healthy_response(resp: urllib.request.addinfourl) -> bool:
+    if resp.status != 200:
+        return False
+    body = resp.read().decode("utf-8", errors="ignore").strip()
+    if not body:
+        return True
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return True
+    status = payload.get("status")
+    return isinstance(status, str) and status.lower() == "healthy"
+
+
 def wait_backend_healthy(timeout_sec: int) -> bool:
     log(
-        "백엔드 health check 대기 … "
-        f"(최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
+        "백엔드 health endpoint 대기 … "
+        f"(URL: {HEALTH_URL}, 최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
     )
-    deadline = time.time() + timeout_sec
-    last_status = ""
-    while time.time() < deadline:
-        container_id = get_backend_container_id()
-        status = get_backend_health_status(container_id)
-        if status != last_status:
-            log(f"health 상태: {status}")
-            last_status = status
-        if status == "healthy":
-            log("백엔드 정상 (healthy)")
-            return True
-        time.sleep(HEALTH_POLL_INTERVAL_SEC)
+    deadline = time.monotonic() + timeout_sec
+    last_error = ""
+    while True:
+        poll_started = time.monotonic()
+        try:
+            with urllib.request.urlopen(HEALTH_URL, timeout=HEALTH_POLL_INTERVAL_SEC) as resp:
+                if _is_healthy_response(resp):
+                    log("백엔드 정상 (healthy)")
+                    return True
+                last_error = f"unexpected response status={resp.status}"
+        except Exception as exc:
+            last_error = str(exc)
+
+        now = time.monotonic()
+        if now >= deadline:
+            break
+        sleep_for = min(
+            HEALTH_POLL_INTERVAL_SEC,
+            max(0.0, HEALTH_POLL_INTERVAL_SEC - (now - poll_started)),
+            deadline - now,
+        )
+        if sleep_for > 0:
+            time.sleep(sleep_for)
 
     err(
-        f"{timeout_sec}초 내 healthy 상태가 되지 않았습니다 "
-        f"(마지막 상태: {last_status or 'unknown'})"
+        f"{timeout_sec}초 내 /health 확인이 실패했습니다 "
+        f"(URL: {HEALTH_URL}, 마지막 오류: {last_error or 'unknown'})"
     )
     tail_backend_logs()
     return False
@@ -188,6 +256,8 @@ def main() -> None:
     if args.down:
         compose_down(all_services=args.all)
         return
+
+    configure_runtime_health_url()
 
     if args.all:
         compose_up_all(args.timeout)
