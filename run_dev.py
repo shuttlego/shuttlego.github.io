@@ -15,6 +15,7 @@ traefik은 기본 실행에서 재시작하지 않고, 내려가 있을 때만 �
 
 import argparse
 import http.server
+import json
 import os
 import signal
 import socket
@@ -137,22 +138,28 @@ def configure_runtime_ports(validate_conflict: bool = True) -> None:
 
 def wait_backend_healthy(timeout_sec: int) -> bool:
     log(
-        "백엔드 health check 대기 … "
-        f"(최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
+        "백엔드 health endpoint 대기 … "
+        f"(URL: {HEALTH_URL}, 최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
     )
     deadline = time.monotonic() + timeout_sec
+    last_error = ""
     while True:
         poll_started = time.monotonic()
         try:
             with urllib.request.urlopen(HEALTH_URL, timeout=HEALTH_POLL_INTERVAL_SEC) as resp:
-                if resp.status == 200:
+                if _is_healthy_response(resp):
                     log("백엔드 정상 (healthy)")
                     return True
-        except Exception:
-            pass
+                last_error = f"unexpected response status={resp.status}"
+        except Exception as exc:
+            last_error = str(exc)
 
         now = time.monotonic()
         if now >= deadline:
+            err(
+                f"{timeout_sec}초 내 /health 확인이 실패했습니다 "
+                f"(URL: {HEALTH_URL}, 마지막 오류: {last_error or 'unknown'})"
+            )
             return False
         sleep_for = min(
             HEALTH_POLL_INTERVAL_SEC,
@@ -161,6 +168,20 @@ def wait_backend_healthy(timeout_sec: int) -> bool:
         )
         if sleep_for > 0:
             time.sleep(sleep_for)
+
+
+def _is_healthy_response(resp: urllib.request.addinfourl) -> bool:
+    if resp.status != 200:
+        return False
+    body = resp.read().decode("utf-8", errors="ignore").strip()
+    if not body:
+        return True
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return True
+    status = payload.get("status")
+    return isinstance(status, str) and status.lower() == "healthy"
 
 
 def compose_down(all_services: bool = False) -> None:
