@@ -29,11 +29,14 @@ from prometheus_client import (
 import load_data
 from load_data import (
     find_nearest_route_options,
+    get_endpoint_options,
+    get_endpoint_route_ids,
     get_db_updated_at,
     get_nearest_departure_time,
     get_route_detail,
     get_sites,
     init_db,
+    warm_endpoint_cache,
 )
 
 try:
@@ -243,6 +246,40 @@ def _parse_max_distance_km(raw: str | None) -> float:
     return value
 
 
+def _parse_selected_endpoints() -> list[str] | None:
+    """
+    selected_endpoints 파라미터 파싱.
+    - 파라미터 미존재: None
+    - 존재하지만 값 없음: []
+    - 값 존재: ["endpoint1", "endpoint2", ...] (중복 제거, 입력 순서 유지)
+    """
+    if "selected_endpoints" not in request.args:
+        return None
+
+    raw_values = request.args.getlist("selected_endpoints")
+    tokens: list[str] = []
+    for raw in raw_values:
+        if raw is None:
+            continue
+        tokens.extend(raw.split(","))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        name = token.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        deduped.append(name)
+    return deduped
+
+
+def _is_truthy_param(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 class GitHubConfigError(RuntimeError):
     pass
 
@@ -412,6 +449,9 @@ def _normalize_label_names(labels: list | None) -> list[str]:
 
 def _normalize_issue(issue: dict) -> dict:
     user = issue.get("user") or {}
+    login = str(user.get("login") or "")
+    owner = (GITHUB_REPO_OWNER or "").strip().lower()
+    is_notice = bool(owner and login.strip().lower() == owner)
     return {
         "number": issue.get("number"),
         "title": issue.get("title") or "",
@@ -422,19 +462,28 @@ def _normalize_issue(issue: dict) -> dict:
         "created_at": issue.get("created_at"),
         "updated_at": issue.get("updated_at"),
         "closed_at": issue.get("closed_at"),
-        "user": user.get("login") or "",
+        "user": login,
+        "is_notice": is_notice,
         "comments": issue.get("comments") or 0,
     }
 
 
 def _normalize_comment(comment: dict) -> dict:
     user = comment.get("user") or {}
+    login = str(user.get("login") or "")
+    user_type = str(user.get("type") or "").strip().lower()
+    is_bot = (
+        user_type == "bot"
+        or login.lower().endswith("[bot]")
+        or isinstance(comment.get("performed_via_github_app"), dict)
+    )
     return {
         "id": comment.get("id"),
         "body": comment.get("body") or "",
         "created_at": comment.get("created_at"),
         "updated_at": comment.get("updated_at"),
-        "user": user.get("login") or "",
+        "user": login,
+        "is_bot": is_bot,
         "url": comment.get("html_url") or "",
     }
 
@@ -588,6 +637,31 @@ def api_sites():
     return jsonify({"sites": get_sites(), "db_updated_at": get_db_updated_at()})
 
 
+@app.route("/api/shuttle/endpoint-options")
+def api_shuttle_endpoint_options():
+    """
+    사업장/요일별 endpoint 선택 옵션 반환.
+    - depart_terminus_options: 출근(commute_in) 종착지 목록
+    - arrive_start_options: 퇴근(commute_out) 출발지 목록
+    """
+    site_id = request.args.get("site_id", default="0000011")
+    day_type = request.args.get("day_type", default="weekday")
+    try:
+        depart_options = get_endpoint_options(site_id, day_type, "depart")
+        arrive_options = get_endpoint_options(site_id, day_type, "arrive")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(
+        {
+            "site_id": site_id,
+            "day_type": day_type,
+            "depart_terminus_options": depart_options,
+            "arrive_start_options": arrive_options,
+        }
+    )
+
+
 @app.route("/api/issues", methods=["GET", "POST"])
 def api_issues():
     if request.method == "POST":
@@ -669,61 +743,106 @@ def api_issues():
     per_page = request.args.get("per_page", default=10, type=int) or 10
     per_page = max(1, min(per_page, 50))
 
-    cache_key = f"issues:list:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
+    cache_key = f"issues:v4:list:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
     cached = _issue_cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
 
-    total_count = None
-    has_next = False
-    try:
-        if q:
-            query_parts = [f"repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}", "is:issue"]
-            if state in {"open", "closed"}:
-                query_parts.append(f"is:{state}")
-            for label in labels:
-                query_parts.append(f'label:"{label}"')
-            query_parts.append(q)
-            search_payload = _github_api_request(
-                "GET",
-                "/search/issues",
-                params={
-                    "q": " ".join(query_parts),
-                    "sort": "updated",
-                    "order": "desc",
-                    "page": page,
-                    "per_page": per_page,
-                },
-            )
-            raw_items = search_payload.get("items") or []
-            total_count = int(search_payload.get("total_count", 0))
-            has_next = (page * per_page) < min(total_count, 1000)
-        else:
-            list_params = {
-                "state": state,
-                "page": page,
-                "per_page": per_page,
-                "sort": "updated",
-                "direction": "desc",
-            }
-            if labels:
-                list_params["labels"] = ",".join(labels)
-            raw_items = _github_api_request(
-                "GET",
-                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                params=list_params,
-            )
-            if not isinstance(raw_items, list):
-                raw_items = []
-            has_next = len(raw_items) >= per_page
-    except GitHubAPIError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
+    base_cache_key = f"issues:v4:base:{state}:{','.join(labels)}:{q}"
+    base_cached = _issue_cache_get(base_cache_key)
+    if base_cached is None:
+        try:
+            raw_items: list[dict] = []
+            fetch_per_page = 100
+            if q:
+                query_parts = [f"repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}", "is:issue"]
+                if state in {"open", "closed"}:
+                    query_parts.append(f"is:{state}")
+                for label in labels:
+                    query_parts.append(f'label:"{label}"')
+                query_parts.append(q)
 
-    issues = []
-    for item in raw_items:
-        if item.get("pull_request"):
-            continue
-        issues.append(_normalize_issue(item))
+                fetch_page = 1
+                fetch_limit = 1000  # GitHub Search API cap
+                while True:
+                    search_payload = _github_api_request(
+                        "GET",
+                        "/search/issues",
+                        params={
+                            "q": " ".join(query_parts),
+                            "sort": "created",
+                            "order": "desc",
+                            "page": fetch_page,
+                            "per_page": fetch_per_page,
+                        },
+                    )
+                    page_items = search_payload.get("items") or []
+                    if not isinstance(page_items, list):
+                        page_items = []
+                    raw_items.extend(page_items)
+
+                    total_hits = int(search_payload.get("total_count", 0) or 0)
+                    fetch_limit = min(fetch_limit, max(0, total_hits))
+                    if len(raw_items) >= fetch_limit or len(page_items) < fetch_per_page:
+                        break
+                    fetch_page += 1
+            else:
+                fetch_page = 1
+                while True:
+                    list_params = {
+                        "state": state,
+                        "page": fetch_page,
+                        "per_page": fetch_per_page,
+                        "sort": "created",
+                        "direction": "desc",
+                    }
+                    if labels:
+                        list_params["labels"] = ",".join(labels)
+                    page_items = _github_api_request(
+                        "GET",
+                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                        params=list_params,
+                    )
+                    if not isinstance(page_items, list):
+                        page_items = []
+                    raw_items.extend(page_items)
+                    if len(page_items) < fetch_per_page:
+                        break
+                    fetch_page += 1
+        except GitHubAPIError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+
+        normalized_issues: list[dict] = []
+        for item in raw_items:
+            if item.get("pull_request"):
+                continue
+            normalized = _normalize_issue(item)
+            if state in {"open", "closed"} and normalized.get("is_notice"):
+                continue
+            normalized_issues.append(normalized)
+
+        if state == "all":
+            normalized_issues.sort(
+                key=lambda issue: (
+                    0 if issue.get("is_notice") else 1,
+                    -int(issue.get("number") or 0),
+                )
+            )
+        else:
+            normalized_issues.sort(key=lambda issue: -int(issue.get("number") or 0))
+
+        base_cached = {
+            "issues": normalized_issues,
+            "total_count": len(normalized_issues),
+        }
+        _issue_cache_set(base_cache_key, base_cached)
+
+    normalized_issues = list(base_cached.get("issues") or [])
+    total_count = int(base_cached.get("total_count") or len(normalized_issues))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    issues = normalized_issues[start_idx:end_idx]
+    has_next = end_idx < total_count
 
     response_payload = {
         "issues": issues,
@@ -837,6 +956,8 @@ def api_shuttle_depart_options():
     time_param = request.args.get("time", "").strip()
     day_type = request.args.get("day_type", default="weekday")
     exclude_raw = request.args.get("exclude_route_ids", "").strip()
+    use_endpoint_filter = _is_truthy_param(request.args.get("use_endpoint_filter"))
+    selected_endpoints = _parse_selected_endpoints()
     max_distance_raw = request.args.get("max_distance_km")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
@@ -850,6 +971,20 @@ def api_shuttle_depart_options():
     if exclude_raw:
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
+    include_route_ids: set[int] | None = None
+    if use_endpoint_filter or selected_endpoints is not None:
+        try:
+            include_route_ids = get_endpoint_route_ids(
+                site_id=site_id,
+                day_type=day_type,
+                direction="depart",
+                selected_endpoints=selected_endpoints,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not include_route_ids:
+            return jsonify({"options": []})
+
     SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
 
     results = find_nearest_route_options(
@@ -862,8 +997,11 @@ def api_shuttle_depart_options():
         # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
         max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
+        include_route_ids=include_route_ids,
     )
     if not results:
+        if include_route_ids is not None:
+            return jsonify({"options": []})
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1009,6 +1147,8 @@ def api_shuttle_arrive_options():
     time_param = request.args.get("time", "").strip()
     day_type = request.args.get("day_type", default="weekday")
     exclude_raw = request.args.get("exclude_route_ids", "").strip()
+    use_endpoint_filter = _is_truthy_param(request.args.get("use_endpoint_filter"))
+    selected_endpoints = _parse_selected_endpoints()
     max_distance_raw = request.args.get("max_distance_km")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
@@ -1022,6 +1162,20 @@ def api_shuttle_arrive_options():
     if exclude_raw:
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
+    include_route_ids: set[int] | None = None
+    if use_endpoint_filter or selected_endpoints is not None:
+        try:
+            include_route_ids = get_endpoint_route_ids(
+                site_id=site_id,
+                day_type=day_type,
+                direction="arrive",
+                selected_endpoints=selected_endpoints,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not include_route_ids:
+            return jsonify({"options": []})
+
     SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
 
     results = find_nearest_route_options(
@@ -1034,8 +1188,11 @@ def api_shuttle_arrive_options():
         # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
         max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
+        include_route_ids=include_route_ids,
     )
     if not results:
+        if include_route_ids is not None:
+            return jsonify({"options": []})
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1180,6 +1337,10 @@ def api_route_detail(route_id: int):
 
 # ── 시작 시 DB 초기화 ─────────────────────────────────────────
 init_db()
+try:
+    warm_endpoint_cache()
+except Exception:
+    app.logger.exception("Endpoint cache warm-up failed")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True, port=8081)

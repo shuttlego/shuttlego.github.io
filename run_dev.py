@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """shuttle-go 개발 환경 통합 실행 스크립트
 
-Docker Compose(backend, traefik, prometheus, grafana …)를 (재)시작하고
-프론트엔드 정적 파일 서버를 함께 띄운다.
+기본 실행은 backend만 재빌드/재시작하고 프론트엔드를 함께 시작한다.
+traefik은 기본 실행에서 재시작하지 않고, 내려가 있을 때만 시작한다.
+--all 옵션을 주면 prometheus/grafana 등 나머지 구성요소까지 함께 (재)시작한다.
 
 사용법:
-    python run_dev.py              # 전체 시작 (Docker + 프론트엔드)
+    python run_dev.py              # 기본 시작 (backend rebuild/restart + frontend)
+    python run_dev.py --all        # 전체 시작 (backend + monitoring + frontend)
     python run_dev.py --frontend   # 프론트엔드 서버만 시작
-    python run_dev.py --down       # 전체 종료
+    python run_dev.py --down       # 기본 구성요소 종료(backend + frontend 포트 정리)
+    python run_dev.py --down --all # 전체 종료
 """
 
 import argparse
 import http.server
+import json
 import os
 import signal
 import socket
@@ -33,6 +37,8 @@ FRONTEND_PORT = DEFAULT_FRONTEND_PORT
 BACKEND_HTTP_PORT = DEFAULT_BACKEND_HTTP_PORT
 BACKEND_HTTPS_PORT = DEFAULT_BACKEND_HTTPS_PORT
 HEALTH_URL = ""
+CORE_SERVICES = ("backend",)
+GATEWAY_SERVICE = "traefik"
 
 
 # ── 유틸 ──────────────────────────────────────────────────
@@ -132,22 +138,28 @@ def configure_runtime_ports(validate_conflict: bool = True) -> None:
 
 def wait_backend_healthy(timeout_sec: int) -> bool:
     log(
-        "백엔드 health check 대기 … "
-        f"(최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
+        "백엔드 health endpoint 대기 … "
+        f"(URL: {HEALTH_URL}, 최대 {timeout_sec}초, {int(HEALTH_POLL_INTERVAL_SEC)}초 간격 폴링)"
     )
     deadline = time.monotonic() + timeout_sec
+    last_error = ""
     while True:
         poll_started = time.monotonic()
         try:
             with urllib.request.urlopen(HEALTH_URL, timeout=HEALTH_POLL_INTERVAL_SEC) as resp:
-                if resp.status == 200:
+                if _is_healthy_response(resp):
                     log("백엔드 정상 (healthy)")
                     return True
-        except Exception:
-            pass
+                last_error = f"unexpected response status={resp.status}"
+        except Exception as exc:
+            last_error = str(exc)
 
         now = time.monotonic()
         if now >= deadline:
+            err(
+                f"{timeout_sec}초 내 /health 확인이 실패했습니다 "
+                f"(URL: {HEALTH_URL}, 마지막 오류: {last_error or 'unknown'})"
+            )
             return False
         sleep_for = min(
             HEALTH_POLL_INTERVAL_SEC,
@@ -158,23 +170,71 @@ def wait_backend_healthy(timeout_sec: int) -> bool:
             time.sleep(sleep_for)
 
 
-def compose_down() -> None:
-    log("Docker Compose 종료 중 …")
-    run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log("Docker Compose 종료 완료")
+def _is_healthy_response(resp: urllib.request.addinfourl) -> bool:
+    if resp.status != 200:
+        return False
+    body = resp.read().decode("utf-8", errors="ignore").strip()
+    if not body:
+        return True
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return True
+    status = payload.get("status")
+    return isinstance(status, str) and status.lower() == "healthy"
 
 
-def compose_up() -> None:
-    # 이미 동작 중인 컨테이너가 있으면 재시작
-    result = run(
-        "docker compose ps -q",
-        capture_output=True, text=True,
+def compose_down(all_services: bool = False) -> None:
+    if all_services:
+        log("Docker Compose 전체 종료 중 …")
+        run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("Docker Compose 전체 종료 완료")
+        return
+
+    services = " ".join(CORE_SERVICES)
+    log(f"Docker Compose 기본 구성요소 종료 중 … ({services})")
+    run(f"docker compose stop {services}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run(f"docker compose rm -f {services}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log("Docker Compose 기본 구성요소 종료 완료")
+
+
+def compose_up_core() -> None:
+    # 기본 실행에서는 traefik을 재시작/재빌드하지 않는다.
+    # 다만 내려가 있으면 API 접근 경로 확보를 위해 시작만 수행한다.
+    gateway_running = run(
+        f"docker compose ps --status running -q {GATEWAY_SERVICE}",
+        capture_output=True,
+        text=True,
     )
+    if not gateway_running.stdout.strip():
+        log("traefik 미실행 상태 감지 → 시작만 수행 (재시작/재빌드 없음)")
+        gateway_ret = run(f"docker compose up -d {GATEWAY_SERVICE}")
+        if gateway_ret.returncode != 0:
+            err("traefik 시작 실패")
+            sys.exit(1)
+    else:
+        log("traefik 실행 중 → 재시작 없이 유지")
+
+    services = " ".join(CORE_SERVICES)
+    log(f"기본 구성요소 빌드 & 시작 … ({services})")
+    ret = run(f"docker compose up -d --build --force-recreate {services}")
+    if ret.returncode != 0:
+        err("기본 구성요소 docker compose up 실패")
+        sys.exit(1)
+
+    if not wait_backend_healthy(COMPOSE_TIMEOUT):
+        err(f"{COMPOSE_TIMEOUT}초 내에 백엔드가 응답하지 않았습니다")
+        sys.exit(1)
+
+
+def compose_up_all() -> None:
+    # --all은 전체 스택을 재시작해야 하므로 down -> up 순으로 강제
+    result = run("docker compose ps -q", capture_output=True, text=True)
     if result.stdout.strip():
-        log("기존 컨테이너 감지 → 재시작합니다 …")
+        log("기존 컨테이너 감지 → 전체 재시작합니다 …")
         run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    log("Docker Compose 빌드 & 시작 …")
+    log("Docker Compose 전체 빌드 & 시작 …")
     ret = run("docker compose up -d --build")
     if ret.returncode != 0:
         err("docker compose up 실패")
@@ -239,13 +299,14 @@ def wait_forever(httpd) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="shuttle-go 개발 환경 통합 실행")
-    parser.add_argument("--down", action="store_true", help="전체 종료")
+    parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체)")
+    parser.add_argument("--all", action="store_true", help="모든 구성요소까지 재시작")
     parser.add_argument("--frontend", action="store_true", help="프론트엔드 서버만 시작")
     args = parser.parse_args()
     configure_runtime_ports(validate_conflict=not args.down)
 
     if args.down:
-        compose_down()
+        compose_down(all_services=args.all)
         log(f"포트 {FRONTEND_PORT} 정리")
         run(f"lsof -ti :{FRONTEND_PORT} | xargs kill -9 2>/dev/null")
         log("완료")
@@ -263,18 +324,25 @@ def main() -> None:
         wait_forever(httpd)
         return
 
-    compose_up()
+    if args.all:
+        compose_up_all()
+    else:
+        compose_up_core()
     httpd = start_frontend()
 
     # 컨테이너 상태 출력
     log("실행 중인 서비스:")
-    run("docker compose ps")
+    if args.all:
+        run("docker compose ps")
+    else:
+        run(f"docker compose ps {' '.join(CORE_SERVICES)}")
 
     print()
     log("═══════════════════════════════════════════")
     log(f"  프론트엔드  → {local_url('', FRONTEND_PORT, scheme='http')}")
     log(f"  백엔드 API  → {local_url('/api/sites', BACKEND_HTTP_PORT, scheme='http')}")
-    log(f"  Grafana     → {local_url('/grafana/', BACKEND_HTTP_PORT, scheme='http')}")
+    if args.all:
+        log(f"  Grafana     → {local_url('/grafana/', BACKEND_HTTP_PORT, scheme='http')}")
     log("═══════════════════════════════════════════")
     log("Ctrl+C 로 프론트엔드 서버 종료 (Docker 컨테이너는 유지)")
     log("전체 종료: python run_dev.py --down")
