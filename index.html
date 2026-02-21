@@ -1115,6 +1115,10 @@
       background: #eceff1;
       color: #455a64;
     }
+    .issue-status-badge.notice {
+      background: #fff3bf;
+      color: #8a6d00;
+    }
     .issue-card-number {
       color: #666;
       font-weight: 600;
@@ -3242,9 +3246,11 @@
         }
 
         issues.forEach(function(issue) {
+          var isNotice = !!issue.is_notice;
           var status = (issue.state || 'open').toLowerCase();
-          var statusClass = status === 'closed' ? 'closed' : 'open';
-          var statusLabel = status === 'closed' ? 'CLOSED' : 'OPEN';
+          var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
+          var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
+          var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
           var bodyPreview = (issue.body || '').trim();
           if (bodyPreview.length > 180) bodyPreview = bodyPreview.slice(0, 180) + '...';
           var card = document.createElement('article');
@@ -3252,7 +3258,7 @@
           card.innerHTML =
             '<div class="issue-card-top">' +
               '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
-              '<span class="issue-card-number">#' + issue.number + '</span></div>' +
+              issueNumberHtml + '</div>' +
               '<div>' + formatIssueDate(issue.created_at) + '</div>' +
             '</div>' +
             '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
@@ -3294,9 +3300,7 @@
               throw new Error(result.data.error || '이슈 목록 조회에 실패했습니다.');
             }
             var data = result.data || {};
-            var issues = (data.issues || []).slice().sort(function(a, b) {
-              return Number(b.number || 0) - Number(a.number || 0);
-            });
+            var issues = Array.isArray(data.issues) ? data.issues : [];
             var pagination = data.pagination || {};
             renderIssueList(issues);
             renderIssuePagination(pagination);
@@ -3327,9 +3331,11 @@
             var payload = result.data || {};
             var issue = payload.issue || {};
             var comments = payload.comments || [];
+            var isNotice = !!issue.is_notice;
             var status = (issue.state || 'open').toLowerCase();
-            var statusClass = status === 'closed' ? 'closed' : 'open';
-            var statusLabel = status === 'closed' ? 'CLOSED' : 'OPEN';
+            var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
+            var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
+            var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
             var commentsHtml = '';
             if (!comments.length) {
               commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
@@ -3353,7 +3359,7 @@
 
             issueDetailContent.innerHTML =
               '<div class="issue-card-top">' +
-                '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span><span class="issue-card-number">#' + issue.number + '</span></div>' +
+                '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
                 '<div>' + formatIssueDate(issue.created_at) + '</div>' +
               '</div>' +
               '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +

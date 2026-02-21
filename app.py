@@ -449,6 +449,9 @@ def _normalize_label_names(labels: list | None) -> list[str]:
 
 def _normalize_issue(issue: dict) -> dict:
     user = issue.get("user") or {}
+    login = str(user.get("login") or "")
+    owner = (GITHUB_REPO_OWNER or "").strip().lower()
+    is_notice = bool(owner and login.strip().lower() == owner)
     return {
         "number": issue.get("number"),
         "title": issue.get("title") or "",
@@ -459,7 +462,8 @@ def _normalize_issue(issue: dict) -> dict:
         "created_at": issue.get("created_at"),
         "updated_at": issue.get("updated_at"),
         "closed_at": issue.get("closed_at"),
-        "user": user.get("login") or "",
+        "user": login,
+        "is_notice": is_notice,
         "comments": issue.get("comments") or 0,
     }
 
@@ -739,62 +743,106 @@ def api_issues():
     per_page = request.args.get("per_page", default=10, type=int) or 10
     per_page = max(1, min(per_page, 50))
 
-    cache_key = f"issues:v2:list:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
+    cache_key = f"issues:v4:list:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
     cached = _issue_cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
 
-    total_count = None
-    has_next = False
-    try:
-        if q:
-            query_parts = [f"repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}", "is:issue"]
-            if state in {"open", "closed"}:
-                query_parts.append(f"is:{state}")
-            for label in labels:
-                query_parts.append(f'label:"{label}"')
-            query_parts.append(q)
-            search_payload = _github_api_request(
-                "GET",
-                "/search/issues",
-                params={
-                    "q": " ".join(query_parts),
-                    "sort": "created",
-                    "order": "desc",
-                    "page": page,
-                    "per_page": per_page,
-                },
-            )
-            raw_items = search_payload.get("items") or []
-            total_count = int(search_payload.get("total_count", 0))
-            has_next = (page * per_page) < min(total_count, 1000)
-        else:
-            list_params = {
-                "state": state,
-                "page": page,
-                "per_page": per_page,
-                "sort": "created",
-                "direction": "desc",
-            }
-            if labels:
-                list_params["labels"] = ",".join(labels)
-            raw_items = _github_api_request(
-                "GET",
-                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                params=list_params,
-            )
-            if not isinstance(raw_items, list):
-                raw_items = []
-            has_next = len(raw_items) >= per_page
-    except GitHubAPIError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
+    base_cache_key = f"issues:v4:base:{state}:{','.join(labels)}:{q}"
+    base_cached = _issue_cache_get(base_cache_key)
+    if base_cached is None:
+        try:
+            raw_items: list[dict] = []
+            fetch_per_page = 100
+            if q:
+                query_parts = [f"repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}", "is:issue"]
+                if state in {"open", "closed"}:
+                    query_parts.append(f"is:{state}")
+                for label in labels:
+                    query_parts.append(f'label:"{label}"')
+                query_parts.append(q)
 
-    issues = []
-    for item in raw_items:
-        if item.get("pull_request"):
-            continue
-        issues.append(_normalize_issue(item))
-    issues.sort(key=lambda issue: int(issue.get("number") or 0), reverse=True)
+                fetch_page = 1
+                fetch_limit = 1000  # GitHub Search API cap
+                while True:
+                    search_payload = _github_api_request(
+                        "GET",
+                        "/search/issues",
+                        params={
+                            "q": " ".join(query_parts),
+                            "sort": "created",
+                            "order": "desc",
+                            "page": fetch_page,
+                            "per_page": fetch_per_page,
+                        },
+                    )
+                    page_items = search_payload.get("items") or []
+                    if not isinstance(page_items, list):
+                        page_items = []
+                    raw_items.extend(page_items)
+
+                    total_hits = int(search_payload.get("total_count", 0) or 0)
+                    fetch_limit = min(fetch_limit, max(0, total_hits))
+                    if len(raw_items) >= fetch_limit or len(page_items) < fetch_per_page:
+                        break
+                    fetch_page += 1
+            else:
+                fetch_page = 1
+                while True:
+                    list_params = {
+                        "state": state,
+                        "page": fetch_page,
+                        "per_page": fetch_per_page,
+                        "sort": "created",
+                        "direction": "desc",
+                    }
+                    if labels:
+                        list_params["labels"] = ",".join(labels)
+                    page_items = _github_api_request(
+                        "GET",
+                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                        params=list_params,
+                    )
+                    if not isinstance(page_items, list):
+                        page_items = []
+                    raw_items.extend(page_items)
+                    if len(page_items) < fetch_per_page:
+                        break
+                    fetch_page += 1
+        except GitHubAPIError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+
+        normalized_issues: list[dict] = []
+        for item in raw_items:
+            if item.get("pull_request"):
+                continue
+            normalized = _normalize_issue(item)
+            if state in {"open", "closed"} and normalized.get("is_notice"):
+                continue
+            normalized_issues.append(normalized)
+
+        if state == "all":
+            normalized_issues.sort(
+                key=lambda issue: (
+                    0 if issue.get("is_notice") else 1,
+                    -int(issue.get("number") or 0),
+                )
+            )
+        else:
+            normalized_issues.sort(key=lambda issue: -int(issue.get("number") or 0))
+
+        base_cached = {
+            "issues": normalized_issues,
+            "total_count": len(normalized_issues),
+        }
+        _issue_cache_set(base_cache_key, base_cached)
+
+    normalized_issues = list(base_cached.get("issues") or [])
+    total_count = int(base_cached.get("total_count") or len(normalized_issues))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    issues = normalized_issues[start_idx:end_idx]
+    has_next = end_idx < total_count
 
     response_payload = {
         "issues": issues,
