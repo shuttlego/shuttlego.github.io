@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""shuttle-go 프로덕션 백엔드 스택 실행 스크립트
+"""shuttle-go 프로덕션 백엔드 실행 스크립트
 
-Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, grafana)을
-빌드/실행한다. 컨테이너가 올라오면 스크립트는 즉시 종료된다.
+기본 실행은 backend만 재빌드/재시작한다.
+--all 옵션을 주면 Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, grafana)을 재시작한다.
+컨테이너가 올라오면 스크립트는 즉시 종료된다.
 
 사용법:
-    python run_prd_backend.py                  # 전체 스택 빌드 + 시작
-    python run_prd_backend.py --down           # 전체 스택 종료
+    python run_prd_backend.py                  # backend만 재빌드 + 재시작
+    python run_prd_backend.py --all            # 전체 스택 빌드 + 시작
+    python run_prd_backend.py --down           # backend만 종료
+    python run_prd_backend.py --down --all     # 전체 스택 종료
     python run_prd_backend.py --timeout 120    # health check 타임아웃 변경(초)
 """
 
@@ -91,17 +94,61 @@ def wait_backend_healthy(timeout_sec: int) -> bool:
     return False
 
 
-def compose_down() -> None:
-    log("Docker Compose 전체 종료 중 …")
-    run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log("Docker Compose 전체 종료 완료")
+def compose_down(all_services: bool = False) -> None:
+    if all_services:
+        log("Docker Compose 전체 종료 중 …")
+        run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("Docker Compose 전체 종료 완료")
+        return
+
+    log("backend 종료 중 …")
+    run(
+        f"docker compose rm -f -s {BACKEND_SERVICE}",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    log("backend 종료 완료")
 
 
-def compose_up(timeout_sec: int) -> None:
-    # 기존 스택이 떠 있으면 clean restart
+def compose_up_core(timeout_sec: int) -> None:
+    # 다운타임 최소화를 위해 먼저 이미지 빌드 후 컨테이너 교체
+    log("backend 이미지 빌드 중 …")
+    build_ret = run(f"docker compose build {BACKEND_SERVICE}")
+    if build_ret.returncode != 0:
+        err("docker compose build backend 실패")
+        sys.exit(1)
+
+    existing_backend = get_backend_container_id()
+    if existing_backend:
+        log("기존 backend 컨테이너 감지 → 교체 시작")
+        rm_ret = run(f"docker compose rm -f -s {BACKEND_SERVICE}")
+        if rm_ret.returncode != 0:
+            err("기존 backend 컨테이너 정리에 실패했습니다")
+            sys.exit(1)
+
+    log("새 backend 컨테이너 시작 …")
+    up_ret = run(f"docker compose up -d --no-build --force-recreate {BACKEND_SERVICE}")
+    if up_ret.returncode != 0:
+        err("docker compose up -d backend 실패")
+        sys.exit(1)
+
+    if not wait_backend_healthy(timeout_sec):
+        sys.exit(1)
+
+    print()
+    log("═══════════════════════════════════════════")
+    log("  backend 재시작 완료")
+    log("  확인: docker compose ps backend")
+    log("═══════════════════════════════════════════")
+    run(f"docker compose ps {BACKEND_SERVICE}")
+    print()
+
+
+def compose_up_all(timeout_sec: int) -> None:
+    # --all은 전체 스택 재시작
     result = run("docker compose ps -q", capture_output=True, text=True)
     if result.stdout.strip():
-        log("기존 컨테이너 감지 → 재시작합니다 …")
+        log("기존 컨테이너 감지 → 전체 재시작합니다 …")
         run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     log("Docker Compose 전체 빌드 & 시작 …")
@@ -123,8 +170,9 @@ def compose_up(timeout_sec: int) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="shuttle-go 프로덕션 백엔드 스택 실행")
-    parser.add_argument("--down", action="store_true", help="Docker Compose 전체 종료")
+    parser = argparse.ArgumentParser(description="shuttle-go 프로덕션 백엔드 실행")
+    parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체)")
+    parser.add_argument("--all", action="store_true", help="전체 스택 재시작/종료")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -138,10 +186,13 @@ def main() -> None:
         sys.exit(1)
 
     if args.down:
-        compose_down()
+        compose_down(all_services=args.all)
         return
 
-    compose_up(args.timeout)
+    if args.all:
+        compose_up_all(args.timeout)
+    else:
+        compose_up_core(args.timeout)
 
 
 if __name__ == "__main__":
