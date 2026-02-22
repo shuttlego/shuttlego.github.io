@@ -29,6 +29,7 @@ from prometheus_client import (
 import load_data
 from load_data import (
     find_nearest_route_options,
+    get_available_day_types,
     get_endpoint_options,
     get_endpoint_route_ids,
     get_db_updated_at,
@@ -36,6 +37,7 @@ from load_data import (
     get_route_detail,
     get_sites,
     init_db,
+    search_endpoint_options,
     warm_endpoint_cache,
 )
 
@@ -191,6 +193,9 @@ def _nearest_route_stop_for_user(
     *,
     exclude_first: bool = False,
     exclude_last: bool = False,
+    exclude_stop_ids: set[int] | None = None,
+    min_sequence: int | None = None,
+    max_sequence: int | None = None,
 ) -> dict | None:
     """노선 정류장 목록에서 사용자 좌표 기준 가장 가까운 정류장을 반환."""
     if not route_stops:
@@ -200,6 +205,33 @@ def _nearest_route_stop_for_user(
     if end <= start:
         return None
     candidates = route_stops[start:end]
+    if exclude_stop_ids:
+        filtered = []
+        for stop in candidates:
+            sid = stop.get("stop_id")
+            try:
+                if sid is not None and int(sid) in exclude_stop_ids:
+                    continue
+            except (TypeError, ValueError):
+                pass
+            filtered.append(stop)
+        candidates = filtered
+    if min_sequence is not None or max_sequence is not None:
+        filtered = []
+        for stop in candidates:
+            seq_raw = stop.get("sequence")
+            try:
+                seq = int(seq_raw)
+            except (TypeError, ValueError):
+                continue
+            if min_sequence is not None and seq < min_sequence:
+                continue
+            if max_sequence is not None and seq > max_sequence:
+                continue
+            filtered.append(stop)
+        candidates = filtered
+    if not candidates:
+        return None
     best = min(
         candidates,
         key=lambda s: haversine_distance_m(user_lat, user_lng, s["lat"], s["lng"]),
@@ -208,7 +240,131 @@ def _nearest_route_stop_for_user(
         "name": best["stop_name"],
         "lat": best["lat"],
         "lon": best["lng"],
+        "stop_id": best.get("stop_id"),
+        "sequence": best.get("sequence"),
     }
+
+
+def _find_route_stop_sequence(
+    route_stops: list[dict],
+    *,
+    stop_id: int | None = None,
+    stop_name: str | None = None,
+) -> int | None:
+    """route_stops에서 stop_id/stop_name으로 정류장 순번을 찾는다."""
+    if stop_id is not None:
+        for stop in route_stops:
+            try:
+                if int(stop.get("stop_id")) == int(stop_id):
+                    seq = stop.get("sequence")
+                    return int(seq) if seq is not None else None
+            except (TypeError, ValueError):
+                continue
+    if stop_name:
+        target = str(stop_name).strip()
+        for stop in route_stops:
+            if str(stop.get("stop_name", "")).strip() == target:
+                seq = stop.get("sequence")
+                try:
+                    return int(seq) if seq is not None else None
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
+def _normalize_stop_name_for_endpoint_matching(name: str | None) -> str:
+    if not name:
+        return ""
+    try:
+        return load_data._normalize_endpoint_name(str(name))  # type: ignore[attr-defined]
+    except Exception:
+        return str(name).strip()
+
+
+def _option_component_names(option: dict) -> set[str]:
+    names: set[str] = set()
+    components = option.get("endpoint_components")
+    if isinstance(components, list):
+        for comp in components:
+            normalized = _normalize_stop_name_for_endpoint_matching(str(comp))
+            if normalized:
+                names.add(normalized)
+    primary = _normalize_stop_name_for_endpoint_matching(str(option.get("endpoint_primary_name", "")))
+    if primary:
+        names.add(primary)
+    if not names:
+        raw = str(option.get("endpoint_name", ""))
+        for token in raw.split("/"):
+            normalized = _normalize_stop_name_for_endpoint_matching(token)
+            if normalized:
+                names.add(normalized)
+    return names
+
+
+def _build_selected_endpoint_component_set(
+    site_id: str,
+    day_type: str,
+    direction: str,
+    selected_endpoints: list[str] | None,
+) -> set[str] | None:
+    options = get_endpoint_options(site_id, day_type, direction)
+    if not options:
+        return None
+
+    option_by_name: dict[str, dict] = {}
+    for opt in options:
+        name = str(opt.get("endpoint_name", "")).strip()
+        if name:
+            option_by_name[name] = opt
+
+    if selected_endpoints is None:
+        selected_names = set(option_by_name.keys())
+    else:
+        selected_names = {str(name).strip() for name in selected_endpoints if str(name).strip()}
+
+    if not selected_names:
+        return None
+
+    selected_components: set[str] = set()
+    for endpoint_name in selected_names:
+        opt = option_by_name.get(endpoint_name)
+        if not opt:
+            continue
+        selected_components.update(_option_component_names(opt))
+    return selected_components or None
+
+
+def _choose_endpoint_display_stop(
+    route_stops: list[dict],
+    *,
+    direction: str,
+    selected_components: set[str] | None,
+) -> dict | None:
+    if not route_stops:
+        return None
+
+    canonical_index = (len(route_stops) - 1) if direction == "depart" else 0
+    canonical_stop = route_stops[canonical_index]
+    if not selected_components:
+        return canonical_stop
+
+    normalized_stop_names = [
+        _normalize_stop_name_for_endpoint_matching(str(stop.get("stop_name", "")))
+        for stop in route_stops
+    ]
+    matched_indices = [
+        idx for idx, normalized in enumerate(normalized_stop_names)
+        if normalized and normalized in selected_components
+    ]
+    if not matched_indices:
+        return canonical_stop
+
+    canonical_name = normalized_stop_names[canonical_index]
+    if canonical_name and canonical_name in selected_components:
+        return canonical_stop
+
+    target_index = max(matched_indices) if direction == "depart" else min(matched_indices)
+    return route_stops[target_index]
 
 
 def search_places(query: str) -> list[dict]:
@@ -637,6 +793,14 @@ def api_sites():
     return jsonify({"sites": get_sites(), "db_updated_at": get_db_updated_at()})
 
 
+@app.route("/api/shuttle/day-types")
+def api_shuttle_day_types():
+    """사업장별로 실제 출퇴근 노선이 존재하는 day_type 목록 반환."""
+    site_id = request.args.get("site_id", default="0000011")
+    day_types = get_available_day_types(site_id)
+    return jsonify({"site_id": site_id, "day_types": day_types})
+
+
 @app.route("/api/shuttle/endpoint-options")
 def api_shuttle_endpoint_options():
     """
@@ -658,6 +822,34 @@ def api_shuttle_endpoint_options():
             "day_type": day_type,
             "depart_terminus_options": depart_options,
             "arrive_start_options": arrive_options,
+        }
+    )
+
+
+@app.route("/api/shuttle/endpoint-options/search")
+def api_shuttle_endpoint_options_search():
+    """
+    route_keyword(노선명 부분 일치) 기준으로 endpoint 옵션을 필터링해 반환한다.
+    """
+    site_id = request.args.get("site_id", default="0000011")
+    day_type = request.args.get("day_type", default="weekday")
+    direction = request.args.get("direction", default="depart")
+    route_keyword = request.args.get("keyword", default="", type=str)
+    if direction not in {"depart", "arrive"}:
+        return jsonify({"error": "direction must be 'depart' or 'arrive'"}), 400
+
+    try:
+        options = search_endpoint_options(site_id, day_type, direction, route_keyword)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(
+        {
+            "site_id": site_id,
+            "day_type": day_type,
+            "direction": direction,
+            "keyword": route_keyword,
+            "options": options,
         }
     )
 
@@ -972,6 +1164,7 @@ def api_shuttle_depart_options():
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     include_route_ids: set[int] | None = None
+    selected_endpoint_components: set[str] | None = None
     if use_endpoint_filter or selected_endpoints is not None:
         try:
             include_route_ids = get_endpoint_route_ids(
@@ -984,6 +1177,12 @@ def api_shuttle_depart_options():
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
             return jsonify({"options": []})
+        selected_endpoint_components = _build_selected_endpoint_component_set(
+            site_id=site_id,
+            day_type=day_type,
+            direction="depart",
+            selected_endpoints=selected_endpoints,
+        )
 
     SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
 
@@ -1011,13 +1210,54 @@ def api_shuttle_depart_options():
             "name": r["nearest_stop"]["name"],
             "lat": r["nearest_stop"]["lat"],
             "lon": r["nearest_stop"]["lon"],
+            "stop_id": r["nearest_stop"].get("stop_id"),
         }
         route_stops = r["route_stops"]
-        terminus = route_stops[-1] if route_stops else None
+        terminus = _choose_endpoint_display_stop(
+            route_stops,
+            direction="depart",
+            selected_components=selected_endpoint_components,
+        )
+        terminus_seq = _find_route_stop_sequence(
+            route_stops,
+            stop_id=terminus.get("stop_id") if terminus else None,
+            stop_name=terminus.get("stop_name") if terminus else None,
+        )
+        nearest_seq = _find_route_stop_sequence(
+            route_stops,
+            stop_id=r["nearest_stop"].get("stop_id"),
+            stop_name=ns["name"],
+        )
+        if nearest_seq is not None:
+            ns["sequence"] = nearest_seq
 
-        # 탑승 정류장과 하차(종착) 정류장이 동일하면 같은 노선 내에서 대체 탑승 정류장 탐색
-        if terminus and ns["name"] == terminus["stop_name"]:
-            alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_last=True)
+        needs_boarding_adjust = False
+        max_boarding_seq: int | None = None
+        if terminus and terminus_seq is not None:
+            if nearest_seq is None or nearest_seq >= terminus_seq:
+                needs_boarding_adjust = True
+                max_boarding_seq = terminus_seq - 1
+        elif terminus and ns["name"] == terminus["stop_name"]:
+            needs_boarding_adjust = True
+
+        # 출근은 항상 탑승 정류장 순번이 종착지보다 앞서도록 보정
+        if needs_boarding_adjust:
+            exclude_stop_ids: set[int] = set()
+            try:
+                sid = terminus.get("stop_id")
+                if sid is not None:
+                    exclude_stop_ids.add(int(sid))
+            except (TypeError, ValueError):
+                pass
+            is_canonical_terminus = bool(route_stops) and terminus is route_stops[-1]
+            alt = _nearest_route_stop_for_user(
+                route_stops,
+                lat,
+                lng,
+                exclude_last=is_canonical_terminus,
+                exclude_stop_ids=exclude_stop_ids or None,
+                max_sequence=max_boarding_seq,
+            )
             if not alt:
                 continue
             ns = alt
@@ -1099,13 +1339,50 @@ def api_shuttle_depart():
         "name": r["nearest_stop"]["name"],
         "lat": r["nearest_stop"]["lat"],
         "lon": r["nearest_stop"]["lon"],
+        "stop_id": r["nearest_stop"].get("stop_id"),
     }
     route_stops = r["route_stops"]
     terminus = route_stops[-1] if route_stops else None
-    if terminus and ns["name"] == terminus["stop_name"]:
-        alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_last=True)
+    terminus_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=terminus.get("stop_id") if terminus else None,
+        stop_name=terminus.get("stop_name") if terminus else None,
+    )
+    nearest_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=r["nearest_stop"].get("stop_id"),
+        stop_name=ns["name"],
+    )
+    if nearest_seq is not None:
+        ns["sequence"] = nearest_seq
+    needs_boarding_adjust = False
+    max_boarding_seq: int | None = None
+    if terminus and terminus_seq is not None:
+        if nearest_seq is None or nearest_seq >= terminus_seq:
+            needs_boarding_adjust = True
+            max_boarding_seq = terminus_seq - 1
+    elif terminus and ns["name"] == terminus["stop_name"]:
+        needs_boarding_adjust = True
+    if needs_boarding_adjust:
+        exclude_stop_ids: set[int] = set()
+        try:
+            sid = terminus.get("stop_id") if terminus else None
+            if sid is not None:
+                exclude_stop_ids.add(int(sid))
+        except (TypeError, ValueError):
+            pass
+        alt = _nearest_route_stop_for_user(
+            route_stops,
+            lat,
+            lng,
+            exclude_last=True,
+            exclude_stop_ids=exclude_stop_ids or None,
+            max_sequence=max_boarding_seq,
+        )
         if alt:
             ns = alt
+        else:
+            return jsonify({"error": "해당 노선에서 탑승 가능한 정류장을 찾을 수 없습니다."}), 404
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -1163,6 +1440,7 @@ def api_shuttle_arrive_options():
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     include_route_ids: set[int] | None = None
+    selected_endpoint_components: set[str] | None = None
     if use_endpoint_filter or selected_endpoints is not None:
         try:
             include_route_ids = get_endpoint_route_ids(
@@ -1175,6 +1453,12 @@ def api_shuttle_arrive_options():
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
             return jsonify({"options": []})
+        selected_endpoint_components = _build_selected_endpoint_component_set(
+            site_id=site_id,
+            day_type=day_type,
+            direction="arrive",
+            selected_endpoints=selected_endpoints,
+        )
 
     SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
 
@@ -1202,13 +1486,54 @@ def api_shuttle_arrive_options():
             "name": r["nearest_stop"]["name"],
             "lat": r["nearest_stop"]["lat"],
             "lon": r["nearest_stop"]["lon"],
+            "stop_id": r["nearest_stop"].get("stop_id"),
         }
         route_stops = r["route_stops"]
-        first = route_stops[0] if route_stops else None
+        nearest_seq = _find_route_stop_sequence(
+            route_stops,
+            stop_id=r["nearest_stop"].get("stop_id"),
+            stop_name=ns["name"],
+        )
+        if nearest_seq is not None:
+            ns["sequence"] = nearest_seq
+        first = _choose_endpoint_display_stop(
+            route_stops,
+            direction="arrive",
+            selected_components=selected_endpoint_components,
+        )
+        first_seq = _find_route_stop_sequence(
+            route_stops,
+            stop_id=first.get("stop_id") if first else None,
+            stop_name=first.get("stop_name") if first else None,
+        )
 
-        # 탑승(출발) 정류장과 하차 정류장이 동일하면 같은 노선 내에서 대체 하차 정류장 탐색
-        if first and first["stop_name"] == ns["name"]:
-            alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_first=True)
+        needs_getoff_adjust = False
+        min_getoff_seq: int | None = None
+        if first and first_seq is not None:
+            if nearest_seq is None or nearest_seq <= first_seq:
+                needs_getoff_adjust = True
+                min_getoff_seq = first_seq + 1
+        elif first and first["stop_name"] == ns["name"]:
+            needs_getoff_adjust = True
+
+        # 퇴근은 항상 하차 정류장 순번이 탑승 정류장보다 뒤로 오도록 보정
+        if needs_getoff_adjust:
+            exclude_stop_ids: set[int] = set()
+            try:
+                sid = first.get("stop_id")
+                if sid is not None:
+                    exclude_stop_ids.add(int(sid))
+            except (TypeError, ValueError):
+                pass
+            is_canonical_start = bool(route_stops) and first is route_stops[0]
+            alt = _nearest_route_stop_for_user(
+                route_stops,
+                lat,
+                lng,
+                exclude_first=is_canonical_start,
+                exclude_stop_ids=exclude_stop_ids or None,
+                min_sequence=min_getoff_seq,
+            )
             if not alt:
                 continue
             ns = alt
@@ -1246,6 +1571,7 @@ def api_shuttle_arrive_options():
             "operator": ", ".join(r["companies"]),
             "start_stop_name": first["stop_name"] if first else "",
             "getoff_stop_name": ns["name"],
+            "getoff_stop_sequence": ns.get("sequence"),
             "distance_m": round(distance_m),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
@@ -1290,11 +1616,47 @@ def api_shuttle_arrive():
         "lon": r["nearest_stop"]["lon"],
     }
     route_stops = r["route_stops"]
+    nearest_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=r["nearest_stop"].get("stop_id"),
+        stop_name=ns["name"],
+    )
+    if nearest_seq is not None:
+        ns["sequence"] = nearest_seq
     first = route_stops[0] if route_stops else None
-    if first and first["stop_name"] == ns["name"]:
-        alt = _nearest_route_stop_for_user(route_stops, lat, lng, exclude_first=True)
+    first_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=first.get("stop_id") if first else None,
+        stop_name=first.get("stop_name") if first else None,
+    )
+    needs_getoff_adjust = False
+    min_getoff_seq: int | None = None
+    if first and first_seq is not None:
+        if nearest_seq is None or nearest_seq <= first_seq:
+            needs_getoff_adjust = True
+            min_getoff_seq = first_seq + 1
+    elif first and first["stop_name"] == ns["name"]:
+        needs_getoff_adjust = True
+    if needs_getoff_adjust:
+        exclude_stop_ids: set[int] = set()
+        try:
+            sid = first.get("stop_id") if first else None
+            if sid is not None:
+                exclude_stop_ids.add(int(sid))
+        except (TypeError, ValueError):
+            pass
+        alt = _nearest_route_stop_for_user(
+            route_stops,
+            lat,
+            lng,
+            exclude_first=True,
+            exclude_stop_ids=exclude_stop_ids or None,
+            min_sequence=min_getoff_seq,
+        )
         if alt:
             ns = alt
+        else:
+            return jsonify({"error": "해당 노선에서 하차 가능한 정류장을 찾을 수 없습니다."}), 404
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -1319,6 +1681,7 @@ def api_shuttle_arrive():
         "route_name": r["route_name"],
         "start_stop_name": first["stop_name"] if first else "",
         "getoff_stop_name": ns["name"],
+        "getoff_stop_sequence": ns.get("sequence"),
     }
     if board_time is not None:
         payload["board_time"] = board_time

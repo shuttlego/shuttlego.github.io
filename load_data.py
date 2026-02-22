@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 import threading
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -18,6 +19,8 @@ _conn: sqlite3.Connection | None = None
 _has_stop_scope: bool | None = None
 _endpoint_cache_lock = threading.Lock()
 _endpoint_cache: dict[tuple[str, str, str], dict] = {}
+_ENDPOINT_GROUP_DISTANCE_M = 100.0
+_ENDPOINT_GRID_CELL_DEG = _ENDPOINT_GROUP_DISTANCE_M / 111000.0
 
 
 def init_db(db_path: str | None = None) -> None:
@@ -74,6 +77,35 @@ def get_sites() -> list[dict]:
     return [{"site_id": r["site_id"], "site_name": r["name"]} for r in rows]
 
 
+def get_available_day_types(site_id: str) -> list[str]:
+    """
+    선택 사업장에서 출퇴근 노선(commute_in/commute_out)이 실제 존재하는 day_type 목록을 반환한다.
+    '테스트' 노선은 제외한다.
+    """
+    rows = _db().execute(
+        """
+        SELECT DISTINCT sv.day_type
+        FROM route ro
+        JOIN service_variant sv ON sv.route_id = ro.route_id
+        WHERE ro.site_id = ?
+          AND ro.route_type IN ('commute_in', 'commute_out')
+          AND ro.route_name NOT LIKE '%테스트%'
+        ORDER BY
+          CASE sv.day_type
+            WHEN 'weekday' THEN 1
+            WHEN 'monday' THEN 2
+            WHEN 'saturday' THEN 3
+            WHEN 'holiday' THEN 4
+            WHEN 'familyday' THEN 5
+            ELSE 99
+          END,
+          sv.day_type
+        """,
+        (site_id,),
+    ).fetchall()
+    return [str(r["day_type"]) for r in rows if r["day_type"]]
+
+
 def get_db_updated_at() -> str:
     """DB 파일의 마지막 수정 시각을 KST 문자열로 반환."""
     try:
@@ -117,6 +149,9 @@ def _normalize_endpoint_name(raw_name: str | None) -> str:
     # P2 야외승강장(19) -> P2 야외승강장
     name = re.sub(r"\s*\(\s*\d+(?:-\d+)?\s*\)\s*$", "", name)
 
+    # DSR동 전면도로(1번정류장) -> DSR동 전면도로
+    name = re.sub(r"\s*\(\s*[A-Za-z]?\d+(?:-\d+)?\s*번?\s*정류장\s*\)\s*$", "", name)
+
     # 공백/괄호 포맷 정리
     name = re.sub(r"\s+", " ", name).strip()
     name = re.sub(r"\(\s+", "(", name)
@@ -141,16 +176,19 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
         "options": [{"endpoint_name": str, "route_count": int}, ...],
         "endpoint_to_routes": {endpoint_name: {route_id, ...}},
     }
+
+    규칙:
+    - 동일 명칭 정규화(_normalize_endpoint_name)
+    - endpoint 정류장끼리 100m 이내면 하나의 옵션 그룹으로 병합
+    - 옵션별 route 집합은, 그룹 endpoint 정류장 100m 이내를 지나는 노선 전체를 포함
+      (즉, 중간 정류장으로 경유하는 노선도 옵션에 포함되어 다중 매핑 가능)
+    - 옵션명 구성요소는 반드시 같은 방향 노선의 실제 endpoint 명칭만 사용
     """
     db = _db()
     route_type = _endpoint_route_type(direction)
+    endpoint_seq_col = "es.max_seq" if direction == "depart" else "es.min_seq"
 
-    if direction == "depart":
-        endpoint_expr = "st_max.name"
-    else:
-        endpoint_expr = "st_min.name"
-
-    rows = db.execute(
+    endpoint_rows = db.execute(
         f"""
         WITH target_routes AS (
             SELECT route_id
@@ -174,34 +212,256 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
         )
         SELECT
             fv.route_id,
-            {endpoint_expr} AS endpoint_name
+            vs_ep.stop_id AS endpoint_stop_id,
+            st_ep.name AS endpoint_name
         FROM first_variant fv
         JOIN endpoint_seq es ON es.variant_id = fv.variant_id
-        LEFT JOIN variant_stop vs_min
-            ON vs_min.variant_id = fv.variant_id
-           AND vs_min.seq = es.min_seq
-        LEFT JOIN stop st_min ON st_min.stop_id = vs_min.stop_id
-        LEFT JOIN variant_stop vs_max
-            ON vs_max.variant_id = fv.variant_id
-           AND vs_max.seq = es.max_seq
-        LEFT JOIN stop st_max ON st_max.stop_id = vs_max.stop_id
+        JOIN variant_stop vs_ep
+            ON vs_ep.variant_id = fv.variant_id
+           AND vs_ep.seq = {endpoint_seq_col}
+        LEFT JOIN stop st_ep ON st_ep.stop_id = vs_ep.stop_id
         """,
         (site_id, route_type, day_type),
     ).fetchall()
 
-    endpoint_to_routes: dict[str, set[int]] = {}
-    for row in rows:
+    if not endpoint_rows:
+        return {"options": [], "endpoint_to_routes": {}}
+
+    name_to_direct_routes: dict[str, set[int]] = defaultdict(set)
+    name_to_endpoint_stops: dict[str, set[int]] = defaultdict(set)
+
+    for row in endpoint_rows:
         normalized = _normalize_endpoint_name(row["endpoint_name"])
         if not normalized:
             continue
-        endpoint_to_routes.setdefault(normalized, set()).add(int(row["route_id"]))
+        rid = int(row["route_id"])
+        sid = int(row["endpoint_stop_id"])
+        name_to_direct_routes[normalized].add(rid)
+        name_to_endpoint_stops[normalized].add(sid)
 
-    options = [
-        {"endpoint_name": endpoint, "route_count": len(route_ids)}
-        for endpoint, route_ids in endpoint_to_routes.items()
-    ]
+    if not name_to_direct_routes:
+        return {"options": [], "endpoint_to_routes": {}}
+
+    # day_type 내 target route의 모든 경유 정류장(모든 variant) 로드:
+    # endpoint 100m 근접 경유 노선(중간 정류장 포함) 계산에 사용한다.
+    route_stop_rows = db.execute(
+        """
+        WITH target_routes AS (
+            SELECT route_id
+            FROM route
+            WHERE site_id = ?
+              AND route_type = ?
+              AND route_name NOT LIKE '%테스트%'
+        )
+        SELECT DISTINCT
+            sv.route_id,
+            vs.stop_id,
+            s.lat,
+            s.lon
+        FROM service_variant sv
+        JOIN target_routes tr ON tr.route_id = sv.route_id
+        JOIN variant_stop vs ON vs.variant_id = sv.variant_id
+        JOIN stop s ON s.stop_id = vs.stop_id
+        WHERE sv.day_type = ?
+        """,
+        (site_id, route_type, day_type),
+    ).fetchall()
+
+    route_name_rows = db.execute(
+        """
+        WITH target_routes AS (
+            SELECT route_id
+            FROM route
+            WHERE site_id = ?
+              AND route_type = ?
+              AND route_name NOT LIKE '%테스트%'
+        )
+        SELECT DISTINCT
+            sv.route_id,
+            ro.route_name
+        FROM service_variant sv
+        JOIN target_routes tr ON tr.route_id = sv.route_id
+        JOIN route ro ON ro.route_id = sv.route_id
+        WHERE sv.day_type = ?
+        """,
+        (site_id, route_type, day_type),
+    ).fetchall()
+    route_name_by_id: dict[int, str] = {}
+    for row in route_name_rows:
+        rid = int(row["route_id"])
+        if rid not in route_name_by_id:
+            route_name_by_id[rid] = str(row["route_name"] or "").strip()
+
+    stop_to_routes: dict[int, set[int]] = defaultdict(set)
+    stop_coords: dict[int, tuple[float, float]] = {}
+    for row in route_stop_rows:
+        rid = int(row["route_id"])
+        sid = int(row["stop_id"])
+        stop_to_routes[sid].add(rid)
+        if sid not in stop_coords:
+            stop_coords[sid] = (float(row["lat"]), float(row["lon"]))
+
+    if not stop_coords:
+        # 방어적 폴백: 근접 매핑 정보가 없으면 기존 direct endpoint 매핑만 사용
+        endpoint_to_routes = {name: set(route_ids) for name, route_ids in name_to_direct_routes.items()}
+        options = [
+            {"endpoint_name": endpoint, "route_count": len(route_ids)}
+            for endpoint, route_ids in endpoint_to_routes.items()
+        ]
+        options.sort(key=lambda item: item["endpoint_name"])
+        return {"options": options, "endpoint_to_routes": endpoint_to_routes}
+
+    stop_grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for sid, (lat, lon) in stop_coords.items():
+        gx = math.floor(lat / _ENDPOINT_GRID_CELL_DEG)
+        gy = math.floor(lon / _ENDPOINT_GRID_CELL_DEG)
+        stop_grid[(gx, gy)].append(sid)
+
+    def nearby_stop_ids(origin_sid: int) -> set[int]:
+        coord = stop_coords.get(origin_sid)
+        if coord is None:
+            return set()
+        origin_lat, origin_lon = coord
+        gx = math.floor(origin_lat / _ENDPOINT_GRID_CELL_DEG)
+        gy = math.floor(origin_lon / _ENDPOINT_GRID_CELL_DEG)
+        nearby: set[int] = set()
+        for dx in (-2, -1, 0, 1, 2):
+            for dy in (-2, -1, 0, 1, 2):
+                for cand_sid in stop_grid.get((gx + dx, gy + dy), []):
+                    cand_lat, cand_lon = stop_coords[cand_sid]
+                    if _haversine_m(origin_lat, origin_lon, cand_lat, cand_lon) <= _ENDPOINT_GROUP_DISTANCE_M:
+                        nearby.add(cand_sid)
+        return nearby
+
+    endpoint_stop_to_names: dict[int, set[str]] = defaultdict(set)
+    endpoint_stop_ids: set[int] = set()
+    for name, stop_ids in name_to_endpoint_stops.items():
+        for sid in stop_ids:
+            endpoint_stop_to_names[sid].add(name)
+            endpoint_stop_ids.add(sid)
+
+    # endpoint stop끼리 100m 근접한 관계를 구성
+    endpoint_nearby_map: dict[int, set[int]] = {}
+    for sid in endpoint_stop_ids:
+        endpoint_nearby_map[sid] = nearby_stop_ids(sid).intersection(endpoint_stop_ids)
+
+    # 이름 기준 DSU로 endpoint name 클러스터링
+    parent: dict[str, str] = {name: name for name in name_to_direct_routes}
+    rank: dict[str, int] = {name: 0 for name in name_to_direct_routes}
+
+    def find_name(name: str) -> str:
+        while parent[name] != name:
+            parent[name] = parent[parent[name]]
+            name = parent[name]
+        return name
+
+    def union_name(a: str, b: str) -> None:
+        ra = find_name(a)
+        rb = find_name(b)
+        if ra == rb:
+            return
+        if rank[ra] < rank[rb]:
+            ra, rb = rb, ra
+        parent[rb] = ra
+        if rank[ra] == rank[rb]:
+            rank[ra] += 1
+
+    for sid, names in endpoint_stop_to_names.items():
+        nearby_endpoint_stops = endpoint_nearby_map.get(sid, set())
+        if not nearby_endpoint_stops:
+            continue
+        for near_sid in nearby_endpoint_stops:
+            near_names = endpoint_stop_to_names.get(near_sid)
+            if not near_names:
+                continue
+            for n1 in names:
+                for n2 in near_names:
+                    union_name(n1, n2)
+
+    cluster_to_names: dict[str, set[str]] = defaultdict(set)
+    for name in name_to_direct_routes.keys():
+        cluster_to_names[find_name(name)].add(name)
+
+    # endpoint stop별 100m 근접 경유 route 집합 (중간 정류장 포함)
+    endpoint_stop_to_routes: dict[int, set[int]] = {}
+    for endpoint_sid in endpoint_stop_ids:
+        route_ids: set[int] = set()
+        for near_sid in nearby_stop_ids(endpoint_sid):
+            route_ids.update(stop_to_routes.get(near_sid, set()))
+        endpoint_stop_to_routes[endpoint_sid] = route_ids
+
+    endpoint_to_routes: dict[str, set[int]] = {}
+    endpoint_option_meta: dict[str, dict] = {}
+    for clustered_names in cluster_to_names.values():
+        grouped_stop_ids: set[int] = set()
+        for name in clustered_names:
+            grouped_stop_ids.update(name_to_endpoint_stops.get(name, set()))
+
+        route_ids: set[int] = set()
+        direct_route_ids: set[int] = set()
+        for name in clustered_names:
+            direct_route_ids.update(name_to_direct_routes.get(name, set()))
+        for sid in grouped_stop_ids:
+            route_ids.update(endpoint_stop_to_routes.get(sid, set()))
+        if not route_ids:
+            route_ids = direct_route_ids
+
+        component_name_to_routes: dict[str, set[int]] = defaultdict(set)
+        for name in clustered_names:
+            component_name_to_routes[name].update(name_to_direct_routes.get(name, set()).intersection(route_ids))
+
+        if component_name_to_routes:
+            primary_name = sorted(
+                component_name_to_routes.keys(),
+                key=lambda name: (-len(component_name_to_routes[name]), name),
+            )[0]
+            remaining_names = sorted([name for name in component_name_to_routes.keys() if name != primary_name])
+            ordered_names = [primary_name] + remaining_names
+        else:
+            ordered_names = sorted(clustered_names)
+            primary_name = ordered_names[0] if ordered_names else ""
+
+        option_name = " / ".join(ordered_names)
+        dedup_name = option_name
+        suffix = 2
+        while dedup_name in endpoint_to_routes:
+            dedup_name = f"{option_name} ({suffix})"
+            suffix += 1
+        endpoint_to_routes[dedup_name] = route_ids
+        display_lines = [primary_name] + [f"  {name}" for name in ordered_names[1:]]
+        endpoint_option_meta[dedup_name] = {
+            "endpoint_primary_name": primary_name,
+            "endpoint_components": ordered_names,
+            "endpoint_display_name": "\n".join(display_lines),
+        }
+
+    options: list[dict] = []
+    endpoint_search_blob: dict[str, str] = {}
+    for endpoint, route_ids in endpoint_to_routes.items():
+        meta = endpoint_option_meta.get(endpoint, {})
+        options.append(
+            {
+                "endpoint_name": endpoint,
+                "route_count": len(route_ids),
+                "endpoint_primary_name": str(meta.get("endpoint_primary_name", "")),
+                "endpoint_components": list(meta.get("endpoint_components", [])),
+                "endpoint_display_name": str(meta.get("endpoint_display_name", "")),
+            }
+        )
+        route_names = sorted(
+            {
+                route_name_by_id.get(rid, "").strip()
+                for rid in route_ids
+                if route_name_by_id.get(rid, "").strip()
+            }
+        )
+        endpoint_search_blob[endpoint] = "\n".join(name.casefold() for name in route_names)
     options.sort(key=lambda item: item["endpoint_name"])
-    return {"options": options, "endpoint_to_routes": endpoint_to_routes}
+    return {
+        "options": options,
+        "endpoint_to_routes": endpoint_to_routes,
+        "endpoint_search_blob": endpoint_search_blob,
+    }
 
 
 def _get_or_build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
@@ -240,6 +500,32 @@ def get_endpoint_options(site_id: str, day_type: str, direction: str) -> list[di
     """사업장/요일/방향별 endpoint 옵션(정규화 + route_count 포함) 조회."""
     cache_entry = _get_or_build_endpoint_cache(site_id, day_type, direction)
     return [dict(item) for item in cache_entry["options"]]
+
+
+def search_endpoint_options(
+    site_id: str,
+    day_type: str,
+    direction: str,
+    route_keyword: str,
+) -> list[dict]:
+    """
+    route_keyword(노선명 부분 일치)를 포함한 노선이 속한 endpoint 옵션만 반환한다.
+    """
+    cache_entry = _get_or_build_endpoint_cache(site_id, day_type, direction)
+    options = cache_entry["options"]
+    keyword = (route_keyword or "").strip()
+    if not keyword:
+        return [dict(item) for item in options]
+
+    keyword_cf = keyword.casefold()
+    endpoint_search_blob: dict[str, str] = cache_entry.get("endpoint_search_blob", {})
+    filtered: list[dict] = []
+    for item in options:
+        endpoint_name = str(item.get("endpoint_name", ""))
+        blob = endpoint_search_blob.get(endpoint_name, "")
+        if keyword_cf in blob:
+            filtered.append(dict(item))
+    return filtered
 
 
 def get_endpoint_route_ids(
@@ -526,7 +812,7 @@ def find_nearest_route_options(
         if first_variant:
             stops_rows = db.execute(
                 """
-                SELECT vs.seq, s.name, s.lat, s.lon
+                SELECT vs.seq, vs.stop_id, s.name, s.lat, s.lon
                 FROM variant_stop vs
                 JOIN stop s ON s.stop_id = vs.stop_id
                 WHERE vs.variant_id = ?
@@ -535,7 +821,13 @@ def find_nearest_route_options(
                 (first_variant["variant_id"],),
             ).fetchall()
             route_stops = [
-                {"sequence": sr["seq"], "stop_name": sr["name"], "lat": sr["lat"], "lng": sr["lon"]}
+                {
+                    "sequence": sr["seq"],
+                    "stop_id": sr["stop_id"],
+                    "stop_name": sr["name"],
+                    "lat": sr["lat"],
+                    "lng": sr["lon"],
+                }
                 for sr in stops_rows
             ]
 
@@ -594,7 +886,7 @@ def get_route_detail(route_id: int, day_type: str = "weekday") -> dict | None:
     if variants:
         stops_rows = db.execute(
             """
-            SELECT vs.seq, s.name, s.lat, s.lon
+            SELECT vs.seq, vs.stop_id, s.name, s.lat, s.lon
             FROM variant_stop vs
             JOIN stop s ON s.stop_id = vs.stop_id
             WHERE vs.variant_id = ?
@@ -603,7 +895,13 @@ def get_route_detail(route_id: int, day_type: str = "weekday") -> dict | None:
             (variants[0]["variant_id"],),
         ).fetchall()
         route_stops = [
-            {"sequence": sr["seq"], "stop_name": sr["name"], "lat": sr["lat"], "lng": sr["lon"]}
+            {
+                "sequence": sr["seq"],
+                "stop_id": sr["stop_id"],
+                "stop_name": sr["name"],
+                "lat": sr["lat"],
+                "lng": sr["lon"],
+            }
             for sr in stops_rows
         ]
 
