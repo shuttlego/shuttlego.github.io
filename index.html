@@ -351,6 +351,39 @@
       line-height: 1;
       text-align: left;
     }
+    .route-mode-swap-btn {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      border-radius: 8px;
+      background: #fff;
+      color: #444;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      top: 24px;
+    }
+    .route-mode-swap-btn:hover {
+      background: #fffde7;
+    }
+    .route-mode-swap-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: #f8f8f8;
+    }
+    .route-mode-swap-spacer {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+    }
     .route-mode-actions {
       grid-column: 2;
       flex-shrink: 0;
@@ -408,10 +441,10 @@
       min-width: 0;
     }
     .route-mode-place-label {
-      display: flex;
-      align-items: center;
+      display: block;
       flex: 1 1 auto;
       min-width: 0;
+      width: 100%;
       min-height: 42px;
       padding: 10px 12px;
       border: 1px solid #e0e0e0;
@@ -423,6 +456,23 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      outline: none;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .route-mode-place-label:focus {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .route-mode-place-label:hover {
+        border-color: #fee500;
+        background: #fffde7;
+      }
+    }
+    .route-mode-place-label::placeholder {
+      color: #9a9a9a;
+      font-weight: 500;
     }
     .route-endpoint-trigger {
       display: inline-flex;
@@ -2156,6 +2206,15 @@
         height: 40px;
         font-size: 12px;
       }
+      .route-mode-swap-btn,
+      .route-mode-swap-spacer {
+        width: 30px;
+        height: 30px;
+      }
+      .route-mode-swap-btn {
+        font-size: 14px;
+        top: 22px;
+      }
       .route-mode-place-label,
       .route-endpoint-trigger {
         min-height: 40px;
@@ -2247,13 +2306,12 @@
         <span class="trigger-arrow"></span>
       </button>
     </div>
-    <div class="header-center">
-      <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
-        <button type="button" id="searchBtn">검색</button>
-        <button type="button" class="issue-open-btn" id="issueModalTrigger" title="제보/이슈 보기">이슈</button>
+      <div class="header-center">
+        <div class="search-bar">
+          <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
+          <button type="button" class="issue-open-btn" id="issueModalTrigger" title="제보/이슈 보기">이슈</button>
+        </div>
       </div>
-    </div>
     <div class="site-selector-wrap">
       <select id="siteSelect" title="사업장 선택" aria-hidden="true">
         <option value="0000013">삼성전자(수원)</option>
@@ -2267,7 +2325,8 @@
       <div class="route-mode-topline">
         <div class="route-mode-left">
           <span class="route-mode-row-label">출발</span>
-          <div class="route-mode-place-label" id="routeTopPlaceLabel"></div>
+          <button type="button" class="route-mode-swap-btn" id="routeSwapBtn" title="출발/도착 교환" aria-label="출발과 도착 교환">⇅</button>
+          <input type="text" class="route-mode-place-label" id="routeTopPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
           <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeTopEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
             <span class="endpoint-trigger-text" id="routeTopEndpointTriggerText">선택</span>
             <span class="endpoint-trigger-arrow"></span>
@@ -2280,7 +2339,8 @@
       </div>
       <div class="route-mode-secondline">
         <span class="route-mode-row-label">도착</span>
-        <div class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel"></div>
+        <span class="route-mode-swap-spacer" aria-hidden="true"></span>
+        <input type="text" class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
         <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeBottomEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
           <span class="endpoint-trigger-text" id="routeBottomEndpointTriggerText">선택</span>
           <span class="endpoint-trigger-arrow"></span>
@@ -2549,6 +2609,7 @@
       var routeModeHeader = document.getElementById('routeModeHeader');
       var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
       var routeBottomPlaceLabel = document.getElementById('routeBottomPlaceLabel');
+      var routeSwapBtn = document.getElementById('routeSwapBtn');
       var routeTopEndpointTrigger = document.getElementById('routeTopEndpointTrigger');
       var routeBottomEndpointTrigger = document.getElementById('routeBottomEndpointTrigger');
       var routeTopEndpointTriggerText = document.getElementById('routeTopEndpointTriggerText');
@@ -2604,6 +2665,7 @@
       var issueCurrentView = 'list';
       var routeModeDirection = null;
       var routeModePlaceName = '';
+      var routePlaceInputSubmitting = false;
       var endpointOptionsAll = [];
       var endpointOptions = [];
       var selectedEndpoints = new Set();
@@ -2988,6 +3050,21 @@
         if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.disabled = !enabled;
       }
 
+      function updateRouteSwapButtonState() {
+        if (!routeSwapBtn) return;
+        var hasContext = !!(lastPlace && lastShuttleType);
+        routeSwapBtn.disabled = !hasContext;
+      }
+
+      function swapRouteDirection() {
+        if (!lastPlace || !lastShuttleType) return;
+        closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
+        var nextDirection = lastShuttleType === 'depart' ? 'arrive' : 'depart';
+        var opts = { preserveSheetState: isMobile() };
+        if (nextDirection === 'depart') runDepartWithPlace(lastPlace, opts);
+        else runArriveWithPlace(lastPlace, opts);
+      }
+
       function updateEndpointTriggerText() {
         var text = getEndpointTriggerSummaryText();
         if (routeTopEndpointTriggerText) routeTopEndpointTriggerText.textContent = text;
@@ -3139,8 +3216,8 @@
       function updateRouteModeHeader() {
         if (!routeModeHeader) return;
         var placeText = routeModePlaceName || '선택한 위치';
-        if (routeTopPlaceLabel) routeTopPlaceLabel.textContent = placeText;
-        if (routeBottomPlaceLabel) routeBottomPlaceLabel.textContent = placeText;
+        if (routeTopPlaceLabel && document.activeElement !== routeTopPlaceLabel) routeTopPlaceLabel.value = placeText;
+        if (routeBottomPlaceLabel && document.activeElement !== routeBottomPlaceLabel) routeBottomPlaceLabel.value = placeText;
         updateEndpointTriggerText();
 
         if (routeModeDirection === 'depart') {
@@ -3161,6 +3238,34 @@
         }
       }
 
+      function getActiveRouteModePlaceInput() {
+        if (!routeModeDirection) return null;
+        if (routeModeDirection === 'depart') {
+          if (routeTopPlaceLabel && !routeTopPlaceLabel.classList.contains('route-mode-hidden')) return routeTopPlaceLabel;
+          return null;
+        }
+        if (routeBottomPlaceLabel && !routeBottomPlaceLabel.classList.contains('route-mode-hidden')) return routeBottomPlaceLabel;
+        return null;
+      }
+
+      function onRouteModePlaceInputFocus(e) {
+        var target = e && e.currentTarget;
+        if (!target || target.classList.contains('route-mode-hidden')) return;
+        if (!routeModeDirection) return;
+        var placeText = String(routeModePlaceName || '선택한 위치').trim();
+        var currentText = String(target.value || '').trim();
+        if (currentText === placeText || currentText === '선택한 위치') {
+          target.value = '';
+        }
+      }
+
+      function onRouteModePlaceInputBlur(e) {
+        var target = e && e.currentTarget;
+        if (!target || target.classList.contains('route-mode-hidden')) return;
+        if (!routeModeDirection || routePlaceInputSubmitting) return;
+        target.value = routeModePlaceName || '선택한 위치';
+      }
+
       function setRouteMode(active, direction, placeName) {
         if (active) {
           routeModeDirection = direction || routeModeDirection || 'depart';
@@ -3168,6 +3273,7 @@
           if (headerEl) headerEl.classList.add('route-mode');
           if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'false');
           updateRouteModeHeader();
+          updateRouteSwapButtonState();
           return;
         }
         routeModeDirection = null;
@@ -3181,6 +3287,7 @@
         if (headerEl) headerEl.classList.remove('route-mode');
         if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'true');
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
+        updateRouteSwapButtonState();
       }
 
       function loadEndpointOptions(direction) {
@@ -4129,6 +4236,12 @@
           closeEndpointPickerModal();
         });
       }
+      if (routeSwapBtn) {
+        routeSwapBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          swapRouteDirection();
+        });
+      }
       if (endpointPickerSearchInput) {
         endpointPickerSearchInput.addEventListener('input', function() {
           var keyword = endpointPickerSearchInput.value || '';
@@ -4140,6 +4253,7 @@
         });
       }
       if (routeHeaderBackBtn) routeHeaderBackBtn.addEventListener('click', goBackFromRouteOptions);
+      updateRouteSwapButtonState();
 
       if (issueModalTrigger) issueModalTrigger.addEventListener('click', openIssueModal);
       if (routeIssueModalTrigger) routeIssueModalTrigger.addEventListener('click', openIssueModal);
@@ -4346,10 +4460,20 @@
         showBubbleWithPlace(place, lat, lng, true);
       }
 
-      function showBubbleAtPosition(lat, lng) {
+      function blurActiveSearchInputs() {
         if (searchInput && document.activeElement === searchInput) {
           searchInput.blur();
         }
+        if (routeTopPlaceLabel && document.activeElement === routeTopPlaceLabel) {
+          routeTopPlaceLabel.blur();
+        }
+        if (routeBottomPlaceLabel && document.activeElement === routeBottomPlaceLabel) {
+          routeBottomPlaceLabel.blur();
+        }
+      }
+
+      function showBubbleAtPosition(lat, lng) {
+        blurActiveSearchInputs();
         closeBubble();
         var place = {
           place_name: '선택한 위치',
@@ -5717,8 +5841,10 @@
       }
 
       function doSearch() {
-        var q = searchInput.value.trim();
+        var routeInput = getActiveRouteModePlaceInput();
+        var q = routeInput ? String(routeInput.value || '').trim() : searchInput.value.trim();
         if (!q) return;
+        if (searchInput) searchInput.value = q;
         shuttleMessage.classList.remove('show');
         clearShuttleOverlays();
         fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q))
@@ -5744,6 +5870,35 @@
             showPlaceResultsView();
             showEmptyResults();
           });
+      }
+
+      function onRouteModePlaceInputKeydown(e) {
+        if (!e || e.key !== 'Enter') return;
+        e.preventDefault();
+        var target = e.currentTarget;
+        var submitSearch = function() {
+          if (!target) return;
+          var keyword = String(target.value || '').trim();
+          if (!keyword) {
+            routePlaceInputSubmitting = false;
+            target.blur();
+            return;
+          }
+          routePlaceInputSubmitting = true;
+          target.blur();
+          doSearch();
+          setTimeout(function() {
+            routePlaceInputSubmitting = false;
+          }, 0);
+        };
+        if (e.isComposing && target) {
+          target.addEventListener('compositionend', function onCompEnd() {
+            target.removeEventListener('compositionend', onCompEnd);
+            submitSearch();
+          }, { once: true });
+          return;
+        }
+        submitSearch();
       }
 
       var locationPermissionOnConfirm = null;
@@ -5839,7 +5994,7 @@
         map.setLevel(Math.min(14, level + 1), { animate: true });
       }
 
-      searchBtn.addEventListener('click', doSearch);
+      if (searchBtn) searchBtn.addEventListener('click', doSearch);
       searchInput.addEventListener('keydown', function(e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -5865,6 +6020,16 @@
       }
       if (locationPermissionBackdrop) {
         locationPermissionBackdrop.addEventListener('click', closeLocationPermissionModal);
+      }
+      if (routeTopPlaceLabel) {
+        routeTopPlaceLabel.addEventListener('focus', onRouteModePlaceInputFocus);
+        routeTopPlaceLabel.addEventListener('blur', onRouteModePlaceInputBlur);
+        routeTopPlaceLabel.addEventListener('keydown', onRouteModePlaceInputKeydown);
+      }
+      if (routeBottomPlaceLabel) {
+        routeBottomPlaceLabel.addEventListener('focus', onRouteModePlaceInputFocus);
+        routeBottomPlaceLabel.addEventListener('blur', onRouteModePlaceInputBlur);
+        routeBottomPlaceLabel.addEventListener('keydown', onRouteModePlaceInputKeydown);
       }
       var btnBackFromRoutes = document.getElementById('btnBackFromRoutes');
       if (btnBackFromRoutes) btnBackFromRoutes.addEventListener('click', goBackFromRouteOptions);
