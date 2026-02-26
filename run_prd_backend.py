@@ -2,14 +2,18 @@
 """shuttle-go 프로덕션 백엔드 실행 스크립트
 
 기본 실행은 backend만 재빌드/재시작한다.
---all 옵션을 주면 Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, grafana)을 재시작한다.
+--all 옵션을 주면 Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, grafana, otp)을 재시작한다.
+개별 컴포넌트 플래그(예: --grafana, --traefik, --otp)로 선택 재시작도 가능하다.
 컨테이너가 올라오면 스크립트는 즉시 종료된다.
 
 사용법:
     python run_prd_backend.py                  # backend만 재빌드 + 재시작
     python run_prd_backend.py --all            # 전체 스택 빌드 + 시작
+    python run_prd_backend.py --otp            # otp만 재시작
+    python run_prd_backend.py --traefik --grafana  # 지정 컴포넌트만 재시작
     python run_prd_backend.py --down           # backend만 종료
     python run_prd_backend.py --down --all     # 전체 스택 종료
+    python run_prd_backend.py --down --otp     # otp만 종료
     python run_prd_backend.py --timeout 120    # health check 타임아웃 변경(초)
 """
 
@@ -24,6 +28,8 @@ import urllib.request
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_FILE = os.path.join(PROJECT_DIR, ".env")
 BACKEND_SERVICE = "backend"
+GATEWAY_SERVICE = "traefik"
+SERVICE_ORDER = ("traefik", "backend", "prometheus", "node-exporter", "grafana", "otp")
 DEFAULT_TIMEOUT = 60
 DEFAULT_BACKEND_HTTP_PORT = 80
 HEALTH_POLL_INTERVAL_SEC = 1.0
@@ -93,6 +99,47 @@ def configure_runtime_health_url() -> None:
     env_map = load_env_file(ENV_FILE)
     BACKEND_HTTP_PORT = get_env_int(env_map, "BACKEND_HTTP_PORT", DEFAULT_BACKEND_HTTP_PORT)
     HEALTH_URL = local_url("/health", BACKEND_HTTP_PORT, scheme="http")
+
+
+def ordered_services(services: list[str] | tuple[str, ...]) -> list[str]:
+    service_set = set(services)
+    return [name for name in SERVICE_ORDER if name in service_set]
+
+
+def selected_services_from_args(args: argparse.Namespace) -> list[str]:
+    selected: list[str] = []
+    if args.traefik:
+        selected.append("traefik")
+    if args.backend:
+        selected.append("backend")
+    if args.prometheus:
+        selected.append("prometheus")
+    if args.node_exporter:
+        selected.append("node-exporter")
+    if args.grafana:
+        selected.append("grafana")
+    if args.otp:
+        selected.append("otp")
+    return ordered_services(selected)
+
+
+def ensure_gateway_running() -> None:
+    gateway_running = run(
+        f"docker compose ps --status running -q {GATEWAY_SERVICE}",
+        capture_output=True,
+        text=True,
+    )
+    if gateway_running.returncode != 0:
+        err("traefik 실행 상태 확인에 실패했습니다")
+        sys.exit(1)
+    if gateway_running.stdout.strip():
+        return
+
+    log("traefik 미실행 상태 감지 → 시작만 수행")
+    gateway_ret = run(f"docker compose up -d {GATEWAY_SERVICE}")
+    if gateway_ret.returncode != 0:
+        err("traefik 시작 실패")
+        sys.exit(1)
 
 
 def get_backend_container_id() -> str:
@@ -178,7 +225,21 @@ def compose_down(all_services: bool = False) -> None:
     log("backend 종료 완료")
 
 
+def compose_down_selected(services: list[str]) -> None:
+    ordered = ordered_services(services)
+    service_expr = " ".join(ordered)
+    log(f"선택 구성요소 종료 중 … ({service_expr})")
+    run(
+        f"docker compose rm -f -s {service_expr}",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    log("선택 구성요소 종료 완료")
+
+
 def compose_up_core(timeout_sec: int) -> None:
+    ensure_gateway_running()
+
     # 다운타임 최소화를 위해 먼저 이미지 빌드 후 컨테이너 교체
     log("backend 이미지 빌드 중 …")
     build_ret = run(f"docker compose build {BACKEND_SERVICE}")
@@ -212,6 +273,35 @@ def compose_up_core(timeout_sec: int) -> None:
     print()
 
 
+def compose_up_selected(services: list[str], timeout_sec: int) -> None:
+    ordered = ordered_services(services)
+    service_expr = " ".join(ordered)
+    includes_backend = BACKEND_SERVICE in ordered
+
+    if includes_backend and GATEWAY_SERVICE not in ordered:
+        ensure_gateway_running()
+
+    log(f"선택 구성요소 시작 … ({service_expr})")
+    if includes_backend:
+        ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
+    else:
+        ret = run(f"docker compose up -d {service_expr}")
+    if ret.returncode != 0:
+        err("선택 구성요소 docker compose up 실패")
+        sys.exit(1)
+
+    if includes_backend and not wait_backend_healthy(timeout_sec):
+        sys.exit(1)
+
+    print()
+    log("═══════════════════════════════════════════")
+    log("  선택 구성요소 재시작 완료")
+    log(f"  확인: docker compose ps {service_expr}")
+    log("═══════════════════════════════════════════")
+    run(f"docker compose ps {service_expr}")
+    print()
+
+
 def compose_up_all(timeout_sec: int) -> None:
     # --all은 전체 스택 재시작
     result = run("docker compose ps -q", capture_output=True, text=True)
@@ -241,6 +331,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="shuttle-go 프로덕션 백엔드 실행")
     parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체)")
     parser.add_argument("--all", action="store_true", help="전체 스택 재시작/종료")
+    parser.add_argument("--traefik", action="store_true", help="traefik만 재시작/종료")
+    parser.add_argument("--backend", action="store_true", help="backend만 재시작/종료")
+    parser.add_argument("--prometheus", action="store_true", help="prometheus만 재시작/종료")
+    parser.add_argument("--node-exporter", dest="node_exporter", action="store_true", help="node-exporter만 재시작/종료")
+    parser.add_argument("--grafana", action="store_true", help="grafana만 재시작/종료")
+    parser.add_argument("--otp", action="store_true", help="otp만 재시작/종료")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -248,19 +344,29 @@ def main() -> None:
         help=f"health check 타임아웃(초), 기본 {DEFAULT_TIMEOUT}",
     )
     args = parser.parse_args()
+    selected_services = selected_services_from_args(args)
 
     if args.timeout < 1:
         err("--timeout은 1 이상의 정수여야 합니다.")
         sys.exit(1)
+    if args.all and selected_services:
+        parser.error("--all과 개별 컴포넌트 플래그(--traefik/--backend/--prometheus/--node-exporter/--grafana/--otp)는 함께 사용할 수 없습니다.")
 
     if args.down:
-        compose_down(all_services=args.all)
+        if args.all:
+            compose_down(all_services=True)
+        elif selected_services:
+            compose_down_selected(selected_services)
+        else:
+            compose_down(all_services=False)
         return
 
     configure_runtime_health_url()
 
     if args.all:
         compose_up_all(args.timeout)
+    elif selected_services:
+        compose_up_selected(selected_services, args.timeout)
     else:
         compose_up_core(args.timeout)
 

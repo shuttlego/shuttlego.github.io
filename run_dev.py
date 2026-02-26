@@ -3,14 +3,18 @@
 
 기본 실행은 backend만 재빌드/재시작하고 프론트엔드를 함께 시작한다.
 traefik은 기본 실행에서 재시작하지 않고, 내려가 있을 때만 시작한다.
---all 옵션을 주면 prometheus/grafana 등 나머지 구성요소까지 함께 (재)시작한다.
+--all 옵션을 주면 전체 구성요소(traefik/backend/prometheus/node-exporter/grafana/otp)를 함께 (재)시작한다.
+개별 컴포넌트 플래그(예: --grafana, --traefik, --otp)로 선택 재시작도 가능하다.
 
 사용법:
     python run_dev.py              # 기본 시작 (backend rebuild/restart + frontend)
-    python run_dev.py --all        # 전체 시작 (backend + monitoring + frontend)
+    python run_dev.py --all        # 전체 시작 (backend + monitoring + otp + frontend)
+    python run_dev.py --otp        # otp만 재시작 + frontend
+    python run_dev.py --traefik --grafana  # 지정 컴포넌트만 재시작 + frontend
     python run_dev.py --frontend   # 프론트엔드 서버만 시작
     python run_dev.py --down       # 기본 구성요소 종료(backend + frontend 포트 정리)
     python run_dev.py --down --all # 전체 종료
+    python run_dev.py --down --otp # otp만 종료
 """
 
 import argparse
@@ -39,6 +43,7 @@ BACKEND_HTTPS_PORT = DEFAULT_BACKEND_HTTPS_PORT
 HEALTH_URL = ""
 CORE_SERVICES = ("backend",)
 GATEWAY_SERVICE = "traefik"
+SERVICE_ORDER = ("traefik", "backend", "prometheus", "node-exporter", "grafana", "otp")
 
 
 # ── 유틸 ──────────────────────────────────────────────────
@@ -136,6 +141,28 @@ def configure_runtime_ports(validate_conflict: bool = True) -> None:
 
 # ── Docker Compose ────────────────────────────────────────
 
+def ordered_services(services: list[str] | tuple[str, ...]) -> list[str]:
+    service_set = set(services)
+    return [name for name in SERVICE_ORDER if name in service_set]
+
+
+def selected_services_from_args(args: argparse.Namespace) -> list[str]:
+    selected: list[str] = []
+    if args.traefik:
+        selected.append("traefik")
+    if args.backend:
+        selected.append("backend")
+    if args.prometheus:
+        selected.append("prometheus")
+    if args.node_exporter:
+        selected.append("node-exporter")
+    if args.grafana:
+        selected.append("grafana")
+    if args.otp:
+        selected.append("otp")
+    return ordered_services(selected)
+
+
 def wait_backend_healthy(timeout_sec: int) -> bool:
     log(
         "백엔드 health endpoint 대기 … "
@@ -184,21 +211,7 @@ def _is_healthy_response(resp: urllib.request.addinfourl) -> bool:
     return isinstance(status, str) and status.lower() == "healthy"
 
 
-def compose_down(all_services: bool = False) -> None:
-    if all_services:
-        log("Docker Compose 전체 종료 중 …")
-        run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        log("Docker Compose 전체 종료 완료")
-        return
-
-    services = " ".join(CORE_SERVICES)
-    log(f"Docker Compose 기본 구성요소 종료 중 … ({services})")
-    run(f"docker compose stop {services}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    run(f"docker compose rm -f {services}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log("Docker Compose 기본 구성요소 종료 완료")
-
-
-def compose_up_core() -> None:
+def ensure_gateway_running() -> None:
     # 기본 실행에서는 traefik을 재시작/재빌드하지 않는다.
     # 다만 내려가 있으면 API 접근 경로 확보를 위해 시작만 수행한다.
     gateway_running = run(
@@ -215,6 +228,33 @@ def compose_up_core() -> None:
     else:
         log("traefik 실행 중 → 재시작 없이 유지")
 
+
+def compose_down(all_services: bool = False) -> None:
+    if all_services:
+        log("Docker Compose 전체 종료 중 …")
+        run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("Docker Compose 전체 종료 완료")
+        return
+
+    services = " ".join(CORE_SERVICES)
+    log(f"Docker Compose 기본 구성요소 종료 중 … ({services})")
+    run(f"docker compose stop {services}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run(f"docker compose rm -f {services}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log("Docker Compose 기본 구성요소 종료 완료")
+
+
+def compose_down_selected(services: list[str]) -> None:
+    ordered = ordered_services(services)
+    service_expr = " ".join(ordered)
+    log(f"선택 구성요소 종료 중 … ({service_expr})")
+    run(f"docker compose stop {service_expr}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run(f"docker compose rm -f {service_expr}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log("선택 구성요소 종료 완료")
+
+
+def compose_up_core() -> None:
+    ensure_gateway_running()
+
     services = " ".join(CORE_SERVICES)
     log(f"기본 구성요소 빌드 & 시작 … ({services})")
     ret = run(f"docker compose up -d --build --force-recreate {services}")
@@ -223,6 +263,28 @@ def compose_up_core() -> None:
         sys.exit(1)
 
     if not wait_backend_healthy(COMPOSE_TIMEOUT):
+        err(f"{COMPOSE_TIMEOUT}초 내에 백엔드가 응답하지 않았습니다")
+        sys.exit(1)
+
+
+def compose_up_selected(services: list[str]) -> None:
+    ordered = ordered_services(services)
+    service_expr = " ".join(ordered)
+    includes_backend = "backend" in ordered
+
+    if includes_backend and GATEWAY_SERVICE not in ordered:
+        ensure_gateway_running()
+
+    log(f"선택 구성요소 시작 … ({service_expr})")
+    if includes_backend:
+        ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
+    else:
+        ret = run(f"docker compose up -d {service_expr}")
+    if ret.returncode != 0:
+        err("선택 구성요소 docker compose up 실패")
+        sys.exit(1)
+
+    if includes_backend and not wait_backend_healthy(COMPOSE_TIMEOUT):
         err(f"{COMPOSE_TIMEOUT}초 내에 백엔드가 응답하지 않았습니다")
         sys.exit(1)
 
@@ -300,13 +362,31 @@ def wait_forever(httpd) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="shuttle-go 개발 환경 통합 실행")
     parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체)")
-    parser.add_argument("--all", action="store_true", help="모든 구성요소까지 재시작")
+    parser.add_argument("--all", action="store_true", help="모든 구성요소(traefik/backend/prometheus/node-exporter/grafana/otp) 재시작")
     parser.add_argument("--frontend", action="store_true", help="프론트엔드 서버만 시작")
+    parser.add_argument("--traefik", action="store_true", help="traefik만 재시작/종료")
+    parser.add_argument("--backend", action="store_true", help="backend만 재시작/종료")
+    parser.add_argument("--prometheus", action="store_true", help="prometheus만 재시작/종료")
+    parser.add_argument("--node-exporter", dest="node_exporter", action="store_true", help="node-exporter만 재시작/종료")
+    parser.add_argument("--grafana", action="store_true", help="grafana만 재시작/종료")
+    parser.add_argument("--otp", action="store_true", help="otp만 재시작/종료")
     args = parser.parse_args()
+    selected_services = selected_services_from_args(args)
+
+    if args.all and selected_services:
+        parser.error("--all과 개별 컴포넌트 플래그(--traefik/--backend/--prometheus/--node-exporter/--grafana/--otp)는 함께 사용할 수 없습니다.")
+    if args.frontend and (args.down or args.all or selected_services):
+        parser.error("--frontend는 단독으로만 사용할 수 있습니다.")
+
     configure_runtime_ports(validate_conflict=not args.down)
 
     if args.down:
-        compose_down(all_services=args.all)
+        if args.all:
+            compose_down(all_services=True)
+        elif selected_services:
+            compose_down_selected(selected_services)
+        else:
+            compose_down(all_services=False)
         log(f"포트 {FRONTEND_PORT} 정리")
         run(f"lsof -ti :{FRONTEND_PORT} | xargs kill -9 2>/dev/null")
         log("완료")
@@ -326,6 +406,8 @@ def main() -> None:
 
     if args.all:
         compose_up_all()
+    elif selected_services:
+        compose_up_selected(selected_services)
     else:
         compose_up_core()
     httpd = start_frontend()
@@ -334,6 +416,8 @@ def main() -> None:
     log("실행 중인 서비스:")
     if args.all:
         run("docker compose ps")
+    elif selected_services:
+        run(f"docker compose ps {' '.join(selected_services)}")
     else:
         run(f"docker compose ps {' '.join(CORE_SERVICES)}")
 
@@ -341,8 +425,10 @@ def main() -> None:
     log("═══════════════════════════════════════════")
     log(f"  프론트엔드  → {local_url('', FRONTEND_PORT, scheme='http')}")
     log(f"  백엔드 API  → {local_url('/api/sites', BACKEND_HTTP_PORT, scheme='http')}")
-    if args.all:
+    if args.all or "grafana" in selected_services:
         log(f"  Grafana     → {local_url('/grafana/', BACKEND_HTTP_PORT, scheme='http')}")
+    if args.all or "otp" in selected_services:
+        log("  OTP 내부주소 → http://otp:8080 (Docker 네트워크)")
     log("═══════════════════════════════════════════")
     log("Ctrl+C 로 프론트엔드 서버 종료 (Docker 컨테이너는 유지)")
     log("전체 종료: python run_dev.py --down")
