@@ -12,6 +12,7 @@ import os
 import threading
 import time as _time
 import uuid
+from collections import OrderedDict
 from datetime import datetime
 
 import requests
@@ -67,6 +68,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 GITHUB_API_BASE = os.environ.get("GITHUB_API_BASE", "https://api.github.com").rstrip("/")
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "").strip()
 GITHUB_INSTALLATION_ID = os.environ.get("GITHUB_INSTALLATION_ID", "").strip()
@@ -100,6 +108,22 @@ _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
 _OPTIONS_CANDIDATE_LIMIT = 100
 _DEFAULT_MAX_DISTANCE_KM = 5.0
 _MAX_DISTANCE_KM = 30.0
+
+OTP_BASE_URL = os.environ.get("OTP_BASE_URL", "http://otp:8082").rstrip("/")
+OTP_PLAN_PATH = os.environ.get("OTP_PLAN_PATH", "/otp/gtfs/v1").strip() or "/otp/gtfs/v1"
+if not OTP_PLAN_PATH.startswith("/"):
+    OTP_PLAN_PATH = "/" + OTP_PLAN_PATH
+OTP_WALK_ENABLED = os.environ.get("OTP_WALK_ENABLED", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+OTP_WALK_HTTP_TIMEOUT_SEC = max(0.2, _env_float("OTP_WALK_HTTP_TIMEOUT_SEC", 8.0))
+OTP_WALK_DURATION_MULTIPLIER = max(0.0, _env_float("OTP_WALK_DURATION_MULTIPLIER", 1.25))
+OTP_WALK_CACHE_SIZE = max(100, _env_int("OTP_WALK_CACHE_SIZE", 10000))
+_walk_path_cache: OrderedDict[str, dict] = OrderedDict()
+_walk_path_cache_lock = threading.Lock()
 
 # ── Prometheus 메트릭 정의 ──────────────────────────────────
 REQUEST_COUNT = Counter(
@@ -471,6 +495,92 @@ def _is_truthy_param(raw: str | None) -> bool:
     if raw is None:
         return False
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _walk_path_cache_key(from_lat: float, from_lng: float, to_lat: float, to_lng: float) -> str:
+    return f"{from_lat:.6f},{from_lng:.6f}->{to_lat:.6f},{to_lng:.6f}"
+
+
+def _walk_path_cache_get(cache_key: str) -> dict | None:
+    with _walk_path_cache_lock:
+        cached = _walk_path_cache.get(cache_key)
+        if cached is None:
+            return None
+        _walk_path_cache.move_to_end(cache_key)
+        return dict(cached)
+
+
+def _walk_path_cache_set(cache_key: str, payload: dict) -> None:
+    with _walk_path_cache_lock:
+        _walk_path_cache[cache_key] = dict(payload)
+        _walk_path_cache.move_to_end(cache_key)
+        while len(_walk_path_cache) > OTP_WALK_CACHE_SIZE:
+            _walk_path_cache.popitem(last=False)
+
+
+def _fetch_walk_path_from_otp(from_lat: float, from_lng: float, to_lat: float, to_lng: float) -> dict:
+    query = (
+        "query { "
+        f"plan(from:{{lat:{from_lat},lon:{from_lng}}} "
+        f"to:{{lat:{to_lat},lon:{to_lng}}} "
+        "transportModes:[{mode:WALK}]) { "
+        "itineraries { duration legs { distance legGeometry { points } } } "
+        "} }"
+    )
+    url = f"{OTP_BASE_URL}{OTP_PLAN_PATH}"
+    response = requests.post(
+        url,
+        json={"query": query},
+        timeout=OTP_WALK_HTTP_TIMEOUT_SEC,
+    )
+    response.raise_for_status()
+    payload = response.json() if response.text else {}
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    plan = data.get("plan") if isinstance(data, dict) else None
+    itineraries = plan.get("itineraries") if isinstance(plan, dict) else None
+    if not itineraries:
+        return {
+            "has_route": False,
+            "status": "empty_itineraries",
+            "encoded_polyline": "",
+            "duration_sec": None,
+            "distance_m": None,
+        }
+
+    first = itineraries[0] if isinstance(itineraries[0], dict) else {}
+    legs = first.get("legs") if isinstance(first, dict) else []
+    encoded = ""
+    distance_m = 0.0
+    if isinstance(legs, list):
+        for leg in legs:
+            if not isinstance(leg, dict):
+                continue
+            try:
+                distance_m += float(leg.get("distance") or 0.0)
+            except (TypeError, ValueError):
+                pass
+            geom = leg.get("legGeometry")
+            points = geom.get("points") if isinstance(geom, dict) else None
+            if not encoded and points:
+                encoded = str(points).strip()
+
+    duration_sec: int | None
+    try:
+        raw_duration = first.get("duration")
+        duration_sec = int(float(raw_duration)) if raw_duration is not None else None
+    except (TypeError, ValueError):
+        duration_sec = None
+    if duration_sec is not None and duration_sec > 0:
+        duration_sec = int(math.ceil(duration_sec * OTP_WALK_DURATION_MULTIPLIER))
+
+    return {
+        "has_route": bool(encoded),
+        "status": "ok" if encoded else "empty_geometry",
+        "encoded_polyline": encoded,
+        "duration_sec": duration_sec,
+        "distance_m": distance_m if distance_m > 0 else None,
+    }
 
 
 class GitHubConfigError(RuntimeError):
@@ -891,6 +1001,64 @@ def api_shuttle_endpoint_options_search():
     )
 
 
+@app.route("/api/shuttle/walk-path")
+def api_shuttle_walk_path():
+    from_lat = request.args.get("from_lat", type=float)
+    from_lng = request.args.get("from_lng", type=float)
+    to_lat = request.args.get("to_lat", type=float)
+    to_lng = request.args.get("to_lng", type=float)
+    if from_lat is None or from_lng is None or to_lat is None or to_lng is None:
+        return jsonify({"error": "from_lat, from_lng, to_lat, to_lng required"}), 400
+    if not (
+        math.isfinite(from_lat)
+        and math.isfinite(from_lng)
+        and math.isfinite(to_lat)
+        and math.isfinite(to_lng)
+    ):
+        return jsonify({"error": "coordinates must be finite numbers"}), 400
+
+    if not OTP_WALK_ENABLED:
+        return jsonify(
+            {
+                "walk_otp_enabled": False,
+                "has_route": False,
+                "status": "disabled",
+                "encoded_polyline": "",
+                "duration_sec": None,
+                "distance_m": None,
+                "source": "disabled",
+            }
+        )
+
+    cache_key = _walk_path_cache_key(from_lat, from_lng, to_lat, to_lng)
+    cached = _walk_path_cache_get(cache_key)
+    if cached is not None:
+        cached["source"] = "cache"
+        cached["walk_otp_enabled"] = True
+        return jsonify(cached)
+
+    try:
+        fetched = _fetch_walk_path_from_otp(from_lat, from_lng, to_lat, to_lng)
+    except requests.Timeout:
+        return jsonify({"error": "otp_walk_timeout"}), 504
+    except requests.RequestException as exc:
+        return jsonify({"error": f"otp_walk_request_failed: {exc}"}), 502
+    except ValueError:
+        return jsonify({"error": "otp_walk_invalid_response"}), 502
+
+    cache_payload = {
+        "has_route": bool(fetched.get("has_route")),
+        "status": str(fetched.get("status") or ""),
+        "encoded_polyline": str(fetched.get("encoded_polyline") or ""),
+        "duration_sec": fetched.get("duration_sec"),
+        "distance_m": fetched.get("distance_m"),
+    }
+    _walk_path_cache_set(cache_key, cache_payload)
+    cache_payload["source"] = "otp"
+    cache_payload["walk_otp_enabled"] = True
+    return jsonify(cache_payload)
+
+
 @app.route("/api/issues", methods=["GET", "POST"])
 def api_issues():
     if request.method == "POST":
@@ -1213,7 +1381,7 @@ def api_shuttle_depart_options():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         selected_endpoint_components = _build_selected_endpoint_component_set(
             site_id=site_id,
             day_type=day_type,
@@ -1237,7 +1405,7 @@ def api_shuttle_depart_options():
     )
     if not results:
         if include_route_ids is not None:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1359,7 +1527,7 @@ def api_shuttle_depart_options():
         if len(options) >= 5:
             break
 
-    resp = {"options": options}
+    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
     return jsonify(resp)
@@ -1476,6 +1644,7 @@ def api_shuttle_depart():
         "terminus_sequence": terminus_seq,
         "route_stops": route_stops,
         "bus_segment_polylines": bus_segment_polylines,
+        "walk_otp_enabled": OTP_WALK_ENABLED,
     }
     if board_time is not None:
         payload["board_time"] = board_time
@@ -1520,7 +1689,7 @@ def api_shuttle_arrive_options():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         selected_endpoint_components = _build_selected_endpoint_component_set(
             site_id=site_id,
             day_type=day_type,
@@ -1544,7 +1713,7 @@ def api_shuttle_arrive_options():
     )
     if not results:
         if include_route_ids is not None:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1664,7 +1833,7 @@ def api_shuttle_arrive_options():
         if len(options) >= 5:
             break
 
-    resp = {"options": options}
+    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
     return jsonify(resp)
@@ -1779,6 +1948,7 @@ def api_shuttle_arrive():
         "getoff_stop_sequence": ns.get("sequence"),
         "route_stops": route_stops,
         "bus_segment_polylines": bus_segment_polylines,
+        "walk_otp_enabled": OTP_WALK_ENABLED,
     }
     if board_time is not None:
         payload["board_time"] = board_time
