@@ -428,7 +428,7 @@ def main() -> None:
     if args.all or "grafana" in selected_services:
         log(f"  Grafana     → {local_url('/grafana/', BACKEND_HTTP_PORT, scheme='http')}")
     if args.all or "otp" in selected_services:
-        log("  OTP 내부주소 → http://otp:8080 (Docker 네트워크)")
+        log("  OTP 내부주소 → http://otp:8082 (Docker 네트워크)")
     log("═══════════════════════════════════════════")
     log("Ctrl+C 로 프론트엔드 서버 종료 (Docker 컨테이너는 유지)")
     log("전체 종료: python run_dev.py --down")

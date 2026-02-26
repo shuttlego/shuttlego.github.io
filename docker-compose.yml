@@ -27,7 +27,7 @@ services:
     env_file:
       - .env
     environment:
-      - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8080}
+      - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8082}
     volumes:
       - ./data:/app/data:ro
     expose:
@@ -93,7 +93,8 @@ services:
       - shuttle-net
 
   # ─── OpenTripPlanner (OTP) ─────────────────────────────
-  # 외부 노출 없음 — backend가 내부 네트워크로 호출
+  # backend는 내부 네트워크(http://otp:8080)로 호출하고,
+  # 호스트에서는 localhost:${OTP_HOST_PORT}로 직접 호출 가능
   otp:
     image: opentripplanner/opentripplanner
     container_name: shuttle-otp
@@ -103,10 +104,14 @@ services:
     command:
       - "--load"
       - "--serve"
+      - "--port"
+      - "8082"
     volumes:
       - "${OTP_DATA_DIR:-.}:/var/opentripplanner"
     expose:
-      - "8080"
+      - "8082"
+    ports:
+      - "${OTP_HOST_PORT:-8082}:8082"
     mem_limit: 32g
     memswap_limit: 32g
     cpus: 12.0
