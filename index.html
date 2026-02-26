@@ -4622,11 +4622,173 @@
         if (errorEl) errorEl.classList.remove('show');
       }
 
+      function isSamePathPoint(a, b) {
+        if (!a || !b) return false;
+        return Math.abs((Number(a.lat) || 0) - (Number(b.lat) || 0)) < 1e-6 &&
+          Math.abs((Number(a.lng) || 0) - (Number(b.lng) || 0)) < 1e-6;
+      }
+
+      function appendPathPoints(target, source) {
+        if (!Array.isArray(source) || source.length === 0) return;
+        for (var i = 0; i < source.length; i++) {
+          var point = source[i];
+          if (!point) continue;
+          var lat = Number(point.lat);
+          var lng = Number(point.lng);
+          if (!isFinite(lat) || !isFinite(lng)) continue;
+          if (target.length > 0 && isSamePathPoint(target[target.length - 1], { lat: lat, lng: lng })) {
+            continue;
+          }
+          target.push({ lat: lat, lng: lng });
+        }
+      }
+
+      function appendStraightLeg(pathPoints, fromPos, toPos) {
+        if (!fromPos || !toPos) return;
+        appendPathPoints(pathPoints, [
+          { lat: Number(fromPos.lat), lng: Number(fromPos.lng) },
+          { lat: Number(toPos.lat), lng: Number(toPos.lng) }
+        ]);
+      }
+
+      function decodeEncodedPolyline(encoded) {
+        if (!encoded || typeof encoded !== 'string') return [];
+        var points = [];
+        var index = 0;
+        var lat = 0;
+        var lng = 0;
+        while (index < encoded.length) {
+          var result = 0;
+          var shift = 0;
+          var b;
+          do {
+            if (index >= encoded.length) return points;
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          var dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lat += dlat;
+
+          result = 0;
+          shift = 0;
+          do {
+            if (index >= encoded.length) return points;
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          var dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lng += dlng;
+
+          points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+        }
+        return points;
+      }
+
+      function buildPathFromEncodedSegments(segments) {
+        var pathPoints = [];
+        if (!Array.isArray(segments)) return pathPoints;
+        segments.forEach(function(encoded) {
+          var decoded = decodeEncodedPolyline(String(encoded || '').trim());
+          appendPathPoints(pathPoints, decoded);
+        });
+        return pathPoints;
+      }
+
+      function buildBusPathPointsFromRouteStops(routeStops, fromSequence, toSequence) {
+        if (!Array.isArray(routeStops) || routeStops.length < 2) return [];
+        var startSeq = Number(fromSequence);
+        var endSeq = Number(toSequence);
+        if (!isFinite(startSeq) || !isFinite(endSeq) || endSeq <= startSeq) return [];
+
+        var pathPoints = [];
+        for (var i = 0; i < routeStops.length - 1; i++) {
+          var current = routeStops[i] || {};
+          var next = routeStops[i + 1] || {};
+          var currentSeq = Number(current.sequence);
+          var nextSeq = Number(next.sequence);
+          if (!isFinite(currentSeq) || !isFinite(nextSeq)) continue;
+          if (currentSeq < startSeq || currentSeq >= endSeq) continue;
+          if (nextSeq <= currentSeq || nextSeq > endSeq) continue;
+
+          var encoded = String(current.next_encoded_polyline || '').trim();
+          if (encoded) {
+            var decoded = decodeEncodedPolyline(encoded);
+            if (decoded.length > 0) {
+              appendPathPoints(pathPoints, decoded);
+              continue;
+            }
+          }
+          appendStraightLeg(pathPoints, current, next);
+        }
+        return pathPoints;
+      }
+
+      function buildOptionPathPoints(option, positions, isDepart) {
+        var pathPoints = [];
+        var routeStops = Array.isArray(option.route_stops) ? option.route_stops : [];
+        var fromSeq = isDepart ? option.nearest_stop_sequence : option.start_stop_sequence;
+        var toSeq = isDepart ? option.terminus_sequence : option.getoff_stop_sequence;
+        var busPathPoints = buildBusPathPointsFromRouteStops(routeStops, fromSeq, toSeq);
+        if (busPathPoints.length === 0) {
+          busPathPoints = buildPathFromEncodedSegments(option.bus_segment_polylines || []);
+        }
+
+        if (isDepart) {
+          if (positions.length >= 2) appendStraightLeg(pathPoints, positions[0], positions[1]);
+          if (busPathPoints.length > 0) {
+            appendPathPoints(pathPoints, busPathPoints);
+          } else if (positions.length >= 3) {
+            appendStraightLeg(pathPoints, positions[1], positions[2]);
+          }
+        } else {
+          if (busPathPoints.length > 0) {
+            appendPathPoints(pathPoints, busPathPoints);
+          } else if (positions.length >= 2) {
+            appendStraightLeg(pathPoints, positions[0], positions[1]);
+          }
+          if (positions.length >= 3) appendStraightLeg(pathPoints, positions[1], positions[2]);
+        }
+
+        if (pathPoints.length === 0) {
+          positions.forEach(function(p) {
+            appendPathPoints(pathPoints, [{ lat: Number(p.lat), lng: Number(p.lng) }]);
+          });
+        }
+        return pathPoints;
+      }
+
+      function buildRouteDetailPathPoints(routeStops) {
+        var pathPoints = [];
+        if (!Array.isArray(routeStops) || routeStops.length === 0) return pathPoints;
+        for (var i = 0; i < routeStops.length - 1; i++) {
+          var current = routeStops[i] || {};
+          var next = routeStops[i + 1] || {};
+          var encoded = String(current.next_encoded_polyline || '').trim();
+          if (encoded) {
+            var decoded = decodeEncodedPolyline(encoded);
+            if (decoded.length > 0) {
+              appendPathPoints(pathPoints, decoded);
+              continue;
+            }
+          }
+          appendStraightLeg(pathPoints, current, next);
+        }
+        if (pathPoints.length === 0) {
+          routeStops.forEach(function(stop) {
+            appendPathPoints(pathPoints, [{ lat: Number(stop.lat), lng: Number(stop.lng) }]);
+          });
+        }
+        return pathPoints;
+      }
+
       function drawOptionOnMap(option, placeName, isDepart) {
         clearSearchOverlays();
         clearShuttleOverlays();
         var positions = option.positions;
-        var path = positions.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
+        var pathPoints = buildOptionPathPoints(option, positions, isDepart);
+        var path = pathPoints.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
         var timeStr = (option.board_time != null && option.board_time !== '') ? option.board_time : getDepartureTimeStr();
         var labels = isDepart
           ? [placeName, option.nearest_stop_name, option.terminus_name]
@@ -4648,7 +4810,8 @@
           pinOverlay.setZIndex(zOrder[i]);
           pinOverlay.setMap(map);
           shuttlePointOverlays.push(pinOverlay);
-          var namePart = '<span class="shuttle-point-name">' + escapeHtml(labels[i]) + '</span>';
+          var pointLabel = labels[i] || p.label || '';
+          var namePart = '<span class="shuttle-point-name">' + escapeHtml(pointLabel) + '</span>';
           var tagPart = '';
           if (isDepart && i === 1) tagPart = '<span class="time-tag">(' + timeStr + '분 노선 탑승)</span>';
           if (!isDepart && i === 0) tagPart = '<span class="time-tag">(' + timeStr + '분 노선 탑승)</span>';
@@ -4695,7 +4858,7 @@
         }
         shuttleLine = new kakao.maps.Polyline(lineOpts);
         shuttleLine.setMap(map);
-        shuttlePositions = positions.slice();
+        shuttlePositions = pathPoints.slice();
         var bounds = new kakao.maps.LatLngBounds();
         path.forEach(function(p) { bounds.extend(p); });
         var sw = bounds.getSouthWest();
@@ -4727,7 +4890,8 @@
         var routeStops = option.route_stops || [];
         if (routeStops.length === 0) return;
         var totalStops = routeStops.length;
-        var path = routeStops.map(function(s) { return new kakao.maps.LatLng(s.lat, s.lng); });
+        var pathPoints = buildRouteDetailPathPoints(routeStops);
+        var path = pathPoints.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
         routeStops.forEach(function(s, i) {
           var pos = new kakao.maps.LatLng(s.lat, s.lng);
           var pinEl = document.createElement('div');
@@ -4758,7 +4922,7 @@
           shuttlePointOverlays.push(labelOverlay);
           shuttlePointContents.push(labelAnchor);
         });
-        shuttlePositions = routeStops.map(function(s) { return { lat: s.lat, lng: s.lng }; });
+        shuttlePositions = pathPoints.slice();
         var lineOpts = {
           path: path,
           strokeWeight: 5,
