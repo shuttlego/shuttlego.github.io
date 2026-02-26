@@ -3,7 +3,7 @@
 셔틀버스 노선 검색 서비스. 출발지를 선택하면 가장 가까운 셔틀 정류장과 노선을 안내합니다.
 
 - **프론트엔드**: GitHub Pages ([shuttlego.github.io](https://shuttlego.github.io))
-- **백엔드**: Flask API + Docker Compose (Traefik, Prometheus, Grafana)
+- **백엔드**: Flask API + Docker Compose (Traefik, Prometheus, Grafana, OTP)
 
 ---
 
@@ -41,6 +41,11 @@ BACKEND_HTTPS_PORT=443
 # 로컬 프론트엔드 포트 (run_dev.py)
 FRONTEND_PORT=8080
 
+# OTP 데이터 디렉터리 (docker run의 -v $(pwd):/var/opentripplanner 대체)
+OTP_DATA_DIR=.
+# backend → OTP 내부 호출 주소 (기본 서비스 DNS)
+OTP_BASE_URL=http://otp:8080
+
 # CORS 허용 origin (로컬 개발 + 상용)
 # FRONTEND_PORT를 바꿨다면 해당 포트 origin도 추가해야 합니다.
 CORS_ORIGINS=http://localhost:8080,http://127.0.0.1:8080,https://shuttlego.github.io
@@ -73,7 +78,7 @@ ISSUE_SUBMIT_DEDUPE_WINDOW_SEC=300
 
 ### 3. 실행 (run_dev.py)
 
-`run_dev.py`를 사용하면 Docker Compose(백엔드·Traefik·Prometheus·Grafana)와 프론트엔드 정적 서버를 한 번에 관리할 수 있습니다.
+`run_dev.py`를 사용하면 Docker Compose(백엔드·Traefik·Prometheus·Grafana·OTP)와 프론트엔드 정적 서버를 한 번에 관리할 수 있습니다.
 
 ```bash
 # 전체 시작 — Docker Compose 빌드·(재)시작 + 프론트엔드(:8080) 서버
@@ -84,6 +89,10 @@ python run_dev.py --frontend
 
 # 전체 종료 — Docker Compose down + 프론트엔드 서버 정리
 python run_dev.py --down
+
+# 컴포넌트 단위 재시작
+python run_dev.py --otp
+python run_dev.py --traefik --grafana
 ```
 
 - 이미 동작 중인 컨테이너가 있으면 자동으로 재시작합니다.
@@ -106,6 +115,10 @@ python run_prd_backend.py --down
 
 # health check 타임아웃 변경(초)
 python run_prd_backend.py --timeout 120
+
+# 컴포넌트 단위 재시작/종료
+python run_prd_backend.py --otp
+python run_prd_backend.py --down --grafana
 ```
 
 - `docker compose up -d --build backend`로 backend만 시작합니다.
@@ -135,6 +148,7 @@ python3 -m http.server 8080 --bind 0.0.0.0
 | 헬스체크 | `http://localhost:${BACKEND_HTTP_PORT}/health` | `{"status":"healthy"}` |
 | 헬스체크 (HTTPS) | `https://localhost:${BACKEND_HTTPS_PORT}/health` | HTTPS 라우팅 확인 |
 | Grafana | `http://localhost:${BACKEND_HTTP_PORT}/grafana/` | 모니터링 대시보드 |
+| OTP (내부 전용) | `http://otp:8080` | Docker 네트워크 내부에서 backend가 호출 |
 
 ### 이슈 API (GitHub 연동)
 

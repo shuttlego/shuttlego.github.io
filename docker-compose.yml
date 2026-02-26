@@ -26,6 +26,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8080}
     volumes:
       - ./data:/app/data:ro
     expose:
@@ -87,6 +89,27 @@ services:
       - "--web.enable-lifecycle"
     expose:
       - "9090"
+    networks:
+      - shuttle-net
+
+  # ─── OpenTripPlanner (OTP) ─────────────────────────────
+  # 외부 노출 없음 — backend가 내부 네트워크로 호출
+  otp:
+    image: opentripplanner/opentripplanner
+    container_name: shuttle-otp
+    restart: unless-stopped
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xms28g -Xmx28g
+    command:
+      - "--load"
+      - "--serve"
+    volumes:
+      - "${OTP_DATA_DIR:-.}:/var/opentripplanner"
+    expose:
+      - "8080"
+    mem_limit: 32g
+    memswap_limit: 32g
+    cpus: 12.0
     networks:
       - shuttle-net
 
