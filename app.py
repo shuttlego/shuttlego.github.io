@@ -272,6 +272,43 @@ def _find_route_stop_sequence(
     return None
 
 
+def _segment_polylines_between_sequences(
+    route_stops: list[dict],
+    *,
+    from_sequence: int | None,
+    to_sequence: int | None,
+) -> list[str]:
+    if from_sequence is None or to_sequence is None:
+        return []
+    try:
+        start_seq = int(from_sequence)
+        end_seq = int(to_sequence)
+    except (TypeError, ValueError):
+        return []
+    if end_seq <= start_seq:
+        return []
+
+    stop_by_seq: dict[int, dict] = {}
+    for stop in route_stops:
+        seq_raw = stop.get("sequence")
+        try:
+            seq = int(seq_raw)
+        except (TypeError, ValueError):
+            continue
+        if seq not in stop_by_seq:
+            stop_by_seq[seq] = stop
+
+    segments: list[str] = []
+    for seq in range(start_seq, end_seq):
+        stop = stop_by_seq.get(seq)
+        if not stop:
+            continue
+        encoded = str(stop.get("next_encoded_polyline") or "").strip()
+        if encoded:
+            segments.append(encoded)
+    return segments
+
+
 def _normalize_stop_name_for_endpoint_matching(name: str | None) -> str:
     if not name:
         return ""
@@ -1261,6 +1298,13 @@ def api_shuttle_depart_options():
             if not alt:
                 continue
             ns = alt
+            nearest_seq = _find_route_stop_sequence(
+                route_stops,
+                stop_id=ns.get("stop_id"),
+                stop_name=ns.get("name"),
+            )
+            if nearest_seq is not None:
+                ns["sequence"] = nearest_seq
 
         distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
         if distance_m > max_distance_m:
@@ -1288,6 +1332,11 @@ def api_shuttle_depart_options():
             f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
             f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
         )
+        bus_segment_polylines = _segment_polylines_between_sequences(
+            route_stops,
+            from_sequence=ns.get("sequence"),
+            to_sequence=terminus_seq,
+        )
 
         payload = {
             "positions": positions,
@@ -1296,10 +1345,13 @@ def api_shuttle_depart_options():
             "route_id": r["route_id"],
             "operator": ", ".join(r["companies"]),
             "nearest_stop_name": ns["name"],
+            "nearest_stop_sequence": ns.get("sequence"),
             "terminus_name": terminus["stop_name"] if terminus else "",
+            "terminus_sequence": terminus_seq,
             "distance_m": round(distance_m),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
+            "bus_segment_polylines": bus_segment_polylines,
         }
         if board_time is not None:
             payload["board_time"] = board_time
@@ -1383,6 +1435,13 @@ def api_shuttle_depart():
             ns = alt
         else:
             return jsonify({"error": "해당 노선에서 탑승 가능한 정류장을 찾을 수 없습니다."}), 404
+    nearest_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=ns.get("stop_id"),
+        stop_name=ns.get("name"),
+    )
+    if nearest_seq is not None:
+        ns["sequence"] = nearest_seq
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -1401,13 +1460,22 @@ def api_shuttle_depart():
         f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
         f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
     )
+    bus_segment_polylines = _segment_polylines_between_sequences(
+        route_stops,
+        from_sequence=ns.get("sequence"),
+        to_sequence=terminus_seq,
+    )
 
     payload = {
         "positions": positions,
         "message": message,
         "route_name": r["route_name"],
         "nearest_stop_name": ns["name"],
+        "nearest_stop_sequence": ns.get("sequence"),
         "terminus_name": terminus["stop_name"] if terminus else "",
+        "terminus_sequence": terminus_seq,
+        "route_stops": route_stops,
+        "bus_segment_polylines": bus_segment_polylines,
     }
     if board_time is not None:
         payload["board_time"] = board_time
@@ -1537,6 +1605,13 @@ def api_shuttle_arrive_options():
             if not alt:
                 continue
             ns = alt
+            nearest_seq = _find_route_stop_sequence(
+                route_stops,
+                stop_id=ns.get("stop_id"),
+                stop_name=ns.get("name"),
+            )
+            if nearest_seq is not None:
+                ns["sequence"] = nearest_seq
 
         positions = []
         if first:
@@ -1547,6 +1622,11 @@ def api_shuttle_arrive_options():
         message = (
             f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
             f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
+        )
+        bus_segment_polylines = _segment_polylines_between_sequences(
+            route_stops,
+            from_sequence=first_seq,
+            to_sequence=ns.get("sequence"),
         )
         distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
         if distance_m > max_distance_m:
@@ -1570,11 +1650,13 @@ def api_shuttle_arrive_options():
             "route_id": r["route_id"],
             "operator": ", ".join(r["companies"]),
             "start_stop_name": first["stop_name"] if first else "",
+            "start_stop_sequence": first_seq,
             "getoff_stop_name": ns["name"],
             "getoff_stop_sequence": ns.get("sequence"),
             "distance_m": round(distance_m),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
+            "bus_segment_polylines": bus_segment_polylines,
         }
         if board_time is not None:
             payload["board_time"] = board_time
@@ -1657,6 +1739,13 @@ def api_shuttle_arrive():
             ns = alt
         else:
             return jsonify({"error": "해당 노선에서 하차 가능한 정류장을 찾을 수 없습니다."}), 404
+    nearest_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=ns.get("stop_id"),
+        stop_name=ns.get("name"),
+    )
+    if nearest_seq is not None:
+        ns["sequence"] = nearest_seq
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -1674,14 +1763,22 @@ def api_shuttle_arrive():
         f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
         f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
     )
+    bus_segment_polylines = _segment_polylines_between_sequences(
+        route_stops,
+        from_sequence=first_seq,
+        to_sequence=ns.get("sequence"),
+    )
 
     payload = {
         "positions": positions,
         "message": message,
         "route_name": r["route_name"],
         "start_stop_name": first["stop_name"] if first else "",
+        "start_stop_sequence": first_seq,
         "getoff_stop_name": ns["name"],
         "getoff_stop_sequence": ns.get("sequence"),
+        "route_stops": route_stops,
+        "bus_segment_polylines": bus_segment_polylines,
     }
     if board_time is not None:
         payload["board_time"] = board_time

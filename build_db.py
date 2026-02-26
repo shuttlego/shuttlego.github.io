@@ -10,12 +10,19 @@ import csv
 import os
 import re
 import sqlite3
+import threading
+import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+import requests
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 RAW_DIR = DATA_DIR / "raw"
 DB_PATH = DATA_DIR / "data.db"
 SITES_CSV = DATA_DIR / "sites.csv"
+ENV_PATH = Path(__file__).resolve().parent / ".env"
 
 # ── 파일명 매핑 ───────────────────────────────────────────────
 ROUTE_TYPE_MAP = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
@@ -78,6 +85,22 @@ CREATE TABLE IF NOT EXISTS stop_scope (
     PRIMARY KEY(stop_id, site_id, route_type, day_type)
 );
 
+CREATE TABLE IF NOT EXISTS stop_segment_polyline (
+    from_stop_id INTEGER NOT NULL REFERENCES stop(stop_id),
+    to_stop_id INTEGER NOT NULL REFERENCES stop(stop_id),
+    encoded_polyline TEXT NOT NULL,
+    distance_m REAL,
+    PRIMARY KEY(from_stop_id, to_stop_id)
+);
+
+CREATE TABLE IF NOT EXISTS stop_segment_no_route (
+    from_stop_id INTEGER NOT NULL REFERENCES stop(stop_id),
+    to_stop_id INTEGER NOT NULL REFERENCES stop(stop_id),
+    reason TEXT NOT NULL,
+    detail TEXT,
+    PRIMARY KEY(from_stop_id, to_stop_id)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS stop_rtree USING rtree(
     stop_id, min_lat, max_lat, min_lon, max_lon
 );
@@ -87,6 +110,8 @@ CREATE INDEX IF NOT EXISTS idx_variant_route_day ON service_variant(route_id, da
 CREATE INDEX IF NOT EXISTS idx_variant_stop_stop ON variant_stop(stop_id);
 CREATE INDEX IF NOT EXISTS idx_stop_scope_site_type_day ON stop_scope(site_id, route_type, day_type, stop_id);
 CREATE INDEX IF NOT EXISTS idx_stop_scope_stop ON stop_scope(stop_id);
+CREATE INDEX IF NOT EXISTS idx_segment_polyline_to_stop ON stop_segment_polyline(to_stop_id);
+CREATE INDEX IF NOT EXISTS idx_segment_no_route_to_stop ON stop_segment_no_route(to_stop_id);
 """
 
 
@@ -115,6 +140,388 @@ def _format_time(hhmm: str) -> str:
     if len(hhmm) == 4 and hhmm.isdigit():
         return f"{hhmm[:2]}:{hhmm[2:]}"
     return hhmm
+
+
+def _load_env_file(path: Path) -> dict[str, str]:
+    env_map: dict[str, str] = {}
+    if not path.exists():
+        return env_map
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        env_map[key] = value
+    return env_map
+
+
+def _env_int(
+    env_map: dict[str, str],
+    key: str,
+    default: int,
+    *,
+    minimum: int = 1,
+) -> int:
+    raw = (os.environ.get(key) or env_map.get(key) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if value < minimum:
+        return minimum
+    return value
+
+
+SegmentTask = tuple[int, int, tuple[float, float], tuple[float, float]]
+
+
+def _resolve_otp_graphql_url(env_map: dict[str, str]) -> str:
+    base_url = (
+        os.environ.get("OTP_HTTP_BASE_URL")
+        or env_map.get("OTP_HTTP_BASE_URL")
+        or "http://localhost:8888"
+    ).strip()
+    if not base_url:
+        base_url = "http://localhost:8888"
+    base_url = base_url.rstrip("/")
+    path = (
+        os.environ.get("OTP_HTTP_PLAN_PATH")
+        or env_map.get("OTP_HTTP_PLAN_PATH")
+        or "/otp/gtfs/v1"
+    ).strip()
+    if not path:
+        path = "/otp/gtfs/v1"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base_url}{path}"
+
+
+def _segment_coord_key(
+    from_coord: tuple[float, float],
+    to_coord: tuple[float, float],
+) -> tuple[float, float, float, float]:
+    return (
+        round(from_coord[0], 7),
+        round(from_coord[1], 7),
+        round(to_coord[0], 7),
+        round(to_coord[1], 7),
+    )
+
+
+def _load_existing_segment_cache(
+    db_path: Path,
+) -> dict[tuple[float, float, float, float], tuple[str, float | None]]:
+    if not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        has_segment_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_segment_polyline' LIMIT 1"
+        ).fetchone()
+        if not has_segment_table:
+            conn.close()
+            return {}
+        rows = conn.execute(
+            """
+            SELECT
+                sf.lat AS from_lat,
+                sf.lon AS from_lon,
+                st.lat AS to_lat,
+                st.lon AS to_lon,
+                sp.encoded_polyline,
+                sp.distance_m
+            FROM stop_segment_polyline sp
+            JOIN stop sf ON sf.stop_id = sp.from_stop_id
+            JOIN stop st ON st.stop_id = sp.to_stop_id
+            """
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return {}
+
+    cache: dict[tuple[float, float, float, float], tuple[str, float | None]] = {}
+    for from_lat, from_lon, to_lat, to_lon, encoded, distance_m in rows:
+        encoded_s = str(encoded or "").strip()
+        if not encoded_s:
+            continue
+        key = _segment_coord_key((float(from_lat), float(from_lon)), (float(to_lat), float(to_lon)))
+        distance_val: float | None = None
+        if distance_m is not None:
+            try:
+                distance_val = float(distance_m)
+            except (TypeError, ValueError):
+                distance_val = None
+        cache[key] = (encoded_s, distance_val)
+    return cache
+
+
+def _load_existing_no_route_cache(
+    db_path: Path,
+) -> dict[tuple[float, float, float, float], tuple[str, str | None]]:
+    if not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_segment_no_route' LIMIT 1"
+        ).fetchone()
+        if not has_table:
+            conn.close()
+            return {}
+        rows = conn.execute(
+            """
+            SELECT
+                sf.lat AS from_lat,
+                sf.lon AS from_lon,
+                st.lat AS to_lat,
+                st.lon AS to_lon,
+                nr.reason,
+                nr.detail
+            FROM stop_segment_no_route nr
+            JOIN stop sf ON sf.stop_id = nr.from_stop_id
+            JOIN stop st ON st.stop_id = nr.to_stop_id
+            """
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return {}
+
+    cache: dict[tuple[float, float, float, float], tuple[str, str | None]] = {}
+    for from_lat, from_lon, to_lat, to_lon, reason, detail in rows:
+        reason_s = str(reason or "").strip()
+        if not reason_s:
+            continue
+        key = _segment_coord_key((float(from_lat), float(from_lon)), (float(to_lat), float(to_lon)))
+        detail_s = str(detail).strip() if detail is not None else None
+        cache[key] = (reason_s, detail_s)
+    return cache
+
+
+class RateLimiter:
+    """Simple global rate limiter for OTP calls."""
+
+    def __init__(self, rate_per_sec: int):
+        self.rate_per_sec = max(1, int(rate_per_sec))
+        self._interval = 1.0 / self.rate_per_sec
+        self._lock = threading.Lock()
+        self._next_allowed = 0.0
+
+    def acquire(self) -> None:
+        wait_sec = 0.0
+        with self._lock:
+            now = time.monotonic()
+            if now < self._next_allowed:
+                wait_sec = self._next_allowed - now
+                self._next_allowed += self._interval
+            else:
+                self._next_allowed = now + self._interval
+        if wait_sec > 0:
+            time.sleep(wait_sec)
+
+
+class OTPPolylineClient:
+    def __init__(
+        self,
+        graphql_url: str,
+        timeout_sec: float = 10.0,
+        max_retries: int = 2,
+        rate_limiter: RateLimiter | None = None,
+    ):
+        self.graphql_url = graphql_url
+        self.timeout_sec = timeout_sec
+        self.max_retries = max_retries
+        self.rate_limiter = rate_limiter
+        self._thread_local = threading.local()
+
+    def _session(self) -> requests.Session:
+        session = getattr(self._thread_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            self._thread_local.session = session
+        return session
+
+    def _build_query(self, from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> str:
+        return (
+            "query { "
+            f"plan(from:{{lat:{from_lat:.7f},lon:{from_lon:.7f}}} "
+            f"to:{{lat:{to_lat:.7f},lon:{to_lon:.7f}}} "
+            "transportModes:[{mode:CAR}]) { "
+            "itineraries { legs { distance legGeometry { points } } } "
+            "} }"
+        )
+
+    @staticmethod
+    def _extract_polyline(payload: dict) -> tuple[str, str | None, float | None, str | None]:
+        if isinstance(payload, dict) and payload.get("errors"):
+            return "graphql_errors", None, None, str(payload.get("errors"))
+
+        try:
+            data = payload.get("data") if isinstance(payload, dict) else None
+            plan = data.get("plan") if isinstance(data, dict) else None
+            itineraries = plan.get("itineraries") if isinstance(plan, dict) else None
+        except Exception:  # noqa: BLE001
+            itineraries = None
+
+        if itineraries is None:
+            return "invalid_payload", None, None, "missing data.plan.itineraries"
+        if not isinstance(itineraries, list):
+            return "invalid_payload", None, None, "itineraries is not a list"
+        if len(itineraries) == 0:
+            return "empty_itineraries", None, None, None
+        for itinerary in itineraries:
+            legs = itinerary.get("legs") if isinstance(itinerary, dict) else None
+            if not isinstance(legs, list):
+                continue
+            for leg in legs:
+                if not isinstance(leg, dict):
+                    continue
+                geom = leg.get("legGeometry")
+                if not isinstance(geom, dict):
+                    continue
+                points = str(geom.get("points") or "").strip()
+                if not points:
+                    continue
+                distance_raw = leg.get("distance")
+                try:
+                    distance_m = float(distance_raw) if distance_raw is not None else None
+                except (TypeError, ValueError):
+                    distance_m = None
+                return "ok", points, distance_m, None
+        return "no_points", None, None, None
+
+    def get_segment_polyline(
+        self,
+        from_lat: float,
+        from_lon: float,
+        to_lat: float,
+        to_lon: float,
+    ) -> tuple[str, str | None, float | None, str | None]:
+        if from_lat == to_lat and from_lon == to_lon:
+            return "same_point", None, 0.0, None
+        query = self._build_query(from_lat, from_lon, to_lat, to_lon)
+        payload = {"query": query}
+        last_status = "unknown_error"
+        last_detail: str | None = None
+        for _ in range(self.max_retries + 1):
+            try:
+                if self.rate_limiter is not None:
+                    self.rate_limiter.acquire()
+                resp = self._session().post(
+                    self.graphql_url,
+                    json=payload,
+                    timeout=self.timeout_sec,
+                    headers={"Content-Type": "application/json"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                status, points, distance_m, detail = self._extract_polyline(data)
+                if status == "ok" and points:
+                    return status, points, distance_m, detail
+                if status == "empty_itineraries":
+                    # 경로 없음은 재시도해도 동일할 가능성이 높다.
+                    return status, None, None, detail
+                last_status = status
+                last_detail = detail
+            except requests.exceptions.Timeout as exc:
+                last_status = "timeout"
+                last_detail = str(exc)
+            except requests.exceptions.RequestException as exc:
+                last_status = "request_error"
+                last_detail = str(exc)
+            except ValueError as exc:
+                last_status = "invalid_json"
+                last_detail = str(exc)
+            except Exception as exc:  # noqa: BLE001
+                last_status = "unknown_error"
+                last_detail = str(exc)
+        return last_status, None, None, last_detail
+
+
+def _run_otp_batch(
+    conn: sqlite3.Connection,
+    otp_client: OTPPolylineClient,
+    tasks: list[SegmentTask],
+    *,
+    max_parallel: int,
+    progress_label: str,
+) -> tuple[int, int, list[tuple[SegmentTask, str]], Counter[str]]:
+    if not tasks:
+        return 0, 0, [], Counter()
+
+    future_map = {}
+    success_count = 0
+    no_route_count = 0
+    retry_tasks: list[tuple[SegmentTask, str]] = []
+    status_counts: Counter[str] = Counter()
+    total_tasks = len(tasks)
+
+    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+        for task in tasks:
+            from_stop_id, to_stop_id, from_coord, to_coord = task
+            future = executor.submit(
+                otp_client.get_segment_polyline,
+                from_lat=from_coord[0],
+                from_lon=from_coord[1],
+                to_lat=to_coord[0],
+                to_lon=to_coord[1],
+            )
+            future_map[future] = (from_stop_id, to_stop_id, from_coord, to_coord)
+
+        for idx, future in enumerate(as_completed(future_map), start=1):
+            task = future_map[future]
+            from_stop_id, to_stop_id, _from_coord, _to_coord = task
+            status = "unknown_error"
+            points: str | None = None
+            distance_m: float | None = None
+            detail: str | None = None
+            try:
+                status, points, distance_m, detail = future.result()
+            except Exception:
+                status, points, distance_m, detail = "unknown_error", None, None, None
+
+            if status == "ok" and points:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO stop_segment_polyline (
+                        from_stop_id, to_stop_id, encoded_polyline, distance_m
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (from_stop_id, to_stop_id, points, distance_m),
+                )
+                success_count += 1
+            elif status == "empty_itineraries":
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO stop_segment_no_route (
+                        from_stop_id, to_stop_id, reason, detail
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (from_stop_id, to_stop_id, "empty_itineraries", detail),
+                )
+                no_route_count += 1
+                status_counts["empty_itineraries"] += 1
+            else:
+                retry_tasks.append((task, status))
+                status_counts[status] += 1
+
+            if idx % 200 == 0 or idx == total_tasks:
+                conn.commit()
+                print(
+                    f"    {progress_label}: {idx}/{total_tasks} "
+                    f"(ok={success_count}, empty_itineraries={status_counts['empty_itineraries']}, "
+                    f"timeout={status_counts['timeout']}, retryable={len(retry_tasks)})"
+                )
+
+    conn.commit()
+    return success_count, no_route_count, retry_tasks, status_counts
 
 
 def parse_html_file(content: str) -> list[dict]:
@@ -219,9 +626,24 @@ def parse_html_file(content: str) -> list[dict]:
 
 # ── DB 적재 ───────────────────────────────────────────────────
 def build_database() -> None:
+    env_map = _load_env_file(ENV_PATH)
+    otp_graphql_url = _resolve_otp_graphql_url(env_map)
+    otp_max_parallel = _env_int(env_map, "OTP_HTTP_MAX_PARALLEL", 50, minimum=1)
+    otp_max_rps = _env_int(env_map, "OTP_HTTP_MAX_RPS", 50, minimum=1)
+    otp_request_retries = _env_int(env_map, "OTP_HTTP_REQUEST_RETRIES", 2, minimum=0)
+    otp_failed_retry_rounds = _env_int(env_map, "OTP_HTTP_FAILED_RETRY_ROUNDS", 2, minimum=0)
+    existing_segment_cache = _load_existing_segment_cache(DB_PATH)
+    existing_no_route_cache = _load_existing_no_route_cache(DB_PATH)
+
     # 기존 DB 삭제 후 재생성
     if DB_PATH.exists():
         DB_PATH.unlink()
+
+    otp_client = OTPPolylineClient(
+        otp_graphql_url,
+        max_retries=otp_request_retries,
+        rate_limiter=RateLimiter(otp_max_rps),
+    )
 
     conn = sqlite3.connect(str(DB_PATH))
     conn.executescript(SCHEMA_SQL)
@@ -238,8 +660,12 @@ def build_database() -> None:
 
     # 캐시: stop (lat, lon) → stop_id
     stop_cache: dict[tuple[float, float], int] = {}
+    # 캐시: stop_id → (lat, lon)
+    stop_coords_by_id: dict[int, tuple[float, float]] = {}
     # 캐시: route (site_id, route_name, route_type) → route_id
     route_cache: dict[tuple[str, str, str], int] = {}
+    # 모든 variant에서 인접 정류장 쌍 수집 (방향 포함)
+    segment_pairs: set[tuple[int, int]] = set()
 
     total_variants = 0
     total_stops_inserted = 0
@@ -310,6 +736,7 @@ def build_database() -> None:
             # stops + variant_stop
             # 기존 variant_stop 삭제 후 재삽입
             conn.execute("DELETE FROM variant_stop WHERE variant_id=?", (variant_id,))
+            prev_stop_id: int | None = None
             for seq, (stop_name, lat, lon) in enumerate(stop_list, start=1):
                 # stop upsert
                 # 위경도를 소수점 7자리로 반올림하여 유니크 키로 사용
@@ -331,11 +758,15 @@ def build_database() -> None:
                         ).fetchone()
                         stop_cache[stop_key] = row[0]
                 stop_id = stop_cache[stop_key]
+                stop_coords_by_id[stop_id] = (lat_r, lon_r)
 
                 conn.execute(
                     "INSERT OR REPLACE INTO variant_stop (variant_id, seq, stop_id) VALUES (?, ?, ?)",
                     (variant_id, seq, stop_id),
                 )
+                if prev_stop_id is not None and prev_stop_id != stop_id:
+                    segment_pairs.add((prev_stop_id, stop_id))
+                prev_stop_id = stop_id
 
         conn.commit()
         print(f"  {fname}: {len(blocks)} blocks loaded")
@@ -365,6 +796,106 @@ def build_database() -> None:
     )
     conn.commit()
 
+    # 5) stop_segment_polyline 동기화
+    conn.execute("DELETE FROM stop_segment_polyline")
+    conn.execute("DELETE FROM stop_segment_no_route")
+    total_segment_pairs = len(segment_pairs)
+    polyline_inserted = 0
+    polyline_reused = 0
+    polyline_otp_ok = 0
+    polyline_failed = 0
+    no_route_reused = 0
+    no_route_new = 0
+    retry_failure_final: Counter[str] = Counter()
+    pending_otp_segments: list[SegmentTask] = []
+    if total_segment_pairs:
+        print(f"  OTP endpoint: {otp_graphql_url}")
+        print(
+            f"  stop_segment_polyline building... ({total_segment_pairs} pairs, "
+            f"polyline_cache_hit={len(existing_segment_cache)}, "
+            f"no_route_cache_hit={len(existing_no_route_cache)})"
+        )
+
+    for from_stop_id, to_stop_id in sorted(segment_pairs):
+        from_coord = stop_coords_by_id.get(from_stop_id)
+        to_coord = stop_coords_by_id.get(to_stop_id)
+        if not from_coord or not to_coord:
+            polyline_failed += 1
+            continue
+
+        cache_key = _segment_coord_key(from_coord, to_coord)
+        cached = existing_segment_cache.get(cache_key)
+        if cached and cached[0]:
+            points, distance_m = cached
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO stop_segment_polyline (
+                    from_stop_id, to_stop_id, encoded_polyline, distance_m
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (from_stop_id, to_stop_id, points, distance_m),
+            )
+            polyline_inserted += 1
+            polyline_reused += 1
+            continue
+
+        cached_no_route = existing_no_route_cache.get(cache_key)
+        if cached_no_route:
+            reason, detail = cached_no_route
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO stop_segment_no_route (
+                    from_stop_id, to_stop_id, reason, detail
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (from_stop_id, to_stop_id, reason, detail),
+            )
+            no_route_reused += 1
+            continue
+
+        pending_otp_segments.append((from_stop_id, to_stop_id, from_coord, to_coord))
+
+    conn.commit()
+
+    total_pending = len(pending_otp_segments)
+    if total_pending:
+        total_attempts = otp_failed_retry_rounds + 1
+        print(
+            f"  OTP requests: {total_pending} "
+            f"(max_parallel={otp_max_parallel}, max_rps={otp_max_rps}, "
+            f"request_retries={otp_request_retries}, attempts={total_attempts})"
+        )
+        remaining_tasks = pending_otp_segments
+        for attempt_idx in range(1, total_attempts + 1):
+            if not remaining_tasks:
+                break
+            ok_count, no_route_count, retry_tasks, status_counts = _run_otp_batch(
+                conn,
+                otp_client,
+                remaining_tasks,
+                max_parallel=otp_max_parallel,
+                progress_label=f"otp attempt {attempt_idx}/{total_attempts}",
+            )
+            polyline_inserted += ok_count
+            polyline_otp_ok += ok_count
+            no_route_new += no_route_count
+            remaining_tasks = [task for task, _status in retry_tasks]
+            retry_failure_final = Counter(status for _task, status in retry_tasks)
+            if remaining_tasks and attempt_idx < total_attempts:
+                print(
+                    f"    retry queued: {len(remaining_tasks)} segment(s) "
+                    f"for attempt {attempt_idx + 1}/{total_attempts} "
+                    f"(timeout={retry_failure_final['timeout']}, "
+                    f"empty_itineraries={status_counts['empty_itineraries']})"
+                )
+        polyline_failed += len(remaining_tasks)
+    else:
+        print("  OTP requests: 0 (all segment polylines reused from existing data.db)")
+
+    # 혹시 재사용만 있었고 OTP 성공이 0일 수 있으므로 안전 계산
+    if polyline_otp_ok == 0 and polyline_inserted >= polyline_reused:
+        polyline_otp_ok = polyline_inserted - polyline_reused
+
     # 통계
     site_count = conn.execute("SELECT COUNT(*) FROM site").fetchone()[0]
     route_count = conn.execute("SELECT COUNT(*) FROM route").fetchone()[0]
@@ -373,6 +904,14 @@ def build_database() -> None:
     vs_count = conn.execute("SELECT COUNT(*) FROM variant_stop").fetchone()[0]
     rtree_count = conn.execute("SELECT COUNT(*) FROM stop_rtree").fetchone()[0]
     stop_scope_count = conn.execute("SELECT COUNT(*) FROM stop_scope").fetchone()[0]
+    segment_polyline_count = conn.execute("SELECT COUNT(*) FROM stop_segment_polyline").fetchone()[0]
+    segment_no_route_count = conn.execute("SELECT COUNT(*) FROM stop_segment_no_route").fetchone()[0]
+
+    timeout_failed = retry_failure_final.get("timeout", 0)
+    empty_itinerary_seen = no_route_reused + no_route_new
+    other_failed = polyline_failed - timeout_failed
+    if other_failed < 0:
+        other_failed = 0
 
     print(f"\n=== Build Complete ===")
     print(f"  Sites:            {site_count}")
@@ -382,6 +921,22 @@ def build_database() -> None:
     print(f"  Variant Stops:    {vs_count}")
     print(f"  Stop Scopes:      {stop_scope_count}")
     print(f"  RTree entries:    {rtree_count}")
+    print(f"  Segment pairs:    {total_segment_pairs}")
+    print(
+        "  Segment polylines:"
+        f"{segment_polyline_count} (reused={polyline_reused}, "
+        f"otp_ok={polyline_otp_ok}, failed={polyline_failed})"
+    )
+    print(
+        "  No-route cache:   "
+        f"{segment_no_route_count} (reused={no_route_reused}, "
+        f"new_empty_itineraries={no_route_new})"
+    )
+    print(
+        "  OTP fail reasons: "
+        f"timeout={timeout_failed}, empty_itineraries_seen={empty_itinerary_seen}, "
+        f"other={other_failed}"
+    )
     print(f"  DB file:          {DB_PATH}")
 
     conn.close()
