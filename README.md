@@ -48,6 +48,20 @@ FRONTEND_PORT=8080
 OTP_DATA_DIR=.
 OTP_HOST_PORT=8082
 OTP_BASE_URL=http://otp:8082
+# build_db.py에서 OTP 경로(정류장 간 encoded polyline) 계산 시 사용할 HTTP 주소
+# 기본값: OTP_HTTP_BASE_URL=http://localhost:8888, OTP_HTTP_PLAN_PATH=/otp/gtfs/v1
+OTP_HTTP_BASE_URL=http://localhost:8888
+OTP_HTTP_PLAN_PATH=/otp/gtfs/v1
+# build_db.py OTP 병렬 호출 설정
+# - OTP_HTTP_MAX_PARALLEL: 동시 요청 개수 (기본 50)
+# - OTP_HTTP_MAX_RPS: 초당 요청 상한(req/s, 기본 50)
+OTP_HTTP_MAX_PARALLEL=50
+OTP_HTTP_MAX_RPS=50
+# build_db.py OTP 재시도 설정
+# - OTP_HTTP_REQUEST_RETRIES: 요청 1건 내부 재시도 횟수 (기본 2)
+# - OTP_HTTP_FAILED_RETRY_ROUNDS: 실패 구간 전체 재시도 라운드 수 (기본 2)
+OTP_HTTP_REQUEST_RETRIES=2
+OTP_HTTP_FAILED_RETRY_ROUNDS=2
 
 # CORS 허용 origin (로컬 개발 + 상용)
 # FRONTEND_PORT를 바꿨다면 해당 포트 origin도 추가해야 합니다.
@@ -190,9 +204,17 @@ docker compose down -v
 ### build_db.py
 
 Raw HTML 파일(`data/raw/`)과 사업장 목록(`data/sites.csv`)을 파싱하여 SQLite DB(`data/data.db`)를 생성합니다.
+이때 인접 정류장 간 `encoded polyline`도 OTP HTTP API를 통해 미리 계산해 DB(`stop_segment_polyline`)에 저장합니다.
 
 - **입력**: `data/raw/` 안의 HTML 파일 + `data/sites.csv`
 - **출력**: `data/data.db`
+- **OTP 주소 환경변수(선택)**:
+  - `OTP_HTTP_BASE_URL` (기본 `http://localhost:8888`)
+  - `OTP_HTTP_PLAN_PATH` (기본 `/otp/gtfs/v1`)
+  - `OTP_HTTP_MAX_PARALLEL` (기본 `50`)
+  - `OTP_HTTP_MAX_RPS` (기본 `50`, req/s)
+  - `OTP_HTTP_REQUEST_RETRIES` (기본 `2`)
+  - `OTP_HTTP_FAILED_RETRY_ROUNDS` (기본 `2`)
 
 ```bash
 python build_db.py

@@ -17,6 +17,7 @@ DB_PATH = DATA_DIR / "data.db"
 
 _conn: sqlite3.Connection | None = None
 _has_stop_scope: bool | None = None
+_has_stop_segment_polyline: bool | None = None
 _endpoint_cache_lock = threading.Lock()
 _endpoint_cache: dict[tuple[str, str, str], dict] = {}
 _ENDPOINT_GROUP_DISTANCE_M = 100.0
@@ -25,7 +26,7 @@ _ENDPOINT_GRID_CELL_DEG = _ENDPOINT_GROUP_DISTANCE_M / 111000.0
 
 def init_db(db_path: str | None = None) -> None:
     """SQLite DB 연결. 앱 시작 시 1회 호출."""
-    global _conn, _has_stop_scope
+    global _conn, _has_stop_scope, _has_stop_segment_polyline
     path = db_path or str(DB_PATH)
     _conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, check_same_thread=False)
     _conn.row_factory = sqlite3.Row
@@ -33,6 +34,11 @@ def init_db(db_path: str | None = None) -> None:
     _has_stop_scope = bool(
         _conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_scope' LIMIT 1"
+        ).fetchone()
+    )
+    _has_stop_segment_polyline = bool(
+        _conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_segment_polyline' LIMIT 1"
         ).fetchone()
     )
 
@@ -55,6 +61,18 @@ def _supports_stop_scope() -> bool:
     return bool(_has_stop_scope)
 
 
+def _supports_stop_segment_polyline() -> bool:
+    global _has_stop_segment_polyline
+    if _has_stop_segment_polyline is None:
+        db = _db()
+        _has_stop_segment_polyline = bool(
+            db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_segment_polyline' LIMIT 1"
+            ).fetchone()
+        )
+    return bool(_has_stop_segment_polyline)
+
+
 # ── 유틸리티 ───────────────────────────────────────────────────
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
@@ -69,6 +87,62 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return _haversine_km(lat1, lon1, lat2, lon2) * 1000.0
+
+
+def _get_variant_stops(db: sqlite3.Connection, variant_id: int) -> list[dict]:
+    has_polyline = _supports_stop_segment_polyline()
+    if has_polyline:
+        rows = db.execute(
+            """
+            SELECT
+                vs.seq,
+                vs.stop_id,
+                s.name,
+                s.lat,
+                s.lon,
+                sp.encoded_polyline AS next_encoded_polyline
+            FROM variant_stop vs
+            JOIN stop s ON s.stop_id = vs.stop_id
+            LEFT JOIN variant_stop vs_next
+                ON vs_next.variant_id = vs.variant_id
+               AND vs_next.seq = vs.seq + 1
+            LEFT JOIN stop_segment_polyline sp
+                ON sp.from_stop_id = vs.stop_id
+               AND sp.to_stop_id = vs_next.stop_id
+            WHERE vs.variant_id = ?
+            ORDER BY vs.seq
+            """,
+            (variant_id,),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT
+                vs.seq,
+                vs.stop_id,
+                s.name,
+                s.lat,
+                s.lon,
+                NULL AS next_encoded_polyline
+            FROM variant_stop vs
+            JOIN stop s ON s.stop_id = vs.stop_id
+            WHERE vs.variant_id = ?
+            ORDER BY vs.seq
+            """,
+            (variant_id,),
+        ).fetchall()
+
+    return [
+        {
+            "sequence": sr["seq"],
+            "stop_id": sr["stop_id"],
+            "stop_name": sr["name"],
+            "lat": sr["lat"],
+            "lng": sr["lon"],
+            "next_encoded_polyline": str(sr["next_encoded_polyline"] or ""),
+        }
+        for sr in rows
+    ]
 
 
 # ── 공개 API ──────────────────────────────────────────────────
@@ -724,7 +798,16 @@ def find_nearest_route_options(
         "distance_m": float,
         "all_departure_times": [str, ...],
         "companies": [str, ...],
-        "route_stops": [{"sequence": int, "stop_name": str, "lat": float, "lon": float}, ...],
+        "route_stops": [
+            {
+                "sequence": int,
+                "stop_name": str,
+                "lat": float,
+                "lon": float,
+                "next_encoded_polyline": str,
+            },
+            ...
+        ],
     }
     """
     db = _db()
@@ -808,28 +891,7 @@ def find_nearest_route_options(
             (route_id, day_type),
         ).fetchone()
 
-        route_stops = []
-        if first_variant:
-            stops_rows = db.execute(
-                """
-                SELECT vs.seq, vs.stop_id, s.name, s.lat, s.lon
-                FROM variant_stop vs
-                JOIN stop s ON s.stop_id = vs.stop_id
-                WHERE vs.variant_id = ?
-                ORDER BY vs.seq
-                """,
-                (first_variant["variant_id"],),
-            ).fetchall()
-            route_stops = [
-                {
-                    "sequence": sr["seq"],
-                    "stop_id": sr["stop_id"],
-                    "stop_name": sr["name"],
-                    "lat": sr["lat"],
-                    "lng": sr["lon"],
-                }
-                for sr in stops_rows
-            ]
+        route_stops = _get_variant_stops(db, int(first_variant["variant_id"])) if first_variant else []
 
         results.append(
             {
@@ -882,28 +944,7 @@ def get_route_detail(route_id: int, day_type: str = "weekday") -> dict | None:
     ]
 
     # 대표 경유지
-    route_stops = []
-    if variants:
-        stops_rows = db.execute(
-            """
-            SELECT vs.seq, vs.stop_id, s.name, s.lat, s.lon
-            FROM variant_stop vs
-            JOIN stop s ON s.stop_id = vs.stop_id
-            WHERE vs.variant_id = ?
-            ORDER BY vs.seq
-            """,
-            (variants[0]["variant_id"],),
-        ).fetchall()
-        route_stops = [
-            {
-                "sequence": sr["seq"],
-                "stop_id": sr["stop_id"],
-                "stop_name": sr["name"],
-                "lat": sr["lat"],
-                "lng": sr["lon"],
-            }
-            for sr in stops_rows
-        ]
+    route_stops = _get_variant_stops(db, int(variants[0]["variant_id"])) if variants else []
 
     return {
         "route_id": route["route_id"],
