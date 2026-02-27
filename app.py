@@ -12,6 +12,7 @@ import os
 import threading
 import time as _time
 import uuid
+from collections import OrderedDict
 from datetime import datetime
 
 import requests
@@ -67,6 +68,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 GITHUB_API_BASE = os.environ.get("GITHUB_API_BASE", "https://api.github.com").rstrip("/")
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "").strip()
 GITHUB_INSTALLATION_ID = os.environ.get("GITHUB_INSTALLATION_ID", "").strip()
@@ -98,8 +106,25 @@ _issue_submit_recent_hash: dict[str, float] = {}
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
 _OPTIONS_CANDIDATE_LIMIT = 100
-_DEFAULT_MAX_DISTANCE_KM = 5.0
+_OPTIONS_RESPONSE_LIMIT = 3
+_DEFAULT_MAX_DISTANCE_KM = 3.0
 _MAX_DISTANCE_KM = 30.0
+
+OTP_BASE_URL = os.environ.get("OTP_BASE_URL", "http://otp:8082").rstrip("/")
+OTP_PLAN_PATH = os.environ.get("OTP_PLAN_PATH", "/otp/gtfs/v1").strip() or "/otp/gtfs/v1"
+if not OTP_PLAN_PATH.startswith("/"):
+    OTP_PLAN_PATH = "/" + OTP_PLAN_PATH
+OTP_WALK_ENABLED = os.environ.get("OTP_WALK_ENABLED", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+OTP_WALK_HTTP_TIMEOUT_SEC = max(0.2, _env_float("OTP_WALK_HTTP_TIMEOUT_SEC", 8.0))
+OTP_WALK_DURATION_MULTIPLIER = max(0.0, _env_float("OTP_WALK_DURATION_MULTIPLIER", 1.25))
+OTP_WALK_CACHE_SIZE = max(100, _env_int("OTP_WALK_CACHE_SIZE", 10000))
+_walk_path_cache: OrderedDict[str, dict] = OrderedDict()
+_walk_path_cache_lock = threading.Lock()
 
 # ── Prometheus 메트릭 정의 ──────────────────────────────────
 REQUEST_COUNT = Counter(
@@ -113,6 +138,18 @@ REQUEST_LATENCY = Histogram(
     "HTTP request latency in seconds",
     ["method", "endpoint"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
+REQUEST_SIZE_TOTAL = Counter(
+    "shuttle_http_request_size_bytes_total",
+    "Total HTTP request size in bytes",
+    ["method", "endpoint"],
+)
+
+RESPONSE_SIZE_TOTAL = Counter(
+    "shuttle_http_response_size_bytes_total",
+    "Total HTTP response size in bytes",
+    ["method", "endpoint", "status"],
 )
 
 KAKAO_API_CALLS = Counter(
@@ -147,17 +184,55 @@ def _before_request():
     IN_PROGRESS_REQUESTS.inc()
 
 
+def _safe_request_size_bytes() -> int:
+    url_size = len((request.path or "").encode("utf-8"))
+    if request.query_string:
+        url_size += len(request.query_string)
+    content_length = request.content_length
+    if isinstance(content_length, int) and content_length >= 0:
+        return content_length + url_size
+    try:
+        body = request.get_data(cache=True, as_text=False)
+    except Exception:
+        return url_size
+    return (len(body) if body else 0) + url_size
+
+
+def _safe_response_size_bytes(response) -> int:
+    try:
+        content_length = response.calculate_content_length()
+    except Exception:
+        content_length = None
+    if isinstance(content_length, int) and content_length >= 0:
+        return content_length
+    try:
+        body = response.get_data()
+    except Exception:
+        return 0
+    return len(body) if body else 0
+
+
 @app.after_request
 def _after_request(response):
     if request.path == "/metrics":
         IN_PROGRESS_REQUESTS.dec()
         return response
     latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
-    endpoint = request.path
+    url_rule = getattr(request, "url_rule", None)
+    if url_rule is not None and getattr(url_rule, "rule", None):
+        endpoint = url_rule.rule
+    elif request.path.startswith("/api/"):
+        endpoint = "/api/_unmatched"
+    else:
+        endpoint = request.path
     method = request.method
     status = str(response.status_code)
+    request_size = _safe_request_size_bytes()
+    response_size = _safe_response_size_bytes(response)
     REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
+    REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
+    RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
     IN_PROGRESS_REQUESTS.dec()
     return response
 
@@ -270,6 +345,43 @@ def _find_route_stop_sequence(
                 except (TypeError, ValueError):
                     return None
     return None
+
+
+def _segment_polylines_between_sequences(
+    route_stops: list[dict],
+    *,
+    from_sequence: int | None,
+    to_sequence: int | None,
+) -> list[str]:
+    if from_sequence is None or to_sequence is None:
+        return []
+    try:
+        start_seq = int(from_sequence)
+        end_seq = int(to_sequence)
+    except (TypeError, ValueError):
+        return []
+    if end_seq <= start_seq:
+        return []
+
+    stop_by_seq: dict[int, dict] = {}
+    for stop in route_stops:
+        seq_raw = stop.get("sequence")
+        try:
+            seq = int(seq_raw)
+        except (TypeError, ValueError):
+            continue
+        if seq not in stop_by_seq:
+            stop_by_seq[seq] = stop
+
+    segments: list[str] = []
+    for seq in range(start_seq, end_seq):
+        stop = stop_by_seq.get(seq)
+        if not stop:
+            continue
+        encoded = str(stop.get("next_encoded_polyline") or "").strip()
+        if encoded:
+            segments.append(encoded)
+    return segments
 
 
 def _normalize_stop_name_for_endpoint_matching(name: str | None) -> str:
@@ -434,6 +546,92 @@ def _is_truthy_param(raw: str | None) -> bool:
     if raw is None:
         return False
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _walk_path_cache_key(from_lat: float, from_lng: float, to_lat: float, to_lng: float) -> str:
+    return f"{from_lat:.6f},{from_lng:.6f}->{to_lat:.6f},{to_lng:.6f}"
+
+
+def _walk_path_cache_get(cache_key: str) -> dict | None:
+    with _walk_path_cache_lock:
+        cached = _walk_path_cache.get(cache_key)
+        if cached is None:
+            return None
+        _walk_path_cache.move_to_end(cache_key)
+        return dict(cached)
+
+
+def _walk_path_cache_set(cache_key: str, payload: dict) -> None:
+    with _walk_path_cache_lock:
+        _walk_path_cache[cache_key] = dict(payload)
+        _walk_path_cache.move_to_end(cache_key)
+        while len(_walk_path_cache) > OTP_WALK_CACHE_SIZE:
+            _walk_path_cache.popitem(last=False)
+
+
+def _fetch_walk_path_from_otp(from_lat: float, from_lng: float, to_lat: float, to_lng: float) -> dict:
+    query = (
+        "query { "
+        f"plan(from:{{lat:{from_lat},lon:{from_lng}}} "
+        f"to:{{lat:{to_lat},lon:{to_lng}}} "
+        "transportModes:[{mode:WALK}]) { "
+        "itineraries { duration legs { distance legGeometry { points } } } "
+        "} }"
+    )
+    url = f"{OTP_BASE_URL}{OTP_PLAN_PATH}"
+    response = requests.post(
+        url,
+        json={"query": query},
+        timeout=OTP_WALK_HTTP_TIMEOUT_SEC,
+    )
+    response.raise_for_status()
+    payload = response.json() if response.text else {}
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    plan = data.get("plan") if isinstance(data, dict) else None
+    itineraries = plan.get("itineraries") if isinstance(plan, dict) else None
+    if not itineraries:
+        return {
+            "has_route": False,
+            "status": "empty_itineraries",
+            "encoded_polyline": "",
+            "duration_sec": None,
+            "distance_m": None,
+        }
+
+    first = itineraries[0] if isinstance(itineraries[0], dict) else {}
+    legs = first.get("legs") if isinstance(first, dict) else []
+    encoded = ""
+    distance_m = 0.0
+    if isinstance(legs, list):
+        for leg in legs:
+            if not isinstance(leg, dict):
+                continue
+            try:
+                distance_m += float(leg.get("distance") or 0.0)
+            except (TypeError, ValueError):
+                pass
+            geom = leg.get("legGeometry")
+            points = geom.get("points") if isinstance(geom, dict) else None
+            if not encoded and points:
+                encoded = str(points).strip()
+
+    duration_sec: int | None
+    try:
+        raw_duration = first.get("duration")
+        duration_sec = int(float(raw_duration)) if raw_duration is not None else None
+    except (TypeError, ValueError):
+        duration_sec = None
+    if duration_sec is not None and duration_sec > 0:
+        duration_sec = int(math.ceil(duration_sec * OTP_WALK_DURATION_MULTIPLIER))
+
+    return {
+        "has_route": bool(encoded),
+        "status": "ok" if encoded else "empty_geometry",
+        "encoded_polyline": encoded,
+        "duration_sec": duration_sec,
+        "distance_m": distance_m if distance_m > 0 else None,
+    }
 
 
 class GitHubConfigError(RuntimeError):
@@ -854,6 +1052,64 @@ def api_shuttle_endpoint_options_search():
     )
 
 
+@app.route("/api/shuttle/walk-path")
+def api_shuttle_walk_path():
+    from_lat = request.args.get("from_lat", type=float)
+    from_lng = request.args.get("from_lng", type=float)
+    to_lat = request.args.get("to_lat", type=float)
+    to_lng = request.args.get("to_lng", type=float)
+    if from_lat is None or from_lng is None or to_lat is None or to_lng is None:
+        return jsonify({"error": "from_lat, from_lng, to_lat, to_lng required"}), 400
+    if not (
+        math.isfinite(from_lat)
+        and math.isfinite(from_lng)
+        and math.isfinite(to_lat)
+        and math.isfinite(to_lng)
+    ):
+        return jsonify({"error": "coordinates must be finite numbers"}), 400
+
+    if not OTP_WALK_ENABLED:
+        return jsonify(
+            {
+                "walk_otp_enabled": False,
+                "has_route": False,
+                "status": "disabled",
+                "encoded_polyline": "",
+                "duration_sec": None,
+                "distance_m": None,
+                "source": "disabled",
+            }
+        )
+
+    cache_key = _walk_path_cache_key(from_lat, from_lng, to_lat, to_lng)
+    cached = _walk_path_cache_get(cache_key)
+    if cached is not None:
+        cached["source"] = "cache"
+        cached["walk_otp_enabled"] = True
+        return jsonify(cached)
+
+    try:
+        fetched = _fetch_walk_path_from_otp(from_lat, from_lng, to_lat, to_lng)
+    except requests.Timeout:
+        return jsonify({"error": "otp_walk_timeout"}), 504
+    except requests.RequestException as exc:
+        return jsonify({"error": f"otp_walk_request_failed: {exc}"}), 502
+    except ValueError:
+        return jsonify({"error": "otp_walk_invalid_response"}), 502
+
+    cache_payload = {
+        "has_route": bool(fetched.get("has_route")),
+        "status": str(fetched.get("status") or ""),
+        "encoded_polyline": str(fetched.get("encoded_polyline") or ""),
+        "duration_sec": fetched.get("duration_sec"),
+        "distance_m": fetched.get("distance_m"),
+    }
+    _walk_path_cache_set(cache_key, cache_payload)
+    cache_payload["source"] = "otp"
+    cache_payload["walk_otp_enabled"] = True
+    return jsonify(cache_payload)
+
+
 @app.route("/api/issues", methods=["GET", "POST"])
 def api_issues():
     if request.method == "POST":
@@ -1140,7 +1396,7 @@ def api_github_webhook():
 
 @app.route("/api/shuttle/depart/options")
 def api_shuttle_depart_options():
-    """출근 노선 후보 최대 5개."""
+    """출근 노선 후보 최대 3개."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -1176,7 +1432,7 @@ def api_shuttle_depart_options():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         selected_endpoint_components = _build_selected_endpoint_component_set(
             site_id=site_id,
             day_type=day_type,
@@ -1193,14 +1449,14 @@ def api_shuttle_depart_options():
         lon=lng,
         day_type=day_type,
         # 후처리(탑승/하차 동일 정류장 제외, 시간 필터) 이후에도
-        # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
+        # 실제 반환 3개를 채울 수 있도록 후보를 넉넉히 가져온다.
         max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
         include_route_ids=include_route_ids,
     )
     if not results:
         if include_route_ids is not None:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1261,6 +1517,13 @@ def api_shuttle_depart_options():
             if not alt:
                 continue
             ns = alt
+            nearest_seq = _find_route_stop_sequence(
+                route_stops,
+                stop_id=ns.get("stop_id"),
+                stop_name=ns.get("name"),
+            )
+            if nearest_seq is not None:
+                ns["sequence"] = nearest_seq
 
         distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
         if distance_m > max_distance_m:
@@ -1288,6 +1551,11 @@ def api_shuttle_depart_options():
             f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
             f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
         )
+        bus_segment_polylines = _segment_polylines_between_sequences(
+            route_stops,
+            from_sequence=ns.get("sequence"),
+            to_sequence=terminus_seq,
+        )
 
         payload = {
             "positions": positions,
@@ -1296,18 +1564,21 @@ def api_shuttle_depart_options():
             "route_id": r["route_id"],
             "operator": ", ".join(r["companies"]),
             "nearest_stop_name": ns["name"],
+            "nearest_stop_sequence": ns.get("sequence"),
             "terminus_name": terminus["stop_name"] if terminus else "",
+            "terminus_sequence": terminus_seq,
             "distance_m": round(distance_m),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
+            "bus_segment_polylines": bus_segment_polylines,
         }
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
-        if len(options) >= 5:
+        if len(options) >= _OPTIONS_RESPONSE_LIMIT:
             break
 
-    resp = {"options": options}
+    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
     return jsonify(resp)
@@ -1383,6 +1654,13 @@ def api_shuttle_depart():
             ns = alt
         else:
             return jsonify({"error": "해당 노선에서 탑승 가능한 정류장을 찾을 수 없습니다."}), 404
+    nearest_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=ns.get("stop_id"),
+        stop_name=ns.get("name"),
+    )
+    if nearest_seq is not None:
+        ns["sequence"] = nearest_seq
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -1401,13 +1679,23 @@ def api_shuttle_depart():
         f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
         f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
     )
+    bus_segment_polylines = _segment_polylines_between_sequences(
+        route_stops,
+        from_sequence=ns.get("sequence"),
+        to_sequence=terminus_seq,
+    )
 
     payload = {
         "positions": positions,
         "message": message,
         "route_name": r["route_name"],
         "nearest_stop_name": ns["name"],
+        "nearest_stop_sequence": ns.get("sequence"),
         "terminus_name": terminus["stop_name"] if terminus else "",
+        "terminus_sequence": terminus_seq,
+        "route_stops": route_stops,
+        "bus_segment_polylines": bus_segment_polylines,
+        "walk_otp_enabled": OTP_WALK_ENABLED,
     }
     if board_time is not None:
         payload["board_time"] = board_time
@@ -1416,7 +1704,7 @@ def api_shuttle_depart():
 
 @app.route("/api/shuttle/arrive/options")
 def api_shuttle_arrive_options():
-    """퇴근 노선 후보 최대 5개."""
+    """퇴근 노선 후보 최대 3개."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -1452,7 +1740,7 @@ def api_shuttle_arrive_options():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         selected_endpoint_components = _build_selected_endpoint_component_set(
             site_id=site_id,
             day_type=day_type,
@@ -1469,14 +1757,14 @@ def api_shuttle_arrive_options():
         lon=lng,
         day_type=day_type,
         # 후처리(탑승/하차 동일 정류장 제외, 시간 필터) 이후에도
-        # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
+        # 실제 반환 3개를 채울 수 있도록 후보를 넉넉히 가져온다.
         max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
         include_route_ids=include_route_ids,
     )
     if not results:
         if include_route_ids is not None:
-            return jsonify({"options": []})
+            return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1537,6 +1825,13 @@ def api_shuttle_arrive_options():
             if not alt:
                 continue
             ns = alt
+            nearest_seq = _find_route_stop_sequence(
+                route_stops,
+                stop_id=ns.get("stop_id"),
+                stop_name=ns.get("name"),
+            )
+            if nearest_seq is not None:
+                ns["sequence"] = nearest_seq
 
         positions = []
         if first:
@@ -1547,6 +1842,11 @@ def api_shuttle_arrive_options():
         message = (
             f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
             f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
+        )
+        bus_segment_polylines = _segment_polylines_between_sequences(
+            route_stops,
+            from_sequence=first_seq,
+            to_sequence=ns.get("sequence"),
         )
         distance_m = haversine_distance_m(lat, lng, ns["lat"], ns["lon"])
         if distance_m > max_distance_m:
@@ -1570,19 +1870,21 @@ def api_shuttle_arrive_options():
             "route_id": r["route_id"],
             "operator": ", ".join(r["companies"]),
             "start_stop_name": first["stop_name"] if first else "",
+            "start_stop_sequence": first_seq,
             "getoff_stop_name": ns["name"],
             "getoff_stop_sequence": ns.get("sequence"),
             "distance_m": round(distance_m),
             "all_departure_times": r["all_departure_times"],
             "route_stops": route_stops,
+            "bus_segment_polylines": bus_segment_polylines,
         }
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
-        if len(options) >= 5:
+        if len(options) >= _OPTIONS_RESPONSE_LIMIT:
             break
 
-    resp = {"options": options}
+    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
     return jsonify(resp)
@@ -1657,6 +1959,13 @@ def api_shuttle_arrive():
             ns = alt
         else:
             return jsonify({"error": "해당 노선에서 하차 가능한 정류장을 찾을 수 없습니다."}), 404
+    nearest_seq = _find_route_stop_sequence(
+        route_stops,
+        stop_id=ns.get("stop_id"),
+        stop_name=ns.get("name"),
+    )
+    if nearest_seq is not None:
+        ns["sequence"] = nearest_seq
 
     board_time = (
         get_nearest_departure_time(r["all_departure_times"], time_param)
@@ -1674,14 +1983,23 @@ def api_shuttle_arrive():
         f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
         f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
     )
+    bus_segment_polylines = _segment_polylines_between_sequences(
+        route_stops,
+        from_sequence=first_seq,
+        to_sequence=ns.get("sequence"),
+    )
 
     payload = {
         "positions": positions,
         "message": message,
         "route_name": r["route_name"],
         "start_stop_name": first["stop_name"] if first else "",
+        "start_stop_sequence": first_seq,
         "getoff_stop_name": ns["name"],
         "getoff_stop_sequence": ns.get("sequence"),
+        "route_stops": route_stops,
+        "bus_segment_polylines": bus_segment_polylines,
+        "walk_otp_enabled": OTP_WALK_ENABLED,
     }
     if board_time is not None:
         payload["board_time"] = board_time
