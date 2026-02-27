@@ -113,13 +113,13 @@ AUTH_PENDING_SIGNUP_TTL_SEC = max(60, _env_int("AUTH_PENDING_SIGNUP_TTL_SEC", 90
 AUTH_OAUTH_STATE_TTL_SEC = max(60, _env_int("AUTH_OAUTH_STATE_TTL_SEC", 600))
 AUTH_METRICS_REFRESH_SEC = max(30, _env_int("AUTH_METRICS_REFRESH_SEC", 300))
 AUTH_FRONTEND_CALLBACK_URL = os.environ.get(
-    "AUTH_FRONTEND_CALLBACK_URL", "https://shuttlego.github.io/auth-callback.html"
+    "AUTH_FRONTEND_CALLBACK_URL", "https://shuttle-go.com/auth-callback.html"
 ).strip()
 AUTH_FRONTEND_ALLOWED_ORIGINS = [
     v.strip()
     for v in os.environ.get(
         "AUTH_FRONTEND_ALLOWED_ORIGINS",
-        "https://shuttlego.github.io,http://localhost:8080,http://127.0.0.1:8080",
+        "https://shuttle-go.com,http://localhost:8080,http://127.0.0.1:8080",
     ).split(",")
     if v.strip()
 ]
@@ -1426,7 +1426,7 @@ def _resolve_frontend_callback_url(raw_next: str | None) -> str:
         return candidate
     if _origin_allowed_for_auth(AUTH_FRONTEND_CALLBACK_URL):
         return AUTH_FRONTEND_CALLBACK_URL
-    return "https://shuttlego.github.io/auth-callback.html"
+    return "https://shuttle-go.com/auth-callback.html"
 
 
 def _build_frontend_redirect(base_url: str, params: dict[str, str | int | None]) -> str:
