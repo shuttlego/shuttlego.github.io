@@ -121,7 +121,6 @@ def write_dev_config_js() -> None:
     with open(DEV_CONFIG_JS, "w", encoding="utf-8") as f:
         f.write(content)
 
-
 def configure_runtime_ports(validate_conflict: bool = True) -> None:
     global FRONTEND_PORT, BACKEND_HTTP_PORT, BACKEND_HTTPS_PORT, HEALTH_URL
     env_map = load_env_file(ENV_FILE)
