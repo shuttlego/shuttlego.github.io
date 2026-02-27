@@ -5674,7 +5674,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                 : '';
               commentsHtml = comments.map(function(comment) {
                 var rawUser = String(comment.user || 'unknown');
-                var displayUser = String(comment.display_name || rawUser || 'unknown');
+                var isBotAuthor = !!comment.is_bot;
+                var displayUser = String(comment.display_name || '');
+                if (!displayUser.trim() && !isBotAuthor) {
+                  displayUser = rawUser || 'unknown';
+                }
                 var commentUserId = String(comment.user_id || '').trim();
                 var isRepoOwner = !!comment.is_repo_owner;
                 var isSelfAuthor = !!(currentPublicUserId && commentUserId && commentUserId === currentPublicUserId);
@@ -5688,12 +5692,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                 if (isSelfAuthor && currentNicknameForRender) {
                   displayUser = currentNicknameForRender;
                 }
-                var safeDisplayUser = displayUser.trim() || rawUser.trim() || 'unknown';
+                var safeDisplayUser = displayUser.trim();
                 var authorClass = isRepoOwner ? 'issue-owner-name' : 'issue-comment-author';
                 var metaParts = [];
                 if (isSelfAuthor) metaParts.push('<span class="issue-self-mark">*</span>');
-                metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
-                metaParts.push('<span class="issue-comment-separator">·</span>');
+                if (safeDisplayUser) {
+                  metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
+                  metaParts.push('<span class="issue-comment-separator">·</span>');
+                }
                 metaParts.push('<span>' + formatIssueDate(comment.created_at) + '</span>');
                 var metaText = metaParts.join('');
                 return (
@@ -5948,6 +5954,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var center = new kakao.maps.LatLng(37.5665, 126.978);
         var options = { center: center, level: 5 };
         map = new kakao.maps.Map(mapContainer, options);
+        if (mapContainer) {
+          mapContainer.addEventListener('wheel', cancelRouteVisualFitOnUserMapInteraction, { passive: true });
+          mapContainer.addEventListener('mousedown', cancelRouteVisualFitOnUserMapInteraction, { passive: true });
+          mapContainer.addEventListener('touchstart', cancelRouteVisualFitOnUserMapInteraction, { passive: true });
+        }
         updatePinScale();
         kakao.maps.event.addListener(map, 'dragstart', function() {
           mapDragStartedAt = Date.now();
@@ -6368,6 +6379,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!routeVisualFitIdleHandler || !map) return;
         kakao.maps.event.removeListener(map, 'idle', routeVisualFitIdleHandler);
         routeVisualFitIdleHandler = null;
+      }
+
+      function cancelRouteVisualFitOnUserMapInteraction() {
+        if (!routeVisualFitIdleHandler) return;
+        clearRouteVisualFitWatcher();
       }
 
       function getMapOverlayInsets() {

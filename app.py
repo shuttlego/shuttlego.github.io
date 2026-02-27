@@ -335,6 +335,16 @@ def _current_auth_state_for_metrics() -> str:
     return "authenticated" if user is not None else "anonymous"
 
 
+def _is_business_api_endpoint_for_auth_metrics(endpoint: str) -> bool:
+    if endpoint in {"/api/search", "/api/sites", "/api/issues"}:
+        return True
+    return (
+        endpoint.startswith("/api/shuttle/")
+        or endpoint.startswith("/api/issues/")
+        or endpoint.startswith("/api/route/")
+    )
+
+
 def _extract_site_id_for_metrics(endpoint: str) -> str | None:
     if not (endpoint.startswith("/api/shuttle/") or endpoint in _SITE_ID_METRIC_EXTRA_ENDPOINTS):
         return None
@@ -351,7 +361,8 @@ def _extract_site_id_for_metrics(endpoint: str) -> str | None:
 def _user_db_size_bytes() -> int:
     db_path = str(user_store.get_db_path())
     total = 0
-    for suffix in ("", "-wal", "-shm"):
+    # -shm은 SQLite의 공유 메모리 보조 파일이라 저장 데이터 크기 지표로는 노이즈가 크다.
+    for suffix in ("", "-wal"):
         try:
             total += os.path.getsize(db_path + suffix)
         except OSError:
@@ -417,9 +428,13 @@ def _after_request(response):
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
     REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
     RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
-    if endpoint.startswith("/api/"):
+    # 비즈니스 메트릭은 Flask가 실제로 매칭한 API 라우트만 집계한다.
+    # 이렇게 해야 /api/.env 같은 스캔 요청이 /api/_unmatched로 집계되지 않는다.
+    matched_api_endpoint = url_rule is not None and endpoint.startswith("/api/")
+    if matched_api_endpoint and _is_business_api_endpoint_for_auth_metrics(endpoint):
         auth_state = _current_auth_state_for_metrics()
         API_REQUEST_AUTH_STATE_COUNT.labels(auth_state=auth_state).inc()
+    if matched_api_endpoint:
         site_id = _extract_site_id_for_metrics(endpoint)
         if site_id:
             API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
@@ -1082,7 +1097,6 @@ def _normalize_comment(comment: dict) -> dict:
     if isinstance(meta, dict):
         nickname = str(meta.get("nickname") or "").strip()[:40]
         user_id = str(meta.get("user-id") or "").strip()[:64]
-    display_name = nickname or login
     owner = (GITHUB_REPO_OWNER or "").strip().lower()
     is_repo_owner = bool(owner and login.strip().lower() == owner)
     user_type = str(user.get("type") or "").strip().lower()
@@ -1091,6 +1105,12 @@ def _normalize_comment(comment: dict) -> dict:
         or login.lower().endswith("[bot]")
         or isinstance(comment.get("performed_via_github_app"), dict)
     )
+    if nickname:
+        display_name = nickname
+    elif is_bot:
+        display_name = ""
+    else:
+        display_name = login
     return {
         "id": comment.get("id"),
         "body": body,
