@@ -29,7 +29,13 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html _site/index.html
+          cp auth-callback.html _site/auth-callback.html
           cp favicon.png _site/favicon.png
+          cp start_icon.png _site/start_icon.png
+          cp arrive_icon.png _site/arrive_icon.png
+          cp stop_icon.png _site/stop_icon.png
+          cp place_icon.png _site/place_icon.png
+          cp current_position_icon.png _site/current_position_icon.png
           cp dev.config.js _site/dev.config.js
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
 
