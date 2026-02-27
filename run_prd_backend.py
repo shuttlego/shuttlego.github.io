@@ -2,17 +2,20 @@
 """shuttle-go 프로덕션 백엔드 실행 스크립트
 
 기본 실행은 backend만 재빌드/재시작한다.
---all 옵션을 주면 Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, grafana, otp)을 재시작한다.
+--all 옵션을 주면 Docker Compose 전체 스택(traefik, backend, prometheus, node-exporter, cadvisor, grafana, otp)을 재시작한다.
+--all-no-otp 옵션을 주면 otp를 제외한 구성요소(traefik, backend, prometheus, node-exporter, cadvisor, grafana)만 재시작한다.
 개별 컴포넌트 플래그(예: --grafana, --traefik, --otp)로 선택 재시작도 가능하다.
 컨테이너가 올라오면 스크립트는 즉시 종료된다.
 
 사용법:
     python run_prd_backend.py                  # backend만 재빌드 + 재시작
     python run_prd_backend.py --all            # 전체 스택 빌드 + 시작
+    python run_prd_backend.py --all-no-otp     # otp 제외 전체 스택 빌드 + 시작
     python run_prd_backend.py --otp            # otp만 재시작
     python run_prd_backend.py --traefik --grafana  # 지정 컴포넌트만 재시작
     python run_prd_backend.py --down           # backend만 종료
     python run_prd_backend.py --down --all     # 전체 스택 종료
+    python run_prd_backend.py --down --all-no-otp # otp 제외 전체 스택 종료
     python run_prd_backend.py --down --otp     # otp만 종료
     python run_prd_backend.py --timeout 120    # health check 타임아웃 변경(초)
 """
@@ -29,12 +32,15 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_FILE = os.path.join(PROJECT_DIR, ".env")
 BACKEND_SERVICE = "backend"
 GATEWAY_SERVICE = "traefik"
-SERVICE_ORDER = ("traefik", "backend", "prometheus", "node-exporter", "grafana", "otp")
+SERVICE_ORDER = ("traefik", "backend", "prometheus", "node-exporter", "cadvisor", "grafana", "otp")
 DEFAULT_TIMEOUT = 60
 DEFAULT_BACKEND_HTTP_PORT = 80
+DEFAULT_PROMETHEUS_HOST_PORT = 9090
 HEALTH_POLL_INTERVAL_SEC = 1.0
 BACKEND_HTTP_PORT = DEFAULT_BACKEND_HTTP_PORT
+PROMETHEUS_HOST_PORT = DEFAULT_PROMETHEUS_HOST_PORT
 HEALTH_URL = ""
+ALL_EXCEPT_OTP_SERVICES = tuple(name for name in SERVICE_ORDER if name != "otp")
 
 
 def log(msg: str) -> None:
@@ -95,9 +101,12 @@ def local_url(path: str, port: int, scheme: str = "http") -> str:
 
 
 def configure_runtime_health_url() -> None:
-    global BACKEND_HTTP_PORT, HEALTH_URL
+    global BACKEND_HTTP_PORT, PROMETHEUS_HOST_PORT, HEALTH_URL
     env_map = load_env_file(ENV_FILE)
     BACKEND_HTTP_PORT = get_env_int(env_map, "BACKEND_HTTP_PORT", DEFAULT_BACKEND_HTTP_PORT)
+    PROMETHEUS_HOST_PORT = get_env_int(
+        env_map, "PROMETHEUS_HOST_PORT", DEFAULT_PROMETHEUS_HOST_PORT
+    )
     HEALTH_URL = local_url("/health", BACKEND_HTTP_PORT, scheme="http")
 
 
@@ -327,10 +336,45 @@ def compose_up_all(timeout_sec: int) -> None:
     print()
 
 
+def compose_up_all_except_otp(timeout_sec: int) -> None:
+    service_expr = " ".join(ALL_EXCEPT_OTP_SERVICES)
+    log(f"OTP 제외 전체 구성요소 재시작 … ({service_expr})")
+    ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
+    if ret.returncode != 0:
+        err("OTP 제외 전체 구성요소 docker compose up 실패")
+        sys.exit(1)
+
+    if not wait_backend_healthy(timeout_sec):
+        sys.exit(1)
+
+    print()
+    log("═══════════════════════════════════════════")
+    log("  OTP 제외 구성요소 실행 완료")
+    log(f"  확인: docker compose ps {service_expr}")
+    log("═══════════════════════════════════════════")
+    run(f"docker compose ps {service_expr}")
+    print()
+
+
+def print_access_summary(args: argparse.Namespace, selected_services: list[str]) -> None:
+    print()
+    log("═══════════════════════════════════════════")
+    log(f"  백엔드 API  → {local_url('/api/sites', BACKEND_HTTP_PORT, scheme='http')}")
+    if args.all or args.all_no_otp or "prometheus" in selected_services:
+        log(f"  Prometheus  → {local_url('/', PROMETHEUS_HOST_PORT, scheme='http')}")
+    if args.all or args.all_no_otp or "grafana" in selected_services:
+        log(f"  Grafana     → {local_url('/grafana/', BACKEND_HTTP_PORT, scheme='http')}")
+    if args.all or "otp" in selected_services:
+        log("  OTP 내부주소 → http://otp:8082 (Docker 네트워크)")
+    log("═══════════════════════════════════════════")
+    print()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="shuttle-go 프로덕션 백엔드 실행")
-    parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체)")
+    parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체, --all-no-otp: otp 제외 전체)")
     parser.add_argument("--all", action="store_true", help="전체 스택 재시작/종료")
+    parser.add_argument("--all-no-otp", action="store_true", help="otp 제외 전체 스택 재시작/종료")
     parser.add_argument("--traefik", action="store_true", help="traefik만 재시작/종료")
     parser.add_argument("--backend", action="store_true", help="backend만 재시작/종료")
     parser.add_argument("--prometheus", action="store_true", help="prometheus만 재시작/종료")
@@ -345,16 +389,21 @@ def main() -> None:
     )
     args = parser.parse_args()
     selected_services = selected_services_from_args(args)
+    all_no_otp_services = ordered_services(ALL_EXCEPT_OTP_SERVICES)
 
     if args.timeout < 1:
         err("--timeout은 1 이상의 정수여야 합니다.")
         sys.exit(1)
-    if args.all and selected_services:
-        parser.error("--all과 개별 컴포넌트 플래그(--traefik/--backend/--prometheus/--node-exporter/--grafana/--otp)는 함께 사용할 수 없습니다.")
+    if args.all and args.all_no_otp:
+        parser.error("--all과 --all-no-otp는 함께 사용할 수 없습니다.")
+    if (args.all or args.all_no_otp) and selected_services:
+        parser.error("--all/--all-no-otp와 개별 컴포넌트 플래그(--traefik/--backend/--prometheus/--node-exporter/--grafana/--otp)는 함께 사용할 수 없습니다.")
 
     if args.down:
         if args.all:
             compose_down(all_services=True)
+        elif args.all_no_otp:
+            compose_down_selected(all_no_otp_services)
         elif selected_services:
             compose_down_selected(selected_services)
         else:
@@ -365,10 +414,13 @@ def main() -> None:
 
     if args.all:
         compose_up_all(args.timeout)
+    elif args.all_no_otp:
+        compose_up_all_except_otp(args.timeout)
     elif selected_services:
         compose_up_selected(selected_services, args.timeout)
     else:
         compose_up_core(args.timeout)
+    print_access_summary(args, selected_services)
 
 
 if __name__ == "__main__":

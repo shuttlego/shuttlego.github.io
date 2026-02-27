@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="favicon.png" />
   <title>셔틀 검색</title>
+  <script>
+    (function() {
+      if (location.hostname !== 'shuttle-go.com') return;
+      var gaScript = document.createElement('script');
+      gaScript.async = true;
+      gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-RG3HTCFH4K';
+      document.head.appendChild(gaScript);
+
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { window.dataLayer.push(arguments); }
+      window.gtag = gtag;
+
+      gtag('js', new Date());
+      gtag('config', 'G-RG3HTCFH4K');
+    })();
+  </script>
   <style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
@@ -351,6 +367,39 @@
       line-height: 1;
       text-align: left;
     }
+    .route-mode-swap-btn {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      border-radius: 8px;
+      background: #fff;
+      color: #444;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      top: 24px;
+    }
+    .route-mode-swap-btn:hover {
+      background: #fffde7;
+    }
+    .route-mode-swap-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: #f8f8f8;
+    }
+    .route-mode-swap-spacer {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+    }
     .route-mode-actions {
       grid-column: 2;
       flex-shrink: 0;
@@ -408,10 +457,10 @@
       min-width: 0;
     }
     .route-mode-place-label {
-      display: flex;
-      align-items: center;
+      display: block;
       flex: 1 1 auto;
       min-width: 0;
+      width: 100%;
       min-height: 42px;
       padding: 10px 12px;
       border: 1px solid #e0e0e0;
@@ -423,6 +472,23 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      outline: none;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .route-mode-place-label:focus {
+      border-color: #fee500;
+      background: #fffde7;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .route-mode-place-label:hover {
+        border-color: #fee500;
+        background: #fffde7;
+      }
+    }
+    .route-mode-place-label::placeholder {
+      color: #9a9a9a;
+      font-weight: 500;
     }
     .route-endpoint-trigger {
       display: inline-flex;
@@ -1443,14 +1509,50 @@
       font-weight: 700;
       color: #1565c0;
     }
+    .shuttle-message .msg-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #111;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      vertical-align: middle;
+      box-sizing: border-box;
+    }
+    .shuttle-message .msg-pill-stop {
+      background: #ffe066;
+    }
+    .shuttle-message .msg-pill-start {
+      background: #8ddc65;
+    }
+    .shuttle-message .msg-inline-icon {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      background-position: center;
+      background-size: contain;
+      background-repeat: no-repeat;
+      flex-shrink: 0;
+    }
+    .shuttle-message .msg-icon-stop {
+      background-image: url('stop_icon.png');
+    }
+    .shuttle-message .msg-icon-start {
+      background-image: url('start_icon.png');
+    }
     .shuttle-message .time-tag,
     .shuttle-point-label .time-tag {
       color: #0d47a1;
       font-weight: 600;
+      font-size: 14px;
     }
     .shuttle-point-label .getoff-tag {
       color: #c62828;
       font-weight: 600;
+      font-size: 14px;
       margin-left: 2px;
     }
     .shuttle-point-label .shuttle-point-name {
@@ -1493,30 +1595,166 @@
       z-index: 2;
     }
     .shuttle-point-pin {
-      width: 24px;
-      height: 24px;
-      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%234285F4" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle cx="12" cy="9.5" r="2.5" fill="%23fff"/></svg>') center/contain no-repeat;
+      width: 48px;
+      height: 48px;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      background-image: url('stop_icon.png');
       transform-origin: 50% 50%;
       transition: transform 0.15s ease;
-      transform: scale(var(--pin-scale, 1));
+      transform: scale(var(--shuttle-pin-scale, 1));
+    }
+    .shuttle-point-pin.icon-start {
+      background-image: url('start_icon.png');
+    }
+    .shuttle-point-pin.icon-stop {
+      background-image: url('stop_icon.png');
+    }
+    .shuttle-point-pin.icon-arrive {
+      background-image: url('arrive_icon.png');
     }
     .shuttle-label-anchor {
       display: inline-flex;
       flex-direction: column;
       align-items: center;
-      padding-bottom: 18px;
+      padding-bottom: calc((24px * var(--shuttle-pin-scale, 1)) + 1px);
       pointer-events: none;
     }
+    .shuttle-label-anchor.clickable {
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .shuttle-label-anchor.clickable .shuttle-point-label {
+      cursor: pointer;
+    }
     .shuttle-point-label {
+      position: relative;
       background: #fff;
-      padding: 4px 8px;
-      border-radius: 6px;
-      border: 2px solid #000;
-      box-shadow: 0 1px 4px rgba(0,0,0,.15);
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid #2f3a4f;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
       font-size: 15px;
-      font-weight: 500;
+      font-weight: 700;
+      line-height: 1.25;
+      color: #1f2a37;
       text-align: center;
       white-space: nowrap;
+    }
+    .shuttle-point-label.is-highlight {
+      background: #fff8c9;
+      border-color: #d7b44b;
+      box-shadow: 0 2px 10px rgba(165, 133, 34, 0.28);
+    }
+    .shuttle-point-label.is-highlight::before {
+      border-top-color: #d7b44b;
+    }
+    .shuttle-point-label.is-highlight::after {
+      border-top-color: #fff8c9;
+    }
+    .shuttle-point-label::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 7px solid #2f3a4f;
+    }
+    .shuttle-point-label::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translateX(-50%) translateY(-1px);
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 6px solid #fff;
+    }
+    .route-direction-arrow-wrap {
+      position: relative;
+      width: 12px;
+      height: 12px;
+      display: block;
+      line-height: 0;
+      font-size: 0;
+      transform-origin: 50% 50%;
+      pointer-events: none;
+      opacity: 0.9;
+    }
+    .route-direction-arrow {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      display: block;
+      background: rgba(255,255,255,0.95);
+      clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+      transform: translate(-50%, -50%);
+      filter: drop-shadow(0 0 1px rgba(11,63,140,0.35));
+    }
+    .walk-time-anchor {
+      position: relative;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+    }
+    .walk-time-bubble {
+      position: absolute;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 12px;
+      border: 1px solid #4f5967;
+      background: #758193;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+      box-shadow: 0 2px 10px rgba(0,0,0,.22);
+      --tail-x: 50%;
+    }
+    .walk-time-bubble::after {
+      content: '';
+      position: absolute;
+      left: var(--tail-x);
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+    }
+    .walk-time-bubble.tail-down::after {
+      top: 100%;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 8px solid #758193;
+      filter: drop-shadow(0 1px 0 #4f5967);
+    }
+    .walk-time-bubble.tail-up::after {
+      bottom: 100%;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-bottom: 8px solid #758193;
+      filter: drop-shadow(0 -1px 0 #4f5967);
+    }
+    .walk-time-icon {
+      display: inline-flex;
+      width: 16px;
+      height: 16px;
+      background: url('walk_icon.png') center/contain no-repeat;
+      filter: brightness(0) invert(1);
+      line-height: 1;
+    }
+    .walk-time-text {
+      font-variant-numeric: tabular-nums;
     }
 
     .results-panel {
@@ -1666,7 +1904,7 @@
       height: 32px;
       margin-left: -16px;
       margin-bottom: -32px;
-      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%234285F4" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle cx="12" cy="9.5" r="2.5" fill="%23fff"/></svg>') center/contain no-repeat;
+      background: url('place_icon.png') center/contain no-repeat;
       cursor: pointer;
       transition: transform 0.15s ease;
       transform-origin: 16px 32px;
@@ -1752,12 +1990,48 @@
 
     /* 현재 위치 마커 (지도 위 아이콘) */
     .current-location-marker {
-      width: 28px;
-      height: 28px;
-      margin-left: -14px;
-      margin-top: -14px;
-      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%231a73e8" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle cx="12" cy="9.5" r="2.5" fill="%23fff"/></svg>') center/contain no-repeat;
+      width: 45px;
+      height: 45px;
+      margin-left: 0;
+      margin-top: 0;
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform: translate(-50%, -50%);
+      z-index: 3000;
       pointer-events: none;
+      overflow: visible;
+    }
+    .current-location-icon {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: url('current_position_icon.png') center/contain no-repeat;
+      z-index: 2;
+    }
+    .current-location-pulse {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      background: rgba(66, 133, 244, 0.28);
+      z-index: 1;
+      animation: current-location-pulse 900ms ease-out 3 forwards;
+    }
+    @keyframes current-location-pulse {
+      0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.55;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(2);
+        opacity: 0;
+      }
     }
 
     /* 정렬 토글 */
@@ -1866,7 +2140,7 @@
       }
     }
 
-    /* 노선 선택 리스트 (최대 5개) */
+    /* 노선 선택 리스트 (최대 3개 배치) */
     .route-options-wrap {
       display: none;
       flex-direction: column;
@@ -1908,6 +2182,65 @@
       color: #666;
       line-height: 1.4;
       margin-top: 6px;
+    }
+    .route-option-card .route-detail-default {
+      display: block;
+    }
+    .route-option-card .route-detail-selected {
+      display: none;
+    }
+    .route-option-card.selected .route-detail-default {
+      display: none;
+    }
+    .route-option-card.selected .route-detail-selected {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .route-option-card .route-step-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .route-option-card .route-step-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #444;
+      font-weight: 600;
+    }
+    .route-option-card .route-step-meta {
+      margin-left: auto;
+      text-align: right;
+      white-space: nowrap;
+      color: #1e5a8e;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .route-option-card .route-step-arrow {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 8px;
+      padding-left: 3.5ch;
+      color: #666;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .route-option-card .route-step-arrow .arrow {
+      font-size: 14px;
+      font-weight: 700;
+      color: #333;
+    }
+    .route-option-card .route-step-distance {
+      color: #555;
+      font-weight: 600;
+    }
+    .route-option-card .route-step-mode {
+      color: #666;
+      font-weight: 500;
     }
     .route-option-card .card-main {
       display: flex;
@@ -2097,6 +2430,15 @@
         height: 40px;
         font-size: 12px;
       }
+      .route-mode-swap-btn,
+      .route-mode-swap-spacer {
+        width: 30px;
+        height: 30px;
+      }
+      .route-mode-swap-btn {
+        font-size: 14px;
+        top: 22px;
+      }
       .route-mode-place-label,
       .route-endpoint-trigger {
         min-height: 40px;
@@ -2188,13 +2530,12 @@
         <span class="trigger-arrow"></span>
       </button>
     </div>
-    <div class="header-center">
-      <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
-        <button type="button" id="searchBtn">검색</button>
-        <button type="button" class="issue-open-btn" id="issueModalTrigger" title="제보/이슈 보기">이슈</button>
+      <div class="header-center">
+        <div class="search-bar">
+          <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
+          <button type="button" class="issue-open-btn" id="issueModalTrigger" title="제보/이슈 보기">이슈</button>
+        </div>
       </div>
-    </div>
     <div class="site-selector-wrap">
       <select id="siteSelect" title="사업장 선택" aria-hidden="true">
         <option value="0000013">삼성전자(수원)</option>
@@ -2208,7 +2549,8 @@
       <div class="route-mode-topline">
         <div class="route-mode-left">
           <span class="route-mode-row-label">출발</span>
-          <div class="route-mode-place-label" id="routeTopPlaceLabel"></div>
+          <button type="button" class="route-mode-swap-btn" id="routeSwapBtn" title="출발/도착 교환" aria-label="출발과 도착 교환">⇅</button>
+          <input type="text" class="route-mode-place-label" id="routeTopPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
           <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeTopEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
             <span class="endpoint-trigger-text" id="routeTopEndpointTriggerText">선택</span>
             <span class="endpoint-trigger-arrow"></span>
@@ -2221,7 +2563,8 @@
       </div>
       <div class="route-mode-secondline">
         <span class="route-mode-row-label">도착</span>
-        <div class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel"></div>
+        <span class="route-mode-swap-spacer" aria-hidden="true"></span>
+        <input type="text" class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
         <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeBottomEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
           <span class="endpoint-trigger-text" id="routeBottomEndpointTriggerText">선택</span>
           <span class="endpoint-trigger-arrow"></span>
@@ -2360,11 +2703,11 @@
           <button type="button" class="route-sort-btn active" id="sortByDistance" data-sort="distance">거리순</button>
           <button type="button" class="route-sort-btn" id="sortByTime" data-sort="time">시간순</button>
           <div class="route-sort-spacer"></div>
-          <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">최대 5 km 이내</button>
+          <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">최대 반경 3 km 이내</button>
           <div class="route-distance-popover" id="maxDistancePopover" role="dialog" aria-hidden="true">
             <div class="route-distance-title">최대 정류장 거리</div>
-            <div class="route-distance-value"><span id="maxDistanceValue">5</span> km</div>
-            <input type="range" class="route-distance-slider" id="maxDistanceSlider" min="0" max="30" step="0.5" value="5" />
+            <div class="route-distance-value">반경 <span id="maxDistanceValue">3</span> km</div>
+            <input type="range" class="route-distance-slider" id="maxDistanceSlider" min="0" max="30" step="0.5" value="3" />
             <div class="route-distance-actions">
               <button type="button" class="route-distance-confirm" id="maxDistanceConfirm">확인</button>
             </div>
@@ -2490,6 +2833,7 @@
       var routeModeHeader = document.getElementById('routeModeHeader');
       var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
       var routeBottomPlaceLabel = document.getElementById('routeBottomPlaceLabel');
+      var routeSwapBtn = document.getElementById('routeSwapBtn');
       var routeTopEndpointTrigger = document.getElementById('routeTopEndpointTrigger');
       var routeBottomEndpointTrigger = document.getElementById('routeBottomEndpointTrigger');
       var routeTopEndpointTriggerText = document.getElementById('routeTopEndpointTriggerText');
@@ -2511,16 +2855,31 @@
       var dbUpdatedAt = '';
       var selectedPlaceIndex = -1;
       var bubbleOverlay = null;
+      var bubbleState = null;
       var shuttleLine = null;
+      var shuttlePathLayers = [];
+      var shuttleDirectionArrowOverlays = [];
+      var shuttleDirectionArrowElements = [];
       var shuttlePointOverlays = [];
       var shuttlePointContents = [];
       var shuttlePositions = [];
+      var shuttleBusPathPoints = [];
+      var shuttleWalkPathPoints = [];
+      var shuttleWalkTimeOverlay = null;
+      var shuttleWalkTimeAnchor = null;
+      var shuttleWalkTimeBubble = null;
+      var shuttleWalkTimeBasePoint = null;
+      var routeVisualFitIdleHandler = null;
+      var routeVisualFitRequestId = 0;
       var hoverPlaceOverlay = null;
       var currentLocationOverlay = null;
       var mapClickIgnore = false;
       var mapTouchStart = null;
+      var mapDragStartedAt = 0;
       var bubbleOpenedAt = 0;
       var bubbleClosedByOutsideAt = 0;
+      var lastMobileCardTouchSelectAt = 0;
+      var hoverBubbleCloseTimer = null;
       var shuttleErrorHideTimer = null;
       var shuttleLabelAdjustTimer = null;
       var departureTime = { h: 0, m: 0 };
@@ -2534,8 +2893,8 @@
       var maxDistanceSlider = document.getElementById('maxDistanceSlider');
       var maxDistanceValue = document.getElementById('maxDistanceValue');
       var maxDistanceConfirm = document.getElementById('maxDistanceConfirm');
-      var maxDistanceKm = 5;
-      var maxDistancePendingKm = 5;
+      var maxDistanceKm = 3;
+      var maxDistancePendingKm = 3;
       var resultsPanel = document.getElementById('resultsPanel');
       var panToVisibleCenterRafId = null;
       var ISSUE_PAGE_SIZE = 10;
@@ -2545,6 +2904,7 @@
       var issueCurrentView = 'list';
       var routeModeDirection = null;
       var routeModePlaceName = '';
+      var routePlaceInputSubmitting = false;
       var endpointOptionsAll = [];
       var endpointOptions = [];
       var selectedEndpoints = new Set();
@@ -2555,6 +2915,25 @@
       var endpointContextKey = '';
       var routeRequestSerial = 0;
       var dayTypeRequestSerial = 0;
+      var WALK_OTP_TIMEOUT_MS = 100;
+      var WALK_OTP_TIMEOUT_BACKOFF_INITIAL_MS = 1000;
+      var WALK_ESTIMATED_SPEED_MPS = 1.3;
+      var MOBILE_ROUTE_FIT_PEEK_HEIGHT_PX = 72;
+      var SHUTTLE_ROUTE_WALK_OUTER_COLOR = '#4f5967';
+      var SHUTTLE_ROUTE_WALK_INNER_COLOR = '#758193';
+      var SHUTTLE_ROUTE_BUS_OUTER_COLOR = '#0b3f8c';
+      var SHUTTLE_ROUTE_BUS_INNER_COLOR = '#1f78ff';
+      var SHUTTLE_ROUTE_OUTER_WEIGHT = 12;
+      var SHUTTLE_ROUTE_INNER_WEIGHT = 8;
+      var SHUTTLE_ROUTE_ARROW_SPACING_PX = 40;
+      var SHUTTLE_ROUTE_ARROW_MAX_COUNT = 240;
+      var walkOtpEnabled = true;
+      var walkPathCache = new Map();
+      var walkPathPending = new Map();
+      var walkOtpTimeoutBackoffStep = 0;
+      var walkOtpTimeoutSkipUntilMs = 0;
+      var activeOptionDrawToken = 0;
+      var routeLabelTriggeredDetailState = null;
       if (maxDistanceSlider) {
         var initMaxDistance = parseFloat(maxDistanceSlider.value);
         if (isFinite(initMaxDistance)) {
@@ -2588,6 +2967,13 @@
         overlays.forEach(function(o) { bounds.extend(o.getPosition()); });
         map.setBounds(bounds);
         map.panBy(0, Math.round(sheetHeight / 2));
+      }
+
+      function resetResultsListWrapScroll() {
+        if (!resultsPanel) return;
+        var listWrap = resultsPanel.querySelector('.results-list-wrap');
+        if (!listWrap) return;
+        listWrap.scrollTop = 0;
       }
 
       function cloneStringSet(src) {
@@ -2923,6 +3309,21 @@
         if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.disabled = !enabled;
       }
 
+      function updateRouteSwapButtonState() {
+        if (!routeSwapBtn) return;
+        var hasContext = !!(lastPlace && lastShuttleType);
+        routeSwapBtn.disabled = !hasContext;
+      }
+
+      function swapRouteDirection() {
+        if (!lastPlace || !lastShuttleType) return;
+        closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
+        var nextDirection = lastShuttleType === 'depart' ? 'arrive' : 'depart';
+        var opts = { preserveSheetState: isMobile() };
+        if (nextDirection === 'depart') runDepartWithPlace(lastPlace, opts);
+        else runArriveWithPlace(lastPlace, opts);
+      }
+
       function updateEndpointTriggerText() {
         var text = getEndpointTriggerSummaryText();
         if (routeTopEndpointTriggerText) routeTopEndpointTriggerText.textContent = text;
@@ -3074,8 +3475,8 @@
       function updateRouteModeHeader() {
         if (!routeModeHeader) return;
         var placeText = routeModePlaceName || '선택한 위치';
-        if (routeTopPlaceLabel) routeTopPlaceLabel.textContent = placeText;
-        if (routeBottomPlaceLabel) routeBottomPlaceLabel.textContent = placeText;
+        if (routeTopPlaceLabel && document.activeElement !== routeTopPlaceLabel) routeTopPlaceLabel.value = placeText;
+        if (routeBottomPlaceLabel && document.activeElement !== routeBottomPlaceLabel) routeBottomPlaceLabel.value = placeText;
         updateEndpointTriggerText();
 
         if (routeModeDirection === 'depart') {
@@ -3096,6 +3497,34 @@
         }
       }
 
+      function getActiveRouteModePlaceInput() {
+        if (!routeModeDirection) return null;
+        if (routeModeDirection === 'depart') {
+          if (routeTopPlaceLabel && !routeTopPlaceLabel.classList.contains('route-mode-hidden')) return routeTopPlaceLabel;
+          return null;
+        }
+        if (routeBottomPlaceLabel && !routeBottomPlaceLabel.classList.contains('route-mode-hidden')) return routeBottomPlaceLabel;
+        return null;
+      }
+
+      function onRouteModePlaceInputFocus(e) {
+        var target = e && e.currentTarget;
+        if (!target || target.classList.contains('route-mode-hidden')) return;
+        if (!routeModeDirection) return;
+        var placeText = String(routeModePlaceName || '선택한 위치').trim();
+        var currentText = String(target.value || '').trim();
+        if (currentText === placeText || currentText === '선택한 위치') {
+          target.value = '';
+        }
+      }
+
+      function onRouteModePlaceInputBlur(e) {
+        var target = e && e.currentTarget;
+        if (!target || target.classList.contains('route-mode-hidden')) return;
+        if (!routeModeDirection || routePlaceInputSubmitting) return;
+        target.value = routeModePlaceName || '선택한 위치';
+      }
+
       function setRouteMode(active, direction, placeName) {
         if (active) {
           routeModeDirection = direction || routeModeDirection || 'depart';
@@ -3103,10 +3532,12 @@
           if (headerEl) headerEl.classList.add('route-mode');
           if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'false');
           updateRouteModeHeader();
+          updateRouteSwapButtonState();
           return;
         }
         routeModeDirection = null;
         routeModePlaceName = '';
+        routeLabelTriggeredDetailState = null;
         endpointOptionsAll = [];
         endpointOptions = [];
         selectedEndpoints = new Set();
@@ -3116,6 +3547,7 @@
         if (headerEl) headerEl.classList.remove('route-mode');
         if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'true');
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
+        updateRouteSwapButtonState();
       }
 
       function loadEndpointOptions(direction) {
@@ -3887,8 +4319,51 @@
       function updatePinScale() {
         if (!map || !mapContainer) return;
         var level = map.getLevel();
-        var scale = Math.max(0.75, Math.min(1.5, 1.5 - level * 0.05));
-        mapContainer.style.setProperty('--pin-scale', String(scale));
+        var markerScale = Math.max(0.75, Math.min(1.5, 1.5 - level * 0.05));
+        var shuttleScale = Math.max(1.0, Math.min(1.55, 0.8 + level * 0.055));
+        mapContainer.style.setProperty('--pin-scale', String(markerScale));
+        mapContainer.style.setProperty('--shuttle-pin-scale', String(shuttleScale));
+      }
+
+      function clearCurrentLocationOverlay() {
+        if (!currentLocationOverlay) return;
+        if (currentLocationOverlay.element && currentLocationOverlay.element.parentNode) {
+          currentLocationOverlay.element.parentNode.removeChild(currentLocationOverlay.element);
+        }
+        currentLocationOverlay = null;
+      }
+
+      function refreshCurrentLocationOverlayPosition() {
+        if (!currentLocationOverlay || !currentLocationOverlay.element || !map || !mapContainer) return;
+        var proj = map.getProjection();
+        if (!proj || typeof proj.containerPointFromCoords !== 'function') return;
+        var lat = Number(currentLocationOverlay.lat);
+        var lng = Number(currentLocationOverlay.lng);
+        if (!isFinite(lat) || !isFinite(lng)) return;
+        var pt = proj.containerPointFromCoords(new kakao.maps.LatLng(lat, lng));
+        if (!pt) return;
+        currentLocationOverlay.element.style.left = Math.round(pt.x) + 'px';
+        currentLocationOverlay.element.style.top = Math.round(pt.y) + 'px';
+      }
+
+      function showCurrentLocationOverlay(lat, lng, forceRender) {
+        clearCurrentLocationOverlay();
+        if ((!isMobile() && !forceRender) || !mapContainer) return;
+        var numericLat = Number(lat);
+        var numericLng = Number(lng);
+        if (!isFinite(numericLat) || !isFinite(numericLng)) return;
+        var el = document.createElement('div');
+        el.className = 'current-location-marker';
+        el.innerHTML =
+          '<div class="current-location-pulse" aria-hidden="true"></div>' +
+          '<div class="current-location-icon" aria-hidden="true"></div>';
+        mapContainer.appendChild(el);
+        currentLocationOverlay = {
+          lat: numericLat,
+          lng: numericLng,
+          element: el
+        };
+        refreshCurrentLocationOverlayPosition();
       }
 
       function initMap() {
@@ -3897,11 +4372,20 @@
         map = new kakao.maps.Map(mapContainer, options);
         updatePinScale();
         kakao.maps.event.addListener(map, 'dragstart', function() {
-          closeBubble();
+          mapDragStartedAt = Date.now();
         });
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
-          closeBubble();
           updatePinScale();
+          refreshBubbleOverlayPosition();
+          refreshCurrentLocationOverlayPosition();
+        });
+        kakao.maps.event.addListener(map, 'idle', function() {
+          refreshBubbleOverlayPosition();
+          refreshCurrentLocationOverlayPosition();
+          if (shuttlePathLayers.length > 0 && shuttlePositions.length >= 2) {
+            refreshRouteDirectionArrows();
+          }
+          refreshWalkTimeOverlayPosition();
         });
         kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
           var lat = mouseEvent.latLng.getLat();
@@ -3909,6 +4393,18 @@
           setTimeout(function() {
             if (mapClickIgnore) {
               mapClickIgnore = false;
+              return;
+            }
+            var mapDraggedRecently = mapDragStartedAt > 0 && (Date.now() - mapDragStartedAt) < 350;
+            if (mapDraggedRecently) {
+              return;
+            }
+            var restoredFromRouteDetail = restoreRouteOptionMapFromLabelTriggeredDetail();
+            var blurredRouteModeInput = blurFocusedRouteModePlaceInputIfActive();
+            if (restoredFromRouteDetail || blurredRouteModeInput) {
+              return;
+            }
+            if (handleMobileSelectedPlaceTapToCollapseSheet()) {
               return;
             }
             if (bubbleOverlay) {
@@ -3950,9 +4446,35 @@
         var dist = Math.sqrt(dx * dx + dy * dy);
         mapTouchStart = null;
         if (duration > 300 || dist > 15) return;
-        // 핀 마커 위를 탭한 경우 — 핀의 click 이벤트에 위임
         var touchTarget = document.elementFromPoint(t.clientX, t.clientY);
-        if (touchTarget && touchTarget.closest('.pin-marker')) return;
+        // 노선 라벨 위를 탭한 경우 — 라벨 click 이벤트에 위임
+        var routeLabel = touchTarget && touchTarget.closest('.shuttle-label-anchor.clickable');
+        if (routeLabel) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          if (typeof routeLabel.click === 'function') routeLabel.click();
+          return;
+        }
+        // 핀 마커 위를 탭한 경우 — 핀의 click 이벤트에 위임
+        var pinMarker = touchTarget && touchTarget.closest('.pin-marker');
+        if (pinMarker) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          if (typeof pinMarker.click === 'function') pinMarker.click();
+          return;
+        }
+        var restoredFromRouteDetail = restoreRouteOptionMapFromLabelTriggeredDetail();
+        var blurredRouteModeInput = blurFocusedRouteModePlaceInputIfActive();
+        if (restoredFromRouteDetail || blurredRouteModeInput) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          return;
+        }
+        if (handleMobileSelectedPlaceTapToCollapseSheet()) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          return;
+        }
         var rect = mapContainer.getBoundingClientRect();
         var x = t.clientX - rect.left;
         var y = t.clientY - rect.top;
@@ -4064,6 +4586,12 @@
           closeEndpointPickerModal();
         });
       }
+      if (routeSwapBtn) {
+        routeSwapBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          swapRouteDirection();
+        });
+      }
       if (endpointPickerSearchInput) {
         endpointPickerSearchInput.addEventListener('input', function() {
           var keyword = endpointPickerSearchInput.value || '';
@@ -4075,6 +4603,7 @@
         });
       }
       if (routeHeaderBackBtn) routeHeaderBackBtn.addEventListener('click', goBackFromRouteOptions);
+      updateRouteSwapButtonState();
 
       if (issueModalTrigger) issueModalTrigger.addEventListener('click', openIssueModal);
       if (routeIssueModalTrigger) routeIssueModalTrigger.addEventListener('click', openIssueModal);
@@ -4121,17 +4650,292 @@
         hideHoverMarker();
       }
 
+      function clearWalkTimeOverlay() {
+        if (shuttleWalkTimeOverlay) shuttleWalkTimeOverlay.setMap(null);
+        shuttleWalkTimeOverlay = null;
+        shuttleWalkTimeAnchor = null;
+        shuttleWalkTimeBubble = null;
+        shuttleWalkTimeBasePoint = null;
+      }
+
       function clearShuttleOverlays() {
+        clearRouteVisualFitWatcher();
         clearTimeout(shuttleLabelAdjustTimer);
         shuttleLabelAdjustTimer = null;
-        if (shuttleLine) {
-          shuttleLine.setMap(null);
-          shuttleLine = null;
-        }
+        routeLabelTriggeredDetailState = null;
+        clearWalkTimeOverlay();
+        shuttlePathLayers.forEach(function(layer) {
+          if (layer) layer.setMap(null);
+        });
+        shuttlePathLayers = [];
+        shuttleDirectionArrowOverlays.forEach(function(overlay) {
+          if (overlay) overlay.setMap(null);
+        });
+        shuttleDirectionArrowOverlays = [];
+        shuttleDirectionArrowElements = [];
+        shuttleLine = null;
         shuttlePointOverlays.forEach(function(o) { o.setMap(null); });
         shuttlePointOverlays = [];
         shuttlePointContents = [];
         shuttlePositions = [];
+        shuttleBusPathPoints = [];
+        shuttleWalkPathPoints = [];
+      }
+
+      function clearRouteVisualFitWatcher() {
+        if (!routeVisualFitIdleHandler || !map) return;
+        kakao.maps.event.removeListener(map, 'idle', routeVisualFitIdleHandler);
+        routeVisualFitIdleHandler = null;
+      }
+
+      function getMapOverlayInsets() {
+        if (!mapContainer) {
+          return { top: 0, right: 0, bottom: 0, left: 0 };
+        }
+        var mapRect = mapContainer.getBoundingClientRect();
+        var insets = { top: 8, right: 8, bottom: 8, left: 8 };
+        if (!isMobile() && shuttleMessage && shuttleMessage.classList.contains('show')) {
+          var msgRect = shuttleMessage.getBoundingClientRect();
+          var overlapW = Math.min(mapRect.right, msgRect.right) - Math.max(mapRect.left, msgRect.left);
+          if (overlapW > 0) {
+            var msgBottom = msgRect.bottom - mapRect.top;
+            if (isFinite(msgBottom)) insets.top = Math.max(insets.top, Math.round(msgBottom + 8));
+          }
+        }
+        if (resultsPanel) {
+          if (isMobile()) {
+            // 모바일 노선 자동 맞춤은 현재 시트 높이가 아니라,
+            // sheet-peek(하단으로 내린 상태) 기준 가시영역을 사용한다.
+            insets.bottom = Math.max(insets.bottom, Math.round(MOBILE_ROUTE_FIT_PEEK_HEIGHT_PX + 8));
+            return insets;
+          }
+          var panelRect = resultsPanel.getBoundingClientRect();
+          var overlapX = Math.min(mapRect.right, panelRect.right) - Math.max(mapRect.left, panelRect.left);
+          var overlapY = Math.min(mapRect.bottom, panelRect.bottom) - Math.max(mapRect.top, panelRect.top);
+          if (overlapX > 0 && overlapY > 0) {
+            var panelTopRel = panelRect.top - mapRect.top;
+            if (panelTopRel >= 0) {
+              insets.bottom = Math.max(insets.bottom, Math.round(mapRect.bottom - panelRect.top + 8));
+            }
+          }
+        }
+        return insets;
+      }
+
+      function getVisibleMapRectForRoute() {
+        if (!mapContainer) return null;
+        var width = Number(mapContainer.clientWidth);
+        var height = Number(mapContainer.clientHeight);
+        if (!isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return null;
+        var insets = getMapOverlayInsets();
+        var rect = {
+          left: insets.left,
+          top: insets.top,
+          right: width - insets.right,
+          bottom: height - insets.bottom
+        };
+        if ((rect.right - rect.left) < 40 || (rect.bottom - rect.top) < 40) return null;
+        return rect;
+      }
+
+      function getRouteCorePixelBounds() {
+        if (!map || !mapContainer || shuttlePositions.length === 0) return null;
+        var minX = Infinity;
+        var minY = Infinity;
+        var maxX = -Infinity;
+        var maxY = -Infinity;
+        var hasPoint = false;
+        function includePixel(x, y) {
+          if (!isFinite(x) || !isFinite(y)) return;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+          hasPoint = true;
+        }
+        shuttlePositions.forEach(function(p) {
+          var px = getPathPointContainerPixel(p);
+          if (!px) return;
+          includePixel(px.x, px.y);
+        });
+        if (!hasPoint) return null;
+        return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+      }
+
+      function getRouteVisualPixelBounds() {
+        var core = getRouteCorePixelBounds();
+        if (!core) return null;
+        var mapRect = mapContainer.getBoundingClientRect();
+        var minX = core.minX;
+        var minY = core.minY;
+        var maxX = core.maxX;
+        var maxY = core.maxY;
+        function includeElementRect(el) {
+          if (!el || typeof el.getBoundingClientRect !== 'function') return;
+          var rect = el.getBoundingClientRect();
+          var width = Number(rect.width);
+          var height = Number(rect.height);
+          if (!isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return;
+          minX = Math.min(minX, rect.left - mapRect.left);
+          minY = Math.min(minY, rect.top - mapRect.top);
+          maxX = Math.max(maxX, rect.right - mapRect.left);
+          maxY = Math.max(maxY, rect.bottom - mapRect.top);
+        }
+        mapContainer.querySelectorAll('.shuttle-point-pin, .shuttle-point-label, .walk-time-bubble').forEach(function(el) {
+          includeElementRect(el);
+        });
+        return {
+          minX: minX,
+          minY: minY,
+          maxX: maxX,
+          maxY: maxY,
+          coreWidth: core.maxX - core.minX,
+          coreHeight: core.maxY - core.minY
+        };
+      }
+
+      function fitRouteVisualBoundsOnce(context) {
+        if (!map || shuttlePositions.length === 0) return false;
+        var visibleRect = getVisibleMapRectForRoute();
+        var contentBounds = getRouteVisualPixelBounds();
+        if (!visibleRect || !contentBounds) return false;
+
+        var visibleWidth = visibleRect.right - visibleRect.left;
+        var visibleHeight = visibleRect.bottom - visibleRect.top;
+        var contentWidth = contentBounds.maxX - contentBounds.minX;
+        var contentHeight = contentBounds.maxY - contentBounds.minY;
+        var fillRatio = Math.max(
+          contentWidth / Math.max(1, visibleWidth),
+          contentHeight / Math.max(1, visibleHeight)
+        );
+        var maxZoomOutCount = (context && isFinite(context.maxZoomOutCount))
+          ? Number(context.maxZoomOutCount)
+          : 2;
+        var maxZoomInCount = (context && isFinite(context.maxZoomInCount))
+          ? Number(context.maxZoomInCount)
+          : 3;
+        var canZoomOutMore = !!(
+          context &&
+          isFinite(context.zoomOutCount) &&
+          context.zoomOutCount < maxZoomOutCount
+        );
+        var canZoomInMore = !!(
+          context &&
+          isFinite(context.zoomInCount) &&
+          context.zoomInCount < maxZoomInCount
+        );
+        var needsZoomOut = (contentWidth > visibleWidth || contentHeight > visibleHeight);
+        if (needsZoomOut && canZoomOutMore && map.getLevel() < 14) {
+          context.zoomOutCount += 1;
+          map.setLevel(map.getLevel() + 1);
+          return true;
+        }
+        var zoomInFillThreshold = isMobile() ? 0.80 : 0.60;
+        if (!needsZoomOut && fillRatio < zoomInFillThreshold && canZoomInMore && map.getLevel() > 1) {
+          context.zoomInCount += 1;
+          map.setLevel(map.getLevel() - 1);
+          return true;
+        }
+        // PC에서는 타이트하게 맞춘 뒤 한 단계 완화해 전체 경로를 더 읽기 쉽게 유지한다.
+        if (
+          !isMobile() &&
+          !needsZoomOut &&
+          !!context &&
+          context.zoomInCount > 0 &&
+          !context.pcRelaxed &&
+          map.getLevel() < 14
+        ) {
+          context.pcRelaxed = true;
+          map.setLevel(map.getLevel() + 1);
+          return true;
+        }
+
+        var visibleCenterX = (visibleRect.left + visibleRect.right) / 2;
+        var visibleCenterY = (visibleRect.top + visibleRect.bottom) / 2;
+        var contentCenterX = (contentBounds.minX + contentBounds.maxX) / 2;
+        var contentCenterY = (contentBounds.minY + contentBounds.maxY) / 2;
+        var panX = Math.round(contentCenterX - visibleCenterX);
+        var panY = Math.round(contentCenterY - visibleCenterY);
+        if (Math.abs(panX) <= 1 && Math.abs(panY) <= 1) return false;
+        map.panBy(panX, panY);
+        return true;
+      }
+
+      function scheduleRouteVisualFit() {
+        if (!map || shuttlePositions.length === 0) return;
+        routeVisualFitRequestId += 1;
+        var requestId = routeVisualFitRequestId;
+        var remainingAttempts = 10;
+        var context = {
+          zoomOutCount: 0,
+          maxZoomOutCount: isMobile() ? 5 : 4,
+          zoomInCount: 0,
+          maxZoomInCount: isMobile() ? 5 : 2,
+          pcRelaxed: false
+        };
+        clearRouteVisualFitWatcher();
+
+        routeVisualFitIdleHandler = function() {
+          if (requestId !== routeVisualFitRequestId) {
+            clearRouteVisualFitWatcher();
+            return;
+          }
+          if (remainingAttempts <= 0) {
+            clearRouteVisualFitWatcher();
+            return;
+          }
+          remainingAttempts -= 1;
+          var changed = fitRouteVisualBoundsOnce(context);
+          if (!changed) clearRouteVisualFitWatcher();
+        };
+        kakao.maps.event.addListener(map, 'idle', routeVisualFitIdleHandler);
+        requestAnimationFrame(function() {
+          if (requestId !== routeVisualFitRequestId || !routeVisualFitIdleHandler) return;
+          routeVisualFitIdleHandler();
+        });
+      }
+
+      function setShuttlePathDimmed(dimmed) {
+        if (shuttlePathLayers.length > 0) {
+          shuttlePathLayers.forEach(function(layer, idx) {
+            if (!layer) return;
+            var baseOpacity = Number(layer.__baseOpacity);
+            if (!isFinite(baseOpacity) || baseOpacity <= 0) {
+              baseOpacity = idx === 0 ? 0.95 : 0.92;
+            }
+            layer.setOptions({ strokeOpacity: dimmed ? 0.25 : baseOpacity });
+          });
+        } else if (shuttleLine) {
+          shuttleLine.setOptions({ strokeOpacity: dimmed ? 0.25 : 0.9 });
+        }
+        shuttleDirectionArrowElements.forEach(function(el) {
+          if (!el || !el.style) return;
+          el.style.opacity = dimmed ? '0.35' : '0.9';
+        });
+        if (shuttleWalkTimeBubble && shuttleWalkTimeBubble.style) {
+          shuttleWalkTimeBubble.style.opacity = dimmed ? '0.35' : '1';
+        }
+      }
+
+      function refreshRouteDirectionArrows() {
+        if (!map) return;
+        shuttleDirectionArrowOverlays.forEach(function(overlay) {
+          if (overlay) overlay.setMap(null);
+        });
+        shuttleDirectionArrowOverlays = [];
+        shuttleDirectionArrowElements = [];
+        if (shuttleBusPathPoints.length >= 2) {
+          drawRouteDirectionArrows(shuttleBusPathPoints, {
+            kind: 'bus',
+            occlusionPathPoints: shuttleWalkPathPoints
+          });
+        }
+        if (shuttleWalkPathPoints.length >= 2) {
+          drawRouteDirectionArrows(shuttleWalkPathPoints, { kind: 'walk' });
+        }
+        if (shuttleMessage && shuttleMessage.classList.contains('dimmed')) {
+          setShuttlePathDimmed(true);
+        }
       }
 
       function addMarker(lat, lng, index) {
@@ -4141,32 +4945,32 @@
         el.setAttribute('data-index', index);
         el.addEventListener('mouseenter', function() {
           if (selectedPlaceIndex >= 0) return;
+          clearHoverBubbleCloseTimer();
           onMarkerHover(index, true);
-          if (!isMobile()) showBubble(index);
+          if (!isMobile()) showBubble(index, 'hover');
         });
-        el.addEventListener('mouseleave', function() {
+        el.addEventListener('mouseleave', function(e) {
           if (selectedPlaceIndex >= 0) return;
-          onMarkerHover(index, false);
-          if (!isMobile()) closeBubble();
+          if (bubbleOverlay && e && e.relatedTarget && bubbleOverlay.contains(e.relatedTarget)) {
+            return;
+          }
+          if (!isMobile()) scheduleHoverBubbleClose(index);
         });
         el.addEventListener('click', function(e) {
           e.stopPropagation();
           mapClickIgnore = true;
-          if (isMobile()) {
-            closeBubble();
-            selectPlace(index);
-            setMapDimmed(true, index);
-            // 시트를 내리되 adjustMapForSheet는 건너뜀 (panTo를 보존)
-            resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
-            resultsPanel.classList.add('sheet-peek');
-            var place = places[index];
-            if (place) panTo(parseFloat(place.y), parseFloat(place.x));
-            setTimeout(function() { showBubble(index); }, 60);
-          } else {
-            selectPlace(index);
-            setMapDimmed(true, index);
-            showBubble(index);
-          }
+          clearHoverBubbleCloseTimer();
+          var shouldRecenterAfterTransition = !!(
+            isMobile() &&
+            resultsPanel &&
+            (resultsPanel.classList.contains('sheet-half') || resultsPanel.classList.contains('sheet-full'))
+          );
+          activatePlaceSelection(index, {
+            source: 'marker',
+            showBubble: true,
+            preserveSheetState: false,
+            recenterAfterSheetTransition: shouldRecenterAfterTransition
+          });
         });
         var overlay = new kakao.maps.CustomOverlay({
           position: pos,
@@ -4198,6 +5002,10 @@
       }
 
       function onListCardHover(index, enter) {
+        if (selectedPlaceIndex >= 0) {
+          hideHoverMarker();
+          return;
+        }
         if (enter && places[index] && map) {
           setMapDimmed(true, index);
           if (overlays.length === 0) showHoverMarker(index);
@@ -4216,7 +5024,7 @@
           shuttlePointContents.forEach(function(el) {
             if (el && el.style) el.style.opacity = '0.35';
           });
-          if (shuttleLine) shuttleLine.setOptions({ strokeOpacity: 0.25 });
+          setShuttlePathDimmed(true);
           shuttleMessage.classList.add('dimmed');
         } else {
           markerElements.forEach(function(m) {
@@ -4226,7 +5034,7 @@
           shuttlePointContents.forEach(function(el) {
             if (el && el.style) el.style.opacity = '';
           });
-          if (shuttleLine) shuttleLine.setOptions({ strokeOpacity: 0.9 });
+          setShuttlePathDimmed(false);
           shuttleMessage.classList.remove('dimmed');
         }
       }
@@ -4255,51 +5063,118 @@
         }
       }
 
+      function clearHoverBubbleCloseTimer() {
+        if (!hoverBubbleCloseTimer) return;
+        clearTimeout(hoverBubbleCloseTimer);
+        hoverBubbleCloseTimer = null;
+      }
+
+      function clearHoverMarkerState() {
+        markerElements.forEach(function(m) { m.classList.remove('hover'); });
+        resultsList.querySelectorAll('.result-card').forEach(function(c) { c.classList.remove('highlight'); });
+      }
+
+      function scheduleHoverBubbleClose(index) {
+        clearHoverBubbleCloseTimer();
+        hoverBubbleCloseTimer = setTimeout(function() {
+          hoverBubbleCloseTimer = null;
+          if (selectedPlaceIndex >= 0) return;
+          if (!bubbleOverlay || !bubbleState || bubbleState.source !== 'hover') return;
+          var box = bubbleOverlay.querySelector('.bubble-box');
+          if (box && typeof box.matches === 'function' && box.matches(':hover')) return;
+          var idx = Number(index);
+          var markerEl = (isFinite(idx) && idx >= 0 && idx < markerElements.length) ? markerElements[idx] : null;
+          if (markerEl && typeof markerEl.matches === 'function' && markerEl.matches(':hover')) return;
+          if (isFinite(idx) && idx >= 0) onMarkerHover(idx, false);
+          else clearHoverMarkerState();
+          closeBubble();
+        }, 90);
+      }
+
+      function activatePlaceSelection(index, options) {
+        options = options || {};
+        var place = places[index];
+        if (!place) return;
+        var lat = parseFloat(place.y);
+        var lng = parseFloat(place.x);
+        if (!isFinite(lat) || !isFinite(lng)) return;
+        var shouldShowBubble = options.showBubble !== false;
+        var preserveSheetState = !!options.preserveSheetState;
+        var recenterAfterSheetTransition = !!options.recenterAfterSheetTransition;
+        clearHoverBubbleCloseTimer();
+        closeBubble();
+        selectPlace(index);
+        setMapDimmed(true, index);
+        if (isMobile() && resultsPanel && !preserveSheetState) {
+          // 시트를 내리되 adjustMapForSheet는 건너뜀 (panTo를 보존)
+          resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
+          resultsPanel.classList.add('sheet-peek');
+        }
+        panTo(lat, lng);
+        if (isMobile() && recenterAfterSheetTransition) {
+          setTimeout(function() {
+            if (selectedPlaceIndex !== index) return;
+            if (!resultsPanel || !resultsPanel.classList.contains('sheet-peek')) return;
+            panTo(lat, lng);
+          }, 280);
+        }
+        if (shouldShowBubble) {
+          if (isMobile()) {
+            setTimeout(function() { showBubble(index); }, 60);
+          } else {
+            showBubble(index);
+          }
+        }
+      }
+
       function closeBubble() {
+        clearHoverBubbleCloseTimer();
         if (bubbleOverlay) {
           if (bubbleOverlay.parentNode) bubbleOverlay.parentNode.removeChild(bubbleOverlay);
           bubbleOverlay = null;
         }
+        bubbleState = null;
       }
 
       function closeBubbleIfOutside(e) {
         if (!bubbleOverlay) return;
         if (Date.now() - bubbleOpenedAt < 200) return;
         if (bubbleOverlay.contains(e.target)) return;
+        if (mapContainer && e.target && mapContainer.contains(e.target)) return;
         bubbleClosedByOutsideAt = Date.now();
         closeBubble();
         deselectPlace();
         setMapDimmed(false);
       }
 
-      function showBubble(index) {
-        closeBubble();
-        var place = places[index];
-        if (!place) return;
-        var lat = parseFloat(place.y);
-        var lng = parseFloat(place.x);
-        showBubbleWithPlace(place, lat, lng, true);
+      function getBubblePinTopOffset(hasPin) {
+        if (!hasPin) return 0;
+        var pinScale = parseFloat(mapContainer.style.getPropertyValue('--pin-scale')) || 1;
+        return Math.round(16 * pinScale);
       }
 
-      function showBubbleAtPosition(lat, lng) {
-        if (searchInput && document.activeElement === searchInput) {
-          searchInput.blur();
-        }
-        closeBubble();
-        var place = {
-          place_name: '선택한 위치',
-          address_name: '',
-          y: lat,
-          x: lng
+      function getBubbleMarkerAnchorPoint(markerIndex) {
+        var idx = Number(markerIndex);
+        if (!isFinite(idx) || idx < 0 || idx >= markerElements.length) return null;
+        var markerEl = markerElements[idx];
+        if (!markerEl || !mapContainer) return null;
+        var markerRect = markerEl.getBoundingClientRect();
+        var mapRect = mapContainer.getBoundingClientRect();
+        if (!markerRect.width || !markerRect.height || !mapRect.width || !mapRect.height) return null;
+        return {
+          x: markerRect.left - mapRect.left + markerRect.width / 2 + 2,
+          y: markerRect.top - mapRect.top + 2
         };
-        showBubbleWithPlace(place, lat, lng, false);
       }
 
-      function showBubbleWithPlace(place, lat, lng, hasPin) {
-        closeBubble();
+      function positionBubbleOverlay(container, lat, lng, hasPin, markerIndex) {
+        if (!container || !map || !mapContainer) return;
+        var box = container.querySelector('.bubble-box');
+        if (!box) return;
         var pos = new kakao.maps.LatLng(lat, lng);
         var proj = map.getProjection();
-        var clickX, clickY;
+        var clickX;
+        var clickY;
         if (proj && typeof proj.containerPointFromCoords === 'function') {
           var clickPt = proj.containerPointFromCoords(pos);
           clickX = clickPt.x;
@@ -4310,6 +5185,188 @@
         }
         var mapW = mapContainer.clientWidth;
         var mapH = mapContainer.clientHeight;
+        var boxW = box.offsetWidth || 0;
+        var boxH = box.offsetHeight || 0;
+        if (boxW <= 0 || boxH <= 0) return;
+        var pad = 8;
+        var tailLen = 7;
+        var tailBaseWidth = 12;
+        var markerAnchor = hasPin ? getBubbleMarkerAnchorPoint(markerIndex) : null;
+        var tailTipX = markerAnchor ? markerAnchor.x : clickX;
+        var tailTipY = markerAnchor ? markerAnchor.y : (clickY - getBubblePinTopOffset(hasPin));
+
+        // 화면 밖 마커일 때: markerTracker처럼 화면 경계로 꼬리 끝점을 보정해
+        // 말풍선이 마커 방향을 가리키도록 유지한다.
+        var edgePad = 22;
+        var isOutsideViewport =
+          clickX < edgePad ||
+          clickX > (mapW - edgePad) ||
+          clickY < edgePad ||
+          clickY > (mapH - edgePad);
+        if (isOutsideViewport) {
+          var centerX = mapW / 2;
+          var centerY = mapH / 2;
+          var dx = clickX - centerX;
+          var dy = clickY - centerY;
+          if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
+            dy = -1;
+          }
+          var t = Infinity;
+          if (Math.abs(dx) > 0.001) {
+            if (dx > 0) t = Math.min(t, (mapW - edgePad - centerX) / dx);
+            else t = Math.min(t, (edgePad - centerX) / dx);
+          }
+          if (Math.abs(dy) > 0.001) {
+            if (dy > 0) t = Math.min(t, (mapH - edgePad - centerY) / dy);
+            else t = Math.min(t, (edgePad - centerY) / dy);
+          }
+          if (!isFinite(t) || t < 0) t = 0;
+          tailTipX = centerX + dx * t;
+          tailTipY = centerY + dy * t;
+          hasPin = false;
+        }
+
+        var boxLeft = tailTipX - boxW / 2;
+        var boxTop = tailTipY - boxH - tailLen;
+
+        if (boxLeft < pad) boxLeft = pad;
+        if (boxLeft + boxW > mapW - pad) boxLeft = mapW - pad - boxW;
+
+        if (boxTop < pad) {
+          if (hasPin) {
+            if (markerAnchor) {
+              tailTipY = markerAnchor.y + 8;
+            } else {
+              var pinScale = parseFloat(mapContainer.style.getPropertyValue('--pin-scale')) || 1;
+              var belowOffset = Math.max(6, Math.round(10 * pinScale));
+              tailTipY = clickY + belowOffset;
+            }
+          }
+          boxTop = tailTipY + tailLen;
+        }
+        if (boxTop + boxH > mapH - pad) {
+          boxTop = mapH - pad - boxH;
+        }
+        if (boxTop < pad) boxTop = pad;
+
+        box.style.left = Math.round(boxLeft) + 'px';
+        box.style.top = Math.round(boxTop) + 'px';
+
+        var existingTail = container.querySelector('.bubble-tail-svg');
+        if (existingTail && existingTail.parentNode) existingTail.parentNode.removeChild(existingTail);
+
+        var boxRect = { left: boxLeft, top: boxTop, width: boxW, height: boxH };
+        var tailBase = getBubbleTailBase(boxRect, tailTipX, tailTipY, tailBaseWidth);
+        if (tailBase) {
+          var svgNS = 'http://www.w3.org/2000/svg';
+          var svg = document.createElementNS(svgNS, 'svg');
+          svg.setAttribute('class', 'bubble-tail-svg');
+          var poly = document.createElementNS(svgNS, 'polygon');
+          poly.setAttribute('points',
+            tailBase.p1.x + ',' + tailBase.p1.y + ' ' +
+            tailTipX + ',' + tailTipY + ' ' +
+            tailBase.p2.x + ',' + tailBase.p2.y
+          );
+          poly.setAttribute('fill', '#fff');
+          svg.appendChild(poly);
+          container.insertBefore(svg, box);
+        }
+      }
+
+      function refreshBubbleOverlayPosition() {
+        if (!bubbleOverlay || !bubbleState) return;
+        positionBubbleOverlay(
+          bubbleOverlay,
+          bubbleState.lat,
+          bubbleState.lng,
+          bubbleState.hasPin,
+          bubbleState.markerIndex
+        );
+      }
+
+      function syncBubblePositionAfterMarkerTransform() {
+        var offsets = [0, 40, 90, 150, 220];
+        offsets.forEach(function(ms) {
+          setTimeout(function() {
+            refreshBubbleOverlayPosition();
+          }, ms);
+        });
+      }
+
+      function showBubble(index, source) {
+        clearHoverBubbleCloseTimer();
+        closeBubble();
+        var place = places[index];
+        if (!place) return;
+        var lat = parseFloat(place.y);
+        var lng = parseFloat(place.x);
+        showBubbleWithPlace(place, lat, lng, true, index, source || 'selected');
+        syncBubblePositionAfterMarkerTransform();
+      }
+
+      function blurActiveSearchInputs() {
+        if (searchInput && document.activeElement === searchInput) {
+          searchInput.blur();
+        }
+        if (routeTopPlaceLabel && document.activeElement === routeTopPlaceLabel) {
+          routeTopPlaceLabel.blur();
+        }
+        if (routeBottomPlaceLabel && document.activeElement === routeBottomPlaceLabel) {
+          routeBottomPlaceLabel.blur();
+        }
+      }
+
+      function blurFocusedRouteModePlaceInputIfActive() {
+        if (!routeModeDirection) return false;
+        var active = document.activeElement;
+        if (!active) return false;
+        if (routeTopPlaceLabel && active === routeTopPlaceLabel && !routeTopPlaceLabel.classList.contains('route-mode-hidden')) {
+          routeTopPlaceLabel.blur();
+          return true;
+        }
+        if (routeBottomPlaceLabel && active === routeBottomPlaceLabel && !routeBottomPlaceLabel.classList.contains('route-mode-hidden')) {
+          routeBottomPlaceLabel.blur();
+          return true;
+        }
+        return false;
+      }
+
+      function handleMobileSelectedPlaceTapToCollapseSheet() {
+        if (!isMobile() || !resultsPanel) return false;
+        var expanded = resultsPanel.classList.contains('sheet-half') || resultsPanel.classList.contains('sheet-full');
+        if (!expanded) return false;
+        if (selectedPlaceIndex >= 0) {
+          activatePlaceSelection(selectedPlaceIndex, {
+            source: 'mobile-map-blank',
+            showBubble: true,
+            preserveSheetState: false,
+            recenterAfterSheetTransition: true
+          });
+        } else {
+          setSheetState('sheet-peek');
+          closeBubble();
+          setMapDimmed(false);
+        }
+        return true;
+      }
+
+      function showBubbleAtPosition(lat, lng) {
+        blurActiveSearchInputs();
+        closeBubble();
+        var place = {
+          place_name: '선택한 위치',
+          address_name: '',
+          y: lat,
+          x: lng
+        };
+        showBubbleWithPlace(place, lat, lng, false, null, 'manual');
+      }
+
+      function showBubbleWithPlace(place, lat, lng, hasPin, markerIndex, source) {
+        closeBubble();
+        var numericLat = Number(lat);
+        var numericLng = Number(lng);
+        if (!isFinite(numericLat) || !isFinite(numericLng)) return;
 
         // 박스 생성
         var box = document.createElement('div');
@@ -4332,59 +5389,7 @@
         container.appendChild(box);
         mapContainer.appendChild(container);
 
-        var boxW = box.offsetWidth;
-        var boxH = box.offsetHeight;
-
-        // 핀 상단 위치 계산 (꼬리 끝이 핀 바로 위에 위치, 핀 없으면 클릭 지점 그대로)
-        var pinTopOffset = 0;
-        if (hasPin) {
-          var pinScale = parseFloat(mapContainer.style.getPropertyValue('--pin-scale')) || 1;
-          pinTopOffset = Math.round(34 * pinScale);
-        }
-        var tailTipX = clickX;
-        var tailTipY = clickY - pinTopOffset;
-
-        // 뷰포트 내 최적 위치 계산
-        var pad = 8;
-        var tailLen = 10;
-        var boxLeft = tailTipX - boxW / 2;
-        var boxTop = tailTipY - boxH - tailLen;
-
-        // 수평 클램핑
-        if (boxLeft < pad) boxLeft = pad;
-        if (boxLeft + boxW > mapW - pad) boxLeft = mapW - pad - boxW;
-
-        // 상단 벗어나면 아래로 (핀 아래에 표시)
-        if (boxTop < pad) {
-          tailTipY = clickY + tailLen;
-          boxTop = tailTipY + tailLen;
-        }
-
-        // 하단 벗어나면 클램핑
-        if (boxTop + boxH > mapH - pad) {
-          boxTop = mapH - pad - boxH;
-        }
-
-        box.style.left = Math.round(boxLeft) + 'px';
-        box.style.top = Math.round(boxTop) + 'px';
-
-        // SVG 꼬리 생성
-        var boxRect = { left: boxLeft, top: boxTop, width: boxW, height: boxH };
-        var tailBase = getBubbleTailBase(boxRect, tailTipX, tailTipY, 14);
-        if (tailBase) {
-          var svgNS = 'http://www.w3.org/2000/svg';
-          var svg = document.createElementNS(svgNS, 'svg');
-          svg.setAttribute('class', 'bubble-tail-svg');
-          var poly = document.createElementNS(svgNS, 'polygon');
-          poly.setAttribute('points',
-            tailBase.p1.x + ',' + tailBase.p1.y + ' ' +
-            tailTipX + ',' + tailTipY + ' ' +
-            tailBase.p2.x + ',' + tailBase.p2.y
-          );
-          poly.setAttribute('fill', '#fff');
-          svg.appendChild(poly);
-          container.insertBefore(svg, box);
-        }
+        positionBubbleOverlay(container, numericLat, numericLng, hasPin, markerIndex);
 
         // 이벤트 핸들러
         function dismissBubble() {
@@ -4422,8 +5427,24 @@
           closeBubble();
           runArriveWithPlace(place);
         });
+        if (!isMobile() && source === 'hover') {
+          box.addEventListener('mouseenter', function() {
+            clearHoverBubbleCloseTimer();
+          });
+          box.addEventListener('mouseleave', function() {
+            scheduleHoverBubbleClose(markerIndex);
+          });
+        }
 
         bubbleOverlay = container;
+        bubbleState = {
+          place: place,
+          lat: numericLat,
+          lng: numericLng,
+          hasPin: !!hasPin,
+          markerIndex: (isFinite(Number(markerIndex)) ? Number(markerIndex) : -1),
+          source: source || 'manual'
+        };
         bubbleOpenedAt = Date.now();
       }
 
@@ -4551,6 +5572,269 @@
         return Math.round(num) + 'm';
       }
 
+      function haversineDistanceMeters(fromPos, toPos) {
+        if (!fromPos || !toPos) return NaN;
+        var lat1 = Number(fromPos.lat);
+        var lng1 = Number(fromPos.lng);
+        var lat2 = Number(toPos.lat);
+        var lng2 = Number(toPos.lng);
+        if (!isFinite(lat1) || !isFinite(lng1) || !isFinite(lat2) || !isFinite(lng2)) return NaN;
+        var R = 6371000;
+        var dLat = (lat2 - lat1) * Math.PI / 180;
+        var dLng = (lng2 - lng1) * Math.PI / 180;
+        var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      }
+
+      function estimateWalkDurationSec(distanceM) {
+        var distance = Number(distanceM);
+        if (!isFinite(distance) || distance <= 0) return null;
+        return Math.max(60, Math.round(distance / WALK_ESTIMATED_SPEED_MPS));
+      }
+
+      function parseHHMMToMinutes(hhmm) {
+        var text = String(hhmm || '').trim();
+        var parts = text.split(':');
+        if (parts.length !== 2) return null;
+        var h = Number(parts[0]);
+        var m = Number(parts[1]);
+        if (!isFinite(h) || !isFinite(m)) return null;
+        if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+        return h * 60 + m;
+      }
+
+      function formatMinutesToHHMM(minutes) {
+        var value = Number(minutes);
+        if (!isFinite(value)) return '';
+        var total = Math.round(value);
+        while (total < 0) total += 24 * 60;
+        total = total % (24 * 60);
+        var h = Math.floor(total / 60);
+        var m = total % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+      }
+
+      function addDurationToHHMM(baseHHMM, durationSec) {
+        var baseMinutes = parseHHMMToMinutes(baseHHMM);
+        if (baseMinutes == null) return '';
+        var dur = Number(durationSec);
+        if (!isFinite(dur) || dur < 0) return formatMinutesToHHMM(baseMinutes);
+        return formatMinutesToHHMM(baseMinutes + dur / 60);
+      }
+
+      function getOptionWalkLegPositions(positions, isDepart) {
+        if (!Array.isArray(positions)) return null;
+        if (isDepart) {
+          if (positions.length < 2) return null;
+          return { fromPos: positions[0], toPos: positions[1] };
+        }
+        if (positions.length < 3) return null;
+        return { fromPos: positions[1], toPos: positions[2] };
+      }
+
+      function buildStraightWalkInfo(positions, isDepart) {
+        var leg = getOptionWalkLegPositions(positions, isDepart);
+        if (!leg) {
+          return { distance_m: null, duration_sec: null };
+        }
+        var distanceM = haversineDistanceMeters(leg.fromPos, leg.toPos);
+        var durationSec = estimateWalkDurationSec(distanceM);
+        return {
+          distance_m: isFinite(distanceM) ? distanceM : null,
+          duration_sec: durationSec
+        };
+      }
+
+      function buildStraightLineFallbackWalkInfo(positions, isDepart, reason) {
+        var straight = buildStraightWalkInfo(positions, isDepart);
+        return {
+          distance_m: straight.distance_m,
+          duration_sec: straight.duration_sec,
+          fallback_type: 'straight_line',
+          fallback_reason: String(reason || 'straight_fallback')
+        };
+      }
+
+      function isSuccessfulWalkPathResult(walkInfo) {
+        if (!walkInfo) return false;
+        if (walkInfo.has_route !== true) return false;
+        return Array.isArray(walkInfo.path_points) && walkInfo.path_points.length > 0;
+      }
+
+      function isWalkOtpBackoffActive() {
+        return Date.now() < walkOtpTimeoutSkipUntilMs;
+      }
+
+      function registerWalkOtpTimeoutBackoff() {
+        var cooldownMs = WALK_OTP_TIMEOUT_BACKOFF_INITIAL_MS * Math.pow(2, walkOtpTimeoutBackoffStep);
+        walkOtpTimeoutBackoffStep += 1;
+        walkOtpTimeoutSkipUntilMs = Date.now() + cooldownMs;
+      }
+
+      function resetWalkOtpTimeoutBackoff() {
+        walkOtpTimeoutBackoffStep = 0;
+        walkOtpTimeoutSkipUntilMs = 0;
+      }
+
+      function buildWalkPathCacheKey(fromPos, toPos) {
+        var fromLat = Number(fromPos && fromPos.lat);
+        var fromLng = Number(fromPos && fromPos.lng);
+        var toLat = Number(toPos && toPos.lat);
+        var toLng = Number(toPos && toPos.lng);
+        if (!isFinite(fromLat) || !isFinite(fromLng) || !isFinite(toLat) || !isFinite(toLng)) return '';
+        return fromLat.toFixed(6) + ',' + fromLng.toFixed(6) + '->' + toLat.toFixed(6) + ',' + toLng.toFixed(6);
+      }
+
+      function setWalkPathCache(key, value) {
+        if (!key) return;
+        walkPathCache.set(key, value);
+        if (walkPathCache.size > 2000) {
+          var firstKey = walkPathCache.keys().next().value;
+          if (firstKey != null) walkPathCache.delete(firstKey);
+        }
+      }
+
+      function fetchWalkPathData(fromPos, toPos) {
+        var key = buildWalkPathCacheKey(fromPos, toPos);
+        if (!key) return Promise.resolve(null);
+        if (walkPathCache.has(key)) return Promise.resolve(walkPathCache.get(key));
+        if (walkPathPending.has(key)) return walkPathPending.get(key);
+
+        var url = API_BASE + '/api/shuttle/walk-path' +
+          '?from_lat=' + encodeURIComponent(String(fromPos.lat)) +
+          '&from_lng=' + encodeURIComponent(String(fromPos.lng)) +
+          '&to_lat=' + encodeURIComponent(String(toPos.lat)) +
+          '&to_lng=' + encodeURIComponent(String(toPos.lng));
+        var pending = fetch(url)
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            var data = result.data || {};
+            if (typeof data.walk_otp_enabled === 'boolean' && !data.walk_otp_enabled) {
+              walkOtpEnabled = false;
+            }
+            if (!result.ok) {
+              throw new Error(data.error || 'walk_path_request_failed');
+            }
+            var encoded = String(data.encoded_polyline || '').trim();
+            var decoded = encoded ? decodeEncodedPolyline(encoded) : [];
+            var distanceM = Number(data.distance_m);
+            var durationSec = Number(data.duration_sec);
+            var normalized = {
+              has_route: !!data.has_route && decoded.length > 0,
+              path_points: decoded,
+              distance_m: (isFinite(distanceM) && distanceM > 0) ? distanceM : null,
+              duration_sec: (isFinite(durationSec) && durationSec > 0) ? durationSec : null,
+              status: String(data.status || ''),
+              source: String(data.source || ''),
+            };
+            if (normalized.status === 'ok' || normalized.status.indexOf('empty') === 0 || normalized.status === 'disabled') {
+              setWalkPathCache(key, normalized);
+            }
+            return normalized;
+          })
+          .finally(function() {
+            walkPathPending.delete(key);
+          });
+        walkPathPending.set(key, pending);
+        return pending;
+      }
+
+      function promiseWithTimeout(promise, timeoutMs) {
+        return new Promise(function(resolve, reject) {
+          var settled = false;
+          var timer = setTimeout(function() {
+            if (settled) return;
+            settled = true;
+            reject(new Error('walk_path_timeout'));
+          }, timeoutMs);
+          promise.then(function(value) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+          }, function(err) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          });
+        });
+      }
+
+      function buildSelectedRouteDetailHtml(option, placeName, isDepart, walkInfo) {
+        var positions = option.positions || [];
+        var straightWalk = buildStraightWalkInfo(positions, isDepart);
+        var distanceM = Number(walkInfo && walkInfo.distance_m);
+        if (!isFinite(distanceM) || distanceM <= 0) distanceM = Number(straightWalk.distance_m);
+        var durationSec = Number(walkInfo && walkInfo.duration_sec);
+        if (!isFinite(durationSec) || durationSec <= 0) durationSec = Number(straightWalk.duration_sec);
+        var distanceText = formatDistance(distanceM);
+        var isStraightFallback = !!(walkInfo && walkInfo.fallback_type === 'straight_line');
+        var walkSummary;
+        if (isStraightFallback) {
+          walkSummary = '직선거리 ' + distanceText;
+        } else {
+          var walkMinutes = (isFinite(durationSec) && durationSec > 0)
+            ? Math.max(1, Math.round(durationSec / 60))
+            : null;
+          walkSummary = (walkMinutes != null)
+            ? ('약 ' + String(walkMinutes) + '분 소요 (도보 ' + distanceText + ')')
+            : ('도보 ' + distanceText);
+        }
+
+        if (isDepart) {
+          return '' +
+            '<div class="route-step-row">' +
+              '<span class="route-step-name">' + escapeHtml(placeName || '출발지') + '</span>' +
+              '<span class="route-step-meta"></span>' +
+            '</div>' +
+            '<div class="route-step-arrow">' +
+              '<span class="arrow">↓</span><span class="route-step-distance">' + escapeHtml(walkSummary) + '</span>' +
+            '</div>' +
+            '<div class="route-step-row">' +
+              '<span class="route-step-name">' + escapeHtml(option.nearest_stop_name || '탑승 정류장') + '</span>' +
+              '<span class="route-step-meta"></span>' +
+            '</div>' +
+            '<div class="route-step-arrow"><span class="arrow">↓</span><span>셔틀 탑승</span></div>' +
+            '<div class="route-step-row">' +
+              '<span class="route-step-name">' + escapeHtml(option.terminus_name || '하차 정류장') + '</span>' +
+              '<span class="route-step-meta"></span>' +
+            '</div>';
+        }
+
+        return '' +
+          '<div class="route-step-row">' +
+            '<span class="route-step-name">' + escapeHtml(option.start_stop_name || '탑승 정류장') + '</span>' +
+            '<span class="route-step-meta"></span>' +
+          '</div>' +
+          '<div class="route-step-arrow"><span class="arrow">↓</span><span>셔틀 이동</span></div>' +
+          '<div class="route-step-row">' +
+            '<span class="route-step-name">' + escapeHtml(option.getoff_stop_name || '하차 정류장') + '</span>' +
+            '<span class="route-step-meta"></span>' +
+          '</div>' +
+          '<div class="route-step-arrow">' +
+            '<span class="arrow">↓</span><span class="route-step-distance">' + escapeHtml(walkSummary) + '</span>' +
+          '</div>' +
+          '<div class="route-step-row">' +
+            '<span class="route-step-name">' + escapeHtml(placeName || '도착지') + '</span>' +
+            '<span class="route-step-meta"></span>' +
+          '</div>';
+      }
+
+      function applySelectedRouteCardDetail(card, option, placeName, isDepart, walkInfo) {
+        if (!card) return;
+        var selectedDetail = card.querySelector('.route-detail-selected');
+        if (!selectedDetail) return;
+        selectedDetail.innerHTML = buildSelectedRouteDetailHtml(option, placeName, isDepart, walkInfo);
+      }
+
       function renderResults(list) {
         showPlaceResultsView();
         deselectPlace();
@@ -4558,8 +5842,6 @@
         resultsList.style.display = 'flex';
         resultsList.innerHTML = '';
         list.forEach(function(place, i) {
-          var y = parseFloat(place.y);
-          var x = parseFloat(place.x);
           var card = document.createElement('div');
           card.className = 'result-card';
           card.setAttribute('data-index', i);
@@ -4570,11 +5852,62 @@
             '<button type="button" class="btn-depart">출발</button>' +
             '<button type="button" class="btn-arrive">도착</button>' +
             '</div>';
+
+          var cardTouchState = null;
+          card.addEventListener('touchstart', function(e) {
+            if (!isMobile()) return;
+            if (!e.touches || e.touches.length !== 1) return;
+            var t = e.touches[0];
+            cardTouchState = { x: t.clientX, y: t.clientY, moved: false };
+          }, { passive: true });
+          card.addEventListener('touchmove', function(e) {
+            if (!isMobile() || !cardTouchState) return;
+            if (!e.touches || !e.touches.length) return;
+            var t = e.touches[0];
+            var dx = t.clientX - cardTouchState.x;
+            var dy = t.clientY - cardTouchState.y;
+            if ((dx * dx + dy * dy) > 100) cardTouchState.moved = true;
+          }, { passive: true });
+          card.addEventListener('touchend', function(e) {
+            if (!isMobile() || !cardTouchState) return;
+            var moved = cardTouchState.moved;
+            cardTouchState = null;
+            if (moved) {
+              lastMobileCardTouchSelectAt = Date.now();
+              return;
+            }
+            if (e.target && e.target.closest('.card-actions')) return;
+            lastMobileCardTouchSelectAt = Date.now();
+            e.preventDefault();
+            e.stopPropagation();
+            activatePlaceSelection(i, {
+              source: 'list',
+              showBubble: false,
+              preserveSheetState: true
+            });
+          }, { passive: false });
+          card.addEventListener('touchcancel', function() {
+            cardTouchState = null;
+          }, { passive: true });
+
           card.addEventListener('click', function(e) {
             if (e.target.closest('.card-actions')) return;
-            closeBubble();
-            selectPlace(i);
-            panTo(y, x);
+            if (isMobile()) {
+              if (Date.now() - lastMobileCardTouchSelectAt < 450) return;
+              e.stopPropagation();
+              activatePlaceSelection(i, {
+                source: 'list',
+                showBubble: false,
+                preserveSheetState: true
+              });
+              return;
+            }
+            e.stopPropagation();
+            activatePlaceSelection(i, {
+              source: 'list',
+              showBubble: true,
+              preserveSheetState: false
+            });
           });
           card.addEventListener('mouseenter', function() { onListCardHover(i, true); });
           card.addEventListener('mouseleave', function() { onListCardHover(i, false); });
@@ -4622,11 +5955,685 @@
         if (errorEl) errorEl.classList.remove('show');
       }
 
-      function drawOptionOnMap(option, placeName, isDepart) {
+      function isSamePathPoint(a, b) {
+        if (!a || !b) return false;
+        return Math.abs((Number(a.lat) || 0) - (Number(b.lat) || 0)) < 1e-6 &&
+          Math.abs((Number(a.lng) || 0) - (Number(b.lng) || 0)) < 1e-6;
+      }
+
+      function appendPathPoints(target, source) {
+        if (!Array.isArray(source) || source.length === 0) return;
+        for (var i = 0; i < source.length; i++) {
+          var point = source[i];
+          if (!point) continue;
+          var lat = Number(point.lat);
+          var lng = Number(point.lng);
+          if (!isFinite(lat) || !isFinite(lng)) continue;
+          if (target.length > 0 && isSamePathPoint(target[target.length - 1], { lat: lat, lng: lng })) {
+            continue;
+          }
+          target.push({ lat: lat, lng: lng });
+        }
+      }
+
+      function appendStraightLeg(pathPoints, fromPos, toPos) {
+        if (!fromPos || !toPos) return;
+        appendPathPoints(pathPoints, [
+          { lat: Number(fromPos.lat), lng: Number(fromPos.lng) },
+          { lat: Number(toPos.lat), lng: Number(toPos.lng) }
+        ]);
+      }
+
+      function decodeEncodedPolyline(encoded) {
+        if (!encoded || typeof encoded !== 'string') return [];
+        var points = [];
+        var index = 0;
+        var lat = 0;
+        var lng = 0;
+        while (index < encoded.length) {
+          var result = 0;
+          var shift = 0;
+          var b;
+          do {
+            if (index >= encoded.length) return points;
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          var dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lat += dlat;
+
+          result = 0;
+          shift = 0;
+          do {
+            if (index >= encoded.length) return points;
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          var dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lng += dlng;
+
+          points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+        }
+        return points;
+      }
+
+      function buildPathFromEncodedSegments(segments) {
+        var pathPoints = [];
+        if (!Array.isArray(segments)) return pathPoints;
+        segments.forEach(function(encoded) {
+          var decoded = decodeEncodedPolyline(String(encoded || '').trim());
+          appendPathPoints(pathPoints, decoded);
+        });
+        return pathPoints;
+      }
+
+      function buildBusPathPointsFromRouteStops(routeStops, fromSequence, toSequence) {
+        if (!Array.isArray(routeStops) || routeStops.length < 2) return [];
+        var startSeq = Number(fromSequence);
+        var endSeq = Number(toSequence);
+        if (!isFinite(startSeq) || !isFinite(endSeq) || endSeq <= startSeq) return [];
+
+        var pathPoints = [];
+        for (var i = 0; i < routeStops.length - 1; i++) {
+          var current = routeStops[i] || {};
+          var next = routeStops[i + 1] || {};
+          var currentSeq = Number(current.sequence);
+          var nextSeq = Number(next.sequence);
+          if (!isFinite(currentSeq) || !isFinite(nextSeq)) continue;
+          if (currentSeq < startSeq || currentSeq >= endSeq) continue;
+          if (nextSeq <= currentSeq || nextSeq > endSeq) continue;
+
+          var encoded = String(current.next_encoded_polyline || '').trim();
+          if (encoded) {
+            var decoded = decodeEncodedPolyline(encoded);
+            if (decoded.length > 0) {
+              appendPathPoints(pathPoints, decoded);
+              continue;
+            }
+          }
+          appendStraightLeg(pathPoints, current, next);
+        }
+        return pathPoints;
+      }
+
+      function buildRouteDetailPathPoints(routeStops) {
+        var pathPoints = [];
+        if (!Array.isArray(routeStops) || routeStops.length === 0) return pathPoints;
+        for (var i = 0; i < routeStops.length - 1; i++) {
+          var current = routeStops[i] || {};
+          var next = routeStops[i + 1] || {};
+          var encoded = String(current.next_encoded_polyline || '').trim();
+          if (encoded) {
+            var decoded = decodeEncodedPolyline(encoded);
+            if (decoded.length > 0) {
+              appendPathPoints(pathPoints, decoded);
+              continue;
+            }
+          }
+          appendStraightLeg(pathPoints, current, next);
+        }
+        if (pathPoints.length === 0) {
+          routeStops.forEach(function(stop) {
+            appendPathPoints(pathPoints, [{ lat: Number(stop.lat), lng: Number(stop.lng) }]);
+          });
+        }
+        return pathPoints;
+      }
+
+      function buildOptionPathSegments(option, positions, isDepart, walkPathPoints) {
+        var routeStops = Array.isArray(option.route_stops) ? option.route_stops : [];
+        var fromSeq = isDepart ? option.nearest_stop_sequence : option.start_stop_sequence;
+        var toSeq = isDepart ? option.terminus_sequence : option.getoff_stop_sequence;
+        var busPathPoints = buildBusPathPointsFromRouteStops(routeStops, fromSeq, toSeq);
+        if (busPathPoints.length === 0) {
+          busPathPoints = buildPathFromEncodedSegments(option.bus_segment_polylines || []);
+        }
+
+        var walkSegmentPoints = [];
+        if (isDepart) {
+          if (Array.isArray(walkPathPoints) && walkPathPoints.length > 0) {
+            appendPathPoints(walkSegmentPoints, walkPathPoints);
+          } else if (positions.length >= 2) {
+            appendStraightLeg(walkSegmentPoints, positions[0], positions[1]);
+          }
+          if (busPathPoints.length === 0 && positions.length >= 3) {
+            appendStraightLeg(busPathPoints, positions[1], positions[2]);
+          }
+        } else {
+          if (busPathPoints.length === 0 && positions.length >= 2) {
+            appendStraightLeg(busPathPoints, positions[0], positions[1]);
+          }
+          if (Array.isArray(walkPathPoints) && walkPathPoints.length > 0) {
+            appendPathPoints(walkSegmentPoints, walkPathPoints);
+          } else if (positions.length >= 3) {
+            appendStraightLeg(walkSegmentPoints, positions[1], positions[2]);
+          }
+        }
+
+        var allPathPoints = [];
+        if (isDepart) {
+          appendPathPoints(allPathPoints, walkSegmentPoints);
+          appendPathPoints(allPathPoints, busPathPoints);
+        } else {
+          appendPathPoints(allPathPoints, busPathPoints);
+          appendPathPoints(allPathPoints, walkSegmentPoints);
+        }
+
+        if (allPathPoints.length === 0) {
+          positions.forEach(function(p) {
+            appendPathPoints(allPathPoints, [{ lat: Number(p.lat), lng: Number(p.lng) }]);
+          });
+        }
+
+        return {
+          walkPathPoints: walkSegmentPoints,
+          busPathPoints: busPathPoints,
+          allPathPoints: allPathPoints
+        };
+      }
+
+      function interpolatePathPoint(fromPos, toPos, ratio) {
+        var t = Math.max(0, Math.min(1, Number(ratio) || 0));
+        return {
+          lat: Number(fromPos.lat) + (Number(toPos.lat) - Number(fromPos.lat)) * t,
+          lng: Number(fromPos.lng) + (Number(toPos.lng) - Number(fromPos.lng)) * t
+        };
+      }
+
+      function getPathPointContainerPixel(point) {
+        if (!map || !point) return null;
+        var lat = Number(point.lat);
+        var lng = Number(point.lng);
+        if (!isFinite(lat) || !isFinite(lng)) return null;
+        var proj = map.getProjection();
+        if (!proj || typeof proj.containerPointFromCoords !== 'function') return null;
+        var px = proj.containerPointFromCoords(new kakao.maps.LatLng(lat, lng));
+        if (!px) return null;
+        return { x: Number(px.x), y: Number(px.y) };
+      }
+
+      function buildPathPixelSegments(pathPoints) {
+        var segments = [];
+        if (!Array.isArray(pathPoints) || pathPoints.length < 2) return segments;
+        for (var i = 0; i < pathPoints.length - 1; i++) {
+          var fromPx = getPathPointContainerPixel(pathPoints[i]);
+          var toPx = getPathPointContainerPixel(pathPoints[i + 1]);
+          if (!fromPx || !toPx) continue;
+          var dx = toPx.x - fromPx.x;
+          var dy = toPx.y - fromPx.y;
+          var distance = Math.sqrt(dx * dx + dy * dy);
+          if (!isFinite(distance) || distance < 1) continue;
+          segments.push({ from: fromPx, to: toPx });
+        }
+        return segments;
+      }
+
+      function distancePointToSegmentPx(pointPx, fromPx, toPx) {
+        if (!pointPx || !fromPx || !toPx) return Infinity;
+        var vx = toPx.x - fromPx.x;
+        var vy = toPx.y - fromPx.y;
+        var wx = pointPx.x - fromPx.x;
+        var wy = pointPx.y - fromPx.y;
+        var vv = vx * vx + vy * vy;
+        if (!isFinite(vv) || vv <= 0) {
+          var dx0 = pointPx.x - fromPx.x;
+          var dy0 = pointPx.y - fromPx.y;
+          return Math.sqrt(dx0 * dx0 + dy0 * dy0);
+        }
+        var t = (wx * vx + wy * vy) / vv;
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        var projX = fromPx.x + vx * t;
+        var projY = fromPx.y + vy * t;
+        var dx = pointPx.x - projX;
+        var dy = pointPx.y - projY;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+
+      function isPointNearPathInPixels(point, pathPixelSegments, thresholdPx) {
+        if (!point || !Array.isArray(pathPixelSegments) || pathPixelSegments.length === 0) return false;
+        var pointPx = getPathPointContainerPixel(point);
+        if (!pointPx) return false;
+        var threshold = Number(thresholdPx);
+        if (!isFinite(threshold) || threshold <= 0) threshold = 1;
+        for (var i = 0; i < pathPixelSegments.length; i++) {
+          var seg = pathPixelSegments[i];
+          if (!seg) continue;
+          if (distancePointToSegmentPx(pointPx, seg.from, seg.to) <= threshold) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function getPathMidPoint(pathPoints) {
+        if (!Array.isArray(pathPoints) || pathPoints.length === 0) return null;
+        if (pathPoints.length === 1) {
+          var lat0 = Number(pathPoints[0].lat);
+          var lng0 = Number(pathPoints[0].lng);
+          if (isFinite(lat0) && isFinite(lng0)) return { lat: lat0, lng: lng0 };
+          return null;
+        }
+
+        var segments = [];
+        var totalDistance = 0;
+        for (var i = 0; i < pathPoints.length - 1; i++) {
+          var from = pathPoints[i];
+          var to = pathPoints[i + 1];
+          var fromLat = Number(from && from.lat);
+          var fromLng = Number(from && from.lng);
+          var toLat = Number(to && to.lat);
+          var toLng = Number(to && to.lng);
+          if (!isFinite(fromLat) || !isFinite(fromLng) || !isFinite(toLat) || !isFinite(toLng)) continue;
+          var fromPos = { lat: fromLat, lng: fromLng };
+          var toPos = { lat: toLat, lng: toLng };
+          var segDistance = haversineDistanceMeters(fromPos, toPos);
+          if (!isFinite(segDistance) || segDistance <= 0) continue;
+          segments.push({ fromPos: fromPos, toPos: toPos, distance: segDistance });
+          totalDistance += segDistance;
+        }
+        if (segments.length === 0 || totalDistance <= 0) {
+          var first = pathPoints[0] || {};
+          var firstLat = Number(first.lat);
+          var firstLng = Number(first.lng);
+          if (isFinite(firstLat) && isFinite(firstLng)) return { lat: firstLat, lng: firstLng };
+          return null;
+        }
+
+        var target = totalDistance * 0.5;
+        var acc = 0;
+        for (var si = 0; si < segments.length; si++) {
+          var seg = segments[si];
+          if ((acc + seg.distance) >= target) {
+            var ratio = (target - acc) / seg.distance;
+            return interpolatePathPoint(seg.fromPos, seg.toPos, ratio);
+          }
+          acc += seg.distance;
+        }
+
+        var lastSeg = segments[segments.length - 1];
+        return { lat: lastSeg.toPos.lat, lng: lastSeg.toPos.lng };
+      }
+
+      function getWalkTimeMinutesForDisplay(positions, isDepart, walkInfo) {
+        var durationSec = Number(walkInfo && walkInfo.duration_sec);
+        if (!isFinite(durationSec) || durationSec <= 0) {
+          var straightWalk = buildStraightWalkInfo(positions, isDepart);
+          durationSec = Number(straightWalk && straightWalk.duration_sec);
+        }
+        if (!isFinite(durationSec) || durationSec <= 0) return null;
+        return Math.max(1, Math.round(durationSec / 60));
+      }
+
+      function getWalkTimeBasePoint(walkPathPoints, positions, isDepart) {
+        var mid = getPathMidPoint(walkPathPoints);
+        if (mid) return mid;
+        var leg = getOptionWalkLegPositions(positions, isDepart);
+        if (!leg || !leg.fromPos || !leg.toPos) return null;
+        var fromLat = Number(leg.fromPos.lat);
+        var fromLng = Number(leg.fromPos.lng);
+        var toLat = Number(leg.toPos.lat);
+        var toLng = Number(leg.toPos.lng);
+        if (!isFinite(fromLat) || !isFinite(fromLng) || !isFinite(toLat) || !isFinite(toLng)) return null;
+        return interpolatePathPoint({ lat: fromLat, lng: fromLng }, { lat: toLat, lng: toLng }, 0.5);
+      }
+
+      function getWalkTimeBlockedRects() {
+        var rects = [];
+        if (!mapContainer) return rects;
+        var containerRect = mapContainer.getBoundingClientRect();
+        shuttlePointContents.forEach(function(anchor) {
+          if (!anchor || typeof anchor.querySelector !== 'function') return;
+          var label = anchor.querySelector('.shuttle-point-label');
+          if (!label) return;
+          var rect = label.getBoundingClientRect();
+          var width = Number(rect.width);
+          var height = Number(rect.height);
+          if (!isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return;
+          rects.push({
+            left: rect.left - containerRect.left,
+            top: rect.top - containerRect.top,
+            right: rect.right - containerRect.left,
+            bottom: rect.bottom - containerRect.top
+          });
+        });
+        return rects;
+      }
+
+      function getRectOverlapArea(a, b) {
+        var left = Math.max(a.left, b.left);
+        var top = Math.max(a.top, b.top);
+        var right = Math.min(a.right, b.right);
+        var bottom = Math.min(a.bottom, b.bottom);
+        if (right <= left || bottom <= top) return 0;
+        return (right - left) * (bottom - top);
+      }
+
+      function getWalkTimePlacementCandidates() {
+        return [
+          { dx: 0, dy: -8, placement: 'above' },
+          { dx: 54, dy: -8, placement: 'above' },
+          { dx: -54, dy: -8, placement: 'above' },
+          { dx: 0, dy: 8, placement: 'below' },
+          { dx: 54, dy: 8, placement: 'below' },
+          { dx: -54, dy: 8, placement: 'below' },
+          { dx: 108, dy: -8, placement: 'above' },
+          { dx: -108, dy: -8, placement: 'above' },
+          { dx: 108, dy: 8, placement: 'below' },
+          { dx: -108, dy: 8, placement: 'below' },
+          { dx: 0, dy: -44, placement: 'above' },
+          { dx: 0, dy: 44, placement: 'below' },
+          { dx: 162, dy: -8, placement: 'above' },
+          { dx: -162, dy: -8, placement: 'above' },
+          { dx: 162, dy: 8, placement: 'below' },
+          { dx: -162, dy: 8, placement: 'below' }
+        ];
+      }
+
+      function refreshWalkTimeOverlayPosition() {
+        if (!map || !mapContainer || !shuttleWalkTimeBubble || !shuttleWalkTimeBasePoint) return;
+        var basePx = getPathPointContainerPixel(shuttleWalkTimeBasePoint);
+        if (!basePx) return;
+        var bubbleWidth = Number(shuttleWalkTimeBubble.offsetWidth);
+        var bubbleHeight = Number(shuttleWalkTimeBubble.offsetHeight);
+        if (!isFinite(bubbleWidth) || !isFinite(bubbleHeight) || bubbleWidth <= 0 || bubbleHeight <= 0) return;
+        var mapWidth = Number(mapContainer.clientWidth);
+        var mapHeight = Number(mapContainer.clientHeight);
+        if (!isFinite(mapWidth) || !isFinite(mapHeight) || mapWidth <= 0 || mapHeight <= 0) return;
+
+        var blockedRects = getWalkTimeBlockedRects();
+        var tailSize = 8;
+        var edgePad = 6;
+        var best = null;
+        var candidates = getWalkTimePlacementCandidates();
+        for (var ci = 0; ci < candidates.length; ci++) {
+          var candidate = candidates[ci];
+          var left = basePx.x + candidate.dx - (bubbleWidth / 2);
+          var top = (candidate.placement === 'above')
+            ? (basePx.y + candidate.dy - bubbleHeight - tailSize)
+            : (basePx.y + candidate.dy + tailSize);
+          var rect = {
+            left: left,
+            top: top,
+            right: left + bubbleWidth,
+            bottom: top + bubbleHeight
+          };
+
+          var overlapArea = 0;
+          for (var bi = 0; bi < blockedRects.length; bi++) {
+            overlapArea += getRectOverlapArea(rect, blockedRects[bi]);
+          }
+
+          var overflow =
+            Math.max(0, edgePad - rect.left) +
+            Math.max(0, edgePad - rect.top) +
+            Math.max(0, rect.right - (mapWidth - edgePad)) +
+            Math.max(0, rect.bottom - (mapHeight - edgePad));
+          var distancePenalty = Math.abs(candidate.dx) * 0.12 + Math.abs(candidate.dy) * 0.08 +
+            (candidate.placement === 'below' ? 1 : 0);
+          var score = overlapArea * 1000 + overflow * 60 + distancePenalty;
+          if (!best || score < best.score) {
+            best = {
+              score: score,
+              rect: rect,
+              placement: candidate.placement,
+              tailX: Math.max(10, Math.min(bubbleWidth - 10, basePx.x - left))
+            };
+          }
+        }
+        if (!best) return;
+
+        shuttleWalkTimeBubble.style.left = Math.round(best.rect.left - basePx.x) + 'px';
+        shuttleWalkTimeBubble.style.top = Math.round(best.rect.top - basePx.y) + 'px';
+        shuttleWalkTimeBubble.style.setProperty('--tail-x', Math.round(best.tailX) + 'px');
+        shuttleWalkTimeBubble.classList.remove('tail-down', 'tail-up');
+        shuttleWalkTimeBubble.classList.add(best.placement === 'above' ? 'tail-down' : 'tail-up');
+      }
+
+      function renderWalkTimeOverlay(walkPathPoints, positions, isDepart, walkInfo) {
+        clearWalkTimeOverlay();
+        var minutes = getWalkTimeMinutesForDisplay(positions, isDepart, walkInfo);
+        if (minutes == null) return;
+        var basePoint = getWalkTimeBasePoint(walkPathPoints, positions, isDepart);
+        if (!basePoint) return;
+
+        var anchor = document.createElement('div');
+        anchor.className = 'walk-time-anchor';
+        var bubble = document.createElement('div');
+        bubble.className = 'walk-time-bubble tail-down';
+        bubble.innerHTML =
+          '<span class="walk-time-icon" aria-hidden="true"></span>' +
+          '<span class="walk-time-text">약 ' + String(minutes) + '분</span>';
+        anchor.appendChild(bubble);
+
+        var overlay = new kakao.maps.CustomOverlay({
+          position: new kakao.maps.LatLng(basePoint.lat, basePoint.lng),
+          content: anchor,
+          xAnchor: 0.5,
+          yAnchor: 0.5
+        });
+        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(12);
+        overlay.setMap(map);
+
+        shuttleWalkTimeOverlay = overlay;
+        shuttleWalkTimeAnchor = anchor;
+        shuttleWalkTimeBubble = bubble;
+        shuttleWalkTimeBasePoint = basePoint;
+
+        refreshWalkTimeOverlayPosition();
+        setTimeout(refreshWalkTimeOverlayPosition, 0);
+      }
+
+      function clipLineSegmentToRect(fromPx, toPx, rect) {
+        var x0 = Number(fromPx && fromPx.x);
+        var y0 = Number(fromPx && fromPx.y);
+        var x1 = Number(toPx && toPx.x);
+        var y1 = Number(toPx && toPx.y);
+        if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return null;
+
+        var dx = x1 - x0;
+        var dy = y1 - y0;
+        var p = [-dx, dx, -dy, dy];
+        var q = [x0 - rect.minX, rect.maxX - x0, y0 - rect.minY, rect.maxY - y0];
+        var t0 = 0;
+        var t1 = 1;
+
+        for (var i = 0; i < 4; i++) {
+          if (p[i] === 0) {
+            if (q[i] < 0) return null;
+            continue;
+          }
+          var r = q[i] / p[i];
+          if (p[i] < 0) {
+            if (r > t1) return null;
+            if (r > t0) t0 = r;
+          } else {
+            if (r < t0) return null;
+            if (r < t1) t1 = r;
+          }
+        }
+        if (t1 < t0) return null;
+        return { t0: t0, t1: t1 };
+      }
+
+      function addRouteDirectionArrow(point, rotateDeg) {
+        if (!point || !isFinite(point.lat) || !isFinite(point.lng) || !isFinite(rotateDeg)) return;
+        var arrowWrap = document.createElement('div');
+        arrowWrap.className = 'route-direction-arrow-wrap';
+        arrowWrap.style.transform = 'rotate(' + rotateDeg.toFixed(2) + 'deg)';
+        var arrowShape = document.createElement('span');
+        arrowShape.className = 'route-direction-arrow';
+        arrowWrap.appendChild(arrowShape);
+
+        var overlay = new kakao.maps.CustomOverlay({
+          position: new kakao.maps.LatLng(point.lat, point.lng),
+          content: arrowWrap,
+          xAnchor: 0.5,
+          yAnchor: 0.5
+        });
+        // Always render route arrows below shuttle point icons/labels.
+        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(0);
+        overlay.setMap(map);
+        shuttleDirectionArrowOverlays.push(overlay);
+        shuttleDirectionArrowElements.push(arrowWrap);
+      }
+
+      function getRoutePathStyle(kind) {
+        if (kind === 'bus') {
+          return {
+            outerColor: SHUTTLE_ROUTE_BUS_OUTER_COLOR,
+            innerColor: SHUTTLE_ROUTE_BUS_INNER_COLOR
+          };
+        }
+        return {
+          outerColor: SHUTTLE_ROUTE_WALK_OUTER_COLOR,
+          innerColor: SHUTTLE_ROUTE_WALK_INNER_COLOR
+        };
+      }
+
+      function drawRouteDirectionArrows(pathPoints, opts) {
+        if (!Array.isArray(pathPoints) || pathPoints.length < 2) return;
+        opts = opts || {};
+        var kind = String(opts.kind || 'bus').toLowerCase();
+        var occlusionPathPoints = Array.isArray(opts.occlusionPathPoints) ? opts.occlusionPathPoints : [];
+        var occlusionThresholdPx = Number(opts.occlusionThresholdPx);
+        if (!isFinite(occlusionThresholdPx) || occlusionThresholdPx <= 0) {
+          occlusionThresholdPx = SHUTTLE_ROUTE_OUTER_WEIGHT * 0.9;
+        }
+        var occlusionPathPixelSegments = (kind === 'bus' && occlusionPathPoints.length >= 2)
+          ? buildPathPixelSegments(occlusionPathPoints)
+          : [];
+        var mapWidth = mapContainer ? Number(mapContainer.clientWidth) : 0;
+        var mapHeight = mapContainer ? Number(mapContainer.clientHeight) : 0;
+        if (!isFinite(mapWidth) || !isFinite(mapHeight) || mapWidth <= 0 || mapHeight <= 0) return;
+
+        var clipMargin = 120;
+        var clipRect = {
+          minX: -clipMargin,
+          minY: -clipMargin,
+          maxX: mapWidth + clipMargin,
+          maxY: mapHeight + clipMargin
+        };
+
+        var visibleSegments = [];
+        var visibleTotalPx = 0;
+        var longestSegment = null;
+
+        for (var i = 0; i < pathPoints.length - 1; i++) {
+          var rawFrom = pathPoints[i];
+          var rawTo = pathPoints[i + 1];
+          var rawFromPx = getPathPointContainerPixel(rawFrom);
+          var rawToPx = getPathPointContainerPixel(rawTo);
+          if (!rawFromPx || !rawToPx) continue;
+
+          var clip = clipLineSegmentToRect(rawFromPx, rawToPx, clipRect);
+          if (!clip) continue;
+
+          var clippedFromPos = interpolatePathPoint(rawFrom, rawTo, clip.t0);
+          var clippedToPos = interpolatePathPoint(rawFrom, rawTo, clip.t1);
+          var clippedFromPx = {
+            x: rawFromPx.x + (rawToPx.x - rawFromPx.x) * clip.t0,
+            y: rawFromPx.y + (rawToPx.y - rawFromPx.y) * clip.t0
+          };
+          var clippedToPx = {
+            x: rawFromPx.x + (rawToPx.x - rawFromPx.x) * clip.t1,
+            y: rawFromPx.y + (rawToPx.y - rawFromPx.y) * clip.t1
+          };
+
+          var dx = clippedToPx.x - clippedFromPx.x;
+          var dy = clippedToPx.y - clippedFromPx.y;
+          var segDistancePx = Math.sqrt(dx * dx + dy * dy);
+          if (!isFinite(segDistancePx) || segDistancePx < 3) continue;
+
+          var rotateDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+          var segment = {
+            fromPos: clippedFromPos,
+            toPos: clippedToPos,
+            distancePx: segDistancePx,
+            rotateDeg: rotateDeg
+          };
+          visibleSegments.push(segment);
+          visibleTotalPx += segDistancePx;
+          if (!longestSegment || segDistancePx > longestSegment.distancePx) longestSegment = segment;
+        }
+
+        if (visibleSegments.length === 0) return;
+
+        var spacingPx = SHUTTLE_ROUTE_ARROW_SPACING_PX;
+        var minSpacingPx = 10;
+        var maxSpacingPx = 64;
+        var targetMinArrows = 16;
+        var targetMaxArrows = Math.min(SHUTTLE_ROUTE_ARROW_MAX_COUNT, 220);
+
+        var spacingByMin = visibleTotalPx / targetMinArrows;
+        if (isFinite(spacingByMin) && spacingByMin > 0) spacingPx = Math.min(spacingPx, spacingByMin);
+        var spacingByMax = visibleTotalPx / targetMaxArrows;
+        if (isFinite(spacingByMax) && spacingByMax > 0) spacingPx = Math.max(spacingPx, spacingByMax);
+        spacingPx = Math.max(minSpacingPx, Math.min(maxSpacingPx, spacingPx));
+
+        var distanceToNextArrow = spacingPx * 0.5;
+        for (var si = 0; si < visibleSegments.length; si++) {
+          var seg = visibleSegments[si];
+          while (distanceToNextArrow <= seg.distancePx && shuttleDirectionArrowOverlays.length < SHUTTLE_ROUTE_ARROW_MAX_COUNT) {
+            var ratio = distanceToNextArrow / seg.distancePx;
+            var arrowPoint = interpolatePathPoint(seg.fromPos, seg.toPos, ratio);
+            var shouldSkipArrow = (kind === 'bus') &&
+              isPointNearPathInPixels(arrowPoint, occlusionPathPixelSegments, occlusionThresholdPx);
+            if (!shouldSkipArrow) {
+              addRouteDirectionArrow(arrowPoint, seg.rotateDeg);
+            }
+            distanceToNextArrow += spacingPx;
+          }
+          distanceToNextArrow -= seg.distancePx;
+        }
+
+        if (shuttleDirectionArrowOverlays.length === 0 && longestSegment && longestSegment.distancePx >= 8) {
+          var fallbackPoint = interpolatePathPoint(longestSegment.fromPos, longestSegment.toPos, 0.5);
+          var skipFallback = (kind === 'bus') &&
+            isPointNearPathInPixels(fallbackPoint, occlusionPathPixelSegments, occlusionThresholdPx);
+          if (!skipFallback) {
+            addRouteDirectionArrow(fallbackPoint, longestSegment.rotateDeg);
+          }
+        }
+      }
+
+      function renderStyledRoutePath(pathPoints, kind) {
+        var path = pathPoints.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
+        if (path.length === 0) return path;
+        var style = getRoutePathStyle(kind);
+
+        var outerLine = new kakao.maps.Polyline({
+          path: path,
+          strokeWeight: SHUTTLE_ROUTE_OUTER_WEIGHT,
+          strokeColor: style.outerColor,
+          strokeOpacity: 0.95
+        });
+        outerLine.__baseOpacity = 0.95;
+        outerLine.setMap(map);
+        shuttlePathLayers.push(outerLine);
+
+        var innerLine = new kakao.maps.Polyline({
+          path: path,
+          strokeWeight: SHUTTLE_ROUTE_INNER_WEIGHT,
+          strokeColor: style.innerColor,
+          strokeOpacity: 0.92
+        });
+        innerLine.__baseOpacity = 0.92;
+        innerLine.setMap(map);
+        shuttlePathLayers.push(innerLine);
+        shuttleLine = innerLine;
+        return path;
+      }
+
+      function renderOptionOnMap(option, placeName, isDepart, walkInfo, selectedCard, showWalkTimeBubble) {
         clearSearchOverlays();
         clearShuttleOverlays();
-        var positions = option.positions;
-        var path = positions.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
+        var positions = Array.isArray(option.positions) ? option.positions : [];
+        var walkPathPoints = (walkInfo && Array.isArray(walkInfo.path_points)) ? walkInfo.path_points : [];
+        var pathSegments = buildOptionPathSegments(option, positions, isDepart, walkPathPoints);
+        var path = [];
         var timeStr = (option.board_time != null && option.board_time !== '') ? option.board_time : getDepartureTimeStr();
         var labels = isDepart
           ? [placeName, option.nearest_stop_name, option.terminus_name]
@@ -4638,7 +6645,8 @@
         positions.forEach(function(p, i) {
           var pos = new kakao.maps.LatLng(p.lat, p.lng);
           var pinEl = document.createElement('div');
-          pinEl.className = 'shuttle-point-pin';
+          var iconClass = (i === 0) ? 'icon-start' : (i === 1 ? 'icon-stop' : 'icon-arrive');
+          pinEl.className = 'shuttle-point-pin ' + iconClass;
           var pinOverlay = new kakao.maps.CustomOverlay({
             position: pos,
             content: pinEl,
@@ -4648,7 +6656,10 @@
           pinOverlay.setZIndex(zOrder[i]);
           pinOverlay.setMap(map);
           shuttlePointOverlays.push(pinOverlay);
-          var namePart = '<span class="shuttle-point-name">' + escapeHtml(labels[i]) + '</span>';
+          var hidePointLabel = (isDepart && i === 0) || (!isDepart && i === 2);
+          if (hidePointLabel) return;
+          var pointLabel = labels[i] || p.label || '';
+          var namePart = '<span class="shuttle-point-name">' + escapeHtml(pointLabel) + '</span>';
           var tagPart = '';
           if (isDepart && i === 1) tagPart = '<span class="time-tag">(' + timeStr + '분 노선 탑승)</span>';
           if (!isDepart && i === 0) tagPart = '<span class="time-tag">(' + timeStr + '분 노선 탑승)</span>';
@@ -4669,9 +6680,14 @@
             var hasSeq = (seq != null && seq !== '');
             tagPart = '<span class="getoff-tag">(' + (hasSeq ? String(seq) + ' 번째 하차' : '하차') + ')</span>';
           }
+          var highlightTarget = getOptionLabelHighlightTarget(option, isDepart, i);
+          var isClickableLabel = !!(selectedCard && highlightTarget);
           var labelAnchor = document.createElement('div');
-          labelAnchor.className = 'shuttle-label-anchor';
+          labelAnchor.className = 'shuttle-label-anchor' + (isClickableLabel ? ' clickable' : '');
           labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + '">' + namePart + tagPart + '</div>';
+          if (isClickableLabel) {
+            attachRouteOptionLabelClickHandler(labelAnchor, selectedCard, option, placeName, isDepart, highlightTarget);
+          }
           var labelOverlay = new kakao.maps.CustomOverlay({
             position: pos,
             content: labelAnchor,
@@ -4683,19 +6699,18 @@
           shuttlePointOverlays.push(labelOverlay);
           shuttlePointContents.push(labelAnchor);
         });
-        var lineColor = '#000';
-        var lineOpts = {
-          path: path,
-          strokeWeight: 5,
-          strokeColor: lineColor,
-          strokeOpacity: 0.9
-        };
-        if (typeof kakao.maps.StrokeStyles !== 'undefined') {
-          lineOpts.strokeStyle = kakao.maps.StrokeStyles.SHORTDASH;
-        }
-        shuttleLine = new kakao.maps.Polyline(lineOpts);
-        shuttleLine.setMap(map);
-        shuttlePositions = positions.slice();
+        // Always draw bus first, then walk so walk segments stay on top when overlapped.
+        renderStyledRoutePath(pathSegments.busPathPoints, 'bus');
+        renderStyledRoutePath(pathSegments.walkPathPoints, 'walk');
+        shuttleBusPathPoints = pathSegments.busPathPoints.slice();
+        shuttleWalkPathPoints = pathSegments.walkPathPoints.slice();
+        shuttlePositions = pathSegments.allPathPoints.slice();
+        drawRouteDirectionArrows(shuttleBusPathPoints, {
+          kind: 'bus',
+          occlusionPathPoints: shuttleWalkPathPoints
+        });
+        drawRouteDirectionArrows(shuttleWalkPathPoints, { kind: 'walk' });
+        path = shuttlePositions.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
         var bounds = new kakao.maps.LatLngBounds();
         path.forEach(function(p) { bounds.extend(p); });
         var sw = bounds.getSouthWest();
@@ -4711,27 +6726,123 @@
         bounds.extend(new kakao.maps.LatLng(sw.getLat(), sw.getLng() - lngSpan * pad));
         bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
         map.setBounds(bounds);
+        if (showWalkTimeBubble) {
+          renderWalkTimeOverlay(pathSegments.walkPathPoints, positions, isDepart, walkInfo);
+        } else {
+          clearWalkTimeOverlay();
+        }
         if (!isMobile()) {
+          var routeNameHtml = '<span class="hl">' + escapeHtml(option.route_name) + '</span>';
+          var routeTimeHtml = '<span class="hl">' + escapeHtml(timeStr) + '분</span>';
+          var stopBadgeHtml = function(nameText) {
+            return '<span class="msg-pill msg-pill-stop"><span class="msg-inline-icon msg-icon-stop" aria-hidden="true"></span>' +
+              '<span>' + escapeHtml(nameText || '') + '</span></span>';
+          };
+          var startBadgeHtml = function(nameText) {
+            return '<span class="msg-pill msg-pill-start"><span class="msg-inline-icon msg-icon-start" aria-hidden="true"></span>' +
+              '<span>' + escapeHtml(nameText || '') + '</span></span>';
+          };
           var msgHtml = isDepart
-            ? escapeHtml(placeName) + '에서 출근하기 위해서는 <span class="time-tag">' + timeStr + '분</span>에 <span class="hl">' + escapeHtml(option.nearest_stop_name) + '</span> 정류장에서 <span class="hl">' + escapeHtml(option.route_name) + '</span> 출근 버스(노선)를 탑승하세요.'
-            : escapeHtml(placeName) + '(으)로 가기 위해서는 <span class="hl">' + escapeHtml(option.route_name) + '</span> 퇴근 버스를 <span class="time-tag">' + timeStr + '분</span>에 <span class="hl">' + escapeHtml(option.start_stop_name) + '</span>에서 탑승하고 <span class="hl">' + escapeHtml(option.getoff_stop_name) + '</span>에서 하차하세요.';
+            ? escapeHtml(placeName) + '에서 출근하기 위해서는 ' + stopBadgeHtml(option.nearest_stop_name) +
+              ' 정류장에서 ' + routeNameHtml + ' ' + routeTimeHtml + ' 출근 노선 버스에 탑승하세요.'
+            : escapeHtml(placeName) + '(으)로 가기 위해서는 ' + routeNameHtml + ' ' + routeTimeHtml +
+              ' 퇴근 노선을 ' + startBadgeHtml(option.start_stop_name) + '에서 탑승하고 ' +
+              stopBadgeHtml(option.getoff_stop_name) + '에서 하차하세요.';
           showShuttleResult(msgHtml);
         } else {
           shuttleMessage.classList.remove('show');
         }
+        scheduleRouteVisualFit();
       }
 
-      function drawRouteDetailOnMap(option, placeName, isDepart) {
+      function drawOptionOnMap(option, placeName, isDepart, selectedCard) {
+        activeOptionDrawToken += 1;
+        var drawToken = activeOptionDrawToken;
+        var positions = Array.isArray(option.positions) ? option.positions : [];
+        function applyWalkFallback(reason) {
+          applySelectedRouteCardDetail(
+            selectedCard,
+            option,
+            placeName,
+            isDepart,
+            buildStraightLineFallbackWalkInfo(positions, isDepart, reason)
+          );
+          clearWalkTimeOverlay();
+        }
+        var straightWalk = buildStraightWalkInfo(positions, isDepart);
+        applySelectedRouteCardDetail(selectedCard, option, placeName, isDepart, straightWalk);
+        renderOptionOnMap(option, placeName, isDepart, null, selectedCard, false);
+
+        if (!walkOtpEnabled) return;
+        var leg = getOptionWalkLegPositions(positions, isDepart);
+        if (!leg) return;
+
+        var walkCacheKey = buildWalkPathCacheKey(leg.fromPos, leg.toPos);
+        if (walkCacheKey && walkPathCache.has(walkCacheKey)) {
+          var cachedWalk = walkPathCache.get(walkCacheKey);
+          if (cachedWalk) {
+            if (isSuccessfulWalkPathResult(cachedWalk)) {
+              resetWalkOtpTimeoutBackoff();
+              applySelectedRouteCardDetail(selectedCard, option, placeName, isDepart, cachedWalk);
+              renderOptionOnMap(option, placeName, isDepart, cachedWalk, selectedCard, true);
+            } else {
+              applyWalkFallback(String(cachedWalk.status || 'otp_empty_itineraries'));
+            }
+          }
+          return;
+        }
+
+        var hasPendingWalk = !!(walkCacheKey && walkPathPending.has(walkCacheKey));
+        if (isWalkOtpBackoffActive() && !hasPendingWalk) {
+          applyWalkFallback('otp_backoff');
+          return;
+        }
+
+        var walkPromise = hasPendingWalk
+          ? walkPathPending.get(walkCacheKey)
+          : fetchWalkPathData(leg.fromPos, leg.toPos);
+        if (!walkPromise) return;
+        promiseWithTimeout(walkPromise, WALK_OTP_TIMEOUT_MS)
+          .then(function(walkResult) {
+            if (drawToken !== activeOptionDrawToken) return;
+            if (!walkResult) {
+              applyWalkFallback('otp_empty_response');
+              return;
+            }
+            if (isSuccessfulWalkPathResult(walkResult)) {
+              resetWalkOtpTimeoutBackoff();
+              applySelectedRouteCardDetail(selectedCard, option, placeName, isDepart, walkResult);
+              renderOptionOnMap(option, placeName, isDepart, walkResult, selectedCard, true);
+              return;
+            }
+            applyWalkFallback(String(walkResult.status || 'otp_empty_itineraries'));
+          })
+          .catch(function(err) {
+            if (drawToken !== activeOptionDrawToken) return;
+            if (err && err.message === 'walk_path_timeout') {
+              registerWalkOtpTimeoutBackoff();
+              applyWalkFallback('otp_timeout');
+              return;
+            }
+            applyWalkFallback('otp_request_failed');
+          });
+      }
+
+      function drawRouteDetailOnMap(option, placeName, isDepart, highlightTarget) {
+        activeOptionDrawToken += 1;
         clearSearchOverlays();
         clearShuttleOverlays();
         var routeStops = option.route_stops || [];
         if (routeStops.length === 0) return;
+        var highlightSeq = normalizeStopSequence(highlightTarget && highlightTarget.sequence);
+        var highlightName = normalizeStopName(highlightTarget && highlightTarget.name);
         var totalStops = routeStops.length;
-        var path = routeStops.map(function(s) { return new kakao.maps.LatLng(s.lat, s.lng); });
+        var pathPoints = buildRouteDetailPathPoints(routeStops);
+        var path = [];
         routeStops.forEach(function(s, i) {
           var pos = new kakao.maps.LatLng(s.lat, s.lng);
           var pinEl = document.createElement('div');
-          pinEl.className = 'shuttle-point-pin';
+          pinEl.className = 'shuttle-point-pin icon-stop';
           var pinZIndex = totalStops - i;
           var pinOverlay = new kakao.maps.CustomOverlay({
             position: pos,
@@ -4742,11 +6853,16 @@
           pinOverlay.setZIndex(pinZIndex);
           pinOverlay.setMap(map);
           shuttlePointOverlays.push(pinOverlay);
+          var currentSeq = normalizeStopSequence(s.sequence);
+          var currentName = normalizeStopName(s.stop_name);
+          var isHighlightedStop = false;
+          if (highlightSeq) isHighlightedStop = (currentSeq === highlightSeq);
+          if (!isHighlightedStop && highlightName) isHighlightedStop = (currentName === highlightName);
           var labelAnchor = document.createElement('div');
           labelAnchor.className = 'shuttle-label-anchor';
-          labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + '">' +
+          labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + (isHighlightedStop ? ' is-highlight' : '') + '">' +
             '<span class="shuttle-point-name">' + escapeHtml(s.sequence + '. ' + s.stop_name) + '</span></div>';
-          var labelZIndex = totalStops - i + totalStops;
+          var labelZIndex = totalStops - i + totalStops + (isHighlightedStop ? (totalStops + 20) : 0);
           var labelOverlay = new kakao.maps.CustomOverlay({
             position: pos,
             content: labelAnchor,
@@ -4758,18 +6874,11 @@
           shuttlePointOverlays.push(labelOverlay);
           shuttlePointContents.push(labelAnchor);
         });
-        shuttlePositions = routeStops.map(function(s) { return { lat: s.lat, lng: s.lng }; });
-        var lineOpts = {
-          path: path,
-          strokeWeight: 5,
-          strokeColor: '#000',
-          strokeOpacity: 0.9
-        };
-        if (typeof kakao.maps.StrokeStyles !== 'undefined') {
-          lineOpts.strokeStyle = kakao.maps.StrokeStyles.SHORTDASH;
-        }
-        shuttleLine = new kakao.maps.Polyline(lineOpts);
-        shuttleLine.setMap(map);
+        path = renderStyledRoutePath(pathPoints, 'bus');
+        shuttleBusPathPoints = pathPoints.slice();
+        shuttleWalkPathPoints = [];
+        shuttlePositions = pathPoints.slice();
+        drawRouteDirectionArrows(shuttleBusPathPoints, { kind: 'bus' });
         var bounds = new kakao.maps.LatLngBounds();
         path.forEach(function(p) { bounds.extend(p); });
         var sw = bounds.getSouthWest();
@@ -4785,6 +6894,7 @@
         bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
         map.setBounds(bounds);
         shuttleMessage.classList.remove('show');
+        scheduleRouteVisualFit();
       }
 
       function adjustShuttleLabels() {
@@ -4804,6 +6914,195 @@
         });
       }
 
+      function normalizeStopSequence(value) {
+        var num = Number(value);
+        if (isFinite(num)) return String(num);
+        var text = String(value == null ? '' : value).trim();
+        return text;
+      }
+
+      function normalizeStopName(value) {
+        return String(value == null ? '' : value).trim();
+      }
+
+      function getOptionLabelHighlightTarget(option, isDepart, pointIndex) {
+        if (isDepart) {
+          if (pointIndex === 1) {
+            return {
+              sequence: option.nearest_stop_sequence,
+              name: option.nearest_stop_name
+            };
+          }
+          if (pointIndex === 2) {
+            return {
+              sequence: option.terminus_sequence,
+              name: option.terminus_name
+            };
+          }
+          return null;
+        }
+        if (pointIndex === 0) {
+          return {
+            sequence: option.start_stop_sequence,
+            name: option.start_stop_name
+          };
+        }
+        if (pointIndex === 1) {
+          return {
+            sequence: option.getoff_stop_sequence,
+            name: option.getoff_stop_name
+          };
+        }
+        return null;
+      }
+
+      function attachRouteOptionLabelClickHandler(labelAnchor, selectedCard, option, placeName, isDepart, highlightTarget) {
+        if (!labelAnchor || !selectedCard || !highlightTarget) return;
+        labelAnchor.setAttribute('role', 'button');
+        labelAnchor.setAttribute('tabindex', '0');
+        labelAnchor.setAttribute('title', '노선 상세 보기');
+        var dragThresholdPx = 8;
+        var pointerState = {
+          active: false,
+          pointerId: null,
+          startX: 0,
+          startY: 0,
+          moved: false,
+          movedAt: 0
+        };
+
+        function beginPointerTracking(e) {
+          if (!e) return;
+          pointerState.active = true;
+          pointerState.pointerId = e.pointerId;
+          pointerState.startX = Number(e.clientX) || 0;
+          pointerState.startY = Number(e.clientY) || 0;
+          pointerState.moved = false;
+          pointerState.movedAt = 0;
+        }
+
+        function updatePointerTracking(e) {
+          if (!pointerState.active || !e) return;
+          if (pointerState.pointerId != null && e.pointerId != null && e.pointerId !== pointerState.pointerId) return;
+          if (pointerState.moved) return;
+          var dx = (Number(e.clientX) || 0) - pointerState.startX;
+          var dy = (Number(e.clientY) || 0) - pointerState.startY;
+          if (Math.sqrt(dx * dx + dy * dy) >= dragThresholdPx) {
+            pointerState.moved = true;
+            pointerState.movedAt = Date.now();
+          }
+        }
+
+        function endPointerTracking(e) {
+          updatePointerTracking(e);
+          pointerState.active = false;
+          pointerState.pointerId = null;
+        }
+
+        labelAnchor.addEventListener('pointerdown', beginPointerTracking);
+        labelAnchor.addEventListener('pointermove', updatePointerTracking);
+        labelAnchor.addEventListener('pointerup', endPointerTracking);
+        labelAnchor.addEventListener('pointercancel', endPointerTracking);
+        labelAnchor.addEventListener('pointerleave', function() {
+          pointerState.active = false;
+          pointerState.pointerId = null;
+        });
+
+        function handleActivate(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          if (blurFocusedRouteModePlaceInputIfActive()) {
+            mapClickIgnore = true;
+            return;
+          }
+          var isKeyboard = !!(e && e.type === 'keydown');
+          if (!isKeyboard) {
+            var movedRecently = pointerState.movedAt > 0 && (Date.now() - pointerState.movedAt) < 500;
+            var mapDraggedRecently = mapDragStartedAt > 0 && (Date.now() - mapDragStartedAt) < 350;
+            if (pointerState.moved || movedRecently || mapDraggedRecently) {
+              pointerState.moved = false;
+              pointerState.movedAt = 0;
+              return;
+            }
+          }
+          mapClickIgnore = true;
+          openRouteDetailFromMapLabel(selectedCard, option, placeName, isDepart, highlightTarget);
+        }
+        labelAnchor.addEventListener('click', handleActivate);
+        labelAnchor.addEventListener('keydown', function(e) {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          handleActivate(e);
+        });
+      }
+
+      function getRouteCardIndex(card, fallbackIndex) {
+        if (!card) return (fallbackIndex != null ? fallbackIndex : -1);
+        var raw = card.getAttribute('data-route-index');
+        var idx = Number(raw);
+        if (isFinite(idx) && idx >= 0) return idx;
+        return (fallbackIndex != null ? fallbackIndex : -1);
+      }
+
+      function activateRouteCardOptionView(card, option, placeName, isDepart) {
+        if (!card || !option) return;
+        routeLabelTriggeredDetailState = null;
+        routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) {
+          c.classList.remove('selected', 'expanded');
+        });
+        card.classList.add('selected');
+        expandedOptionIndex = -1;
+        drawOptionOnMap(option, placeName, isDepart, card);
+      }
+
+      function activateRouteCardDetailView(card, option, placeName, isDepart, idx, highlightTarget, isFromMapLabel) {
+        if (!card || !option) return;
+        routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) {
+          c.classList.remove('expanded');
+          if (c !== card) c.classList.remove('selected');
+        });
+        card.classList.add('expanded', 'selected');
+        expandedOptionIndex = getRouteCardIndex(card, idx);
+        drawRouteDetailOnMap(option, placeName, isDepart, highlightTarget || null);
+        if (isFromMapLabel) {
+          routeLabelTriggeredDetailState = {
+            card: card,
+            option: option,
+            placeName: placeName,
+            isDepart: isDepart
+          };
+        } else {
+          routeLabelTriggeredDetailState = null;
+        }
+      }
+
+      function openRouteDetailFromMapLabel(selectedCard, option, placeName, isDepart, highlightTarget) {
+        if (!selectedCard || !option) return;
+        activateRouteCardDetailView(
+          selectedCard,
+          option,
+          placeName,
+          isDepart,
+          getRouteCardIndex(selectedCard, -1),
+          highlightTarget,
+          true
+        );
+      }
+
+      function restoreRouteOptionMapFromLabelTriggeredDetail() {
+        if (!routeLabelTriggeredDetailState) return false;
+        var state = routeLabelTriggeredDetailState;
+        routeLabelTriggeredDetailState = null;
+        var card = state.card;
+        if (!card || !card.isConnected) {
+          card = routeOptionsWrap.querySelector('.route-option-card.selected') ||
+            routeOptionsWrap.querySelector('.route-option-card');
+        }
+        if (card && state.option) {
+          activateRouteCardOptionView(card, state.option, state.placeName, state.isDepart);
+        }
+        return true;
+      }
+
       var currentRouteOptions = null;
       var currentPlaceName = null;
       var currentIsDepart = null;
@@ -4818,7 +7117,7 @@
       function updateMaxDistanceUi() {
         var appliedDisplay = formatMaxDistanceKm(maxDistanceKm);
         var pendingDisplay = formatMaxDistanceKm(maxDistancePendingKm);
-        if (maxDistanceTrigger) maxDistanceTrigger.textContent = '최대 ' + appliedDisplay + ' km 이내';
+        if (maxDistanceTrigger) maxDistanceTrigger.textContent = '최대 반경 ' + appliedDisplay + ' km 이내';
         if (maxDistanceValue) maxDistanceValue.textContent = pendingDisplay;
       }
 
@@ -4912,16 +7211,19 @@
       function renderRouteCards(options, placeName, isDepart) {
         routeOptionsWrap.innerHTML = '';
         expandedOptionIndex = -1;
+        routeLabelTriggeredDetailState = null;
         // "더 가져오기" 버튼 제거 (재렌더 시)
         var existingBtn = routeOptionsWrap.querySelector('.btn-load-more-routes');
         if (existingBtn) existingBtn.remove();
         options.forEach(function(opt, idx) {
           var card = document.createElement('div');
           card.className = 'route-option-card' + (idx === 0 ? ' selected' : '');
+          card.setAttribute('data-route-index', String(idx));
           var timeStr = (opt.board_time != null && opt.board_time !== '') ? opt.board_time : getDepartureTimeStr();
-          var pathDetail = isDepart
+          var pathDetailDefault = isDepart
             ? escapeHtml(placeName) + ' → ' + escapeHtml(opt.nearest_stop_name) + ' → ' + escapeHtml(opt.terminus_name)
             : escapeHtml(opt.start_stop_name) + ' → ' + escapeHtml(opt.getoff_stop_name) + ' 하차 → ' + escapeHtml(placeName);
+          var selectedDetailHtml = buildSelectedRouteDetailHtml(opt, placeName, isDepart, null);
           var distStr = formatDistance(opt.distance_m);
           var metaLine = distStr + ' · ' + timeStr + '분 노선';
           var allTimes = opt.all_departure_times || [];
@@ -4954,7 +7256,10 @@
               '</div>' +
               '<button type="button" class="btn-route-detail" data-idx="' + idx + '">노선 상세</button>' +
             '</div>' +
-            '<div class="route-detail">' + pathDetail + '</div>' +
+            '<div class="route-detail">' +
+              '<div class="route-detail-default">' + pathDetailDefault + '</div>' +
+              '<div class="route-detail-selected">' + selectedDetailHtml + '</div>' +
+            '</div>' +
             '<div class="route-detail-panel">' +
               '<div class="detail-title">출발 시간</div>' +
               '<div class="departure-times">' + (timesHtml || '-') + '</div>' +
@@ -4968,45 +7273,30 @@
           var btnDetail = card.querySelector('.btn-route-detail');
           card.addEventListener('click', function(e) {
             if (e.target.closest('.btn-route-detail')) return;
-            routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) { c.classList.remove('selected'); });
-            card.classList.add('selected');
-            if (expandedOptionIndex >= 0) {
-              expandedOptionIndex = -1;
-              routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) { c.classList.remove('expanded'); });
-            }
-            drawOptionOnMap(opt, placeName, isDepart);
+            activateRouteCardOptionView(card, opt, placeName, isDepart);
           });
           btnDetail.addEventListener('click', function(e) {
             e.stopPropagation();
             if (expandedOptionIndex === idx) {
-              expandedOptionIndex = -1;
-              card.classList.remove('expanded');
-              routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) { c.classList.remove('selected'); });
-              card.classList.add('selected');
-              drawOptionOnMap(opt, placeName, isDepart);
+              activateRouteCardOptionView(card, opt, placeName, isDepart);
               return;
             }
-            routeOptionsWrap.querySelectorAll('.route-option-card').forEach(function(c) {
-              c.classList.remove('expanded');
-              if (c !== card) c.classList.remove('selected');
-            });
-            card.classList.add('expanded', 'selected');
-            expandedOptionIndex = idx;
-            drawRouteDetailOnMap(opt, placeName, isDepart);
+            activateRouteCardDetailView(card, opt, placeName, isDepart, idx, null, false);
           });
           routeOptionsWrap.appendChild(card);
         });
-        // 마지막 배치가 5개(max_routes)이면 "더 가져오기" 버튼 표시
+        // 마지막 배치가 3개(max_routes)이면 "더 가져오기" 버튼 표시
         var lastBatchSize = options._lastBatchSize != null ? options._lastBatchSize : options.length;
-        if (lastBatchSize >= 5) {
+        if (lastBatchSize >= 3) {
           var loadMoreBtn = document.createElement('button');
           loadMoreBtn.type = 'button';
           loadMoreBtn.className = 'btn-load-more-routes';
-          loadMoreBtn.textContent = '노선 더 가져오기 (최대 5개)';
+          loadMoreBtn.textContent = '노선 더 가져오기 (최대 3개)';
           loadMoreBtn.addEventListener('click', function() { loadMoreRoutes(loadMoreBtn); });
           routeOptionsWrap.appendChild(loadMoreBtn);
         }
-        drawOptionOnMap(options[0], placeName, isDepart);
+        var firstCard = routeOptionsWrap.querySelector('.route-option-card.selected');
+        drawOptionOnMap(options[0], placeName, isDepart, firstCard);
       }
 
       function loadMoreRoutes(btn) {
@@ -5028,6 +7318,9 @@
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
+            if (typeof data.walk_otp_enabled === 'boolean') {
+              walkOtpEnabled = data.walk_otp_enabled;
+            }
             var newOptions = (data.options || []);
             if (newOptions.length === 0) {
               btn.textContent = '추가 노선 없음';
@@ -5043,12 +7336,13 @@
             renderRouteCards(sorted, currentPlaceName, currentIsDepart);
           })
           .catch(function() {
-            btn.textContent = '노선 더 가져오기 (최대 5개)';
+            btn.textContent = '노선 더 가져오기 (최대 3개)';
             btn.disabled = false;
           });
       }
 
       function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage) {
+        activeOptionDrawToken += 1;
         var shouldPreserveSheetState = !!preserveSheetState;
         setRouteMode(true, isDepart ? 'depart' : 'arrive', placeName);
         panelTitle.textContent = '노선 선택';
@@ -5074,8 +7368,11 @@
           var noRouteMsg = emptyMessage || '';
           if (!noRouteMsg) {
             var dirLabel = isDepart ? '출근' : '퇴근';
-            noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다.';
+            var maxDistanceLabel = formatMaxDistanceKm(maxDistanceKm);
+            noRouteMsg = '반경 ' + maxDistanceLabel + ' km 안에 탑승 가능한 정류장이 없습니다.';
+            noRouteMsg += '\n최대 반경을 늘려서 다시 시도해보세요.';
             if (lastDepartureTime) {
+              noRouteMsg = '설정한 시간에 탑승 가능한 노선이 없습니다.';
               noRouteMsg += '\n이 장소 근방 ' + dirLabel + ' 셔틀의 마지막 출발 시간은 ' + lastDepartureTime + ' 입니다.';
             }
           }
@@ -5097,6 +7394,7 @@
 
       function showPlaceResultsView() {
         routeRequestSerial += 1;
+        activeOptionDrawToken += 1;
         setRouteMode(false);
         panelTitle.textContent = '검색 결과';
         var btnBack = document.getElementById('btnBackFromRoutes');
@@ -5112,6 +7410,7 @@
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
         lastPlace = null;
         lastShuttleType = null;
+        clearCurrentLocationOverlay();
         clearShuttleOverlays();
         shuttleMessage.classList.remove('show');
         deselectPlace();
@@ -5156,6 +7455,10 @@
 
       function runRouteSearchWithPlace(place, direction, opts) {
         opts = opts || {};
+        closeBubble();
+        setMapDimmed(false);
+        deselectPlace();
+        if (!isMobile()) resetResultsListWrapScroll();
         lastPlace = place;
         lastShuttleType = direction;
         var lat = parseFloat(place.y);
@@ -5194,6 +7497,9 @@
                   showShuttleError(data.error);
                   return;
                 }
+                if (typeof data.walk_otp_enabled === 'boolean') {
+                  walkOtpEnabled = data.walk_otp_enabled;
+                }
                 var options = data.options || [];
                 renderRouteOptions(options, name, isDepart, data.last_departure_time || '', opts.preserveSheetState);
               });
@@ -5212,8 +7518,13 @@
       }
 
       function doSearch() {
-        var q = searchInput.value.trim();
+        var routeInput = getActiveRouteModePlaceInput();
+        var q = routeInput ? String(routeInput.value || '').trim() : searchInput.value.trim();
         if (!q) return;
+        if (routeInput) {
+          clearCurrentLocationOverlay();
+        }
+        if (searchInput) searchInput.value = q;
         shuttleMessage.classList.remove('show');
         clearShuttleOverlays();
         fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q))
@@ -5241,6 +7552,35 @@
           });
       }
 
+      function onRouteModePlaceInputKeydown(e) {
+        if (!e || e.key !== 'Enter') return;
+        e.preventDefault();
+        var target = e.currentTarget;
+        var submitSearch = function() {
+          if (!target) return;
+          var keyword = String(target.value || '').trim();
+          if (!keyword) {
+            routePlaceInputSubmitting = false;
+            target.blur();
+            return;
+          }
+          routePlaceInputSubmitting = true;
+          target.blur();
+          doSearch();
+          setTimeout(function() {
+            routePlaceInputSubmitting = false;
+          }, 0);
+        };
+        if (e.isComposing && target) {
+          target.addEventListener('compositionend', function onCompEnd() {
+            target.removeEventListener('compositionend', onCompEnd);
+            submitSearch();
+          }, { once: true });
+          return;
+        }
+        submitSearch();
+      }
+
       var locationPermissionOnConfirm = null;
       function openLocationPermissionModal(message, onConfirm) {
         if (!locationPermissionMessage || !locationPermissionBackdrop || !locationPermissionModal) return;
@@ -5260,21 +7600,10 @@
           function(pos) {
             var lat = pos.coords.latitude;
             var lng = pos.coords.longitude;
-            if (currentLocationOverlay) {
-              currentLocationOverlay.setMap(null);
-              currentLocationOverlay = null;
-            }
-            var el = document.createElement('div');
-            el.className = 'current-location-marker';
-            currentLocationOverlay = new kakao.maps.CustomOverlay({
-              position: new kakao.maps.LatLng(lat, lng),
-              content: el,
-              yAnchor: 0.5,
-              xAnchor: 0.5
-            });
-            currentLocationOverlay.setMap(map);
+            clearCurrentLocationOverlay();
             map.setCenter(new kakao.maps.LatLng(lat, lng));
             map.setLevel(3);
+            showCurrentLocationOverlay(lat, lng);
           },
           function(err) {
             var msg;
@@ -5334,7 +7663,7 @@
         map.setLevel(Math.min(14, level + 1), { animate: true });
       }
 
-      searchBtn.addEventListener('click', doSearch);
+      if (searchBtn) searchBtn.addEventListener('click', doSearch);
       searchInput.addEventListener('keydown', function(e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -5360,6 +7689,16 @@
       }
       if (locationPermissionBackdrop) {
         locationPermissionBackdrop.addEventListener('click', closeLocationPermissionModal);
+      }
+      if (routeTopPlaceLabel) {
+        routeTopPlaceLabel.addEventListener('focus', onRouteModePlaceInputFocus);
+        routeTopPlaceLabel.addEventListener('blur', onRouteModePlaceInputBlur);
+        routeTopPlaceLabel.addEventListener('keydown', onRouteModePlaceInputKeydown);
+      }
+      if (routeBottomPlaceLabel) {
+        routeBottomPlaceLabel.addEventListener('focus', onRouteModePlaceInputFocus);
+        routeBottomPlaceLabel.addEventListener('blur', onRouteModePlaceInputBlur);
+        routeBottomPlaceLabel.addEventListener('keydown', onRouteModePlaceInputKeydown);
       }
       var btnBackFromRoutes = document.getElementById('btnBackFromRoutes');
       if (btnBackFromRoutes) btnBackFromRoutes.addEventListener('click', goBackFromRouteOptions);
@@ -5463,6 +7802,17 @@
         function setStateIndex(i) {
           resultsPanel.classList.remove('sheet-dragging');
           resultsPanel.style.height = '';
+          if (i === 0 && isMobile() && selectedPlaceIndex >= 0) {
+            // 장소가 선택된 상태에서 시트를 내리면 선택 상태를 유지하고
+            // 핀 중심 + 말풍선 상태로 복귀한다.
+            activatePlaceSelection(selectedPlaceIndex, {
+              source: 'sheet-collapse',
+              showBubble: true,
+              preserveSheetState: false,
+              recenterAfterSheetTransition: true
+            });
+            return;
+          }
           setSheetState(states[i]);
           if (i === 0) {
             deselectPlace();
@@ -5598,7 +7948,14 @@
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
       }
-      window.addEventListener('resize', updateMapControlsPosition);
+      window.addEventListener('resize', function() {
+        updateMapControlsPosition();
+        if (!isMobile()) {
+          clearCurrentLocationOverlay();
+        } else {
+          refreshCurrentLocationOverlayPosition();
+        }
+      });
     };
   </script>
 </body>
