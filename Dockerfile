@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 애플리케이션 코드 복사
-COPY app.py load_data.py ./
+COPY app.py load_data.py user_store.py ./
 
 # data/ 디렉토리는 볼륨으로 마운트 (이미지에 포함하지 않음)
 
