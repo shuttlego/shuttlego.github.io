@@ -658,6 +658,11 @@
           "expr": "max(shuttle_auth_cumulative_users)",
           "legendFormat": "누적 신규 가입자 수",
           "refId": "A"
+        },
+        {
+          "expr": "max(shuttle_auth_cumulative_deleted_users)",
+          "legendFormat": "누적 탈퇴자 수",
+          "refId": "B"
         }
       ],
       "fieldConfig": {

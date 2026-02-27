@@ -23,7 +23,7 @@
   </script>
   <style>
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
+    html, body { height: 100%; margin: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; scrollbar-gutter: stable; }
     body {
       display: flex;
       flex-direction: column;
@@ -927,9 +927,116 @@
       background: #fff1f2;
       border-color: #fecdd3;
     }
+    .account-menu-legal-item {
+      font-size: 12px;
+      color: #475569;
+      min-height: 34px;
+      padding: 7px 10px;
+    }
+    .account-menu-legal-item:hover {
+      color: #334155;
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
     .account-menu-divider {
       border-top: 1px solid #f1f5f9;
       margin: 8px 0;
+    }
+    .policy-modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 218;
+      background: rgba(15, 23, 42, 0.35);
+    }
+    .policy-modal-backdrop.show { display: block; }
+    .policy-modal {
+      display: none;
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(760px, calc(100vw - 24px));
+      max-height: min(84vh, 760px);
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      box-shadow: 0 18px 30px rgba(15, 23, 42, 0.2);
+      z-index: 219;
+      overflow: hidden;
+    }
+    .policy-modal.show {
+      display: flex;
+      flex-direction: column;
+    }
+    .policy-modal-header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid #eef2f7;
+    }
+    .policy-modal-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .policy-modal-close-btn {
+      width: 30px;
+      height: 30px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+      color: #475569;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 0;
+    }
+    .policy-modal-close-btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .policy-modal-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 14px 16px 16px;
+      white-space: normal;
+      word-break: keep-all;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #1f2937;
+    }
+    .policy-modal-body h1,
+    .policy-modal-body h2,
+    .policy-modal-body h3 {
+      margin: 0 0 10px;
+      line-height: 1.35;
+      color: #0f172a;
+    }
+    .policy-modal-body h1 { font-size: 18px; font-weight: 800; }
+    .policy-modal-body h2 { font-size: 16px; font-weight: 750; }
+    .policy-modal-body h3 { font-size: 14px; font-weight: 700; }
+    .policy-modal-body p {
+      margin: 0 0 10px;
+    }
+    .policy-modal-body ul,
+    .policy-modal-body ol {
+      margin: 0 0 10px 18px;
+      padding: 0;
+    }
+    .policy-modal-body li {
+      margin: 0 0 6px;
+    }
+    .policy-modal-body hr {
+      border: 0;
+      border-top: 1px solid #e2e8f0;
+      margin: 12px 0;
     }
     .profile-modal-backdrop {
       display: none;
@@ -1644,12 +1751,41 @@
       margin-left: 6px;
     }
     .issue-card-title {
-      margin: 0 0 6px;
+      margin: 0;
       font-size: 15px;
       font-weight: 700;
       color: #222;
       line-height: 1.35;
       word-break: break-word;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .issue-card-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .issue-card-author {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      max-width: 44%;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #1e3a8a;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .issue-card-author.owner {
+      background: #dbeafe;
+      color: #1d4ed8;
     }
     .issue-card-body {
       font-size: 13px;
@@ -1721,12 +1857,41 @@
       font-family: inherit;
     }
     .issue-detail-title {
-      margin: 0 0 8px;
+      margin: 0;
       font-size: 17px;
       font-weight: 700;
       color: #222;
       line-height: 1.4;
       word-break: break-word;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .issue-detail-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .issue-detail-author {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      max-width: 48%;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #1e3a8a;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .issue-detail-author.owner {
+      background: #dbeafe;
+      color: #1d4ed8;
     }
     .issue-detail-body {
       padding: 12px;
@@ -1945,6 +2110,9 @@
       width: 100%;
       height: 100%;
       min-height: 280px;
+      position: relative;
+      z-index: 0;
+      overflow: hidden;
     }
 
     /* 셔틀 안내 메시지 (지도 상단, 노선·탑승장소 강조) */
@@ -2452,13 +2620,8 @@
     .current-location-marker {
       width: 45px;
       height: 45px;
-      margin-left: 0;
-      margin-top: 0;
-      position: absolute;
-      left: 0;
-      top: 0;
-      transform: translate(-50%, -50%);
-      z-index: 3000;
+      position: relative;
+      z-index: 6;
       pointer-events: none;
       overflow: visible;
     }
@@ -3157,6 +3320,9 @@
     <button type="button" class="account-menu-item" id="accountMenuProfileBtn">내 프로필</button>
     <div class="account-menu-divider" id="accountMenuDividerAfterProfile"></div>
     <button type="button" class="account-menu-item" id="accountMenuIssueBtn">이슈 건의하기</button>
+    <div class="account-menu-divider" id="accountMenuDividerBeforeLegal"></div>
+    <button type="button" class="account-menu-item account-menu-legal-item" id="accountMenuTermsBtn">이용약관</button>
+    <button type="button" class="account-menu-item account-menu-legal-item" id="accountMenuPrivacyBtn">개인정보처리방침</button>
   </div>
 
   <div class="profile-modal-backdrop" id="profileModalBackdrop" aria-hidden="true"></div>
@@ -3172,6 +3338,15 @@
       <button type="button" class="profile-modal-btn primary" id="profileModalSaveBtn">저장</button>
     </div>
     <a href="#" class="profile-modal-delete-link" id="profileModalDeleteBtn">탈퇴하기</a>
+  </div>
+
+  <div class="policy-modal-backdrop" id="policyModalBackdrop" aria-hidden="true"></div>
+  <div class="policy-modal" id="policyModal" role="dialog" aria-label="정책 문서">
+    <div class="policy-modal-header">
+      <h2 class="policy-modal-title" id="policyModalTitle">정책</h2>
+      <button type="button" class="policy-modal-close-btn" id="policyModalCloseBtn" aria-label="닫기">×</button>
+    </div>
+    <div class="policy-modal-body" id="policyModalContent"></div>
   </div>
 
   <div class="place-history-popover" id="placeHistoryPopover" role="dialog" aria-label="검색 히스토리"></div>
@@ -3356,6 +3531,7 @@
             var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
             if (response && response.status === 401 && url && url.indexOf(API_BASE + '/api/') === 0) {
               authState = { logged_in: false, user: null, preferences: {} };
+              if (typeof resetPlaceHistoryState === 'function') resetPlaceHistoryState();
               if (typeof updateAccountMenuUi === 'function') updateAccountMenuUi();
             }
           } catch (e) {}
@@ -3434,12 +3610,19 @@
       var accountMenuProfileBtn = document.getElementById('accountMenuProfileBtn');
       var accountMenuLogoutBtn = document.getElementById('accountMenuLogoutBtn');
       var accountMenuIssueBtn = document.getElementById('accountMenuIssueBtn');
+      var accountMenuTermsBtn = document.getElementById('accountMenuTermsBtn');
+      var accountMenuPrivacyBtn = document.getElementById('accountMenuPrivacyBtn');
       var profileModalBackdrop = document.getElementById('profileModalBackdrop');
       var profileModal = document.getElementById('profileModal');
       var profileNicknameInput = document.getElementById('profileNicknameInput');
       var profileModalSaveBtn = document.getElementById('profileModalSaveBtn');
       var profileModalCancelBtn = document.getElementById('profileModalCancelBtn');
       var profileModalDeleteBtn = document.getElementById('profileModalDeleteBtn');
+      var policyModalBackdrop = document.getElementById('policyModalBackdrop');
+      var policyModal = document.getElementById('policyModal');
+      var policyModalTitle = document.getElementById('policyModalTitle');
+      var policyModalContent = document.getElementById('policyModalContent');
+      var policyModalCloseBtn = document.getElementById('policyModalCloseBtn');
       var placeHistoryPopover = document.getElementById('placeHistoryPopover');
 
       var map = null;
@@ -3522,12 +3705,15 @@
       var SHUTTLE_ROUTE_OUTER_WEIGHT = 12;
       var SHUTTLE_ROUTE_INNER_WEIGHT = 8;
       var SHUTTLE_ROUTE_ARROW_SPACING_PX = 40;
-      var SHUTTLE_ROUTE_ARROW_MAX_COUNT = 240;
+      var SHUTTLE_ROUTE_ARROW_MAX_COUNT = 90;
       var walkOtpEnabled = true;
       var walkPathCache = new Map();
       var walkPathPending = new Map();
       var walkOtpTimeoutBackoffStep = 0;
       var walkOtpTimeoutSkipUntilMs = 0;
+      var ROUTE_ARROW_REFRESH_DEBOUNCE_MS = 120;
+      var routeArrowRefreshTimer = null;
+      var currentLocationOverlayRefreshRaf = 0;
       var activeOptionDrawToken = 0;
       var routeLabelTriggeredDetailState = null;
       var authState = { logged_in: false, user: null, preferences: {} };
@@ -3536,6 +3722,172 @@
       var historyNextCursor = null;
       var historyHasMore = false;
       var historyLoading = false;
+      var historyLastLoadedAtMs = 0;
+      var PLACE_HISTORY_REFRESH_INTERVAL_MS = 30000;
+      var POLICY_TERMS_TEXT = (
+`## Shuttle Go 이용약관
+
+### 제1조 (목적)
+본 약관은 Shuttle Go(이하 “서비스”)가 제공하는 셔틀버스 노선 검색 서비스의 이용과 관련하여 서비스 제공자와 이용자 간의 권리, 의무 및 책임사항을 규정함을 목적으로 합니다.
+
+### 제2조 (서비스 내용)
+서비스는 셔틀버스 노선, 정류장 및 이동 정보를 검색·조회할 수 있는 기능을 제공합니다.
+
+### 제3조 (회원가입 및 계정)
+1. 이용자는 소셜 로그인 방식을 통해 회원가입을 할 수 있습니다.
+2. 이용자는 정확한 정보로 서비스를 이용해야 하며 계정 관리 책임은 이용자에게 있습니다.
+
+### 제4조 (서비스 제공 및 변경)
+서비스는 운영상 또는 기술상 필요에 따라 서비스의 전부 또는 일부를 변경하거나 중단할 수 있습니다.
+
+### 제5조 (이용자의 의무)
+이용자는 관계 법령, 본 약관 및 서비스 운영 정책을 준수해야 하며 다음 행위를 해서는 안 됩니다.
+- 서비스 운영을 방해하는 행위
+- 비정상적인 방법으로 서비스에 접근하거나 이용하는 행위
+
+### 제6조 (면책사항)
+1. 서비스에서 제공하는 노선, 정류장 및 시간 정보는 참고용 정보이며 실제 운행 상황과 차이가 발생할 수 있습니다.
+2. 서비스 제공자는 정보의 정확성, 지연, 변경 또는 이용 결과로 발생하는 손해에 대해 책임을 지지 않습니다.
+
+### 제7조 (서비스 중단)
+시스템 점검, 통신 장애, 서비스 설비의 보수 또는 불가항력적 사유로 서비스 제공이 일시적으로 중단될 수 있습니다.
+
+### 제8조 (계정 관리)
+이용자는 자신의 계정 정보를 안전하게 관리할 책임이 있으며, 계정 사용으로 발생한 문제에 대한 책임은 이용자에게 있습니다.
+
+### 제9조 (약관의 변경)
+서비스는 관련 법령을 위반하지 않는 범위 내에서 약관을 변경할 수 있으며 변경 시 서비스 내 공지합니다.
+
+### 제10조 (준거법 및 관할)
+본 약관은 대한민국 법률을 따르며 서비스 이용과 관련하여 발생한 분쟁은 관련 법령에 따른 관할 법원을 따릅니다.`
+      ).trim();
+      var POLICY_PRIVACY_TEXT = (
+`# 개인정보처리방침
+
+Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 생각하며 「개인정보 보호법」 등 관련 법령을 준수합니다.
+본 개인정보처리방침은 서비스가 이용자의 개인정보를 어떻게 수집, 이용, 보관 및 보호하는지에 대해 설명합니다.
+
+---
+
+## 1. 수집하는 개인정보 항목
+
+서비스는 다음의 개인정보를 수집할 수 있습니다.
+
+### (1) 회원가입 및 로그인 시
+- 이메일 주소 (선택)
+- 소셜 로그인 제공자가 발급한 이용자 식별값(Provider User ID)
+
+### (2) 서비스 이용 과정에서 자동 수집되는 정보
+- 서비스 이용 기록
+- 검색 기록
+- 접속 로그, 접속 IP 정보
+- 쿠키 및 세션 정보
+
+---
+
+## 2. 개인정보의 수집 및 이용 목적
+
+수집한 개인정보는 다음 목적을 위해 이용됩니다.
+
+- 이용자 계정 식별 및 로그인 관리
+- 서비스 제공 및 운영
+- 서비스 개선 및 안정성 확보
+- 공지사항 전달 및 고객 문의 대응
+
+서비스는 수집 목적 범위를 초과하여 개인정보를 이용하지 않습니다.
+
+---
+
+## 3. 개인정보의 보유 및 이용 기간
+
+- 개인정보는 회원 탈퇴 시까지 보관합니다.
+- 단, 관계 법령에 따라 보존이 필요한 경우 해당 기간 동안 보관할 수 있습니다.
+
+예:
+- 접속 기록: 통신비밀보호법에 따라 최대 3개월
+
+---
+
+## 4. 개인정보의 제3자 제공
+
+서비스는 이용자의 개인정보를 외부에 제공하지 않습니다.
+다만 다음의 경우 예외로 합니다.
+
+- 이용자가 사전에 동의한 경우
+- 법령에 의해 요구되는 경우
+
+---
+
+## 5. 개인정보 처리 위탁
+
+현재 서비스는 개인정보 처리 업무를 외부 업체에 위탁하지 않습니다.
+향후 위탁이 발생할 경우 본 방침을 통해 공개하겠습니다.
+
+---
+
+## 6. 개인정보의 파기
+
+서비스는 개인정보 보유 기간이 경과하거나 처리 목적이 달성된 경우 지체 없이 해당 정보를 파기합니다.
+
+- 전자적 파일: 복구 불가능한 방법으로 삭제
+- 출력물: 분쇄 또는 소각
+
+---
+
+## 7. 이용자의 권리와 행사 방법
+
+이용자는 언제든지 다음 권리를 행사할 수 있습니다.
+
+- 개인정보 열람 요청
+- 개인정보 수정 요청
+- 개인정보 삭제 요청
+- 처리 정지 요청
+
+요청은 아래 문의처를 통해 가능합니다.
+
+---
+
+## 8. 쿠키(Cookie)의 사용
+
+서비스는 로그인 유지 및 서비스 제공을 위해 쿠키를 사용할 수 있습니다.
+
+이용자는 브라우저 설정을 통해 쿠키 저장을 거부할 수 있으며, 이 경우 일부 기능 이용이 제한될 수 있습니다.
+
+---
+
+## 9. 개인정보 보호를 위한 조치
+
+서비스는 개인정보 보호를 위해 다음과 같은 조치를 취하고 있습니다.
+
+- 접근 권한 최소화
+- 개인정보 접근 제한
+- 보안 프로토콜(HTTPS) 적용
+
+---
+
+## 10. 개인정보 보호책임자 및 문의처
+
+서비스 이용 중 개인정보 관련 문의는 아래로 연락할 수 있습니다.
+
+- 서비스명: Shuttle Go
+- 이메일: support@shuttle-go.com
+
+---
+
+## 11. 개인정보처리방침의 변경
+
+본 개인정보처리방침은 관련 법령 또는 서비스 정책 변경에 따라 수정될 수 있으며, 변경 시 서비스 내 공지를 통해 안내합니다.
+
+---
+
+## 부칙
+본 개인정보처리방침은 2027년 2월 27일부터 적용됩니다.`
+      ).trim();
+      var timePickerHourItems = [];
+      var timePickerMinuteItems = [];
+      var selectedTimePickerHourIndex = -1;
+      var selectedTimePickerMinuteIndex = -1;
+      var timePickerSelectedClassRaf = 0;
       if (maxDistanceSlider) {
         var initMaxDistance = parseFloat(maxDistanceSlider.value);
         if (isFinite(initMaxDistance)) {
@@ -3547,6 +3899,18 @@
       function isMobile() {
         return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
       }
+
+      function resetPlaceHistoryState() {
+        historyItems = [];
+        historyNextCursor = null;
+        historyHasMore = false;
+        historyLoading = false;
+        historyLastLoadedAtMs = 0;
+        if (placeHistoryPopover && placeHistoryPopover.classList.contains('show')) {
+          renderPlaceHistory();
+        }
+      }
+
       function updateMapControlsPosition() {
         if (!mapControls) return;
         // 위치는 CSS에서 고정 관리한다(모달 상태와 무관).
@@ -3613,11 +3977,13 @@
             if (!result.ok) throw new Error(result.data.error || '로그인 상태 조회 실패');
             authState = result.data || { logged_in: false, user: null, preferences: {} };
             if (!authState.preferences) authState.preferences = {};
+            if (!authState.logged_in) resetPlaceHistoryState();
             updateAccountMenuUi();
             return authState;
           })
           .catch(function() {
             authState = { logged_in: false, user: null, preferences: {} };
+            resetPlaceHistoryState();
             updateAccountMenuUi();
             return authState;
           });
@@ -3739,11 +4105,11 @@
         });
       }
 
-      function loadPlaceHistory(reset) {
+      function loadPlaceHistory(reset, opts) {
+        opts = opts || {};
+        var keepExistingOnReset = !!opts.keepExistingOnReset;
         if (!authState.logged_in) {
-          historyItems = [];
-          historyNextCursor = null;
-          historyHasMore = false;
+          resetPlaceHistoryState();
           renderPlaceHistory();
           return Promise.resolve();
         }
@@ -3751,7 +4117,7 @@
         if (!reset && !historyHasMore) return Promise.resolve();
         historyLoading = true;
         if (reset) {
-          historyItems = [];
+          if (!keepExistingOnReset) historyItems = [];
           historyNextCursor = null;
           historyHasMore = true;
         }
@@ -3767,13 +4133,16 @@
             historyItems = reset ? items : historyItems.concat(items);
             historyNextCursor = payload.data.next_cursor || null;
             historyHasMore = !!payload.data.has_more;
+            historyLastLoadedAtMs = Date.now();
             renderPlaceHistory();
           })
           .catch(function() {
             if (reset) {
-              historyItems = [];
-              historyHasMore = false;
-              historyNextCursor = null;
+              if (!keepExistingOnReset) {
+                historyItems = [];
+                historyHasMore = false;
+                historyNextCursor = null;
+              }
               renderPlaceHistory();
             }
           })
@@ -3787,12 +4156,129 @@
         historyOpenInput = inputEl;
         positionHistoryPopover();
         placeHistoryPopover.classList.add('show');
-        loadPlaceHistory(true);
+        renderPlaceHistory();
+        if (!authState.logged_in) return;
+        if (historyItems.length === 0) {
+          loadPlaceHistory(true);
+          return;
+        }
+        var isStale = !historyLastLoadedAtMs || (Date.now() - historyLastLoadedAtMs) >= PLACE_HISTORY_REFRESH_INTERVAL_MS;
+        if (isStale) {
+          loadPlaceHistory(true, { keepExistingOnReset: true });
+        }
       }
 
       function closeProfileModal() {
         if (profileModalBackdrop) profileModalBackdrop.classList.remove('show');
         if (profileModal) profileModal.classList.remove('show');
+      }
+
+      function closePolicyModal() {
+        if (policyModalBackdrop) policyModalBackdrop.classList.remove('show');
+        if (policyModal) policyModal.classList.remove('show');
+      }
+
+      function escapePolicyHtml(text) {
+        return String(text || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function renderPolicyInlineMarkdown(text) {
+        var escaped = escapePolicyHtml(text);
+        escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        return escaped;
+      }
+
+      function renderPolicyMarkdown(markdown) {
+        var source = String(markdown || '').replace(/\r\n?/g, '\n');
+        var lines = source.split('\n');
+        var html = [];
+        var inUl = false;
+        var inOl = false;
+
+        function closeLists() {
+          if (inUl) {
+            html.push('</ul>');
+            inUl = false;
+          }
+          if (inOl) {
+            html.push('</ol>');
+            inOl = false;
+          }
+        }
+
+        lines.forEach(function(line) {
+          var trimmed = String(line || '').trim();
+          var match = null;
+          if (!trimmed) {
+            closeLists();
+            return;
+          }
+          if (/^-{3,}$/.test(trimmed)) {
+            closeLists();
+            html.push('<hr>');
+            return;
+          }
+          match = trimmed.match(/^###\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h3>' + renderPolicyInlineMarkdown(match[1]) + '</h3>');
+            return;
+          }
+          match = trimmed.match(/^##\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h2>' + renderPolicyInlineMarkdown(match[1]) + '</h2>');
+            return;
+          }
+          match = trimmed.match(/^#\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h1>' + renderPolicyInlineMarkdown(match[1]) + '</h1>');
+            return;
+          }
+          match = trimmed.match(/^\d+\.\s+(.+)$/);
+          if (match) {
+            if (!inOl) {
+              closeLists();
+              html.push('<ol>');
+              inOl = true;
+            }
+            html.push('<li>' + renderPolicyInlineMarkdown(match[1]) + '</li>');
+            return;
+          }
+          match = trimmed.match(/^-+\s+(.+)$/);
+          if (match) {
+            if (!inUl) {
+              closeLists();
+              html.push('<ul>');
+              inUl = true;
+            }
+            html.push('<li>' + renderPolicyInlineMarkdown(match[1]) + '</li>');
+            return;
+          }
+          closeLists();
+          html.push('<p>' + renderPolicyInlineMarkdown(trimmed) + '</p>');
+        });
+
+        closeLists();
+        return html.join('');
+      }
+
+      function openPolicyModal(type) {
+        if (!policyModal || !policyModalBackdrop || !policyModalTitle || !policyModalContent) return;
+        var isPrivacy = type === 'privacy';
+        var policyText = isPrivacy ? POLICY_PRIVACY_TEXT : POLICY_TERMS_TEXT;
+        policyModalTitle.textContent = isPrivacy ? '개인정보처리방침' : '이용약관';
+        policyModalContent.innerHTML = renderPolicyMarkdown(policyText);
+        policyModalContent.scrollTop = 0;
+        policyModalBackdrop.classList.add('show');
+        policyModal.classList.add('show');
       }
 
       function openProfileModal() {
@@ -3868,6 +4354,14 @@
 
       function setSheetState(state) {
         if (!resultsPanel) return;
+        var prevState = '';
+        if (resultsPanel.classList.contains('sheet-peek')) prevState = 'sheet-peek';
+        else if (resultsPanel.classList.contains('sheet-half')) prevState = 'sheet-half';
+        else if (resultsPanel.classList.contains('sheet-full')) prevState = 'sheet-full';
+        if (prevState === state) {
+          updateMapControlsPosition();
+          return;
+        }
         resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
         if (state) resultsPanel.classList.add(state);
         updateMapControlsPosition();
@@ -4663,9 +5157,33 @@
       var PAD_HEIGHT = 60;
       var WHEEL_HEIGHT = 160;
 
+      function setTimePickerSelectedItem(items, prevIndex, nextIndex) {
+        if (prevIndex === nextIndex) return prevIndex;
+        if (prevIndex >= 0 && prevIndex < items.length) {
+          items[prevIndex].classList.remove('selected');
+        }
+        if (nextIndex >= 0 && nextIndex < items.length) {
+          items[nextIndex].classList.add('selected');
+          return nextIndex;
+        }
+        return -1;
+      }
+
+      function requestTimePickerSelectedClassesUpdate() {
+        if (timePickerSelectedClassRaf) return;
+        timePickerSelectedClassRaf = requestAnimationFrame(function() {
+          timePickerSelectedClassRaf = 0;
+          updateTimePickerSelectedClasses();
+        });
+      }
+
       function buildTimePickerWheels() {
         if (!timePickerHourList || !timePickerMinuteList) return;
         function pad(n, len) { var s = String(n); while (s.length < len) s = '0' + s; return s; }
+        timePickerHourItems = [];
+        timePickerMinuteItems = [];
+        selectedTimePickerHourIndex = -1;
+        selectedTimePickerMinuteIndex = -1;
         timePickerHourList.innerHTML = '';
         var padTop = document.createElement('div');
         padTop.className = 'time-picker-pad';
@@ -4676,6 +5194,7 @@
           el.setAttribute('data-value', h);
           el.textContent = pad(h, 2);
           timePickerHourList.appendChild(el);
+          timePickerHourItems.push(el);
         }
         var padBottom = document.createElement('div');
         padBottom.className = 'time-picker-pad';
@@ -4691,6 +5210,7 @@
           el.setAttribute('data-value', m);
           el.textContent = pad(m, 2);
           timePickerMinuteList.appendChild(el);
+          timePickerMinuteItems.push(el);
         }
         var padBottomM = document.createElement('div');
         padBottomM.className = 'time-picker-pad';
@@ -4705,16 +5225,8 @@
       function updateTimePickerSelectedClasses() {
         var h = getTimePickerScrollIndex(timePickerHourList, 23);
         var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
-        if (timePickerHourList) {
-          timePickerHourList.querySelectorAll('.time-picker-item').forEach(function(item, i) {
-            item.classList.toggle('selected', i === h);
-          });
-        }
-        if (timePickerMinuteList) {
-          timePickerMinuteList.querySelectorAll('.time-picker-item').forEach(function(item, i) {
-            item.classList.toggle('selected', i === m);
-          });
-        }
+        selectedTimePickerHourIndex = setTimePickerSelectedItem(timePickerHourItems, selectedTimePickerHourIndex, h);
+        selectedTimePickerMinuteIndex = setTimePickerSelectedItem(timePickerMinuteItems, selectedTimePickerMinuteIndex, m);
       }
       function openTimePickerModal() {
         if (!timePickerBackdrop || !timePickerModal) return;
@@ -5043,6 +5555,11 @@
           var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
           var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
           var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
+          var issueDisplayName = String(issue.display_name || '').trim();
+          var issueAuthorClass = 'issue-card-author' + ((issue.is_repo_owner || isNotice) ? ' owner' : '');
+          var issueAuthorHtml = issueDisplayName
+            ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
+            : '';
           var bodyPreview = (issue.body || '').trim();
           if (bodyPreview.length > 180) bodyPreview = bodyPreview.slice(0, 180) + '...';
           var card = document.createElement('article');
@@ -5053,7 +5570,10 @@
               issueNumberHtml + '</div>' +
               '<div>' + formatIssueDate(issue.created_at) + '</div>' +
             '</div>' +
-            '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
+            '<div class="issue-card-title-row">' +
+              '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
+              issueAuthorHtml +
+            '</div>' +
             '<div class="issue-card-body">' + (bodyPreview ? escapeHtml(bodyPreview).replace(/\n/g, '<br>') : '-') + '</div>' +
             '<div class="issue-card-footer">' +
               '<button type="button" class="issue-detail-btn" data-number="' + issue.number + '">내용/댓글 보기</button>' +
@@ -5128,6 +5648,11 @@
             var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
             var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
             var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
+            var issueDisplayName = String(issue.display_name || '').trim();
+            var issueAuthorClass = 'issue-detail-author' + ((issue.is_repo_owner || isNotice) ? ' owner' : '');
+            var issueAuthorHtml = issueDisplayName
+              ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
+              : '';
             var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
             var fixedCommentNickname = isLoggedInCommentWriter
               ? String(authState.user.nickname || '').trim()
@@ -5187,7 +5712,10 @@
                 '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
                 '<div>' + formatIssueDate(issue.created_at) + '</div>' +
               '</div>' +
-              '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
+              '<div class="issue-detail-title-row">' +
+                '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
+                issueAuthorHtml +
+              '</div>' +
               '<div class="issue-detail-body">' + (issue.body ? escapeHtml(issue.body).replace(/\n/g, '<br>') : '-') + '</div>' +
               '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
               '<div class="issue-comments-list">' + commentsHtml + '</div>' +
@@ -5349,20 +5877,39 @@
       }
 
       function clearCurrentLocationOverlay() {
+        if (currentLocationOverlayRefreshRaf) {
+          cancelAnimationFrame(currentLocationOverlayRefreshRaf);
+          currentLocationOverlayRefreshRaf = 0;
+        }
         if (!currentLocationOverlay) return;
-        if (currentLocationOverlay.element && currentLocationOverlay.element.parentNode) {
+        if (currentLocationOverlay.overlay && typeof currentLocationOverlay.overlay.setMap === 'function') {
+          currentLocationOverlay.overlay.setMap(null);
+        } else if (currentLocationOverlay.element && currentLocationOverlay.element.parentNode) {
           currentLocationOverlay.element.parentNode.removeChild(currentLocationOverlay.element);
         }
         currentLocationOverlay = null;
       }
 
+      function scheduleCurrentLocationOverlayPositionRefresh() {
+        if (currentLocationOverlayRefreshRaf) return;
+        currentLocationOverlayRefreshRaf = requestAnimationFrame(function() {
+          currentLocationOverlayRefreshRaf = 0;
+          refreshCurrentLocationOverlayPosition();
+        });
+      }
+
       function refreshCurrentLocationOverlayPosition() {
-        if (!currentLocationOverlay || !currentLocationOverlay.element || !map || !mapContainer) return;
-        var proj = map.getProjection();
-        if (!proj || typeof proj.containerPointFromCoords !== 'function') return;
+        if (!currentLocationOverlay || !map) return;
         var lat = Number(currentLocationOverlay.lat);
         var lng = Number(currentLocationOverlay.lng);
         if (!isFinite(lat) || !isFinite(lng)) return;
+        if (currentLocationOverlay.overlay && typeof currentLocationOverlay.overlay.setPosition === 'function') {
+          currentLocationOverlay.overlay.setPosition(new kakao.maps.LatLng(lat, lng));
+          return;
+        }
+        if (!currentLocationOverlay.element || !mapContainer) return;
+        var proj = map.getProjection();
+        if (!proj || typeof proj.containerPointFromCoords !== 'function') return;
         var pt = proj.containerPointFromCoords(new kakao.maps.LatLng(lat, lng));
         if (!pt) return;
         currentLocationOverlay.element.style.left = Math.round(pt.x) + 'px';
@@ -5371,7 +5918,7 @@
 
       function showCurrentLocationOverlay(lat, lng, forceRender) {
         clearCurrentLocationOverlay();
-        if ((!isMobile() && !forceRender) || !mapContainer) return;
+        if ((!isMobile() && !forceRender) || !map) return;
         var numericLat = Number(lat);
         var numericLng = Number(lng);
         if (!isFinite(numericLat) || !isFinite(numericLng)) return;
@@ -5380,10 +5927,18 @@
         el.innerHTML =
           '<div class="current-location-pulse" aria-hidden="true"></div>' +
           '<div class="current-location-icon" aria-hidden="true"></div>';
-        mapContainer.appendChild(el);
+        var overlay = new kakao.maps.CustomOverlay({
+          position: new kakao.maps.LatLng(numericLat, numericLng),
+          content: el,
+          xAnchor: 0.5,
+          yAnchor: 0.5
+        });
+        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(6);
+        overlay.setMap(map);
         currentLocationOverlay = {
           lat: numericLat,
           lng: numericLng,
+          overlay: overlay,
           element: el
         };
         refreshCurrentLocationOverlayPosition();
@@ -5400,14 +5955,21 @@
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
           updatePinScale();
           refreshBubbleOverlayPosition();
-          refreshCurrentLocationOverlayPosition();
+          scheduleCurrentLocationOverlayPositionRefresh();
+          scheduleRouteDirectionArrowsRefresh(ROUTE_ARROW_REFRESH_DEBOUNCE_MS);
+        });
+        kakao.maps.event.addListener(map, 'center_changed', function() {
+          scheduleCurrentLocationOverlayPositionRefresh();
+          if (shuttlePathLayers.length > 0 && shuttlePositions.length >= 2) {
+            scheduleRouteDirectionArrowsRefresh(ROUTE_ARROW_REFRESH_DEBOUNCE_MS);
+          }
+        });
+        kakao.maps.event.addListener(map, 'drag', function() {
+          scheduleCurrentLocationOverlayPositionRefresh();
         });
         kakao.maps.event.addListener(map, 'idle', function() {
           refreshBubbleOverlayPosition();
           refreshCurrentLocationOverlayPosition();
-          if (shuttlePathLayers.length > 0 && shuttlePositions.length >= 2) {
-            refreshRouteDirectionArrows();
-          }
           refreshWalkTimeOverlayPosition();
         });
         kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
@@ -5680,6 +6242,18 @@
           openProfileModal();
         });
       }
+      if (accountMenuTermsBtn) {
+        accountMenuTermsBtn.addEventListener('click', function() {
+          closeAccountMenu();
+          openPolicyModal('terms');
+        });
+      }
+      if (accountMenuPrivacyBtn) {
+        accountMenuPrivacyBtn.addEventListener('click', function() {
+          closeAccountMenu();
+          openPolicyModal('privacy');
+        });
+      }
       if (accountMenuLogoutBtn) {
         accountMenuLogoutBtn.addEventListener('click', function() {
           fetch(API_BASE + '/api/auth/logout', { method: 'POST' })
@@ -5699,6 +6273,9 @@
       }
       if (profileModalBackdrop) profileModalBackdrop.addEventListener('click', closeProfileModal);
       if (profileModal) profileModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      if (policyModalCloseBtn) policyModalCloseBtn.addEventListener('click', closePolicyModal);
+      if (policyModalBackdrop) policyModalBackdrop.addEventListener('click', closePolicyModal);
+      if (policyModal) policyModal.addEventListener('click', function(e) { e.stopPropagation(); });
       if (profileNicknameInput) {
         profileNicknameInput.addEventListener('keydown', function(e) {
           if (e.key !== 'Enter') return;
@@ -5739,6 +6316,7 @@
         if (e.key !== 'Escape') return;
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
         if (profileModal && profileModal.classList.contains('show')) closeProfileModal();
+        if (policyModal && policyModal.classList.contains('show')) closePolicyModal();
         closeAccountMenu();
         closeHistoryPopover();
         closeEndpointPickerModal();
@@ -5764,6 +6342,8 @@
         clearRouteVisualFitWatcher();
         clearTimeout(shuttleLabelAdjustTimer);
         shuttleLabelAdjustTimer = null;
+        clearTimeout(routeArrowRefreshTimer);
+        routeArrowRefreshTimer = null;
         routeLabelTriggeredDetailState = null;
         clearWalkTimeOverlay();
         shuttlePathLayers.forEach(function(layer) {
@@ -6038,6 +6618,14 @@
         if (shuttleMessage && shuttleMessage.classList.contains('dimmed')) {
           setShuttlePathDimmed(true);
         }
+      }
+
+      function scheduleRouteDirectionArrowsRefresh(delayMs) {
+        clearTimeout(routeArrowRefreshTimer);
+        routeArrowRefreshTimer = setTimeout(function() {
+          routeArrowRefreshTimer = null;
+          refreshRouteDirectionArrows();
+        }, Math.max(0, Number(delayMs) || 0));
       }
 
       function addMarker(lat, lng, index) {
@@ -7730,7 +8318,9 @@
         return path;
       }
 
-      function renderOptionOnMap(option, placeName, isDepart, walkInfo, selectedCard, showWalkTimeBubble) {
+      function renderOptionOnMap(option, placeName, isDepart, walkInfo, selectedCard, showWalkTimeBubble, opts) {
+        opts = opts || {};
+        var skipViewportFit = !!opts.skipViewportFit;
         clearSearchOverlays();
         clearShuttleOverlays();
         var positions = Array.isArray(option.positions) ? option.positions : [];
@@ -7828,7 +8418,9 @@
         bounds.extend(new kakao.maps.LatLng(ne.getLat() + latSpan * padTop, ne.getLng()));
         bounds.extend(new kakao.maps.LatLng(sw.getLat(), sw.getLng() - lngSpan * pad));
         bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
-        map.setBounds(bounds);
+        if (!skipViewportFit) {
+          map.setBounds(bounds);
+        }
         if (showWalkTimeBubble) {
           renderWalkTimeOverlay(pathSegments.walkPathPoints, positions, isDepart, walkInfo);
         } else {
@@ -7874,7 +8466,7 @@
         }
         var straightWalk = buildStraightWalkInfo(positions, isDepart);
         applySelectedRouteCardDetail(selectedCard, option, placeName, isDepart, straightWalk);
-        renderOptionOnMap(option, placeName, isDepart, null, selectedCard, false);
+        renderOptionOnMap(option, placeName, isDepart, null, selectedCard, false, { skipViewportFit: false });
 
         if (!walkOtpEnabled) return;
         var leg = getOptionWalkLegPositions(positions, isDepart);
@@ -7887,7 +8479,7 @@
             if (isSuccessfulWalkPathResult(cachedWalk)) {
               resetWalkOtpTimeoutBackoff();
               applySelectedRouteCardDetail(selectedCard, option, placeName, isDepart, cachedWalk);
-              renderOptionOnMap(option, placeName, isDepart, cachedWalk, selectedCard, true);
+              renderOptionOnMap(option, placeName, isDepart, cachedWalk, selectedCard, true, { skipViewportFit: true });
             } else {
               applyWalkFallback(String(cachedWalk.status || 'otp_empty_itineraries'));
             }
@@ -7915,7 +8507,7 @@
             if (isSuccessfulWalkPathResult(walkResult)) {
               resetWalkOtpTimeoutBackoff();
               applySelectedRouteCardDetail(selectedCard, option, placeName, isDepart, walkResult);
-              renderOptionOnMap(option, placeName, isDepart, walkResult, selectedCard, true);
+              renderOptionOnMap(option, placeName, isDepart, walkResult, selectedCard, true, { skipViewportFit: true });
               return;
             }
             applyWalkFallback(String(walkResult.status || 'otp_empty_itineraries'));
@@ -8579,6 +9171,7 @@
           placeSource = (name === '선택한 위치') ? 'map' : 'search';
         }
         currentPlaceSource = placeSource;
+        if (isMobile() && !opts.preserveSheetState) setSheetState('sheet-peek');
         var isDepart = direction === 'depart';
         var emptyBySelectionMsg = isDepart
           ? '선택한 출근 종착지 옵션이 없습니다.'
@@ -8636,6 +9229,7 @@
         var routeInput = getActiveRouteModePlaceInput();
         var q = routeInput ? String(routeInput.value || '').trim() : searchInput.value.trim();
         if (!q) return;
+        if (isMobile()) setSheetState('sheet-half');
         if (routeInput) {
           clearCurrentLocationOverlay();
         }
@@ -8663,7 +9257,6 @@
             });
             fitBounds();
             renderResults(places);
-            if (isMobile()) setSheetState('sheet-half');
           })
           .catch(function() {
             showPlaceResultsView();
@@ -8918,8 +9511,8 @@
         if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', applyTimePicker);
         if (timePickerModal) timePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
         if (dayTypeList) dayTypeList.addEventListener('scroll', updateDayTypeSelectedClasses);
-        if (timePickerHourList) timePickerHourList.addEventListener('scroll', updateTimePickerSelectedClasses);
-        if (timePickerMinuteList) timePickerMinuteList.addEventListener('scroll', updateTimePickerSelectedClasses);
+        if (timePickerHourList) timePickerHourList.addEventListener('scroll', requestTimePickerSelectedClassesUpdate);
+        if (timePickerMinuteList) timePickerMinuteList.addEventListener('scroll', requestTimePickerSelectedClassesUpdate);
         // 리사이즈 시 trigger 텍스트 재측정
         window.addEventListener('resize', function() { fitDepartureTrigger(); });
       })();
@@ -9097,7 +9690,10 @@
         if (!isMobile()) {
           clearCurrentLocationOverlay();
         } else {
-          refreshCurrentLocationOverlayPosition();
+          scheduleCurrentLocationOverlayPositionRefresh();
+        }
+        if (shuttlePathLayers.length > 0 && shuttlePositions.length >= 2) {
+          scheduleRouteDirectionArrowsRefresh(ROUTE_ARROW_REFRESH_DEBOUNCE_MS);
         }
       });
     };

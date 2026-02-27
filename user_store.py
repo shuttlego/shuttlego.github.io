@@ -343,6 +343,39 @@ def get_user_by_provider(provider: str, provider_user_id: str) -> dict | None:
         return _row_to_user(row)
 
 
+def get_active_nickname_map_by_public_user_ids(public_user_ids: list[str]) -> dict[str, str]:
+    unique_ids: list[str] = []
+    seen: set[str] = set()
+    for raw in public_user_ids or []:
+        uid = str(raw or "").strip()
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        unique_ids.append(uid)
+        if len(unique_ids) >= 1000:
+            break
+
+    if not unique_ids:
+        return {}
+
+    placeholders = ",".join("?" for _ in unique_ids)
+    query = (
+        "SELECT public_user_id, nickname "
+        "FROM users "
+        f"WHERE status = 'active' AND public_user_id IN ({placeholders})"
+    )
+    with _conn_ctx() as conn:
+        rows = conn.execute(query, tuple(unique_ids)).fetchall()
+
+    result: dict[str, str] = {}
+    for row in rows:
+        key = str(row["public_user_id"] or "").strip()
+        value = str(row["nickname"] or "").strip()
+        if key and value:
+            result[key] = value
+    return result
+
+
 def save_oauth_state(provider: str, next_url: str, ttl_sec: int = 600) -> str:
     now = utc_now()
     state = secrets.token_urlsafe(24)
@@ -729,11 +762,13 @@ def get_user_metrics_snapshot(
     cumulative_users = int(cumulative_users_row["cnt"] if cumulative_users_row else 0)
     if cumulative_users < active_users:
         cumulative_users = active_users
+    cumulative_deleted_users = max(0, cumulative_users - active_users)
     dau = int(daily_active_row["cnt"] if daily_active_row else 0)
     mau = int(monthly_active_row["cnt"] if monthly_active_row else 0)
     daily_new_users = int(daily_new_signup_row["cnt"] if daily_new_signup_row else 0)
     return {
         "cumulative_users": cumulative_users,
+        "cumulative_deleted_users": cumulative_deleted_users,
         "active_users": active_users,
         "daily_new_users": daily_new_users,
         "dau": dau,
