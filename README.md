@@ -48,6 +48,31 @@ FRONTEND_PORT=8080
 OTP_DATA_DIR=.
 OTP_HOST_PORT=8082
 OTP_BASE_URL=http://otp:8082
+# 백엔드 실시간 도보 경로 OTP(plan) 요청 설정
+# - OTP_PLAN_PATH: OTP GraphQL plan path (기본 /otp/gtfs/v1)
+# - OTP_WALK_ENABLED: 1=사용, 0=비활성화(직선 fallback)
+# - OTP_WALK_HTTP_TIMEOUT_SEC: backend->OTP 요청 timeout(초)
+# - OTP_WALK_DURATION_MULTIPLIER: OTP 도보 소요시간 보정 배율(표시용, 기본 1.25)
+# - OTP_WALK_CACHE_SIZE: 도보 경로 캐시 최대 개수
+OTP_PLAN_PATH=/otp/gtfs/v1
+OTP_WALK_ENABLED=1
+OTP_WALK_HTTP_TIMEOUT_SEC=8
+OTP_WALK_DURATION_MULTIPLIER=1.25
+OTP_WALK_CACHE_SIZE=10000
+# build_db.py에서 OTP 경로(정류장 간 encoded polyline) 계산 시 사용할 HTTP 주소
+# 기본값: OTP_HTTP_BASE_URL=http://localhost:8888, OTP_HTTP_PLAN_PATH=/otp/gtfs/v1
+OTP_HTTP_BASE_URL=http://localhost:8888
+OTP_HTTP_PLAN_PATH=/otp/gtfs/v1
+# build_db.py OTP 병렬 호출 설정
+# - OTP_HTTP_MAX_PARALLEL: 동시 요청 개수 (기본 50)
+# - OTP_HTTP_MAX_RPS: 초당 요청 상한(req/s, 기본 50)
+OTP_HTTP_MAX_PARALLEL=50
+OTP_HTTP_MAX_RPS=50
+# build_db.py OTP 재시도 설정
+# - OTP_HTTP_REQUEST_RETRIES: 요청 1건 내부 재시도 횟수 (기본 2)
+# - OTP_HTTP_FAILED_RETRY_ROUNDS: 실패 구간 전체 재시도 라운드 수 (기본 2)
+OTP_HTTP_REQUEST_RETRIES=2
+OTP_HTTP_FAILED_RETRY_ROUNDS=2
 
 # CORS 허용 origin (로컬 개발 + 상용)
 # FRONTEND_PORT를 바꿨다면 해당 포트 origin도 추가해야 합니다.
@@ -190,12 +215,29 @@ docker compose down -v
 ### build_db.py
 
 Raw HTML 파일(`data/raw/`)과 사업장 목록(`data/sites.csv`)을 파싱하여 SQLite DB(`data/data.db`)를 생성합니다.
+이때 인접 정류장 간 `encoded polyline`도 OTP HTTP API를 통해 미리 계산해 DB(`stop_segment_polyline`)에 저장합니다.
 
 - **입력**: `data/raw/` 안의 HTML 파일 + `data/sites.csv`
 - **출력**: `data/data.db`
+- **OTP 주소 환경변수(선택)**:
+  - `OTP_HTTP_BASE_URL` (기본 `http://localhost:8888`)
+  - `OTP_HTTP_PLAN_PATH` (기본 `/otp/gtfs/v1`)
+  - `OTP_HTTP_MAX_PARALLEL` (기본 `50`)
+  - `OTP_HTTP_MAX_RPS` (기본 `50`, req/s)
+  - `OTP_HTTP_REQUEST_RETRIES` (기본 `2`)
+  - `OTP_HTTP_FAILED_RETRY_ROUNDS` (기본 `2`)
 
 ```bash
 python build_db.py
 ```
 
 새로운 노선 데이터를 반영할 때 이 스크립트 하나만 실행하면 됩니다.
+
+### 실시간 도보 경로(선택 노선만)
+
+노선 카드에서 사용자가 선택한 1개 노선에 대해서만 도보 구간(출근: 출발지→탑승 정류장, 퇴근: 하차 정류장→목적지)을 OTP `WALK`로 조회해 encoded polyline을 지도에 반영합니다.
+
+- 프론트엔드는 **100ms 내 응답이 없으면 즉시 직선 fallback**을 사용합니다.
+- 한번 조회한 좌표 구간은 백엔드/프론트 캐시에 저장해 재호출을 줄입니다.
+- `OTP_WALK_ENABLED=0`이면 OTP 도보 조회를 비활성화하고 항상 직선 fallback을 사용합니다.
+- OTP 응답의 `duration`은 `OTP_WALK_DURATION_MULTIPLIER`(기본 `1.25`)를 곱해 표시합니다.
