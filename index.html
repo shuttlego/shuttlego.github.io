@@ -263,6 +263,23 @@
       display: flex;
       justify-content: center;
     }
+    @media (min-width: 769px) {
+      .header:not(.route-mode) .header-left,
+      .header:not(.route-mode) .site-profile-wrap {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .header:not(.route-mode) .header-left {
+        justify-content: flex-start;
+      }
+      .header:not(.route-mode) .header-center {
+        flex: 0 1 560px;
+        max-width: 560px;
+      }
+      .header:not(.route-mode) .site-profile-wrap {
+        justify-content: flex-end;
+      }
+    }
     .search-bar {
       display: flex;
       max-width: 560px;
@@ -308,6 +325,22 @@
       border-color: #fee500;
       background: #fffde7;
     }
+    .search-bar .mobile-menu-btn {
+      display: none;
+      min-width: 44px;
+      width: 44px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      background: #eceff3;
+      color: #374151;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .search-bar .mobile-menu-btn:hover {
+      background: #e2e8f0;
+      border-color: #c5ceda;
+    }
 
     /* 노선 선택 화면 전용 헤더 */
     .route-mode-header {
@@ -342,9 +375,12 @@
       min-width: 0;
     }
     .header.route-mode .site-selector-wrap {
-      order: 2;
+      order: 1;
       display: block;
-      margin-left: auto;
+      margin-left: 0;
+    }
+    .header.route-mode .profile-menu-trigger {
+      order: 2;
     }
     .route-mode-topline {
       display: contents;
@@ -357,15 +393,6 @@
       align-items: center;
       gap: 8px;
       min-width: 0;
-    }
-    .route-mode-row-label {
-      flex-shrink: 0;
-      width: 32px;
-      color: #666;
-      font-size: 13px;
-      font-weight: 700;
-      line-height: 1;
-      text-align: left;
     }
     .route-mode-swap-btn {
       flex-shrink: 0;
@@ -385,7 +412,7 @@
       align-items: center;
       justify-content: center;
       position: relative;
-      top: 24px;
+      top: 16px;
     }
     .route-mode-swap-btn:hover {
       background: #fffde7;
@@ -405,7 +432,7 @@
       flex-shrink: 0;
       display: inline-flex;
       align-items: center;
-      gap: 0;
+      gap: 6px;
     }
     .route-mode-back-btn {
       height: 42px;
@@ -444,6 +471,26 @@
       border-color: #fee500;
       background: #fffde7;
     }
+    .route-mode-profile-btn {
+      display: none;
+      height: 42px;
+      min-width: 44px;
+      width: 44px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #eceff3;
+      color: #374151;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .route-mode-profile-btn:hover {
+      background: #e2e8f0;
+      border-color: #c5ceda;
+    }
     .header.route-mode .route-mode-issue-btn {
       display: none;
     }
@@ -465,7 +512,7 @@
       padding: 10px 12px;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
-      background: #fff;
+      background-color: #fff;
       font-size: 14px;
       font-weight: 600;
       color: #222;
@@ -478,12 +525,12 @@
     }
     .route-mode-place-label:focus {
       border-color: #fee500;
-      background: #fffde7;
+      background-color: #fffde7;
     }
     @media (hover: hover) and (pointer: fine) {
       .route-mode-place-label:hover {
         border-color: #fee500;
-        background: #fffde7;
+        background-color: #fffde7;
       }
     }
     .route-mode-place-label::placeholder {
@@ -501,7 +548,7 @@
       padding: 10px 12px;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
-      background: #fff;
+      background-color: #fff;
       color: #333;
       font-size: 14px;
       font-weight: 600;
@@ -511,13 +558,13 @@
     }
     .route-endpoint-trigger:hover {
       border-color: #fee500;
-      background: #fffde7;
+      background-color: #fffde7;
     }
     .route-endpoint-trigger:disabled {
       opacity: 0.55;
       cursor: not-allowed;
       border-color: #e0e0e0;
-      background: #f8f8f8;
+      background-color: #f8f8f8;
     }
     .route-endpoint-trigger .endpoint-trigger-text {
       flex: 1;
@@ -534,6 +581,28 @@
       border-right: 4px solid transparent;
       border-top: 4px solid #666;
       flex-shrink: 0;
+    }
+    #routeTopPlaceLabel,
+    #routeTopEndpointTrigger,
+    #routeBottomPlaceLabel,
+    #routeBottomEndpointTrigger {
+      background-repeat: no-repeat;
+      background-position: 10px center;
+      background-size: 22px 22px;
+    }
+    #routeTopPlaceLabel,
+    #routeTopEndpointTrigger {
+      background-image: url('start_icon.png');
+    }
+    #routeBottomPlaceLabel,
+    #routeBottomEndpointTrigger {
+      background-image: url('arrive_icon.png');
+    }
+    #routeTopPlaceLabel,
+    #routeBottomPlaceLabel,
+    #routeTopEndpointTrigger,
+    #routeBottomEndpointTrigger {
+      padding-left: 40px;
     }
     .route-mode-hidden {
       display: none !important;
@@ -564,12 +633,13 @@
         flex: 0 0 auto;
         width: auto;
       }
-      .header.route-mode .site-selector-wrap {
+      .header.route-mode .site-profile-wrap {
         grid-column: 3;
         grid-row: 1;
         justify-self: end;
         align-self: start;
         margin-left: 0;
+        display: inline-flex;
       }
     }
 
@@ -577,6 +647,12 @@
     .site-selector-wrap {
       flex-shrink: 0;
       position: relative;
+    }
+    .site-profile-wrap {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
     .site-selector-wrap select {
       position: absolute;
@@ -627,6 +703,31 @@
       border-left: 4px solid transparent;
       border-right: 4px solid transparent;
       border-top: 4px solid #666;
+    }
+    .profile-menu-trigger {
+      height: 42px;
+      min-width: 44px;
+      width: 44px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #374151;
+      font-size: 19px;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .search-bar .mobile-menu-btn.logged-in,
+    .profile-menu-trigger.logged-in,
+    .route-mode-profile-btn.logged-in {
+      border-color: #93c5fd;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .profile-menu-trigger:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
     }
 
     /* 사업장 선택 모달 */
@@ -689,6 +790,305 @@
       background: #fff9c4;
       font-weight: 600;
       color: #1a1a1a;
+    }
+    .account-menu-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 211;
+      background: rgba(15, 23, 42, 0.24);
+    }
+    .account-menu-backdrop.show { display: block; }
+    .account-menu {
+      display: none;
+      position: fixed;
+      z-index: 212;
+      width: min(320px, calc(100vw - 24px));
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      box-shadow: 0 18px 30px rgba(15, 23, 42, 0.2);
+      padding: 12px;
+    }
+    .account-menu.show { display: block; }
+    .account-menu-login-btn {
+      width: 100%;
+      min-height: 46px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #111827;
+      font-size: 14px;
+      font-weight: 700;
+      text-align: left;
+      padding: 10px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .account-menu-login-btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .account-menu-google-logo {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .account-menu-status-row {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 4px;
+    }
+    .account-menu-status-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .account-menu-status-meta {
+      min-width: 0;
+    }
+    .account-menu-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 18px;
+      background: #f1f5f9;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .account-menu-userline {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .account-menu-subline {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .account-menu-logout-icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #475569;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .account-menu-logout-icon-btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .account-menu-logout-icon-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+    .account-menu-item {
+      width: 100%;
+      min-height: 38px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: #fff;
+      color: #1e293b;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: left;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .account-menu-item:hover {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+    .account-menu-item.danger {
+      color: #b91c1c;
+    }
+    .account-menu-item.danger:hover {
+      background: #fff1f2;
+      border-color: #fecdd3;
+    }
+    .account-menu-divider {
+      border-top: 1px solid #f1f5f9;
+      margin: 8px 0;
+    }
+    .profile-modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 216;
+      background: rgba(15, 23, 42, 0.35);
+    }
+    .profile-modal-backdrop.show { display: block; }
+    .profile-modal {
+      display: none;
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(360px, calc(100vw - 24px));
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      box-shadow: 0 18px 30px rgba(15, 23, 42, 0.2);
+      z-index: 217;
+      padding: 16px;
+    }
+    .profile-modal.show { display: block; }
+    .profile-modal-title {
+      margin: 0 0 12px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #111827;
+    }
+    .profile-modal-field label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: #334155;
+      font-weight: 600;
+    }
+    .profile-modal-field input {
+      width: 100%;
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      padding: 0 10px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+    }
+    .profile-modal-field input:focus {
+      border-color: #facc15;
+      box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.22);
+    }
+    .profile-modal-help {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .profile-modal-actions {
+      margin-top: 14px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .profile-modal-btn {
+      min-width: 74px;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #0f172a;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .profile-modal-btn.primary {
+      background: #111827;
+      border-color: #111827;
+      color: #fff;
+    }
+    .profile-modal-delete-link {
+      display: inline-block;
+      margin-top: 10px;
+      color: #b91c1c;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .profile-modal-delete-link:hover {
+      color: #991b1b;
+    }
+    .place-history-popover {
+      display: none;
+      position: fixed;
+      z-index: 214;
+      width: 320px;
+      max-height: 280px;
+      overflow-y: auto;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+      padding: 6px;
+    }
+    .place-history-popover.show { display: block; }
+    .place-history-empty {
+      font-size: 13px;
+      color: #64748b;
+      padding: 14px 10px;
+      text-align: center;
+    }
+    .place-history-item {
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 7px 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .place-history-item:hover {
+      border-color: #e2e8f0;
+      background: #f8fafc;
+    }
+    .place-history-keyword {
+      flex: 1 1 auto;
+      min-width: 0;
+      text-align: left;
+      font-size: 13px;
+      color: #0f172a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .place-history-date {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #64748b;
+    }
+    .place-history-delete {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border: none;
+      border-radius: 10px;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0;
+    }
+    .place-history-delete:hover {
+      background: #d1d5db;
     }
     @media (min-width: 769px) {
       .site-picker-modal {
@@ -1388,9 +1788,30 @@
       background: #fff;
     }
     .issue-comment-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
       font-size: 12px;
       color: #777;
       margin-bottom: 6px;
+    }
+    .issue-self-mark {
+      display: inline-block;
+      color: #dc2626;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .issue-comment-author {
+      font-weight: 700;
+      color: #333;
+    }
+    .issue-owner-name {
+      font-weight: 700;
+      color: #1e3a8a;
+    }
+    .issue-comment-separator {
+      color: #a3a3a3;
     }
     .issue-comment-body {
       font-size: 13px;
@@ -1398,6 +1819,33 @@
       white-space: pre-wrap;
       color: #444;
       word-break: break-word;
+    }
+    .issue-comment-nickname-row {
+      margin-bottom: 8px;
+    }
+    .issue-comment-nickname-row label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #555;
+    }
+    .issue-comment-nickname-row input {
+      width: 100%;
+      height: 36px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      padding: 0 10px;
+      font-size: 13px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .issue-comment-author-fixed {
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #555;
+      font-weight: 600;
     }
     .issue-form-group {
       margin-bottom: 12px;
@@ -1423,6 +1871,18 @@
       min-height: 140px;
       resize: vertical;
       line-height: 1.5;
+    }
+    .issue-nickname-fixed {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      min-height: 40px;
+      font-size: 14px;
+      color: #334155;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
     }
     .issue-form-help {
       margin-top: 4px;
@@ -2357,13 +2817,14 @@
       }
       .header.route-mode {
         flex-wrap: wrap;
-        gap: 8px;
-        padding: 10px 12px;
+        gap: 10px;
+        padding: 12px 16px;
       }
       .header.route-mode .route-mode-header {
         width: 100%;
         max-width: none;
         margin: 0;
+        grid-template-columns: minmax(0, 1fr) auto;
       }
       .header-left {
         order: 2;
@@ -2391,12 +2852,27 @@
         padding: 11px 12px;
       }
       .search-bar .issue-open-btn {
+        display: none;
+      }
+      .search-bar .mobile-menu-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         width: 40px;
         min-width: 40px;
-        font-size: 12px;
+        height: 40px;
+        padding: 0;
+        font-size: 18px;
+      }
+      .site-profile-wrap {
+        order: 3;
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .profile-menu-trigger {
+        display: none;
       }
       .site-selector-wrap {
-        order: 3;
         flex: 1 1 0;
         min-width: 0;
       }
@@ -2404,9 +2880,16 @@
         order: 2;
         flex: 1 1 0;
       }
+      .header.route-mode .site-profile-wrap {
+        order: 2;
+        flex: 0 0 auto;
+      }
       .header.route-mode .site-selector-wrap {
         order: 2;
         flex: 0 0 auto;
+      }
+      .header.route-mode .profile-menu-trigger {
+        order: 3;
       }
       .site-selector-wrap select { min-width: 0; width: 100%; }
       .site-selector-trigger {
@@ -2420,8 +2903,8 @@
       }
       .route-mode-back-btn {
         height: 40px;
-        width: 48px;
-        min-width: 48px;
+        width: 44px;
+        min-width: 44px;
         padding: 0;
       }
       .route-mode-issue-btn {
@@ -2430,14 +2913,31 @@
         height: 40px;
         font-size: 12px;
       }
+      .route-mode-profile-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+        font-size: 18px;
+      }
       .route-mode-swap-btn,
       .route-mode-swap-spacer {
-        width: 30px;
-        height: 30px;
+        width: 28px;
+        height: 28px;
       }
       .route-mode-swap-btn {
         font-size: 14px;
-        top: 22px;
+        top: 14px;
+      }
+      #routeTopPlaceLabel,
+      #routeTopEndpointTrigger,
+      #routeBottomPlaceLabel,
+      #routeBottomEndpointTrigger {
+        background-position: 9px center;
+        background-size: 20px 20px;
+        padding-left: 36px;
       }
       .route-mode-place-label,
       .route-endpoint-trigger {
@@ -2504,6 +3004,13 @@
         width: 44px;
         height: 44px;
       }
+      .account-menu {
+        left: 12px !important;
+        right: 12px !important;
+        width: auto;
+        bottom: calc(env(safe-area-inset-bottom) + 10px);
+        top: auto !important;
+      }
     }
     @media (max-width: 768px) {
       .sheet-drag-area {
@@ -2533,22 +3040,24 @@
       <div class="header-center">
         <div class="search-bar">
           <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
-          <button type="button" class="issue-open-btn" id="issueModalTrigger" title="제보/이슈 보기">이슈</button>
+          <button type="button" class="mobile-menu-btn" id="mobileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
         </div>
       </div>
-    <div class="site-selector-wrap">
-      <select id="siteSelect" title="사업장 선택" aria-hidden="true">
-        <option value="0000013">삼성전자(수원)</option>
-      </select>
-      <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
-        <span class="site-trigger-text">삼성전자(수원)</span>
-        <span class="site-trigger-arrow"></span>
-      </button>
+    <div class="site-profile-wrap">
+      <div class="site-selector-wrap">
+        <select id="siteSelect" title="사업장 선택" aria-hidden="true">
+          <option value="0000013">삼성전자(수원)</option>
+        </select>
+        <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
+          <span class="site-trigger-text">삼성전자(수원)</span>
+          <span class="site-trigger-arrow"></span>
+        </button>
+      </div>
+      <button type="button" class="profile-menu-trigger" id="profileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
     </div>
     <div class="route-mode-header" id="routeModeHeader" aria-hidden="true">
       <div class="route-mode-topline">
         <div class="route-mode-left">
-          <span class="route-mode-row-label">출발</span>
           <button type="button" class="route-mode-swap-btn" id="routeSwapBtn" title="출발/도착 교환" aria-label="출발과 도착 교환">⇅</button>
           <input type="text" class="route-mode-place-label" id="routeTopPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
           <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeTopEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
@@ -2558,11 +3067,10 @@
         </div>
         <div class="route-mode-actions">
           <button type="button" class="route-mode-back-btn" id="routeHeaderBackBtn">뒤로</button>
-          <button type="button" class="route-mode-issue-btn" id="routeIssueModalTrigger" title="제보/이슈 보기">이슈</button>
+          <button type="button" class="route-mode-profile-btn" id="routeProfileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
         </div>
       </div>
       <div class="route-mode-secondline">
-        <span class="route-mode-row-label">도착</span>
         <span class="route-mode-swap-spacer" aria-hidden="true"></span>
         <input type="text" class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
         <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeBottomEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
@@ -2623,6 +3131,51 @@
     <div class="endpoint-picker-list" id="endpointPickerList" role="listbox"></div>
   </div>
 
+  <div class="account-menu-backdrop" id="accountMenuBackdrop" aria-hidden="true"></div>
+  <div class="account-menu" id="accountMenu" role="dialog" aria-label="계정 메뉴">
+    <button type="button" class="account-menu-login-btn" id="accountMenuLoginBtn">
+      <img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />
+      <span>Google 계정으로 로그인</span>
+    </button>
+    <div class="account-menu-status-row" id="accountMenuStatusRow">
+      <div class="account-menu-status-main">
+        <span class="account-menu-avatar" id="accountMenuAvatar">🙂</span>
+        <div class="account-menu-status-meta">
+          <div class="account-menu-userline" id="accountMenuUserLine">닉네임</div>
+          <div class="account-menu-subline" id="accountMenuSubLine">로그인됨</div>
+        </div>
+      </div>
+      <button type="button" class="account-menu-logout-icon-btn" id="accountMenuLogoutBtn" title="로그아웃" aria-label="로그아웃">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"></path>
+          <path d="M16 17l5-5-5-5"></path>
+          <path d="M21 12H9"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="account-menu-divider" id="accountMenuDividerAfterPrimary"></div>
+    <button type="button" class="account-menu-item" id="accountMenuProfileBtn">내 프로필</button>
+    <div class="account-menu-divider" id="accountMenuDividerAfterProfile"></div>
+    <button type="button" class="account-menu-item" id="accountMenuIssueBtn">이슈 건의하기</button>
+  </div>
+
+  <div class="profile-modal-backdrop" id="profileModalBackdrop" aria-hidden="true"></div>
+  <div class="profile-modal" id="profileModal" role="dialog" aria-label="내 프로필">
+    <h2 class="profile-modal-title">내 프로필</h2>
+    <div class="profile-modal-field">
+      <label for="profileNicknameInput">닉네임</label>
+      <input type="text" id="profileNicknameInput" maxlength="20" autocomplete="nickname" />
+      <p class="profile-modal-help">2~20자</p>
+    </div>
+    <div class="profile-modal-actions">
+      <button type="button" class="profile-modal-btn" id="profileModalCancelBtn">닫기</button>
+      <button type="button" class="profile-modal-btn primary" id="profileModalSaveBtn">저장</button>
+    </div>
+    <a href="#" class="profile-modal-delete-link" id="profileModalDeleteBtn">탈퇴하기</a>
+  </div>
+
+  <div class="place-history-popover" id="placeHistoryPopover" role="dialog" aria-label="검색 히스토리"></div>
+
   <div class="location-permission-backdrop" id="locationPermissionBackdrop" aria-hidden="true"></div>
   <div class="location-permission-modal" id="locationPermissionModal" role="dialog" aria-label="위치 권한">
     <p class="location-permission-message" id="locationPermissionMessage"></p>
@@ -2674,9 +3227,14 @@
             <textarea id="issueBodyInput" placeholder="불편했던 내용, 재현 방법, 원하는 개선점을 적어주세요." required></textarea>
             <p class="issue-form-help">작성 내용은 모든 사용자에게 공개됩니다.</p>
           </div>
-          <div class="issue-form-group">
+          <div class="issue-form-group" id="issueNicknameInputGroup">
             <label for="issueNicknameInput">닉네임 (선택)</label>
             <input type="text" id="issueNicknameInput" maxlength="40" placeholder="예: 셔틀러버" />
+          </div>
+          <div class="issue-form-group" id="issueNicknameFixedGroup" style="display: none;">
+            <label>작성자</label>
+            <div class="issue-nickname-fixed" id="issueNicknameFixedText"></div>
+            <p class="issue-form-help">로그인 계정 닉네임으로 고정됩니다.</p>
           </div>
           <div class="issue-form-actions">
             <button type="button" class="issue-form-btn" id="issueFormCancelBtn">취소</button>
@@ -2789,6 +3347,21 @@
     window.__initShuttleApp = function() {
       var ENV = window.__SHUTTLE_ENV;
       var API_BASE = ENV.API_BASE;
+      var nativeFetch = window.fetch.bind(window);
+      window.fetch = function(input, init) {
+        var nextInit = init ? Object.assign({}, init) : {};
+        if (!nextInit.credentials) nextInit.credentials = 'include';
+        return nativeFetch(input, nextInit).then(function(response) {
+          try {
+            var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+            if (response && response.status === 401 && url && url.indexOf(API_BASE + '/api/') === 0) {
+              authState = { logged_in: false, user: null, preferences: {} };
+              if (typeof updateAccountMenuUi === 'function') updateAccountMenuUi();
+            }
+          } catch (e) {}
+          return response;
+        });
+      };
       var mapContainer = document.getElementById('map');
       var searchInput = document.getElementById('searchInput');
       var searchBtn = document.getElementById('searchBtn');
@@ -2806,8 +3379,9 @@
       var departureTriggerText = document.getElementById('departureTriggerText');
       var dayTypeList = document.getElementById('dayTypeList');
       var shuttleMessage = document.getElementById('shuttleMessage');
-      var issueModalTrigger = document.getElementById('issueModalTrigger');
-      var routeIssueModalTrigger = document.getElementById('routeIssueModalTrigger');
+      var mobileMenuTrigger = document.getElementById('mobileMenuTrigger');
+      var profileMenuTrigger = document.getElementById('profileMenuTrigger');
+      var routeProfileMenuTrigger = document.getElementById('routeProfileMenuTrigger');
       var issueModalBackdrop = document.getElementById('issueModalBackdrop');
       var issueModal = document.getElementById('issueModal');
       var issueModalCloseBtn = document.getElementById('issueModalCloseBtn');
@@ -2829,6 +3403,9 @@
       var issueTitleInput = document.getElementById('issueTitleInput');
       var issueBodyInput = document.getElementById('issueBodyInput');
       var issueNicknameInput = document.getElementById('issueNicknameInput');
+      var issueNicknameInputGroup = document.getElementById('issueNicknameInputGroup');
+      var issueNicknameFixedGroup = document.getElementById('issueNicknameFixedGroup');
+      var issueNicknameFixedText = document.getElementById('issueNicknameFixedText');
       var mapControls = document.querySelector('.map-controls');
       var routeModeHeader = document.getElementById('routeModeHeader');
       var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
@@ -2845,6 +3422,25 @@
       var endpointPickerConfirmBtn = document.getElementById('endpointPickerConfirmBtn');
       var endpointPickerList = document.getElementById('endpointPickerList');
       var endpointPickerSearchInput = document.getElementById('endpointPickerSearchInput');
+      var accountMenuBackdrop = document.getElementById('accountMenuBackdrop');
+      var accountMenu = document.getElementById('accountMenu');
+      var accountMenuAvatar = document.getElementById('accountMenuAvatar');
+      var accountMenuUserLine = document.getElementById('accountMenuUserLine');
+      var accountMenuSubLine = document.getElementById('accountMenuSubLine');
+      var accountMenuStatusRow = document.getElementById('accountMenuStatusRow');
+      var accountMenuDividerAfterPrimary = document.getElementById('accountMenuDividerAfterPrimary');
+      var accountMenuDividerAfterProfile = document.getElementById('accountMenuDividerAfterProfile');
+      var accountMenuLoginBtn = document.getElementById('accountMenuLoginBtn');
+      var accountMenuProfileBtn = document.getElementById('accountMenuProfileBtn');
+      var accountMenuLogoutBtn = document.getElementById('accountMenuLogoutBtn');
+      var accountMenuIssueBtn = document.getElementById('accountMenuIssueBtn');
+      var profileModalBackdrop = document.getElementById('profileModalBackdrop');
+      var profileModal = document.getElementById('profileModal');
+      var profileNicknameInput = document.getElementById('profileNicknameInput');
+      var profileModalSaveBtn = document.getElementById('profileModalSaveBtn');
+      var profileModalCancelBtn = document.getElementById('profileModalCancelBtn');
+      var profileModalDeleteBtn = document.getElementById('profileModalDeleteBtn');
+      var placeHistoryPopover = document.getElementById('placeHistoryPopover');
 
       var map = null;
       var overlays = [];
@@ -2934,6 +3530,12 @@
       var walkOtpTimeoutSkipUntilMs = 0;
       var activeOptionDrawToken = 0;
       var routeLabelTriggeredDetailState = null;
+      var authState = { logged_in: false, user: null, preferences: {} };
+      var historyOpenInput = null;
+      var historyItems = [];
+      var historyNextCursor = null;
+      var historyHasMore = false;
+      var historyLoading = false;
       if (maxDistanceSlider) {
         var initMaxDistance = parseFloat(maxDistanceSlider.value);
         if (isFinite(initMaxDistance)) {
@@ -2950,6 +3552,320 @@
         // 위치는 CSS에서 고정 관리한다(모달 상태와 무관).
         mapControls.style.bottom = '';
       }
+
+      function formatDateOnly(isoString) {
+        var dt = new Date(isoString || '');
+        if (isNaN(dt.getTime())) return '';
+        var y = dt.getFullYear();
+        var m = String(dt.getMonth() + 1).padStart(2, '0');
+        var d = String(dt.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+      }
+
+      function updateIssueNicknameUi() {
+        var isLoggedIn = !!(authState && authState.logged_in && authState.user);
+        if (issueNicknameInputGroup) issueNicknameInputGroup.style.display = isLoggedIn ? 'none' : '';
+        if (issueNicknameFixedGroup) issueNicknameFixedGroup.style.display = isLoggedIn ? '' : 'none';
+        if (issueNicknameFixedText) {
+          issueNicknameFixedText.textContent = isLoggedIn
+            ? String((authState.user && authState.user.nickname) || '')
+            : '';
+        }
+      }
+
+      function updateAccountMenuUi() {
+        var isLoggedIn = !!(authState && authState.logged_in && authState.user);
+        var nickname = isLoggedIn ? String(authState.user.nickname || '') : '';
+        if (accountMenuUserLine) {
+          accountMenuUserLine.textContent = nickname;
+        }
+        if (accountMenuSubLine) {
+          accountMenuSubLine.textContent = isLoggedIn ? '로그인됨' : '';
+        }
+        if (accountMenuAvatar) {
+          accountMenuAvatar.textContent = '🙂';
+        }
+        if (accountMenuLoginBtn) accountMenuLoginBtn.style.display = isLoggedIn ? 'none' : '';
+        if (accountMenuStatusRow) accountMenuStatusRow.style.display = isLoggedIn ? 'flex' : 'none';
+        if (accountMenuDividerAfterPrimary) accountMenuDividerAfterPrimary.style.display = '';
+        if (accountMenuProfileBtn) accountMenuProfileBtn.style.display = isLoggedIn ? '' : 'none';
+        if (accountMenuLogoutBtn) accountMenuLogoutBtn.style.display = isLoggedIn ? '' : 'none';
+        if (accountMenuDividerAfterProfile) accountMenuDividerAfterProfile.style.display = isLoggedIn ? '' : 'none';
+
+        [mobileMenuTrigger, profileMenuTrigger, routeProfileMenuTrigger].forEach(function(btn) {
+          if (!btn) return;
+          btn.classList.toggle('logged-in', isLoggedIn);
+          btn.title = '메뉴';
+          btn.setAttribute('aria-label', btn.title);
+        });
+
+        updateIssueNicknameUi();
+      }
+
+      function refreshAuthState() {
+        return fetch(API_BASE + '/api/auth/me')
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) throw new Error(result.data.error || '로그인 상태 조회 실패');
+            authState = result.data || { logged_in: false, user: null, preferences: {} };
+            if (!authState.preferences) authState.preferences = {};
+            updateAccountMenuUi();
+            return authState;
+          })
+          .catch(function() {
+            authState = { logged_in: false, user: null, preferences: {} };
+            updateAccountMenuUi();
+            return authState;
+          });
+      }
+
+      function startGoogleLogin() {
+        var callbackUrl = location.origin + '/auth-callback.html';
+        var loginUrl = API_BASE + '/api/auth/google/start?next=' + encodeURIComponent(callbackUrl);
+        location.href = loginUrl;
+      }
+
+      var accountMenuAnchor = null;
+      function closeAccountMenu() {
+        accountMenuAnchor = null;
+        if (accountMenuBackdrop) accountMenuBackdrop.classList.remove('show');
+        if (accountMenu) accountMenu.classList.remove('show');
+      }
+
+      function openAccountMenu(anchorEl) {
+        if (!accountMenu || !accountMenuBackdrop) return;
+        accountMenuAnchor = anchorEl || null;
+        if (!isMobile() && anchorEl && anchorEl.getBoundingClientRect) {
+          var rect = anchorEl.getBoundingClientRect();
+          var menuWidth = Math.min(320, window.innerWidth - 24);
+          accountMenu.style.top = (rect.bottom + 8) + 'px';
+          accountMenu.style.left = Math.max(12, rect.right - menuWidth) + 'px';
+          accountMenu.style.right = 'auto';
+          accountMenu.style.bottom = 'auto';
+        } else {
+          accountMenu.style.top = '';
+          accountMenu.style.left = '';
+          accountMenu.style.right = '';
+          accountMenu.style.bottom = '';
+        }
+        updateAccountMenuUi();
+        accountMenuBackdrop.classList.add('show');
+        accountMenu.classList.add('show');
+        refreshAuthState();
+      }
+
+      function toggleAccountMenu(anchorEl) {
+        if (!accountMenu || !accountMenu.classList.contains('show')) {
+          openAccountMenu(anchorEl);
+          return;
+        }
+        closeAccountMenu();
+      }
+
+      function isHistoryInput(el) {
+        return !!(el && (el === searchInput || el === routeTopPlaceLabel || el === routeBottomPlaceLabel));
+      }
+
+      function closeHistoryPopover() {
+        historyOpenInput = null;
+        if (placeHistoryPopover) {
+          placeHistoryPopover.classList.remove('show');
+          placeHistoryPopover.innerHTML = '';
+        }
+      }
+
+      function positionHistoryPopover() {
+        if (!placeHistoryPopover || !historyOpenInput) return;
+        var rect = historyOpenInput.getBoundingClientRect();
+        var width = Math.max(0, rect.width);
+        placeHistoryPopover.style.width = width + 'px';
+        placeHistoryPopover.style.left = rect.left + 'px';
+        placeHistoryPopover.style.right = 'auto';
+        placeHistoryPopover.style.top = (rect.bottom + 6) + 'px';
+      }
+
+      function renderPlaceHistory() {
+        if (!placeHistoryPopover) return;
+        placeHistoryPopover.innerHTML = '';
+        if (!historyItems || historyItems.length === 0) {
+          var emptyEl = document.createElement('div');
+          emptyEl.className = 'place-history-empty';
+          emptyEl.textContent = authState.logged_in ? '최근 검색어가 없습니다.' : '로그인하면 사업장의 기본값을 설정할 수 있고 검색 히스토리도 볼 수 있습니다.';
+          placeHistoryPopover.appendChild(emptyEl);
+          return;
+        }
+        historyItems.forEach(function(item) {
+          var row = document.createElement('div');
+          row.className = 'place-history-item';
+          var keywordEl = document.createElement('span');
+          keywordEl.className = 'place-history-keyword';
+          keywordEl.textContent = String(item.keyword || '');
+          var dateEl = document.createElement('span');
+          dateEl.className = 'place-history-date';
+          dateEl.textContent = formatDateOnly(item.searched_at);
+          var delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'place-history-delete';
+          delBtn.setAttribute('data-id', String(item.id));
+          delBtn.textContent = '×';
+          row.appendChild(keywordEl);
+          row.appendChild(dateEl);
+          row.appendChild(delBtn);
+          row.addEventListener('click', function() {
+            if (!historyOpenInput) return;
+            historyOpenInput.value = String(item.keyword || '');
+            if (searchInput && historyOpenInput !== searchInput) searchInput.value = historyOpenInput.value;
+            closeHistoryPopover();
+            doSearch();
+          });
+          delBtn.addEventListener('click', function(evt) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            var id = this.getAttribute('data-id');
+            if (!id) return;
+            fetch(API_BASE + '/api/me/history/place-search/' + encodeURIComponent(id), {
+              method: 'DELETE'
+            }).then(function(r) {
+              if (!r.ok) throw new Error('delete failed');
+              historyItems = historyItems.filter(function(hist) { return String(hist.id) !== String(id); });
+              renderPlaceHistory();
+            }).catch(function() {});
+          });
+          placeHistoryPopover.appendChild(row);
+        });
+      }
+
+      function loadPlaceHistory(reset) {
+        if (!authState.logged_in) {
+          historyItems = [];
+          historyNextCursor = null;
+          historyHasMore = false;
+          renderPlaceHistory();
+          return Promise.resolve();
+        }
+        if (historyLoading) return Promise.resolve();
+        if (!reset && !historyHasMore) return Promise.resolve();
+        historyLoading = true;
+        if (reset) {
+          historyItems = [];
+          historyNextCursor = null;
+          historyHasMore = true;
+        }
+        var url = API_BASE + '/api/me/history/place-search?limit=30';
+        if (!reset && historyNextCursor) {
+          url += '&cursor=' + encodeURIComponent(String(historyNextCursor));
+        }
+        return fetch(url)
+          .then(function(r) { return r.json().catch(function() { return {}; }).then(function(data) { return { ok: r.ok, data: data }; }); })
+          .then(function(payload) {
+            if (!payload.ok) throw new Error(payload.data.error || '히스토리 조회 실패');
+            var items = Array.isArray(payload.data.items) ? payload.data.items : [];
+            historyItems = reset ? items : historyItems.concat(items);
+            historyNextCursor = payload.data.next_cursor || null;
+            historyHasMore = !!payload.data.has_more;
+            renderPlaceHistory();
+          })
+          .catch(function() {
+            if (reset) {
+              historyItems = [];
+              historyHasMore = false;
+              historyNextCursor = null;
+              renderPlaceHistory();
+            }
+          })
+          .finally(function() {
+            historyLoading = false;
+          });
+      }
+
+      function openPlaceHistoryForInput(inputEl) {
+        if (!isHistoryInput(inputEl) || !placeHistoryPopover) return;
+        historyOpenInput = inputEl;
+        positionHistoryPopover();
+        placeHistoryPopover.classList.add('show');
+        loadPlaceHistory(true);
+      }
+
+      function closeProfileModal() {
+        if (profileModalBackdrop) profileModalBackdrop.classList.remove('show');
+        if (profileModal) profileModal.classList.remove('show');
+      }
+
+      function openProfileModal() {
+        if (!authState.logged_in || !authState.user || !profileModal || !profileModalBackdrop) return;
+        if (profileNicknameInput) profileNicknameInput.value = String(authState.user.nickname || '');
+        profileModalBackdrop.classList.add('show');
+        profileModal.classList.add('show');
+        setTimeout(function() {
+          if (profileNicknameInput) profileNicknameInput.focus();
+        }, 0);
+      }
+
+      function saveProfileNickname() {
+        if (!authState.logged_in || !authState.user || !profileNicknameInput) return;
+        var next = String(profileNicknameInput.value || '').trim();
+        if (next.length < 2 || next.length > 20) {
+          alert('닉네임은 2~20자여야 합니다.');
+          profileNicknameInput.focus();
+          return;
+        }
+        fetch(API_BASE + '/api/me/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nickname: next })
+        })
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) throw new Error(result.data.error || '닉네임 변경에 실패했습니다.');
+            return refreshAuthState();
+          })
+          .then(function() {
+            closeProfileModal();
+            alert('닉네임이 변경되었습니다.');
+          })
+          .catch(function(err) {
+            alert(err && err.message ? err.message : '닉네임 변경에 실패했습니다.');
+          });
+      }
+
+      function deleteMyAccount() {
+        if (!authState.logged_in) return;
+        if (!confirm('탈퇴하면 저장된 정보가 삭제됩니다. 진행할까요?')) return;
+        fetch(API_BASE + '/api/me', { method: 'DELETE' })
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) throw new Error(result.data.error || '탈퇴 처리에 실패했습니다.');
+            closeProfileModal();
+            closeAccountMenu();
+            refreshAuthState();
+            alert('탈퇴가 완료되었습니다.');
+          })
+          .catch(function(err) {
+            alert(err && err.message ? err.message : '탈퇴 처리에 실패했습니다.');
+          });
+      }
+
+      if (placeHistoryPopover) {
+        placeHistoryPopover.addEventListener('scroll', function() {
+          if (historyLoading || !historyHasMore) return;
+          if ((placeHistoryPopover.scrollTop + placeHistoryPopover.clientHeight + 20) >= placeHistoryPopover.scrollHeight) {
+            loadPlaceHistory(false);
+          }
+        });
+      }
+
       function setSheetState(state) {
         if (!resultsPanel) return;
         resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
@@ -3330,11 +4246,49 @@
         if (routeBottomEndpointTriggerText) routeBottomEndpointTriggerText.textContent = text;
       }
 
+      function saveEndpointSelectionPreference() {
+        if (!authState.logged_in || !endpointContextKey) return;
+        var parts = endpointContextKey.split('|');
+        if (parts.length !== 3) return;
+        var payload = {
+          site_id: parts[0],
+          day_type: parts[1],
+          direction: parts[2],
+          selected_endpoints: getSelectedEndpointNamesSorted()
+        };
+        fetch(API_BASE + '/api/me/preferences/endpoint', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(function() {});
+      }
+
+      function loadSavedEndpointPreference(siteId, dayType, direction) {
+        if (!authState.logged_in) return Promise.resolve(null);
+        var url = API_BASE + '/api/me/preferences/endpoint' +
+          '?site_id=' + encodeURIComponent(siteId) +
+          '&day_type=' + encodeURIComponent(dayType) +
+          '&direction=' + encodeURIComponent(direction);
+        return fetch(url)
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data };
+            });
+          })
+          .then(function(payload) {
+            if (!payload.ok) return null;
+            if (!payload.data || !payload.data.has_saved) return null;
+            return Array.isArray(payload.data.selected_endpoints) ? payload.data.selected_endpoints : null;
+          })
+          .catch(function() { return null; });
+      }
+
       function persistCurrentEndpointSelection() {
         if (!endpointContextKey) return;
         endpointSelectionByContext[endpointContextKey] = {
           selected: cloneStringSet(selectedEndpoints)
         };
+        saveEndpointSelectionPreference();
       }
 
       function applyEndpointPickerSelection() {
@@ -3511,6 +4465,7 @@
         var target = e && e.currentTarget;
         if (!target || target.classList.contains('route-mode-hidden')) return;
         if (!routeModeDirection) return;
+        openPlaceHistoryForInput(target);
         var placeText = String(routeModePlaceName || '선택한 위치').trim();
         var currentText = String(target.value || '').trim();
         if (currentText === placeText || currentText === '선택한 위치') {
@@ -3521,6 +4476,10 @@
       function onRouteModePlaceInputBlur(e) {
         var target = e && e.currentTarget;
         if (!target || target.classList.contains('route-mode-hidden')) return;
+        setTimeout(function() {
+          if (document.activeElement && placeHistoryPopover && placeHistoryPopover.contains(document.activeElement)) return;
+          closeHistoryPopover();
+        }, 120);
         if (!routeModeDirection || routePlaceInputSubmitting) return;
         target.value = routeModePlaceName || '선택한 위치';
       }
@@ -3586,21 +4545,35 @@
 
             var prevState = endpointSelectionByContext[contextKey];
             var available = new Set(endpointOptionsAll.map(function(item) { return item.endpoint_name; }));
-            var nextSelected = new Set();
-            if (prevState && prevState.selected && typeof prevState.selected.forEach === 'function') {
-              prevState.selected.forEach(function(name) {
-                if (available.has(name)) nextSelected.add(name);
-              });
-            } else {
-              endpointOptionsAll.forEach(function(item) { nextSelected.add(item.endpoint_name); });
+            function applySelection(names) {
+              var nextSelected = new Set();
+              if (Array.isArray(names) && names.length > 0) {
+                names.forEach(function(name) {
+                  var value = String(name || '').trim();
+                  if (value && available.has(value)) nextSelected.add(value);
+                });
+              }
+              if (nextSelected.size === 0) {
+                endpointOptionsAll.forEach(function(item) { nextSelected.add(item.endpoint_name); });
+              }
+              selectedEndpoints = nextSelected;
+              endpointDraftEndpoints = null;
+              persistCurrentEndpointSelection();
+              updateEndpointTriggerText();
+              updateRouteModeHeader();
+              return endpointOptions;
             }
 
-            selectedEndpoints = nextSelected;
-            endpointDraftEndpoints = null;
-            persistCurrentEndpointSelection();
-            updateEndpointTriggerText();
-            updateRouteModeHeader();
-            return endpointOptions;
+            if (prevState && prevState.selected && typeof prevState.selected.forEach === 'function') {
+              var localNames = [];
+              prevState.selected.forEach(function(name) { localNames.push(name); });
+              return applySelection(localNames);
+            }
+
+            return loadSavedEndpointPreference(selectedSiteId, selectedDayType, direction)
+              .then(function(savedNames) {
+                return applySelection(savedNames);
+              });
           })
           .finally(function() {
             setEndpointTriggerEnabled(true);
@@ -4155,16 +5128,49 @@
             var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
             var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
             var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
+            var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
+            var fixedCommentNickname = isLoggedInCommentWriter
+              ? String(authState.user.nickname || '').trim()
+              : '';
+            var commentAuthorFieldHtml = isLoggedInCommentWriter
+              ? ('<div class="issue-comment-author-fixed">작성자: <strong>' + escapeHtml(fixedCommentNickname || '알 수 없음') + '</strong></div>')
+              : (
+                  '<div class="issue-comment-nickname-row">' +
+                    '<label for="issueDetailCommentNickname">닉네임 (선택)</label>' +
+                    '<input type="text" id="issueDetailCommentNickname" maxlength="40" placeholder="예: 셔틀러버" />' +
+                  '</div>'
+                );
             var commentsHtml = '';
             if (!comments.length) {
               commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
             } else {
+              var currentPublicUserId = isLoggedInCommentWriter
+                ? String((authState.user && authState.user.id) || '').trim()
+                : '';
               commentsHtml = comments.map(function(comment) {
                 var rawUser = String(comment.user || 'unknown');
-                var isBotAuthor = !!comment.is_bot || rawUser.trim().toLowerCase().endsWith('[bot]');
-                var metaText = isBotAuthor
-                  ? formatIssueDate(comment.created_at)
-                  : ('<strong>' + escapeHtml(rawUser) + '</strong>' + ' · ' + formatIssueDate(comment.created_at));
+                var displayUser = String(comment.display_name || rawUser || 'unknown');
+                var commentUserId = String(comment.user_id || '').trim();
+                var isRepoOwner = !!comment.is_repo_owner;
+                var isSelfAuthor = !!(currentPublicUserId && commentUserId && commentUserId === currentPublicUserId);
+                if (!isSelfAuthor && isLoggedInCommentWriter && !commentUserId) {
+                  var currentNickname = String((authState.user && authState.user.nickname) || '').trim();
+                  if (currentNickname && displayUser.trim() === currentNickname) isSelfAuthor = true;
+                }
+                var currentNicknameForRender = isLoggedInCommentWriter
+                  ? String((authState.user && authState.user.nickname) || '').trim()
+                  : '';
+                if (isSelfAuthor && currentNicknameForRender) {
+                  displayUser = currentNicknameForRender;
+                }
+                var safeDisplayUser = displayUser.trim() || rawUser.trim() || 'unknown';
+                var authorClass = isRepoOwner ? 'issue-owner-name' : 'issue-comment-author';
+                var metaParts = [];
+                if (isSelfAuthor) metaParts.push('<span class="issue-self-mark">*</span>');
+                metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
+                metaParts.push('<span class="issue-comment-separator">·</span>');
+                metaParts.push('<span>' + formatIssueDate(comment.created_at) + '</span>');
+                var metaText = metaParts.join('');
                 return (
                   '<div class="issue-comment-item">' +
                     '<div class="issue-comment-meta">' +
@@ -4187,6 +5193,7 @@
               '<div class="issue-comments-list">' + commentsHtml + '</div>' +
               '<div class="issue-comment-compose">' +
                 '<div class="issue-comment-compose-title">댓글 작성</div>' +
+                commentAuthorFieldHtml +
                 '<textarea id="issueDetailCommentBody" placeholder="댓글을 입력해 주세요."></textarea>' +
                 '<div class="issue-comment-compose-actions">' +
                   '<button type="button" class="issue-form-btn primary" id="issueDetailCommentSubmit">댓글 등록</button>' +
@@ -4194,6 +5201,7 @@
               '</div>';
 
             var detailCommentBody = document.getElementById('issueDetailCommentBody');
+            var detailCommentNickname = document.getElementById('issueDetailCommentNickname');
             var detailCommentSubmit = document.getElementById('issueDetailCommentSubmit');
             if (detailCommentBody && detailCommentSubmit) {
               detailCommentSubmit.addEventListener('click', function() {
@@ -4206,11 +5214,20 @@
 
                 detailCommentSubmit.disabled = true;
                 setIssueFeedback('info', '댓글을 등록하는 중입니다...');
+                var requestPayload = { body: bodyText };
+                if (isLoggedInCommentWriter && fixedCommentNickname) {
+                  requestPayload.meta = { nickname: fixedCommentNickname };
+                } else if (detailCommentNickname) {
+                  var optionalNickname = String(detailCommentNickname.value || '').trim();
+                  if (optionalNickname) {
+                    requestPayload.meta = { nickname: optionalNickname };
+                  }
+                }
 
                 fetch(API_BASE + '/api/issues/' + issue.number + '/comments', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ body: bodyText })
+                  body: JSON.stringify(requestPayload)
                 })
                   .then(function(r) {
                     return r.json().catch(function() { return {}; }).then(function(data) {
@@ -4242,6 +5259,7 @@
 
       function openIssueCreateView() {
         setIssueView('form');
+        updateIssueNicknameUi();
         if (issueTitleInput) issueTitleInput.focus();
       }
 
@@ -4271,8 +5289,8 @@
         if (!issueTitleInput || !issueBodyInput) return;
         var title = issueTitleInput.value.trim();
         var body = issueBodyInput.value.trim();
+        var isLoggedIn = !!(authState && authState.logged_in && authState.user);
         var nickname = issueNicknameInput ? issueNicknameInput.value.trim() : '';
-        var issueTitle = nickname ? (title + ' - ' + nickname) : title;
         if (!title) {
           setIssueFeedback('error', '제목을 입력해 주세요.');
           return;
@@ -4285,13 +5303,18 @@
         if (issueFormSubmitBtn) issueFormSubmitBtn.disabled = true;
         setIssueFeedback('info', '건의를 등록하는 중입니다...');
 
+        var payload = {
+          title: title,
+          body: body
+        };
+        if (!isLoggedIn && nickname) {
+          payload.meta = { nickname: nickname };
+        }
+
         fetch(API_BASE + '/api/issues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: issueTitle,
-            body: body
-          })
+          body: JSON.stringify(payload)
         })
           .then(function(r) {
             return r.json().catch(function() { return {}; }).then(function(data) {
@@ -4534,7 +5557,12 @@
                 siteSelect.appendChild(new Option(site.site_name, String(site.site_id)));
               });
             }
-            if (siteSelect.querySelector('option[value="0000013"]')) {
+            var preferredSiteId = authState && authState.preferences
+              ? String(authState.preferences.selected_site_id || '').trim()
+              : '';
+            if (preferredSiteId && siteSelect.querySelector('option[value=\"' + preferredSiteId + '\"]')) {
+              siteSelect.value = preferredSiteId;
+            } else if (siteSelect.querySelector('option[value="0000013"]')) {
               siteSelect.value = '0000013';
             }
             selectedSiteId = siteSelect.value;
@@ -4556,6 +5584,13 @@
 
       siteSelect.addEventListener('change', function() {
         selectedSiteId = siteSelect.value;
+        if (authState.logged_in) {
+          fetch(API_BASE + '/api/me/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_site_id: selectedSiteId })
+          }).catch(function() {});
+        }
         refreshDayTypeOptionsForSite(selectedSiteId).then(function(applied) {
           if (applied !== false) refreshLastShuttleResult();
         });
@@ -4605,8 +5640,72 @@
       if (routeHeaderBackBtn) routeHeaderBackBtn.addEventListener('click', goBackFromRouteOptions);
       updateRouteSwapButtonState();
 
-      if (issueModalTrigger) issueModalTrigger.addEventListener('click', openIssueModal);
-      if (routeIssueModalTrigger) routeIssueModalTrigger.addEventListener('click', openIssueModal);
+      if (mobileMenuTrigger) {
+        mobileMenuTrigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          toggleAccountMenu(mobileMenuTrigger);
+        });
+      }
+      if (profileMenuTrigger) {
+        profileMenuTrigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          toggleAccountMenu(profileMenuTrigger);
+        });
+      }
+      if (routeProfileMenuTrigger) {
+        routeProfileMenuTrigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          toggleAccountMenu(routeProfileMenuTrigger);
+        });
+      }
+      if (accountMenuBackdrop) accountMenuBackdrop.addEventListener('click', closeAccountMenu);
+      if (accountMenu) {
+        accountMenu.addEventListener('click', function(e) { e.stopPropagation(); });
+      }
+      if (accountMenuLoginBtn) {
+        accountMenuLoginBtn.addEventListener('click', function() {
+          closeAccountMenu();
+          startGoogleLogin();
+        });
+      }
+      if (accountMenuIssueBtn) {
+        accountMenuIssueBtn.addEventListener('click', function() {
+          closeAccountMenu();
+          openIssueModal();
+        });
+      }
+      if (accountMenuProfileBtn) {
+        accountMenuProfileBtn.addEventListener('click', function() {
+          closeAccountMenu();
+          openProfileModal();
+        });
+      }
+      if (accountMenuLogoutBtn) {
+        accountMenuLogoutBtn.addEventListener('click', function() {
+          fetch(API_BASE + '/api/auth/logout', { method: 'POST' })
+            .finally(function() {
+              closeAccountMenu();
+              refreshAuthState();
+            });
+        });
+      }
+      if (profileModalSaveBtn) profileModalSaveBtn.addEventListener('click', saveProfileNickname);
+      if (profileModalCancelBtn) profileModalCancelBtn.addEventListener('click', closeProfileModal);
+      if (profileModalDeleteBtn) {
+        profileModalDeleteBtn.addEventListener('click', function(e) {
+          if (e && typeof e.preventDefault === 'function') e.preventDefault();
+          deleteMyAccount();
+        });
+      }
+      if (profileModalBackdrop) profileModalBackdrop.addEventListener('click', closeProfileModal);
+      if (profileModal) profileModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      if (profileNicknameInput) {
+        profileNicknameInput.addEventListener('keydown', function(e) {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          saveProfileNickname();
+        });
+      }
       if (issueModalCloseBtn) issueModalCloseBtn.addEventListener('click', closeIssueModal);
       if (issueModalBackdrop) issueModalBackdrop.addEventListener('click', closeIssueModal);
       if (issueModal) issueModal.addEventListener('click', function(e) { e.stopPropagation(); });
@@ -4639,6 +5738,9 @@
       document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
+        if (profileModal && profileModal.classList.contains('show')) closeProfileModal();
+        closeAccountMenu();
+        closeHistoryPopover();
         closeEndpointPickerModal();
         closeMaxDistancePopover();
       });
@@ -5357,7 +6459,8 @@
           place_name: '선택한 위치',
           address_name: '',
           y: lat,
-          x: lng
+          x: lng,
+          _place_source: 'map'
         };
         showBubbleWithPlace(place, lat, lng, false, null, 'manual');
       }
@@ -7105,6 +8208,7 @@
 
       var currentRouteOptions = null;
       var currentPlaceName = null;
+      var currentPlaceSource = 'unknown';
       var currentIsDepart = null;
       var expandedOptionIndex = -1;
 
@@ -7164,11 +8268,14 @@
         }
       }
 
-      function buildRouteOptionsUrl(endpoint, lat, lng, placeName, excludeRouteIds) {
+      function buildRouteOptionsUrl(endpoint, lat, lng, placeName, excludeRouteIds, placeSource) {
+        var normalizedSource = String(placeSource || '').trim().toLowerCase();
+        if (normalizedSource !== 'search' && normalizedSource !== 'map') normalizedSource = 'unknown';
         var url = API_BASE + endpoint +
           '?site_id=' + selectedSiteId +
           '&lat=' + lat + '&lng=' + lng +
           '&place_name=' + encodeURIComponent(placeName) +
+          '&place_source=' + encodeURIComponent(normalizedSource) +
           '&time=' + encodeURIComponent(getDepartureTimeStr()) +
           '&day_type=' + encodeURIComponent(selectedDayType) +
           '&max_distance_km=' + encodeURIComponent(String(maxDistanceKm)) +
@@ -7314,7 +8421,7 @@
         var isDepart = currentIsDepart;
         var endpoint = isDepart ? '/api/shuttle/depart/options' : '/api/shuttle/arrive/options';
         var excludeIds = currentRouteOptions.map(function(o) { return o.route_id; }).join(',');
-        var url = buildRouteOptionsUrl(endpoint, lat, lng, name, excludeIds);
+        var url = buildRouteOptionsUrl(endpoint, lat, lng, name, excludeIds, currentPlaceSource);
         fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -7403,6 +8510,7 @@
         closeMaxDistancePopover();
         routeOptionsWrap.classList.remove('show');
         routeOptionsWrap.innerHTML = '';
+        currentPlaceSource = 'unknown';
       }
 
       function goBackFromRouteOptions() {
@@ -7464,6 +8572,13 @@
         var lat = parseFloat(place.y);
         var lng = parseFloat(place.x);
         var name = place.place_name || '선택한 위치';
+        var placeSource = String(
+          opts.placeSource || place._place_source || place.place_source || place.source || ''
+        ).trim().toLowerCase();
+        if (placeSource !== 'search' && placeSource !== 'map') {
+          placeSource = (name === '선택한 위치') ? 'map' : 'search';
+        }
+        currentPlaceSource = placeSource;
         var isDepart = direction === 'depart';
         var emptyBySelectionMsg = isDepart
           ? '선택한 출근 종착지 옵션이 없습니다.'
@@ -7479,7 +8594,7 @@
               return null;
             }
             var endpoint = isDepart ? '/api/shuttle/depart/options' : '/api/shuttle/arrive/options';
-            var url = buildRouteOptionsUrl(endpoint, lat, lng, name, '');
+            var url = buildRouteOptionsUrl(endpoint, lat, lng, name, '', currentPlaceSource);
             return fetch(url)
               .then(function(r) {
                 return r.json().catch(function() { return {}; }).then(function(data) {
@@ -7530,7 +8645,11 @@
         fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q))
           .then(function(r) { return r.json(); })
           .then(function(data) {
-            places = data.documents || [];
+            places = (data.documents || []).map(function(doc) {
+              var copied = Object.assign({}, doc || {});
+              copied._place_source = 'search';
+              return copied;
+            });
             clearSearchOverlays();
             if (places.length === 0) {
               showPlaceResultsView();
@@ -7664,6 +8783,17 @@
       }
 
       if (searchBtn) searchBtn.addEventListener('click', doSearch);
+      if (searchInput) {
+        searchInput.addEventListener('focus', function() {
+          openPlaceHistoryForInput(searchInput);
+        });
+        searchInput.addEventListener('blur', function() {
+          setTimeout(function() {
+            if (document.activeElement && placeHistoryPopover && placeHistoryPopover.contains(document.activeElement)) return;
+            closeHistoryPopover();
+          }, 120);
+        });
+      }
       searchInput.addEventListener('keydown', function(e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -7700,6 +8830,16 @@
         routeBottomPlaceLabel.addEventListener('blur', onRouteModePlaceInputBlur);
         routeBottomPlaceLabel.addEventListener('keydown', onRouteModePlaceInputKeydown);
       }
+      document.addEventListener('click', function(e) {
+        var target = e.target;
+        if (placeHistoryPopover && placeHistoryPopover.classList.contains('show')) {
+          if (isHistoryInput(target)) return;
+          if (target && typeof target.closest === 'function') {
+            if (target.closest('.place-history-popover')) return;
+          }
+          closeHistoryPopover();
+        }
+      });
       var btnBackFromRoutes = document.getElementById('btnBackFromRoutes');
       if (btnBackFromRoutes) btnBackFromRoutes.addEventListener('click', goBackFromRouteOptions);
 
@@ -7775,7 +8915,7 @@
         if (timePickerConfirm) timePickerConfirm.addEventListener('click', applyTimePicker);
         if (timePickerFive) timePickerFive.addEventListener('click', setTimePickerToFive);
         if (timePickerNow) timePickerNow.addEventListener('click', setTimePickerToNow);
-        if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', closeTimePickerModal);
+        if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', applyTimePicker);
         if (timePickerModal) timePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
         if (dayTypeList) dayTypeList.addEventListener('scroll', updateDayTypeSelectedClasses);
         if (timePickerHourList) timePickerHourList.addEventListener('scroll', updateTimePickerSelectedClasses);
@@ -7938,18 +9078,22 @@
         }
       })();
 
+      updateAccountMenuUi();
       if (typeof kakao !== 'undefined' && kakao.maps) {
         initMap();
-        loadSites();
-        updateMapControlsPosition();
-        if (isMobile()) {
-          setSheetState('sheet-peek');
-        }
+        refreshAuthState().finally(function() {
+          loadSites();
+          updateMapControlsPosition();
+          if (isMobile()) {
+            setSheetState('sheet-peek');
+          }
+        });
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
       }
       window.addEventListener('resize', function() {
         updateMapControlsPosition();
+        positionHistoryPopover();
         if (!isMobile()) {
           clearCurrentLocationOverlay();
         } else {

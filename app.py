@@ -9,11 +9,13 @@ import hmac
 import json
 import math
 import os
+import secrets
 import threading
 import time as _time
 import uuid
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode, urlparse
 
 import requests
 from flask import Flask, jsonify, make_response, request, Response
@@ -28,6 +30,7 @@ from prometheus_client import (
 )
 
 import load_data
+import user_store
 from load_data import (
     find_nearest_route_options,
     get_available_day_types,
@@ -54,7 +57,11 @@ _cors_origins = os.environ.get(
     "CORS_ORIGINS",
     "http://localhost:5500,http://localhost:3000,http://127.0.0.1:5500",
 )
-CORS(app, origins=[o.strip() for o in _cors_origins.split(",") if o.strip()])
+CORS(
+    app,
+    origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
+    supports_credentials=True,
+)
 
 KAKAO_REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY", "")
 SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
@@ -75,6 +82,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 GITHUB_API_BASE = os.environ.get("GITHUB_API_BASE", "https://api.github.com").rstrip("/")
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "").strip()
 GITHUB_INSTALLATION_ID = os.environ.get("GITHUB_INSTALLATION_ID", "").strip()
@@ -84,6 +98,48 @@ GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 60)
 ISSUE_SUBMIT_RATE_LIMIT_SEC = _env_int("ISSUE_SUBMIT_RATE_LIMIT_SEC", 10)
 ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
+
+AUTH_SESSION_COOKIE_NAME = os.environ.get("AUTH_SESSION_COOKIE_NAME", "sg_session").strip() or "sg_session"
+AUTH_SESSION_TTL_DAYS = max(1, _env_int("SESSION_TTL_DAYS", 90))
+AUTH_SESSION_SLIDING = _env_bool("SESSION_SLIDING", True)
+AUTH_COOKIE_DOMAIN = os.environ.get("SESSION_COOKIE_DOMAIN", "").strip() or None
+AUTH_CLEANUP_INTERVAL_SEC = max(60, _env_int("AUTH_CLEANUP_INTERVAL_SEC", 3600))
+AUTH_HISTORY_RETENTION_DAYS = max(1, _env_int("HISTORY_RETENTION_DAYS", 7))
+AUTH_GITHUB_CLEANUP_INTERVAL_SEC = max(30, _env_int("GITHUB_CLEANUP_INTERVAL_SEC", 60))
+AUTH_GITHUB_CLEANUP_DEADLINE_HOURS = max(1, _env_int("GITHUB_CLEANUP_DEADLINE_HOURS", 24))
+AUTH_NICKNAME_MIN_LEN = max(1, _env_int("AUTH_NICKNAME_MIN_LEN", 2))
+AUTH_NICKNAME_MAX_LEN = max(AUTH_NICKNAME_MIN_LEN, _env_int("AUTH_NICKNAME_MAX_LEN", 20))
+AUTH_PENDING_SIGNUP_TTL_SEC = max(60, _env_int("AUTH_PENDING_SIGNUP_TTL_SEC", 900))
+AUTH_OAUTH_STATE_TTL_SEC = max(60, _env_int("AUTH_OAUTH_STATE_TTL_SEC", 600))
+AUTH_METRICS_REFRESH_SEC = max(30, _env_int("AUTH_METRICS_REFRESH_SEC", 300))
+AUTH_FRONTEND_CALLBACK_URL = os.environ.get(
+    "AUTH_FRONTEND_CALLBACK_URL", "https://shuttlego.github.io/auth-callback.html"
+).strip()
+AUTH_FRONTEND_ALLOWED_ORIGINS = [
+    v.strip()
+    for v in os.environ.get(
+        "AUTH_FRONTEND_ALLOWED_ORIGINS",
+        "https://shuttlego.github.io,http://localhost:8080,http://127.0.0.1:8080",
+    ).split(",")
+    if v.strip()
+]
+
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+GOOGLE_OAUTH_AUTHORIZE_URL = os.environ.get(
+    "GOOGLE_OAUTH_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"
+).strip()
+GOOGLE_OAUTH_TOKEN_URL = os.environ.get(
+    "GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"
+).strip()
+GOOGLE_OAUTH_USERINFO_URL = os.environ.get(
+    "GOOGLE_OAUTH_USERINFO_URL", "https://openidconnect.googleapis.com/v1/userinfo"
+).strip()
+GOOGLE_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "").strip()
+
+AUTH_RESERVED_NICKNAMES = {"shuttlego"}
+if GITHUB_REPO_OWNER.strip():
+    AUTH_RESERVED_NICKNAMES.add(GITHUB_REPO_OWNER.strip().casefold())
 
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "").replace("\\n", "\n").strip()
 if not GITHUB_APP_PRIVATE_KEY:
@@ -102,6 +158,8 @@ _issue_cache_lock = threading.Lock()
 _issue_submit_tracker_lock = threading.Lock()
 _issue_submit_recent_by_client: dict[str, float] = {}
 _issue_submit_recent_hash: dict[str, float] = {}
+_auth_background_started = False
+_auth_background_lock = threading.Lock()
 
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
@@ -109,6 +167,18 @@ _OPTIONS_CANDIDATE_LIMIT = 100
 _OPTIONS_RESPONSE_LIMIT = 3
 _DEFAULT_MAX_DISTANCE_KM = 3.0
 _MAX_DISTANCE_KM = 30.0
+_DEFAULT_SITE_ID = "0000011"
+_SITE_ID_DEFAULT_ENDPOINTS = {
+    "/api/shuttle/day-types",
+    "/api/shuttle/endpoint-options",
+    "/api/shuttle/endpoint-options/search",
+    "/api/shuttle/depart/options",
+    "/api/shuttle/depart",
+    "/api/shuttle/arrive/options",
+    "/api/shuttle/arrive",
+}
+_SITE_ID_METRIC_EXTRA_ENDPOINTS = {"/api/me/preferences/endpoint"}
+_ROUTE_SEARCH_SOURCE_VALUES = {"search", "map", "unknown"}
 
 OTP_BASE_URL = os.environ.get("OTP_BASE_URL", "http://otp:8082").rstrip("/")
 OTP_PLAN_PATH = os.environ.get("OTP_PLAN_PATH", "/otp/gtfs/v1").strip() or "/otp/gtfs/v1"
@@ -176,6 +246,49 @@ APP_INFO = Gauge(
 )
 APP_INFO.labels(version=os.environ.get("APP_VERSION", "1.0.0")).set(1)
 
+AUTH_CUMULATIVE_USERS = Gauge(
+    "shuttle_auth_cumulative_users",
+    "Cumulative number of users who have signed up",
+)
+
+AUTH_DAILY_NEW_USERS = Gauge(
+    "shuttle_auth_daily_new_users",
+    "Number of users who signed up within the last 24 hours",
+)
+
+AUTH_USER_DB_SIZE_BYTES = Gauge(
+    "shuttle_auth_user_db_size_bytes",
+    "Total size of user SQLite files (db + wal + shm) in bytes",
+)
+
+AUTH_DAU = Gauge(
+    "shuttle_auth_dau",
+    "Daily active users (distinct active users who logged in within the last 24 hours)",
+)
+
+AUTH_MAU = Gauge(
+    "shuttle_auth_mau",
+    "Monthly active users (distinct active users who logged in within the last 30 days)",
+)
+
+API_REQUEST_AUTH_STATE_COUNT = Counter(
+    "shuttle_api_requests_by_auth_total",
+    "Total API requests grouped by authentication state",
+    ["auth_state"],
+)
+
+API_REQUEST_SITE_COUNT = Counter(
+    "shuttle_api_requests_by_site_total",
+    "Total API requests grouped by site and endpoint",
+    ["site_id", "endpoint"],
+)
+
+ROUTE_SEARCH_SOURCE_COUNT = Counter(
+    "shuttle_route_search_by_source_total",
+    "Route search requests grouped by direction and place source",
+    ["direction", "source"],
+)
+
 
 # ── 요청 전/후 훅 (메트릭 수집) ──────────────────────────────
 @app.before_request
@@ -212,6 +325,71 @@ def _safe_response_size_bytes(response) -> int:
     return len(body) if body else 0
 
 
+def _current_auth_state_for_metrics() -> str:
+    user, _ = _get_current_user(with_touch=False)
+    return "authenticated" if user is not None else "anonymous"
+
+
+def _extract_site_id_for_metrics(endpoint: str) -> str | None:
+    if not (endpoint.startswith("/api/shuttle/") or endpoint in _SITE_ID_METRIC_EXTRA_ENDPOINTS):
+        return None
+    site_id = str(request.args.get("site_id") or "").strip()
+    if not site_id and request.method in {"POST", "PUT", "PATCH"}:
+        payload = request.get_json(silent=True)
+        if isinstance(payload, dict):
+            site_id = str(payload.get("site_id") or "").strip()
+    if not site_id and endpoint in _SITE_ID_DEFAULT_ENDPOINTS:
+        site_id = _DEFAULT_SITE_ID
+    return site_id or None
+
+
+def _user_db_size_bytes() -> int:
+    db_path = str(user_store.get_db_path())
+    total = 0
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            total += os.path.getsize(db_path + suffix)
+        except OSError:
+            continue
+    return total
+
+
+def _refresh_auth_business_metrics() -> None:
+    snapshot = user_store.get_user_metrics_snapshot(daily_window_hours=24)
+    AUTH_CUMULATIVE_USERS.set(float(snapshot.get("cumulative_users") or 0))
+    AUTH_DAILY_NEW_USERS.set(float(snapshot.get("daily_new_users") or 0))
+    AUTH_DAU.set(float(snapshot.get("dau") or 0))
+    AUTH_MAU.set(float(snapshot.get("mau") or 0))
+    AUTH_USER_DB_SIZE_BYTES.set(float(_user_db_size_bytes()))
+
+
+def _route_search_source_from_request() -> str:
+    raw_source = str(
+        request.args.get("place_source")
+        or request.args.get("search_source")
+        or ""
+    ).strip().lower()
+    if raw_source in {"search", "map"}:
+        return raw_source
+
+    place_name = str(request.args.get("place_name") or "").strip()
+    if place_name == "선택한 위치":
+        return "map"
+    if place_name and place_name != "선택한 장소":
+        return "search"
+    return "unknown"
+
+
+def _record_route_search_source_metric(direction: str) -> None:
+    safe_direction = str(direction or "").strip().lower()
+    if safe_direction not in {"depart", "arrive"}:
+        return
+    source = _route_search_source_from_request()
+    if source not in _ROUTE_SEARCH_SOURCE_VALUES:
+        source = "unknown"
+    ROUTE_SEARCH_SOURCE_COUNT.labels(direction=safe_direction, source=source).inc()
+
+
 @app.after_request
 def _after_request(response):
     if request.path == "/metrics":
@@ -233,6 +411,12 @@ def _after_request(response):
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
     REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
     RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
+    if endpoint.startswith("/api/"):
+        auth_state = _current_auth_state_for_metrics()
+        API_REQUEST_AUTH_STATE_COUNT.labels(auth_state=auth_state).inc()
+        site_id = _extract_site_id_for_metrics(endpoint)
+        if site_id:
+            API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
     IN_PROGRESS_REQUESTS.dec()
     return response
 
@@ -804,12 +988,13 @@ def _normalize_label_names(labels: list | None) -> list[str]:
 def _normalize_issue(issue: dict) -> dict:
     user = issue.get("user") or {}
     login = str(user.get("login") or "")
+    body, _ = _split_issue_body_and_meta(str(issue.get("body") or ""))
     owner = (GITHUB_REPO_OWNER or "").strip().lower()
     is_notice = bool(owner and login.strip().lower() == owner)
     return {
         "number": issue.get("number"),
         "title": issue.get("title") or "",
-        "body": issue.get("body") or "",
+        "body": body,
         "state": issue.get("state") or "open",
         "labels": _normalize_label_names(issue.get("labels")),
         "url": issue.get("html_url") or "",
@@ -825,6 +1010,15 @@ def _normalize_issue(issue: dict) -> dict:
 def _normalize_comment(comment: dict) -> dict:
     user = comment.get("user") or {}
     login = str(user.get("login") or "")
+    body, meta = _split_issue_body_and_meta(str(comment.get("body") or ""))
+    nickname = ""
+    user_id = ""
+    if isinstance(meta, dict):
+        nickname = str(meta.get("nickname") or "").strip()[:40]
+        user_id = str(meta.get("user-id") or "").strip()[:64]
+    display_name = nickname or login
+    owner = (GITHUB_REPO_OWNER or "").strip().lower()
+    is_repo_owner = bool(owner and login.strip().lower() == owner)
     user_type = str(user.get("type") or "").strip().lower()
     is_bot = (
         user_type == "bot"
@@ -833,11 +1027,15 @@ def _normalize_comment(comment: dict) -> dict:
     )
     return {
         "id": comment.get("id"),
-        "body": comment.get("body") or "",
+        "body": body,
         "created_at": comment.get("created_at"),
         "updated_at": comment.get("updated_at"),
         "user": login,
+        "display_name": display_name,
+        "nickname": nickname,
+        "user_id": user_id,
         "is_bot": is_bot,
+        "is_repo_owner": is_repo_owner,
         "url": comment.get("html_url") or "",
     }
 
@@ -895,6 +1093,39 @@ def _compose_issue_body(body: str, meta: dict | None) -> str:
     if not content:
         return meta_block
     return f"{content}\n\n---\n{meta_block}"
+
+
+def _split_issue_body_and_meta(raw_body: str) -> tuple[str, dict]:
+    full = str(raw_body or "")
+    if not full:
+        return "", {}
+
+    marker_full = "\n\n---\nmeta\n```json\n"
+    marker_meta_only = "meta\n```json\n"
+
+    if full.startswith(marker_meta_only) and full.endswith("\n```"):
+        raw_meta = full[len(marker_meta_only) : -len("\n```")]
+        try:
+            parsed = json.loads(raw_meta)
+        except Exception:
+            return full, {}
+        if isinstance(parsed, dict):
+            return "", parsed
+        return full, {}
+
+    if marker_full not in full or not full.endswith("\n```"):
+        return full, {}
+
+    body_part, tail = full.rsplit(marker_full, 1)
+    raw_meta = tail[: -len("\n```")]
+    try:
+        parsed = json.loads(raw_meta)
+    except Exception:
+        return full, {}
+
+    if isinstance(parsed, dict):
+        return body_part.rstrip(), parsed
+    return full, {}
 
 
 def _parse_issue_labels_input(raw_labels) -> list[str]:
@@ -977,13 +1208,740 @@ def _verify_github_webhook_signature(payload: bytes, received_signature: str | N
     return hmac.compare_digest(expected, received_signature)
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _hash_session_token(raw_token: str) -> str:
+    return hashlib.sha256(str(raw_token).encode("utf-8")).hexdigest()
+
+
+def _auth_cookie_secure() -> bool:
+    override = os.environ.get("SESSION_COOKIE_SECURE")
+    if override is None:
+        return bool(request.is_secure)
+    return str(override).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _validate_nickname(nickname: str) -> str | None:
+    value = str(nickname or "").strip()
+    if len(value) < AUTH_NICKNAME_MIN_LEN or len(value) > AUTH_NICKNAME_MAX_LEN:
+        return f"닉네임은 {AUTH_NICKNAME_MIN_LEN}~{AUTH_NICKNAME_MAX_LEN}자여야 합니다."
+    if value.casefold() in AUTH_RESERVED_NICKNAMES:
+        return "해당 닉네임은 사용할 수 없습니다."
+    return None
+
+
+def _auth_cookie_samesite() -> str:
+    configured = os.environ.get("SESSION_COOKIE_SAMESITE", "").strip()
+    if configured:
+        return configured
+    return "None" if _auth_cookie_secure() else "Lax"
+
+
+def _set_auth_session_cookie(resp, raw_token: str) -> None:
+    max_age = 60 * 60 * 24 * AUTH_SESSION_TTL_DAYS
+    resp.set_cookie(
+        AUTH_SESSION_COOKIE_NAME,
+        raw_token,
+        max_age=max_age,
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite=_auth_cookie_samesite(),
+        domain=AUTH_COOKIE_DOMAIN,
+        path="/",
+    )
+
+
+def _clear_auth_session_cookie(resp) -> None:
+    resp.set_cookie(
+        AUTH_SESSION_COOKIE_NAME,
+        "",
+        max_age=0,
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite=_auth_cookie_samesite(),
+        domain=AUTH_COOKIE_DOMAIN,
+        path="/",
+    )
+
+
+def _session_token_from_request() -> str:
+    return (request.cookies.get(AUTH_SESSION_COOKIE_NAME) or "").strip()
+
+
+def _client_ip() -> str:
+    forwarded_ip = request.headers.get("CF-Connecting-IP", "").strip()
+    if not forwarded_ip:
+        forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+        forwarded_ip = forwarded_for.split(",")[0].strip() if forwarded_for else ""
+    return forwarded_ip or request.remote_addr or "unknown"
+
+
+def _create_auth_session_for_user(user: dict) -> str:
+    raw_token = secrets.token_urlsafe(48)
+    token_hash = _hash_session_token(raw_token)
+    expires_at = _utc_now() + timedelta(days=AUTH_SESSION_TTL_DAYS)
+    user_store.create_session(
+        user_id=int(user["id"]),
+        session_token_hash=token_hash,
+        expires_at=expires_at,
+        user_agent=request.headers.get("User-Agent", ""),
+        ip=_client_ip(),
+    )
+    return raw_token
+
+
+def _get_current_user(with_touch: bool = False) -> tuple[dict | None, str | None]:
+    if getattr(request, "_auth_user_cache_loaded", False):
+        user = getattr(request, "_auth_user_cache_user", None)
+        token_hash = getattr(request, "_auth_user_cache_token_hash", None)
+    else:
+        raw_token = _session_token_from_request()
+        if not raw_token:
+            request._auth_user_cache_loaded = True
+            request._auth_user_cache_user = None
+            request._auth_user_cache_token_hash = None
+            request._auth_user_cache_touched = False
+            return None, None
+        token_hash = _hash_session_token(raw_token)
+        user = user_store.get_user_by_session_hash(token_hash)
+        request._auth_user_cache_loaded = True
+        request._auth_user_cache_user = user
+        request._auth_user_cache_token_hash = token_hash
+        request._auth_user_cache_touched = False
+
+    if with_touch and user is not None and not getattr(request, "_auth_user_cache_touched", False):
+        if AUTH_SESSION_SLIDING:
+            user_store.touch_session(
+                token_hash,
+                expires_at=_utc_now() + timedelta(days=AUTH_SESSION_TTL_DAYS),
+            )
+        else:
+            user_store.touch_session(token_hash, expires_at=None)
+        request._auth_user_cache_touched = True
+    return user, token_hash
+
+
+def _auth_required() -> tuple[dict | None, str | None, Response | None]:
+    user, token_hash = _get_current_user(with_touch=True)
+    if user is None:
+        resp = make_response(jsonify({"error": "로그인이 필요합니다."}), 401)
+        if token_hash is not None:
+            _clear_auth_session_cookie(resp)
+        return None, token_hash, resp
+    return user, token_hash, None
+
+
+def _serialize_user_profile(user: dict) -> dict:
+    return {
+        "id": user.get("public_user_id"),
+        "nickname": user.get("nickname") or "",
+        "email": user.get("email"),
+        "email_consent": bool(user.get("email_consent")),
+        "created_at": user.get("created_at"),
+    }
+
+
+def _origin_allowed_for_auth(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if not parsed.netloc:
+        return False
+    origin = f"{parsed.scheme}://{parsed.netloc}".lower().rstrip("/")
+    allowed = {o.lower().rstrip("/") for o in AUTH_FRONTEND_ALLOWED_ORIGINS}
+    return origin in allowed
+
+
+def _resolve_frontend_callback_url(raw_next: str | None) -> str:
+    candidate = (raw_next or "").strip()
+    if candidate and _origin_allowed_for_auth(candidate):
+        return candidate
+    if _origin_allowed_for_auth(AUTH_FRONTEND_CALLBACK_URL):
+        return AUTH_FRONTEND_CALLBACK_URL
+    return "https://shuttlego.github.io/auth-callback.html"
+
+
+def _build_frontend_redirect(base_url: str, params: dict[str, str | int | None]) -> str:
+    clean = {k: str(v) for k, v in params.items() if v is not None and str(v) != ""}
+    if not clean:
+        return base_url
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}{urlencode(clean)}"
+
+
+def _frontend_home_url(callback_url: str) -> str:
+    parsed = urlparse((callback_url or "").strip())
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}/"
+    return "/"
+
+
+def _google_callback_redirect_uri() -> str:
+    if GOOGLE_OAUTH_REDIRECT_URI:
+        return GOOGLE_OAUTH_REDIRECT_URI
+    return request.url_root.rstrip("/") + "/api/auth/google/callback"
+
+
+def _build_google_authorize_url(state: str) -> str:
+    redirect_uri = _google_callback_redirect_uri()
+    query = {
+        "response_type": "code",
+        "client_id": GOOGLE_OAUTH_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "scope": "openid email profile",
+        "state": state,
+        "include_granted_scopes": "true",
+        "prompt": "select_account",
+    }
+    return f"{GOOGLE_OAUTH_AUTHORIZE_URL}?{urlencode(query)}"
+
+
+def _google_exchange_code(code: str) -> dict:
+    if not GOOGLE_OAUTH_CLIENT_SECRET:
+        raise ValueError("구글 로그인 설정이 누락되었습니다: GOOGLE_OAUTH_CLIENT_SECRET")
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": GOOGLE_OAUTH_CLIENT_ID,
+        "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "redirect_uri": _google_callback_redirect_uri(),
+        "code": code,
+    }
+    resp = requests.post(GOOGLE_OAUTH_TOKEN_URL, data=payload, timeout=10)
+    resp.raise_for_status()
+    data = resp.json() if resp.text else {}
+    access_token = str(data.get("access_token") or "").strip()
+    if not access_token:
+        raise ValueError("구글 access_token 응답이 비어있습니다.")
+    return data
+
+
+def _google_fetch_profile(access_token: str) -> dict:
+    resp = requests.get(
+        GOOGLE_OAUTH_USERINFO_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json() if resp.text else {}
+    google_sub = str(data.get("sub") or "").strip()
+    if not google_sub:
+        raise ValueError("구글 사용자 식별자(sub)가 비어있습니다.")
+    email = str(data.get("email") or "").strip() or None
+    email_verified = bool(data.get("email_verified")) if email else False
+    nickname_hint = str(data.get("name") or "").strip() or None
+    return {
+        "provider": "google",
+        "provider_user_id": google_sub,
+        "provider_email": email,
+        "provider_email_verified": email_verified,
+        "provider_nickname": nickname_hint,
+    }
+
+
+def _mask_email(email: str | None) -> str:
+    value = (email or "").strip()
+    if "@" not in value:
+        return ""
+    local, domain = value.split("@", 1)
+    if len(local) <= 2:
+        local_masked = local[:1] + "*"
+    else:
+        local_masked = local[:2] + "*" * (len(local) - 2)
+    return f"{local_masked}@{domain}"
+
+
+def _github_cleanup_labels_for_deleted_user(public_user_id: str) -> None:
+    _ensure_github_issue_config()
+    target_label = f"user-id:{public_user_id}"
+    query = f'repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME} is:issue label:"{target_label}"'
+    page = 1
+    per_page = 100
+    while True:
+        payload = _github_api_request(
+            "GET",
+            "/search/issues",
+            params={
+                "q": query,
+                "sort": "created",
+                "order": "desc",
+                "page": page,
+                "per_page": per_page,
+            },
+        )
+        items = payload.get("items") if isinstance(payload, dict) else []
+        if not isinstance(items, list) or not items:
+            break
+        for item in items:
+            issue_number = item.get("number")
+            if not isinstance(issue_number, int):
+                continue
+            labels = _normalize_label_names(item.get("labels"))
+            next_labels = [label for label in labels if label != target_label]
+            if "deleted-user" not in next_labels:
+                next_labels.append("deleted-user")
+            _github_api_request(
+                "PATCH",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}",
+                json_payload={"labels": next_labels},
+            )
+        if len(items) < per_page:
+            break
+        page += 1
+
+
+def _auth_cleanup_loop() -> None:
+    while True:
+        try:
+            user_store.cleanup_old_data(history_retention_days=AUTH_HISTORY_RETENTION_DAYS)
+        except Exception:
+            app.logger.exception("Auth cleanup loop failed")
+        _time.sleep(AUTH_CLEANUP_INTERVAL_SEC)
+
+
+def _auth_metrics_loop() -> None:
+    while True:
+        try:
+            _refresh_auth_business_metrics()
+        except Exception:
+            app.logger.exception("Auth metrics loop failed")
+        _time.sleep(AUTH_METRICS_REFRESH_SEC)
+
+
+def _github_cleanup_loop() -> None:
+    while True:
+        try:
+            job = user_store.claim_due_github_cleanup_job()
+            if not job:
+                _time.sleep(AUTH_GITHUB_CLEANUP_INTERVAL_SEC)
+                continue
+            try:
+                _github_cleanup_labels_for_deleted_user(str(job.get("public_user_id") or ""))
+                user_store.complete_github_cleanup_job(int(job["id"]))
+            except Exception as exc:
+                attempts = int(job.get("attempts") or 1)
+                retry_after = min(60 * 60, max(30, attempts * 30))
+                user_store.fail_github_cleanup_job(int(job["id"]), str(exc), retry_after_sec=retry_after)
+        except Exception:
+            app.logger.exception("GitHub cleanup loop failed")
+            _time.sleep(AUTH_GITHUB_CLEANUP_INTERVAL_SEC)
+
+
+def _start_auth_background_workers() -> None:
+    global _auth_background_started
+    with _auth_background_lock:
+        if _auth_background_started:
+            return
+        _auth_background_started = True
+        threading.Thread(target=_auth_metrics_loop, daemon=True, name="auth-metrics-loop").start()
+        threading.Thread(target=_auth_cleanup_loop, daemon=True, name="auth-cleanup-loop").start()
+        threading.Thread(target=_github_cleanup_loop, daemon=True, name="github-cleanup-loop").start()
+
+
 # ── API 엔드포인트 ───────────────────────────────────────────
+@app.route("/api/auth/providers")
+def api_auth_providers():
+    return jsonify(
+        {
+            "providers": [
+                {
+                    "provider": "google",
+                    "enabled": bool(GOOGLE_OAUTH_CLIENT_ID),
+                }
+            ]
+        }
+    )
+
+
+@app.route("/api/auth/google/start")
+def api_auth_google_start():
+    if not GOOGLE_OAUTH_CLIENT_ID:
+        return jsonify({"error": "구글 로그인 설정이 누락되었습니다."}), 503
+
+    next_url = _resolve_frontend_callback_url(request.args.get("next"))
+    state = user_store.save_oauth_state("google", next_url, ttl_sec=AUTH_OAUTH_STATE_TTL_SEC)
+    authorize_url = _build_google_authorize_url(state)
+    if _is_truthy_param(request.args.get("json")):
+        return jsonify({"authorize_url": authorize_url})
+
+    resp = make_response("", 302)
+    resp.headers["Location"] = authorize_url
+    return resp
+
+
+@app.route("/api/auth/google/callback")
+def api_auth_google_callback():
+    fallback_next_url = _resolve_frontend_callback_url(None)
+    state = request.args.get("state", "").strip()
+    code = request.args.get("code", "").strip()
+    oauth_error = request.args.get("error", "").strip()
+    oauth_error_description = request.args.get("error_description", "").strip()
+
+    state_row = user_store.consume_oauth_state("google", state) if state else None
+    next_url = str(state_row.get("next_url")) if state_row else fallback_next_url
+    next_url = _resolve_frontend_callback_url(next_url)
+
+    if state_row is None:
+        redirect_url = _build_frontend_redirect(
+            next_url,
+            {"result": "error", "message": "로그인 상태값이 유효하지 않습니다. 다시 시도해 주세요."},
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+
+    if oauth_error:
+        redirect_url = _build_frontend_redirect(
+            next_url,
+            {
+                "result": "error",
+                "message": oauth_error_description or oauth_error or "구글 로그인에 실패했습니다.",
+            },
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+
+    if not code:
+        redirect_url = _build_frontend_redirect(
+            next_url,
+            {"result": "error", "message": "인가 코드가 없습니다."},
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+
+    try:
+        token_payload = _google_exchange_code(code)
+        access_token = str(token_payload.get("access_token") or "").strip()
+        profile = _google_fetch_profile(access_token)
+    except requests.RequestException as exc:
+        redirect_url = _build_frontend_redirect(
+            next_url,
+            {"result": "error", "message": f"구글 로그인 요청 실패: {exc}"},
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+    except ValueError as exc:
+        redirect_url = _build_frontend_redirect(
+            next_url,
+            {"result": "error", "message": str(exc)},
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+
+    provider_user_id = str(profile.get("provider_user_id") or "").strip()
+    if not provider_user_id:
+        redirect_url = _build_frontend_redirect(
+            next_url,
+            {"result": "error", "message": "구글 사용자 식별자를 확인할 수 없습니다."},
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+
+    existing_user = user_store.get_user_by_provider("google", provider_user_id)
+    if existing_user is not None:
+        user_store.update_last_login("google", provider_user_id)
+        try:
+            _refresh_auth_business_metrics()
+        except Exception:
+            app.logger.exception("Failed to refresh auth metrics after login")
+        raw_token = _create_auth_session_for_user(existing_user)
+        redirect_url = _frontend_home_url(next_url)
+        resp = make_response("", 302)
+        _set_auth_session_cookie(resp, raw_token)
+        resp.headers["Location"] = redirect_url
+        return resp
+
+    signup_token = user_store.save_pending_signup(
+        provider="google",
+        provider_user_id=provider_user_id,
+        provider_email=profile.get("provider_email"),
+        provider_email_verified=bool(profile.get("provider_email_verified")),
+        provider_nickname=profile.get("provider_nickname"),
+        ttl_sec=AUTH_PENDING_SIGNUP_TTL_SEC,
+    )
+    redirect_url = _build_frontend_redirect(
+        next_url,
+        {
+            "result": "signup_required",
+            "provider": "google",
+            "signup_token": signup_token,
+            "nickname_hint": profile.get("provider_nickname") or "",
+            "email_available": 1 if profile.get("provider_email") else 0,
+            "email_masked": _mask_email(profile.get("provider_email")),
+        },
+    )
+    resp = make_response("", 302)
+    resp.headers["Location"] = redirect_url
+    return resp
+
+
+@app.route("/api/auth/pending-signup")
+def api_auth_pending_signup():
+    token = request.args.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "token이 필요합니다."}), 400
+    pending = user_store.get_pending_signup(token)
+    if pending is None:
+        return jsonify({"error": "가입 세션이 만료되었거나 유효하지 않습니다."}), 400
+    return jsonify(
+        {
+            "provider": pending.get("provider"),
+            "nickname_hint": pending.get("provider_nickname") or "",
+            "email_available": bool(pending.get("provider_email")),
+            "email_masked": _mask_email(pending.get("provider_email")),
+            "expires_at": pending.get("expires_at"),
+        }
+    )
+
+
+@app.route("/api/auth/signup-complete", methods=["POST"])
+def api_auth_signup_complete():
+    payload = request.get_json(silent=True) or {}
+    signup_token = str(payload.get("signup_token", "")).strip()
+    nickname = str(payload.get("nickname", "")).strip()
+    email_consent = bool(payload.get("email_consent"))
+
+    if not signup_token:
+        return jsonify({"error": "signup_token이 필요합니다."}), 400
+    nickname_error = _validate_nickname(nickname)
+    if nickname_error:
+        return jsonify({"error": nickname_error}), 400
+
+    try:
+        user = user_store.consume_pending_signup_and_create_user(
+            signup_token,
+            nickname=nickname,
+            email_consent=email_consent,
+        )
+    except user_store.NicknameConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except user_store.PendingSignupError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("signup-complete failed")
+        return jsonify({"error": "회원 가입 처리에 실패했습니다."}), 500
+
+    try:
+        _refresh_auth_business_metrics()
+    except Exception:
+        app.logger.exception("Failed to refresh auth metrics after signup")
+
+    raw_token = _create_auth_session_for_user(user)
+    prefs = user_store.get_preferences(int(user["id"]))
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "user": _serialize_user_profile(user),
+                "preferences": {"selected_site_id": prefs.get("selected_site_id")},
+            }
+        )
+    )
+    _set_auth_session_cookie(resp, raw_token)
+    return resp
+
+
+@app.route("/api/auth/me")
+def api_auth_me():
+    user, token_hash = _get_current_user(with_touch=True)
+    if user is None:
+        resp = make_response(jsonify({"logged_in": False, "user": None, "preferences": {}}))
+        if token_hash is not None:
+            _clear_auth_session_cookie(resp)
+        return resp
+    prefs = user_store.get_preferences(int(user["id"]))
+    return jsonify(
+        {
+            "logged_in": True,
+            "user": _serialize_user_profile(user),
+            "preferences": {"selected_site_id": prefs.get("selected_site_id")},
+        }
+    )
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    _, token_hash = _get_current_user(with_touch=False)
+    if token_hash:
+        user_store.delete_session(token_hash)
+    resp = make_response(jsonify({"ok": True}))
+    _clear_auth_session_cookie(resp)
+    return resp
+
+
+@app.route("/api/me/profile", methods=["PATCH"])
+def api_me_profile():
+    user, _, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+    payload = request.get_json(silent=True) or {}
+    nickname = str(payload.get("nickname", "")).strip()
+    nickname_error = _validate_nickname(nickname)
+    if nickname_error:
+        return jsonify({"error": nickname_error}), 400
+    try:
+        updated = user_store.set_user_nickname(int(user["id"]), nickname)
+    except user_store.NicknameConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception:
+        app.logger.exception("profile update failed")
+        return jsonify({"error": "닉네임 변경에 실패했습니다."}), 500
+    return jsonify({"ok": True, "user": _serialize_user_profile(updated)})
+
+
+@app.route("/api/me/preferences", methods=["GET", "PATCH"])
+def api_me_preferences():
+    user, _, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+
+    user_id = int(user["id"])
+    if request.method == "GET":
+        prefs = user_store.get_preferences(user_id)
+        return jsonify({"selected_site_id": prefs.get("selected_site_id"), "updated_at": prefs.get("updated_at")})
+
+    payload = request.get_json(silent=True) or {}
+    selected_site_id = payload.get("selected_site_id")
+    if selected_site_id is not None:
+        selected_site_id = str(selected_site_id).strip() or None
+    prefs = user_store.set_selected_site(user_id, selected_site_id)
+    return jsonify({"ok": True, "selected_site_id": prefs.get("selected_site_id"), "updated_at": prefs.get("updated_at")})
+
+
+@app.route("/api/me/preferences/endpoint", methods=["GET", "PATCH"])
+def api_me_endpoint_preferences():
+    user, _, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+
+    user_id = int(user["id"])
+    if request.method == "GET":
+        site_id = request.args.get("site_id", "").strip()
+        day_type = request.args.get("day_type", "").strip()
+        direction = request.args.get("direction", "").strip()
+        if direction not in {"depart", "arrive"}:
+            return jsonify({"error": "direction은 depart|arrive만 허용됩니다."}), 400
+        if not site_id or not day_type:
+            return jsonify({"error": "site_id, day_type은 필수입니다."}), 400
+        selected = user_store.get_endpoint_preference(user_id, site_id, day_type, direction)
+        return jsonify(
+            {
+                "site_id": site_id,
+                "day_type": day_type,
+                "direction": direction,
+                "selected_endpoints": selected or [],
+                "has_saved": selected is not None,
+            }
+        )
+
+    payload = request.get_json(silent=True) or {}
+    site_id = str(payload.get("site_id", "")).strip()
+    day_type = str(payload.get("day_type", "")).strip()
+    direction = str(payload.get("direction", "")).strip()
+    selected_endpoints = payload.get("selected_endpoints")
+    if direction not in {"depart", "arrive"}:
+        return jsonify({"error": "direction은 depart|arrive만 허용됩니다."}), 400
+    if not site_id or not day_type:
+        return jsonify({"error": "site_id, day_type은 필수입니다."}), 400
+    if not isinstance(selected_endpoints, list):
+        return jsonify({"error": "selected_endpoints는 배열이어야 합니다."}), 400
+
+    user_store.set_endpoint_preference(
+        user_id=user_id,
+        site_id=site_id,
+        day_type=day_type,
+        direction=direction,
+        endpoint_names=selected_endpoints,
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me/history/place-search")
+def api_me_place_search_history():
+    user, _, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+    cursor = request.args.get("cursor", default=None, type=int)
+    limit = request.args.get("limit", default=20, type=int) or 20
+    data = user_store.list_place_history(int(user["id"]), cursor=cursor, limit=limit)
+    return jsonify(data)
+
+
+@app.route("/api/me/history/place-search/<int:history_id>", methods=["DELETE"])
+def api_me_place_search_history_delete(history_id: int):
+    user, _, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+    ok = user_store.delete_place_history_item(int(user["id"]), history_id)
+    if not ok:
+        return jsonify({"error": "해당 히스토리를 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me/history/route-search")
+def api_me_route_search_history():
+    user, _, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+    cursor = request.args.get("cursor", default=None, type=int)
+    limit = request.args.get("limit", default=20, type=int) or 20
+    data = user_store.list_route_history(int(user["id"]), cursor=cursor, limit=limit)
+    return jsonify(data)
+
+
+@app.route("/api/me", methods=["DELETE"])
+def api_me_delete():
+    user, token_hash, auth_error = _auth_required()
+    if auth_error is not None:
+        return auth_error
+    deleted = user_store.delete_user_and_enqueue_cleanup(
+        int(user["id"]),
+        deadline_hours=AUTH_GITHUB_CLEANUP_DEADLINE_HOURS,
+    )
+    if deleted is None:
+        return jsonify({"error": "이미 탈퇴된 사용자입니다."}), 404
+    try:
+        _refresh_auth_business_metrics()
+    except Exception:
+        app.logger.exception("Failed to refresh auth metrics after account deletion")
+    if token_hash:
+        user_store.delete_session(token_hash)
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "cleanup": {
+                    "github_label_cleanup": True,
+                    "deadline_at": deleted.get("deadline_at"),
+                },
+            }
+        )
+    )
+    _clear_auth_session_cookie(resp)
+    return resp
+
+
 @app.route("/api/search")
 def api_search():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"documents": []})
-    return jsonify({"documents": search_places(q)})
+    documents = search_places(q)
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        try:
+            user_store.add_place_history(int(user["id"]), q)
+        except Exception:
+            app.logger.exception("Failed to save place search history")
+    return jsonify({"documents": documents})
 
 
 @app.route("/api/sites")
@@ -1123,6 +2081,16 @@ def api_issues():
         body = str(payload.get("body", "")).strip()
         labels = _parse_issue_labels_input(payload.get("labels"))
         meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        meta = dict(meta or {})
+        auth_user, _ = _get_current_user(with_touch=False)
+
+        if auth_user is not None:
+            meta.pop("user-id", None)
+            meta["nickname"] = str(auth_user.get("nickname") or "")
+            meta["user-id"] = str(auth_user.get("public_user_id") or "")
+        else:
+            # 비로그인 사용자는 user-id 라벨을 임의 주입할 수 없다.
+            meta.pop("user-id", None)
 
         if not title:
             return jsonify({"error": "title은 필수입니다."}), 400
@@ -1137,14 +2105,20 @@ def api_issues():
             response = make_response(jsonify({"error": limit_message}), status_code)
             return _attach_issue_cookie_if_needed(response, cookie_id, should_set_cookie)
 
+        label_meta = dict(meta or {})
+        label_meta.pop("nickname", None)
         merged_labels = []
-        for label in labels + _labels_from_meta(meta):
+        for label in labels + _labels_from_meta(label_meta):
             if label not in merged_labels:
                 merged_labels.append(label)
+        if auth_user is not None:
+            uid_label = f"user-id:{_compact_meta_label_part(auth_user.get('public_user_id'))}"
+            if uid_label and uid_label not in merged_labels:
+                merged_labels.append(uid_label)
 
         issue_payload = {
             "title": title,
-            "body": _compose_issue_body(body, meta),
+            "body": body,
         }
         if merged_labels:
             issue_payload["labels"] = merged_labels
@@ -1351,14 +2325,37 @@ def api_issue_comment_create(issue_number: int):
 
     payload = request.get_json(silent=True) or {}
     body = str(payload.get("body", "")).strip()
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    meta = dict(meta or {})
+    auth_user, _ = _get_current_user(with_touch=False)
+
+    if auth_user is not None:
+        meta["nickname"] = str(auth_user.get("nickname") or "").strip()
+        meta["user-id"] = str(auth_user.get("public_user_id") or "").strip()
+    else:
+        meta.pop("user-id", None)
+        meta_nickname = str(meta.get("nickname") or "").strip()
+        if meta_nickname:
+            meta["nickname"] = meta_nickname
+        else:
+            meta.pop("nickname", None)
+
+    nickname = str(meta.get("nickname") or "").strip()
+    if nickname:
+        meta["nickname"] = nickname[:40]
+    else:
+        meta.pop("nickname", None)
+
     if not body:
         return jsonify({"error": "댓글 내용(body)은 필수입니다."}), 400
+
+    comment_body = _compose_issue_body(body, meta if meta else None)
 
     try:
         comment = _github_api_request(
             "POST",
             f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
-            json_payload={"body": body},
+            json_payload={"body": comment_body},
         )
     except GitHubAPIError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
@@ -1406,6 +2403,7 @@ def api_shuttle_depart_options():
     exclude_raw = request.args.get("exclude_route_ids", "").strip()
     use_endpoint_filter = _is_truthy_param(request.args.get("use_endpoint_filter"))
     selected_endpoints = _parse_selected_endpoints()
+    auth_user, _ = _get_current_user(with_touch=False)
     max_distance_raw = request.args.get("max_distance_km")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
@@ -1418,6 +2416,23 @@ def api_shuttle_depart_options():
     exclude_ids = []
     if exclude_raw:
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
+
+    def _record_route_search() -> None:
+        if auth_user is None:
+            return
+        try:
+            user_store.add_route_history(
+                user_id=int(auth_user["id"]),
+                site_id=site_id,
+                day_type=day_type,
+                direction="depart",
+                lat=float(lat),
+                lng=float(lng),
+                selected_endpoints=selected_endpoints,
+                place_name=place_name,
+            )
+        except Exception:
+            app.logger.exception("Failed to save depart route history")
 
     include_route_ids: set[int] | None = None
     selected_endpoint_components: set[str] | None = None
@@ -1432,6 +2447,7 @@ def api_shuttle_depart_options():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
+            _record_route_search()
             return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         selected_endpoint_components = _build_selected_endpoint_component_set(
             site_id=site_id,
@@ -1441,6 +2457,7 @@ def api_shuttle_depart_options():
         )
 
     SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
+    _record_route_search_source_metric("depart")
 
     results = find_nearest_route_options(
         site_id=site_id,
@@ -1456,7 +2473,9 @@ def api_shuttle_depart_options():
     )
     if not results:
         if include_route_ids is not None:
+            _record_route_search()
             return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
+        _record_route_search()
         return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1581,6 +2600,7 @@ def api_shuttle_depart_options():
     resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
+    _record_route_search()
     return jsonify(resp)
 
 
@@ -1597,6 +2617,7 @@ def api_shuttle_depart():
         return jsonify({"error": "lat, lng required"}), 400
 
     SHUTTLE_SEARCH_COUNT.labels(direction="depart").inc()
+    _record_route_search_source_metric("depart")
 
     results = find_nearest_route_options(
         site_id=site_id, route_type="commute_in", lat=lat, lon=lng,
@@ -1714,6 +2735,7 @@ def api_shuttle_arrive_options():
     exclude_raw = request.args.get("exclude_route_ids", "").strip()
     use_endpoint_filter = _is_truthy_param(request.args.get("use_endpoint_filter"))
     selected_endpoints = _parse_selected_endpoints()
+    auth_user, _ = _get_current_user(with_touch=False)
     max_distance_raw = request.args.get("max_distance_km")
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
@@ -1726,6 +2748,23 @@ def api_shuttle_arrive_options():
     exclude_ids = []
     if exclude_raw:
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
+
+    def _record_route_search() -> None:
+        if auth_user is None:
+            return
+        try:
+            user_store.add_route_history(
+                user_id=int(auth_user["id"]),
+                site_id=site_id,
+                day_type=day_type,
+                direction="arrive",
+                lat=float(lat),
+                lng=float(lng),
+                selected_endpoints=selected_endpoints,
+                place_name=place_name,
+            )
+        except Exception:
+            app.logger.exception("Failed to save arrive route history")
 
     include_route_ids: set[int] | None = None
     selected_endpoint_components: set[str] | None = None
@@ -1740,6 +2779,7 @@ def api_shuttle_arrive_options():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if not include_route_ids:
+            _record_route_search()
             return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         selected_endpoint_components = _build_selected_endpoint_component_set(
             site_id=site_id,
@@ -1749,6 +2789,7 @@ def api_shuttle_arrive_options():
         )
 
     SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
+    _record_route_search_source_metric("arrive")
 
     results = find_nearest_route_options(
         site_id=site_id,
@@ -1764,7 +2805,9 @@ def api_shuttle_arrive_options():
     )
     if not results:
         if include_route_ids is not None:
+            _record_route_search()
             return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
+        _record_route_search()
         return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
@@ -1887,6 +2930,7 @@ def api_shuttle_arrive_options():
     resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
+    _record_route_search()
     return jsonify(resp)
 
 
@@ -1903,6 +2947,7 @@ def api_shuttle_arrive():
         return jsonify({"error": "lat, lng required"}), 400
 
     SHUTTLE_SEARCH_COUNT.labels(direction="arrive").inc()
+    _record_route_search_source_metric("arrive")
 
     results = find_nearest_route_options(
         site_id=site_id, route_type="commute_out", lat=lat, lon=lng,
@@ -2018,10 +3063,16 @@ def api_route_detail(route_id: int):
 
 # ── 시작 시 DB 초기화 ─────────────────────────────────────────
 init_db()
+user_store.init_db()
+try:
+    _refresh_auth_business_metrics()
+except Exception:
+    app.logger.exception("Failed to initialize auth business metrics")
 try:
     warm_endpoint_cache()
 except Exception:
     app.logger.exception("Endpoint cache warm-up failed")
+_start_auth_background_workers()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True, port=8081)
