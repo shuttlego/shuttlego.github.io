@@ -106,7 +106,8 @@ _issue_submit_recent_hash: dict[str, float] = {}
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
 _OPTIONS_CANDIDATE_LIMIT = 100
-_DEFAULT_MAX_DISTANCE_KM = 5.0
+_OPTIONS_RESPONSE_LIMIT = 3
+_DEFAULT_MAX_DISTANCE_KM = 3.0
 _MAX_DISTANCE_KM = 30.0
 
 OTP_BASE_URL = os.environ.get("OTP_BASE_URL", "http://otp:8082").rstrip("/")
@@ -1345,7 +1346,7 @@ def api_github_webhook():
 
 @app.route("/api/shuttle/depart/options")
 def api_shuttle_depart_options():
-    """출근 노선 후보 최대 5개."""
+    """출근 노선 후보 최대 3개."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -1398,7 +1399,7 @@ def api_shuttle_depart_options():
         lon=lng,
         day_type=day_type,
         # 후처리(탑승/하차 동일 정류장 제외, 시간 필터) 이후에도
-        # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
+        # 실제 반환 3개를 채울 수 있도록 후보를 넉넉히 가져온다.
         max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
         include_route_ids=include_route_ids,
@@ -1524,7 +1525,7 @@ def api_shuttle_depart_options():
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
-        if len(options) >= 5:
+        if len(options) >= _OPTIONS_RESPONSE_LIMIT:
             break
 
     resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
@@ -1653,7 +1654,7 @@ def api_shuttle_depart():
 
 @app.route("/api/shuttle/arrive/options")
 def api_shuttle_arrive_options():
-    """퇴근 노선 후보 최대 5개."""
+    """퇴근 노선 후보 최대 3개."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -1706,7 +1707,7 @@ def api_shuttle_arrive_options():
         lon=lng,
         day_type=day_type,
         # 후처리(탑승/하차 동일 정류장 제외, 시간 필터) 이후에도
-        # 실제 반환 5개를 채울 수 있도록 후보를 넉넉히 가져온다.
+        # 실제 반환 3개를 채울 수 있도록 후보를 넉넉히 가져온다.
         max_routes=_OPTIONS_CANDIDATE_LIMIT,
         exclude_route_ids=exclude_ids or None,
         include_route_ids=include_route_ids,
@@ -1830,7 +1831,7 @@ def api_shuttle_arrive_options():
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
-        if len(options) >= 5:
+        if len(options) >= _OPTIONS_RESPONSE_LIMIT:
             break
 
     resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
