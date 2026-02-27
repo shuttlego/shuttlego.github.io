@@ -184,7 +184,7 @@
     },
     {
       "id": 5,
-      "title": "일반 API req/s (issue/otp 제외, 경로별)",
+      "title": "일반 API req/s (issue/auth-callback/otp 제외, 경로별)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -198,7 +198,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])) > 0",
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])) > 0",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -219,7 +219,7 @@
     },
     {
       "id": 6,
-      "title": "Issue API req/s (경로별)",
+      "title": "Issue/Auth 콜백 API req/s (경로별)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -233,7 +233,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/issues($|/.*)|/api/github/webhook\"}[$__rate_interval])) > 0",
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])) > 0",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -288,48 +288,8 @@
       }
     },
     {
-      "id": 8,
-      "title": "출근/퇴근 req/s",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 42
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(shuttle_search_total{direction=\"depart\"}[$__rate_interval]))",
-          "legendFormat": "depart",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(shuttle_search_total{direction=\"arrive\"}[$__rate_interval]))",
-          "legendFormat": "arrive",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "showPoints": "never"
-          }
-        }
-      }
-    },
-    {
       "id": 9,
-      "title": "일반 API latency (p50/p90/p99)",
+      "title": "일반 API latency (issue/auth-callback/otp 제외, p50/p90/p99)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -343,17 +303,17 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -374,7 +334,7 @@
     },
     {
       "id": 10,
-      "title": "Issue API latency (p50/p90/p99)",
+      "title": "Issue/Auth 콜백 API latency (p50/p90/p99)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -388,17 +348,17 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -457,6 +417,151 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "일반 API 경로별 p99 latency (issue/auth-callback/otp 제외)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Issue/Auth 콜백 API 경로별 p99 latency",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "OTP API 경로별 p99 latency",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "출근/퇴근 req/s",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 42
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_search_total{direction=\"depart\"}[$__rate_interval]))",
+          "legendFormat": "depart",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_search_total{direction=\"arrive\"}[$__rate_interval]))",
+          "legendFormat": "arrive",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
             "showPoints": "never"
           }
         }
@@ -535,14 +640,14 @@
       }
     },
     {
-      "id": 20,
-      "title": "일반 API 경로별 p99 latency",
+      "id": 23,
+      "title": "누적 신규 가입자 수",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 34
+        "y": 50
       },
       "datasource": {
         "type": "prometheus",
@@ -550,34 +655,34 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
-          "legendFormat": "{{endpoint}}",
+          "expr": "max(shuttle_auth_cumulative_users)",
+          "legendFormat": "누적 신규 가입자 수",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "short",
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 15,
             "showPoints": "never"
           }
         }
       }
     },
     {
-      "id": 21,
-      "title": "Issue API 경로별 p99 latency",
+      "id": 24,
+      "title": "일간 신규 가입자 수 (최근 24시간)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 34
+        "y": 50
       },
       "datasource": {
         "type": "prometheus",
@@ -585,34 +690,34 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook\"}[$__rate_interval])))",
-          "legendFormat": "{{endpoint}}",
+          "expr": "max(shuttle_auth_daily_new_users)",
+          "legendFormat": "일간 신규 가입자 수",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "short",
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 15,
             "showPoints": "never"
           }
         }
       }
     },
     {
-      "id": 22,
-      "title": "OTP API 경로별 p99 latency",
+      "id": 25,
+      "title": "사용자 DB 크기 추이",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 34
+        "y": 50
       },
       "datasource": {
         "type": "prometheus",
@@ -620,20 +725,263 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])))",
-          "legendFormat": "{{endpoint}}",
+          "expr": "max(shuttle_auth_user_db_size_bytes)",
+          "legendFormat": "사용자 DB 크기",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "bytes",
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 26,
+      "title": "로그인/비로그인 API 요청 비율",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_api_requests_by_auth_total{auth_state=\"authenticated\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_api_requests_by_auth_total[$__rate_interval])), 1e-9)",
+          "legendFormat": "로그인",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_api_requests_by_auth_total{auth_state=\"anonymous\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_api_requests_by_auth_total[$__rate_interval])), 1e-9)",
+          "legendFormat": "비로그인",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 27,
+      "title": "사업장별 API 요청 req/s",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (site_name) (\n  label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000011\"}[$__rate_interval])), \"site_name\", \"삼성전자(기흥/화성)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000012\"}[$__rate_interval])), \"site_name\", \"삼성전자(온양/천안)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000013\"}[$__rate_interval])), \"site_name\", \"삼성전자(수원)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000015\"}[$__rate_interval])), \"site_name\", \"삼성디스플레이(아산)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000017\"}[$__rate_interval])), \"site_name\", \"삼성SDI(천안)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000027\"}[$__rate_interval])), \"site_name\", \"삼성전자(구미)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000028\"}[$__rate_interval])), \"site_name\", \"삼성전자(광주)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000041\"}[$__rate_interval])), \"site_name\", \"삼성전자(우면/서울대)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000042\"}[$__rate_interval])), \"site_name\", \"삼성전자(평택)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000069\"}[$__rate_interval])), \"site_name\", \"삼성디스플레이(기흥)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id!~\"0000011|0000012|0000013|0000015|0000017|0000027|0000028|0000041|0000042|0000069\"}[$__rate_interval])), \"site_name\", \"기타($1)\", \"site_id\", \"(.*)\")\n)",
+          "legendFormat": "{{site_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 28,
+      "title": "출근 검색 소스 비율 (장소검색 vs 지도선택)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=\"search\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "장소검색",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=\"map\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "지도선택",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 30,
+      "title": "퇴근 검색 소스 비율 (장소검색 vs 지도선택)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=\"search\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "장소검색",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=\"map\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "지도선택",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 29,
+      "title": "DAU (일간 활성 사용자 수)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max(shuttle_auth_dau)",
+          "legendFormat": "DAU",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "MAU (월간 활성 사용자 수)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max(shuttle_auth_mau)",
+          "legendFormat": "MAU",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
             "showPoints": "never"
           }
         }
@@ -646,7 +994,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 82
       },
       "collapsed": false
     },
@@ -658,7 +1006,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 51
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -695,7 +1043,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 51
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -732,7 +1080,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 51
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -769,7 +1117,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 51
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -809,7 +1157,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 91
       },
       "datasource": {
         "type": "prometheus",
@@ -844,7 +1192,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 91
       },
       "datasource": {
         "type": "prometheus",

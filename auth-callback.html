@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>로그인 처리 중</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f4f5f7;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      line-height: 1.3;
+    }
+    p {
+      margin: 0;
+      color: #475569;
+      line-height: 1.5;
+    }
+    .message {
+      margin-top: 14px;
+      font-size: 14px;
+      white-space: pre-line;
+    }
+    .hidden { display: none !important; }
+    .form {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .form label {
+      font-size: 13px;
+      color: #475569;
+      font-weight: 600;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .form input[type="text"] {
+      width: 100%;
+      height: 42px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      padding: 0 12px;
+      font-size: 14px;
+    }
+    .consent {
+      padding: 10px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #334155;
+      line-height: 1.4;
+    }
+    .consent label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      font-size: 13px;
+      color: #334155;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+    }
+    .signup-actions {
+      justify-content: space-between;
+      align-items: center;
+    }
+    .signup-actions-right {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    button {
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #1f2937;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0 14px;
+    }
+    button.primary {
+      background: #111827;
+      border-color: #111827;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: .6;
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="title">로그인 처리 중</h1>
+    <p id="subtitle">잠시만 기다려 주세요.</p>
+    <p class="message" id="message"></p>
+
+    <div class="form hidden" id="signupFormWrap">
+      <div>
+        <label for="nicknameInput">닉네임 (2~20자)</label>
+        <input type="text" id="nicknameInput" maxlength="20" autocomplete="nickname" />
+      </div>
+      <div class="consent" id="emailConsentBox">
+        <label><input type="checkbox" id="emailConsent" /> 이메일 수집에 동의합니다 (선택)</label>
+        <div id="emailConsentHint" style="margin-top:6px; color:#64748b;"></div>
+      </div>
+      <div class="actions signup-actions">
+        <div class="signup-actions-right">
+          <button type="button" id="cancelBtn">취소</button>
+          <button type="button" class="primary" id="signupBtn">가입 완료</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="dev.config.js"></script>
+  <script>
+    (function() {
+      var host = location.hostname;
+      var isDev = (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host.indexOf('192.168.') === 0
+      );
+      var devConfig = window.__SHUTTLE_DEV_CONFIG || {};
+      function resolveDevApiBase() {
+        var useHttps = (location.protocol === 'https:');
+        var scheme = useHttps ? 'https' : 'http';
+        var defaultPort = useHttps ? 443 : 80;
+        var port = Number(useHttps ? devConfig.API_HTTPS_PORT : devConfig.API_HTTP_PORT);
+        if (!port) port = defaultPort;
+        if (!isFinite(port) || port < 1 || port > 65535) port = defaultPort;
+        return (port === defaultPort) ? (scheme + '://' + host) : (scheme + '://' + host + ':' + port);
+      }
+      window.__AUTH_API_BASE = isDev ? resolveDevApiBase() : 'https://api.shuttle-go.com';
+    })();
+  </script>
+  <script>
+    (function() {
+      var API_BASE = window.__AUTH_API_BASE;
+      var params = new URLSearchParams(location.search || '');
+      var result = params.get('result') || '';
+      var signupToken = params.get('signup_token') || '';
+      var nicknameHint = params.get('nickname_hint') || '';
+      var emailMasked = params.get('email_masked') || '';
+      var emailAvailable = params.get('email_available') === '1';
+      var title = document.getElementById('title');
+      var subtitle = document.getElementById('subtitle');
+      var message = document.getElementById('message');
+      var signupFormWrap = document.getElementById('signupFormWrap');
+      var nicknameInput = document.getElementById('nicknameInput');
+      var signupBtn = document.getElementById('signupBtn');
+      var cancelBtn = document.getElementById('cancelBtn');
+      var emailConsent = document.getElementById('emailConsent');
+      var emailConsentHint = document.getElementById('emailConsentHint');
+
+      function redirectHome(delayMs) {
+        setTimeout(function() {
+          location.href = '/';
+        }, Math.max(0, delayMs || 0));
+      }
+
+      if (result === 'ok') {
+        title.textContent = '로그인 완료';
+        subtitle.textContent = '메인 화면으로 이동합니다.';
+        message.textContent = '';
+        redirectHome(500);
+        return;
+      }
+
+      if (result === 'signup_required') {
+        title.textContent = '가입 정보 입력';
+        subtitle.textContent = '닉네임을 설정하면 가입이 완료됩니다.';
+        message.textContent = '';
+        signupFormWrap.classList.remove('hidden');
+        nicknameInput.value = nicknameHint || '';
+        emailConsent.checked = false;
+        if (emailAvailable && emailMasked) {
+          emailConsentHint.textContent = '수집 가능 이메일: ' + emailMasked;
+        } else {
+          emailConsentHint.textContent = '구글에서 이메일을 제공하지 않아도 가입은 가능합니다.';
+        }
+
+        cancelBtn.addEventListener('click', function() {
+          location.href = '/';
+        });
+
+        signupBtn.addEventListener('click', function() {
+          var nickname = String(nicknameInput.value || '').trim();
+          if (nickname.length < 2 || nickname.length > 20) {
+            message.textContent = '닉네임은 2~20자로 입력해 주세요.';
+            return;
+          }
+          signupBtn.disabled = true;
+          message.textContent = '가입을 완료하는 중입니다...';
+          fetch(API_BASE + '/api/auth/signup-complete', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signup_token: signupToken,
+              nickname: nickname,
+              email_consent: !!emailConsent.checked
+            })
+          })
+            .then(function(r) {
+              return r.json().catch(function() { return {}; }).then(function(data) {
+                return { ok: r.ok, data: data };
+              });
+            })
+            .then(function(resultPayload) {
+              if (!resultPayload.ok) {
+                throw new Error(resultPayload.data.error || '가입에 실패했습니다.');
+              }
+              title.textContent = '가입 완료';
+              subtitle.textContent = '메인 화면으로 이동합니다.';
+              message.textContent = '';
+              signupFormWrap.classList.add('hidden');
+              redirectHome(500);
+            })
+            .catch(function(err) {
+              signupBtn.disabled = false;
+              message.textContent = err && err.message ? err.message : '가입 처리 중 오류가 발생했습니다.';
+            });
+        });
+        return;
+      }
+
+      var errMsg = params.get('message') || '로그인 처리에 실패했습니다.';
+      title.textContent = '로그인 실패';
+      subtitle.textContent = '아래 내용을 확인해 주세요.';
+      message.textContent = errMsg;
+    })();
+  </script>
+</body>
+</html>

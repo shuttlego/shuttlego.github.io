@@ -16,13 +16,40 @@ services:
       - shuttle-net
     labels:
       - "traefik.enable=true"
+      - "traefik.http.routers.backend-dev.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.backend-dev.entrypoints=web"
+      - "traefik.http.routers.backend-dev.priority=1"
+      - "traefik.http.routers.backend-dev.service=backend-active@file"
+      - "traefik.http.routers.backend-dev-secure.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.backend-dev-secure.entrypoints=websecure"
+      - "traefik.http.routers.backend-dev-secure.priority=1"
+      - "traefik.http.routers.backend-dev-secure.tls=true"
+      - "traefik.http.routers.backend-dev-secure.service=backend-active@file"
+      - "traefik.http.routers.backend-dev-domain-redirect.rule=Host(`${API_DEV_DOMAIN:-api-dev.shuttle-go.com}`) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.backend-dev-domain-redirect.entrypoints=web"
+      - "traefik.http.routers.backend-dev-domain-redirect.priority=20"
+      - "traefik.http.routers.backend-dev-domain-redirect.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.backend-dev-domain.rule=Host(`${API_DEV_DOMAIN:-api-dev.shuttle-go.com}`) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.backend-dev-domain.entrypoints=websecure"
+      - "traefik.http.routers.backend-dev-domain.priority=20"
+      - "traefik.http.routers.backend-dev-domain.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-dev-domain.service=backend-active@file"
+      - "traefik.http.routers.backend-prd-redirect.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
+      - "traefik.http.routers.backend-prd-redirect.entrypoints=web"
+      - "traefik.http.routers.backend-prd-redirect.priority=10"
+      - "traefik.http.routers.backend-prd-redirect.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.backend-prd.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
+      - "traefik.http.routers.backend-prd.entrypoints=websecure"
+      - "traefik.http.routers.backend-prd.priority=10"
+      - "traefik.http.routers.backend-prd.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-prd.service=backend-active@file"
 
-  # ─── Flask 백엔드 API ──────────────────────────────────
-  backend:
+  # ─── Flask 백엔드 API (Blue) ───────────────────────────
+  backend-blue:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: shuttle-backend
+    container_name: shuttle-backend-blue
     restart: unless-stopped
     env_file:
       - .env
@@ -30,42 +57,35 @@ services:
       - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8082}
     volumes:
       - ./data:/app/data:ro
+      - ./user-data:/app/user-data
     expose:
       - "8081"
     networks:
       - shuttle-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.backend.loadbalancer.server.port=8081"
-      # ── dev: path 기반 (HTTP) ──
-      - "traefik.http.routers.backend-dev.rule=PathPrefix(`/api`) || Path(`/health`)"
-      - "traefik.http.routers.backend-dev.entrypoints=web"
-      - "traefik.http.routers.backend-dev.priority=1"
-      # ── dev: path 기반 (HTTPS, localhost 테스트용) ──
-      - "traefik.http.routers.backend-dev-secure.rule=PathPrefix(`/api`) || Path(`/health`)"
-      - "traefik.http.routers.backend-dev-secure.entrypoints=websecure"
-      - "traefik.http.routers.backend-dev-secure.priority=1"
-      - "traefik.http.routers.backend-dev-secure.tls=true"
-      # ── dev: 도메인 기반 (HTTP → HTTPS) ──
-      - "traefik.http.routers.backend-dev-domain-redirect.rule=Host(`${API_DEV_DOMAIN:-api-dev.shuttle-go.com}`) && (PathPrefix(`/api`) || Path(`/health`))"
-      - "traefik.http.routers.backend-dev-domain-redirect.entrypoints=web"
-      - "traefik.http.routers.backend-dev-domain-redirect.priority=20"
-      - "traefik.http.routers.backend-dev-domain-redirect.middlewares=redirect-to-https@file"
-      # ── dev: 도메인 기반 (HTTPS) ──
-      - "traefik.http.routers.backend-dev-domain.rule=Host(`${API_DEV_DOMAIN:-api-dev.shuttle-go.com}`) && (PathPrefix(`/api`) || Path(`/health`))"
-      - "traefik.http.routers.backend-dev-domain.entrypoints=websecure"
-      - "traefik.http.routers.backend-dev-domain.priority=20"
-      - "traefik.http.routers.backend-dev-domain.tls.certresolver=letsencrypt"
-      # ── prd: 도메인 HTTP → HTTPS 리다이렉트 ──
-      - "traefik.http.routers.backend-prd-redirect.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
-      - "traefik.http.routers.backend-prd-redirect.entrypoints=web"
-      - "traefik.http.routers.backend-prd-redirect.priority=10"
-      - "traefik.http.routers.backend-prd-redirect.middlewares=redirect-to-https@file"
-      # ── prd: 도메인 기반 (HTTPS) ──
-      - "traefik.http.routers.backend-prd.rule=Host(`${API_DOMAIN:-api.shuttle-go.com}`)"
-      - "traefik.http.routers.backend-prd.entrypoints=websecure"
-      - "traefik.http.routers.backend-prd.priority=10"
-      - "traefik.http.routers.backend-prd.tls.certresolver=letsencrypt"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─── Flask 백엔드 API (Green) ──────────────────────────
+  backend-green:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shuttle-backend-green
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8082}
+    volumes:
+      - ./data:/app/data:ro
+      - ./user-data:/app/user-data
+    expose:
+      - "8081"
+    networks:
+      - shuttle-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 30s

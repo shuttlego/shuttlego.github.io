@@ -1,0 +1,22 @@
+# active_slot: blue
+# This file is managed by run_prd_backend.py for blue/green backend rollout.
+
+http:
+  services:
+    backend-blue:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://backend-blue:8081"
+    backend-green:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://backend-green:8081"
+    backend-active:
+      weighted:
+        services:
+          - name: backend-blue
+            weight: 100
+          - name: backend-green
+            weight: 0

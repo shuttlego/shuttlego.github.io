@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """shuttle-go 개발 환경 통합 실행 스크립트
 
-기본 실행은 backend만 재빌드/재시작하고 프론트엔드를 함께 시작한다.
+기본 실행은 backend-blue/backend-green을 재빌드/재시작하고 프론트엔드를 함께 시작한다.
 traefik은 기본 실행에서 재시작하지 않고, 내려가 있을 때만 시작한다.
---all 옵션을 주면 전체 구성요소(traefik/backend/prometheus/node-exporter/cadvisor/grafana/otp)를 함께 (재)시작한다.
---all-no-otp 옵션을 주면 otp를 제외한 구성요소(traefik/backend/prometheus/node-exporter/cadvisor/grafana)만 함께 (재)시작한다.
+--all 옵션을 주면 전체 구성요소(traefik/backend-blue/backend-green/prometheus/node-exporter/cadvisor/grafana/otp)를 함께 (재)시작한다.
+--all-no-otp 옵션을 주면 otp를 제외한 구성요소(traefik/backend-blue/backend-green/prometheus/node-exporter/cadvisor/grafana)만 함께 (재)시작한다.
 개별 컴포넌트 플래그(예: --grafana, --traefik, --otp)로 선택 재시작도 가능하다.
 
 사용법:
-    python run_dev.py              # 기본 시작 (backend rebuild/restart + frontend)
-    python run_dev.py --all        # 전체 시작 (backend + monitoring + otp + frontend)
-    python run_dev.py --all-no-otp # otp 제외 전체 시작 (backend + monitoring + frontend)
+    python run_dev.py              # 기본 시작 (backend-blue/green rebuild/restart + frontend)
+    python run_dev.py --all        # 전체 시작 (backend-blue/green + monitoring + otp + frontend)
+    python run_dev.py --all-no-otp # otp 제외 전체 시작 (backend-blue/green + monitoring + frontend)
     python run_dev.py --otp        # otp만 재시작 + frontend
     python run_dev.py --traefik --grafana  # 지정 컴포넌트만 재시작 + frontend
     python run_dev.py --frontend   # 프론트엔드 서버만 시작
-    python run_dev.py --down       # 기본 구성요소 종료(backend + frontend 포트 정리)
+    python run_dev.py --down       # 기본 구성요소 종료(backend-blue/green + frontend 포트 정리)
     python run_dev.py --down --all # 전체 종료
     python run_dev.py --down --all-no-otp # otp 제외 전체 종료
     python run_dev.py --down --otp # otp만 종료
@@ -46,9 +46,21 @@ BACKEND_HTTP_PORT = DEFAULT_BACKEND_HTTP_PORT
 BACKEND_HTTPS_PORT = DEFAULT_BACKEND_HTTPS_PORT
 PROMETHEUS_HOST_PORT = DEFAULT_PROMETHEUS_HOST_PORT
 HEALTH_URL = ""
-CORE_SERVICES = ("backend",)
+BACKEND_BLUE_SERVICE = "backend-blue"
+BACKEND_GREEN_SERVICE = "backend-green"
+BACKEND_SERVICES = (BACKEND_BLUE_SERVICE, BACKEND_GREEN_SERVICE)
+CORE_SERVICES = BACKEND_SERVICES
 GATEWAY_SERVICE = "traefik"
-SERVICE_ORDER = ("traefik", "backend", "prometheus", "node-exporter", "cadvisor", "grafana", "otp")
+SERVICE_ORDER = (
+    "traefik",
+    BACKEND_BLUE_SERVICE,
+    BACKEND_GREEN_SERVICE,
+    "prometheus",
+    "node-exporter",
+    "cadvisor",
+    "grafana",
+    "otp",
+)
 ALL_EXCEPT_OTP_SERVICES = tuple(name for name in SERVICE_ORDER if name != "otp")
 
 
@@ -159,7 +171,7 @@ def selected_services_from_args(args: argparse.Namespace) -> list[str]:
     if args.traefik:
         selected.append("traefik")
     if args.backend:
-        selected.append("backend")
+        selected.extend(BACKEND_SERVICES)
     if args.prometheus:
         selected.append("prometheus")
     if args.node_exporter:
@@ -265,7 +277,7 @@ def compose_up_core() -> None:
 
     services = " ".join(CORE_SERVICES)
     log(f"기본 구성요소 빌드 & 시작 … ({services})")
-    ret = run(f"docker compose up -d --build --force-recreate {services}")
+    ret = run(f"docker compose up -d --build --force-recreate --remove-orphans {services}")
     if ret.returncode != 0:
         err("기본 구성요소 docker compose up 실패")
         sys.exit(1)
@@ -278,14 +290,14 @@ def compose_up_core() -> None:
 def compose_up_selected(services: list[str]) -> None:
     ordered = ordered_services(services)
     service_expr = " ".join(ordered)
-    includes_backend = "backend" in ordered
+    includes_backend = any(svc in BACKEND_SERVICES for svc in ordered)
 
     if includes_backend and GATEWAY_SERVICE not in ordered:
         ensure_gateway_running()
 
     log(f"선택 구성요소 시작 … ({service_expr})")
     if includes_backend:
-        ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
+        ret = run(f"docker compose up -d --build --force-recreate --remove-orphans {service_expr}")
     else:
         ret = run(f"docker compose up -d {service_expr}")
     if ret.returncode != 0:
@@ -302,10 +314,10 @@ def compose_up_all() -> None:
     result = run("docker compose ps -q", capture_output=True, text=True)
     if result.stdout.strip():
         log("기존 컨테이너 감지 → 전체 재시작합니다 …")
-        run("docker compose down", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        run("docker compose down --remove-orphans", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     log("Docker Compose 전체 빌드 & 시작 …")
-    ret = run("docker compose up -d --build")
+    ret = run("docker compose up -d --build --remove-orphans")
     if ret.returncode != 0:
         err("docker compose up 실패")
         sys.exit(1)
@@ -318,7 +330,7 @@ def compose_up_all() -> None:
 def compose_up_all_except_otp() -> None:
     service_expr = " ".join(ALL_EXCEPT_OTP_SERVICES)
     log(f"OTP 제외 전체 구성요소 재시작 … ({service_expr})")
-    ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
+    ret = run(f"docker compose up -d --build --force-recreate --remove-orphans {service_expr}")
     if ret.returncode != 0:
         err("OTP 제외 전체 구성요소 docker compose up 실패")
         sys.exit(1)
@@ -382,12 +394,12 @@ def wait_forever(httpd) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="shuttle-go 개발 환경 통합 실행")
-    parser.add_argument("--down", action="store_true", help="종료 (기본: backend만, --all: 전체, --all-no-otp: otp 제외 전체)")
-    parser.add_argument("--all", action="store_true", help="모든 구성요소(traefik/backend/prometheus/node-exporter/cadvisor/grafana/otp) 재시작")
-    parser.add_argument("--all-no-otp", action="store_true", help="otp 제외 모든 구성요소(traefik/backend/prometheus/node-exporter/cadvisor/grafana) 재시작")
+    parser.add_argument("--down", action="store_true", help="종료 (기본: backend-blue/backend-green, --all: 전체, --all-no-otp: otp 제외 전체)")
+    parser.add_argument("--all", action="store_true", help="모든 구성요소(traefik/backend-blue/backend-green/prometheus/node-exporter/cadvisor/grafana/otp) 재시작")
+    parser.add_argument("--all-no-otp", action="store_true", help="otp 제외 모든 구성요소(traefik/backend-blue/backend-green/prometheus/node-exporter/cadvisor/grafana) 재시작")
     parser.add_argument("--frontend", action="store_true", help="프론트엔드 서버만 시작")
     parser.add_argument("--traefik", action="store_true", help="traefik만 재시작/종료")
-    parser.add_argument("--backend", action="store_true", help="backend만 재시작/종료")
+    parser.add_argument("--backend", action="store_true", help="backend-blue/backend-green 재시작/종료")
     parser.add_argument("--prometheus", action="store_true", help="prometheus만 재시작/종료")
     parser.add_argument("--node-exporter", dest="node_exporter", action="store_true", help="node-exporter만 재시작/종료")
     parser.add_argument("--grafana", action="store_true", help="grafana만 재시작/종료")
