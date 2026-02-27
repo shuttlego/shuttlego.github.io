@@ -251,6 +251,11 @@ AUTH_CUMULATIVE_USERS = Gauge(
     "Cumulative number of users who have signed up",
 )
 
+AUTH_CUMULATIVE_DELETED_USERS = Gauge(
+    "shuttle_auth_cumulative_deleted_users",
+    "Cumulative number of users who have deleted their accounts",
+)
+
 AUTH_DAILY_NEW_USERS = Gauge(
     "shuttle_auth_daily_new_users",
     "Number of users who signed up within the last 24 hours",
@@ -357,6 +362,7 @@ def _user_db_size_bytes() -> int:
 def _refresh_auth_business_metrics() -> None:
     snapshot = user_store.get_user_metrics_snapshot(daily_window_hours=24)
     AUTH_CUMULATIVE_USERS.set(float(snapshot.get("cumulative_users") or 0))
+    AUTH_CUMULATIVE_DELETED_USERS.set(float(snapshot.get("cumulative_deleted_users") or 0))
     AUTH_DAILY_NEW_USERS.set(float(snapshot.get("daily_new_users") or 0))
     AUTH_DAU.set(float(snapshot.get("dau") or 0))
     AUTH_MAU.set(float(snapshot.get("mau") or 0))
@@ -985,23 +991,83 @@ def _normalize_label_names(labels: list | None) -> list[str]:
     return result
 
 
-def _normalize_issue(issue: dict) -> dict:
+def _extract_prefixed_label_value(labels: list[str], prefix: str) -> str:
+    key = str(prefix or "").strip().lower()
+    if not key:
+        return ""
+    marker = key + ":"
+    for raw in labels or []:
+        label = str(raw or "").strip()
+        if not label:
+            continue
+        if label.lower().startswith(marker):
+            value = label[len(marker) :].strip()
+            if value:
+                return value
+    return ""
+
+
+def _normalize_issue_label_nickname(raw: object) -> str:
+    text = str(raw or "")
+    if not text:
+        return ""
+    normalized = " ".join(text.replace("\r", " ").replace("\n", " ").split())
+    return normalized[:41]
+
+
+def _build_issue_nickname_label(raw: object) -> str:
+    nickname = _normalize_issue_label_nickname(raw)
+    if not nickname:
+        return ""
+    return f"nickname:{nickname}"[:50]
+
+
+def _collect_issue_author_user_ids(raw_items: list[dict]) -> list[str]:
+    user_ids: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items or []:
+        if item.get("pull_request"):
+            continue
+        labels = _normalize_label_names(item.get("labels"))
+        user_id = _extract_prefixed_label_value(labels, "user-id")
+        if not user_id or user_id in seen:
+            continue
+        seen.add(user_id)
+        user_ids.append(user_id)
+    return user_ids
+
+
+def _normalize_issue(issue: dict, nickname_by_public_user_id: dict[str, str] | None = None) -> dict:
     user = issue.get("user") or {}
     login = str(user.get("login") or "")
     body, _ = _split_issue_body_and_meta(str(issue.get("body") or ""))
+    labels = _normalize_label_names(issue.get("labels"))
     owner = (GITHUB_REPO_OWNER or "").strip().lower()
-    is_notice = bool(owner and login.strip().lower() == owner)
+    is_repo_owner = bool(owner and login.strip().lower() == owner)
+    is_notice = is_repo_owner
+    author_user_id = _extract_prefixed_label_value(labels, "user-id")
+    author_nickname_label = _extract_prefixed_label_value(labels, "nickname")
+    display_name = ""
+    if author_user_id and isinstance(nickname_by_public_user_id, dict):
+        display_name = str(nickname_by_public_user_id.get(author_user_id) or "").strip()
+    if not display_name and author_nickname_label:
+        display_name = author_nickname_label
+    if not display_name and is_repo_owner:
+        display_name = login
     return {
         "number": issue.get("number"),
         "title": issue.get("title") or "",
         "body": body,
         "state": issue.get("state") or "open",
-        "labels": _normalize_label_names(issue.get("labels")),
+        "labels": labels,
         "url": issue.get("html_url") or "",
         "created_at": issue.get("created_at"),
         "updated_at": issue.get("updated_at"),
         "closed_at": issue.get("closed_at"),
         "user": login,
+        "display_name": display_name,
+        "author_user_id": author_user_id,
+        "is_repo_owner": is_repo_owner,
         "is_notice": is_notice,
         "comments": issue.get("comments") or 0,
     }
@@ -2083,6 +2149,7 @@ def api_issues():
         meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
         meta = dict(meta or {})
         auth_user, _ = _get_current_user(with_touch=False)
+        anon_nickname = ""
 
         if auth_user is not None:
             meta.pop("user-id", None)
@@ -2091,6 +2158,11 @@ def api_issues():
         else:
             # 비로그인 사용자는 user-id 라벨을 임의 주입할 수 없다.
             meta.pop("user-id", None)
+            anon_nickname = _normalize_issue_label_nickname(meta.get("nickname"))
+            if anon_nickname:
+                meta["nickname"] = anon_nickname
+            else:
+                meta.pop("nickname", None)
 
         if not title:
             return jsonify({"error": "title은 필수입니다."}), 400
@@ -2115,6 +2187,10 @@ def api_issues():
             uid_label = f"user-id:{_compact_meta_label_part(auth_user.get('public_user_id'))}"
             if uid_label and uid_label not in merged_labels:
                 merged_labels.append(uid_label)
+        elif anon_nickname:
+            nickname_label = _build_issue_nickname_label(anon_nickname)
+            if nickname_label and nickname_label not in merged_labels:
+                merged_labels.append(nickname_label)
 
         issue_payload = {
             "title": title,
@@ -2234,11 +2310,19 @@ def api_issues():
         except GitHubAPIError as exc:
             return jsonify({"error": str(exc)}), exc.status_code
 
+        nickname_by_public_user_id: dict[str, str] = {}
+        try:
+            author_user_ids = _collect_issue_author_user_ids(raw_items)
+            if author_user_ids:
+                nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
+        except Exception:
+            app.logger.exception("Failed to resolve issue author nicknames")
+
         normalized_issues: list[dict] = []
         for item in raw_items:
             if item.get("pull_request"):
                 continue
-            normalized = _normalize_issue(item)
+            normalized = _normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id)
             if state in {"open", "closed"} and normalized.get("is_notice"):
                 continue
             normalized_issues.append(normalized)
@@ -2308,8 +2392,16 @@ def api_issue_detail(issue_number: int):
     if not isinstance(comments, list):
         comments = []
 
+    issue_nickname_map: dict[str, str] = {}
+    try:
+        issue_author_user_ids = _collect_issue_author_user_ids([issue])
+        if issue_author_user_ids:
+            issue_nickname_map = user_store.get_active_nickname_map_by_public_user_ids(issue_author_user_ids)
+    except Exception:
+        app.logger.exception("Failed to resolve issue author nickname in detail")
+
     response_payload = {
-        "issue": _normalize_issue(issue),
+        "issue": _normalize_issue(issue, nickname_by_public_user_id=issue_nickname_map),
         "comments": [_normalize_comment(c) for c in comments],
     }
     _issue_cache_set(cache_key, response_payload)
