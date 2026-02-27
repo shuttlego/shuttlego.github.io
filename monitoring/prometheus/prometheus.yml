@@ -11,7 +11,7 @@ scrape_configs:
   - job_name: "shuttle-backend"
     metrics_path: /metrics
     static_configs:
-      - targets: ["backend:8081"]
+      - targets: ["backend-blue:8081", "backend-green:8081"]
         labels:
           app: "shuttle-go"
           env: "production"
