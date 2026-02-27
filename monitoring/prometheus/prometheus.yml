@@ -18,10 +18,21 @@ scrape_configs:
 
   # Node Exporter (호스트 시스템 메트릭)
   - job_name: "node-exporter"
+    scrape_interval: 10s
+    scrape_timeout: 8s
     static_configs:
       - targets: ["node-exporter:9100"]
         labels:
           instance: "shuttle-vm"
+
+  # cAdvisor (컨테이너 메트릭)
+  - job_name: "cadvisor"
+    scrape_interval: 10s
+    scrape_timeout: 8s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          app: "cadvisor"
 
   # Traefik 메트릭
   - job_name: "traefik"

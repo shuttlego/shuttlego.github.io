@@ -140,6 +140,18 @@ REQUEST_LATENCY = Histogram(
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
 
+REQUEST_SIZE_TOTAL = Counter(
+    "shuttle_http_request_size_bytes_total",
+    "Total HTTP request size in bytes",
+    ["method", "endpoint"],
+)
+
+RESPONSE_SIZE_TOTAL = Counter(
+    "shuttle_http_response_size_bytes_total",
+    "Total HTTP response size in bytes",
+    ["method", "endpoint", "status"],
+)
+
 KAKAO_API_CALLS = Counter(
     "shuttle_kakao_api_calls_total",
     "Total calls to Kakao Local API",
@@ -172,17 +184,55 @@ def _before_request():
     IN_PROGRESS_REQUESTS.inc()
 
 
+def _safe_request_size_bytes() -> int:
+    url_size = len((request.path or "").encode("utf-8"))
+    if request.query_string:
+        url_size += len(request.query_string)
+    content_length = request.content_length
+    if isinstance(content_length, int) and content_length >= 0:
+        return content_length + url_size
+    try:
+        body = request.get_data(cache=True, as_text=False)
+    except Exception:
+        return url_size
+    return (len(body) if body else 0) + url_size
+
+
+def _safe_response_size_bytes(response) -> int:
+    try:
+        content_length = response.calculate_content_length()
+    except Exception:
+        content_length = None
+    if isinstance(content_length, int) and content_length >= 0:
+        return content_length
+    try:
+        body = response.get_data()
+    except Exception:
+        return 0
+    return len(body) if body else 0
+
+
 @app.after_request
 def _after_request(response):
     if request.path == "/metrics":
         IN_PROGRESS_REQUESTS.dec()
         return response
     latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
-    endpoint = request.path
+    url_rule = getattr(request, "url_rule", None)
+    if url_rule is not None and getattr(url_rule, "rule", None):
+        endpoint = url_rule.rule
+    elif request.path.startswith("/api/"):
+        endpoint = "/api/_unmatched"
+    else:
+        endpoint = request.path
     method = request.method
     status = str(response.status_code)
+    request_size = _safe_request_size_bytes()
+    response_size = _safe_response_size_bytes(response)
     REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
+    REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
+    RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
     IN_PROGRESS_REQUESTS.dec()
     return response
 
