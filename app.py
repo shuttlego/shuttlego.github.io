@@ -15,18 +15,21 @@ import time as _time
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 from urllib.parse import urlencode, urlparse
 
 import requests
 from flask import Flask, jsonify, make_response, request, Response
 from flask_cors import CORS
 from prometheus_client import (
-    Counter,
-    Histogram,
-    Gauge,
-    generate_latest,
-    REGISTRY,
     CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    REGISTRY,
+    generate_latest,
+    multiprocess,
 )
 
 import load_data
@@ -103,8 +106,14 @@ AUTH_SESSION_COOKIE_NAME = os.environ.get("AUTH_SESSION_COOKIE_NAME", "sg_sessio
 AUTH_SESSION_TTL_DAYS = max(1, _env_int("SESSION_TTL_DAYS", 90))
 AUTH_SESSION_SLIDING = _env_bool("SESSION_SLIDING", True)
 AUTH_COOKIE_DOMAIN = os.environ.get("SESSION_COOKIE_DOMAIN", "").strip() or None
+HISTORY_VISITOR_COOKIE_NAME = (
+    os.environ.get("HISTORY_VISITOR_COOKIE_NAME", "sg_history_visitor").strip() or "sg_history_visitor"
+)
+HISTORY_VISITOR_COOKIE_TTL_DAYS = max(1, _env_int("HISTORY_VISITOR_COOKIE_TTL_DAYS", 365))
 AUTH_CLEANUP_INTERVAL_SEC = max(60, _env_int("AUTH_CLEANUP_INTERVAL_SEC", 3600))
-AUTH_HISTORY_RETENTION_DAYS = max(1, _env_int("HISTORY_RETENTION_DAYS", 7))
+PLACE_SEARCH_HISTORY_RETENTION_MONTHS = max(1, _env_int("PLACE_SEARCH_HISTORY_RETENTION_MONTHS", 1))
+ROUTE_SEARCH_HISTORY_RETENTION_MONTHS = max(1, _env_int("ROUTE_SEARCH_HISTORY_RETENTION_MONTHS", 6))
+BI_DB_SNAPSHOT_REFRESH_SEC = max(30, _env_int("BI_DB_SNAPSHOT_REFRESH_SEC", 300))
 AUTH_GITHUB_CLEANUP_INTERVAL_SEC = max(30, _env_int("GITHUB_CLEANUP_INTERVAL_SEC", 60))
 AUTH_GITHUB_CLEANUP_DEADLINE_HOURS = max(1, _env_int("GITHUB_CLEANUP_DEADLINE_HOURS", 24))
 AUTH_NICKNAME_MIN_LEN = max(1, _env_int("AUTH_NICKNAME_MIN_LEN", 2))
@@ -123,6 +132,12 @@ AUTH_FRONTEND_ALLOWED_ORIGINS = [
     ).split(",")
     if v.strip()
 ]
+BACKGROUND_TASK_LEASE_STALE_SEC = 300
+BACKGROUND_TASK_LEASE_BUFFER_SEC = 30
+AUTH_CLEANUP_LEASE_SEC = max(90, AUTH_CLEANUP_INTERVAL_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
+BI_SNAPSHOT_LEASE_SEC = max(90, BI_DB_SNAPSHOT_REFRESH_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
+GITHUB_CLEANUP_LEASE_SEC = max(90, AUTH_GITHUB_CLEANUP_INTERVAL_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
+BACKGROUND_WORKER_OWNER_ID = f"{uuid.uuid4().hex}:{os.getpid()}"
 
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
@@ -179,6 +194,7 @@ _SITE_ID_DEFAULT_ENDPOINTS = {
 }
 _SITE_ID_METRIC_EXTRA_ENDPOINTS = {"/api/me/preferences/endpoint"}
 _ROUTE_SEARCH_SOURCE_VALUES = {"search", "map", "unknown"}
+_PROMETHEUS_MULTIPROC_DIR_ENV = "PROMETHEUS_MULTIPROC_DIR"
 
 OTP_BASE_URL = os.environ.get("OTP_BASE_URL", "http://otp:8082").rstrip("/")
 OTP_PLAN_PATH = os.environ.get("OTP_PLAN_PATH", "/otp/gtfs/v1").strip() or "/otp/gtfs/v1"
@@ -237,43 +253,51 @@ SHUTTLE_SEARCH_COUNT = Counter(
 IN_PROGRESS_REQUESTS = Gauge(
     "shuttle_in_progress_requests",
     "Number of requests currently being processed",
+    multiprocess_mode="livesum",
 )
 
 APP_INFO = Gauge(
     "shuttle_app_info",
     "Application metadata",
     ["version"],
+    multiprocess_mode="livemax",
 )
 APP_INFO.labels(version=os.environ.get("APP_VERSION", "1.0.0")).set(1)
 
 AUTH_CUMULATIVE_USERS = Gauge(
     "shuttle_auth_cumulative_users",
     "Cumulative number of users who have signed up",
+    multiprocess_mode="mostrecent",
 )
 
 AUTH_CUMULATIVE_DELETED_USERS = Gauge(
     "shuttle_auth_cumulative_deleted_users",
     "Cumulative number of users who have deleted their accounts",
+    multiprocess_mode="mostrecent",
 )
 
 AUTH_DAILY_NEW_USERS = Gauge(
     "shuttle_auth_daily_new_users",
     "Number of users who signed up within the last 24 hours",
+    multiprocess_mode="mostrecent",
 )
 
 AUTH_USER_DB_SIZE_BYTES = Gauge(
     "shuttle_auth_user_db_size_bytes",
-    "Total size of user SQLite files (db + wal + shm) in bytes",
+    "Total size of user SQLite files (db + wal) in bytes",
+    multiprocess_mode="mostrecent",
 )
 
 AUTH_DAU = Gauge(
     "shuttle_auth_dau",
     "Daily active users (distinct active users who logged in within the last 24 hours)",
+    multiprocess_mode="mostrecent",
 )
 
 AUTH_MAU = Gauge(
     "shuttle_auth_mau",
     "Monthly active users (distinct active users who logged in within the last 30 days)",
+    multiprocess_mode="mostrecent",
 )
 
 API_REQUEST_AUTH_STATE_COUNT = Counter(
@@ -299,7 +323,9 @@ ROUTE_SEARCH_SOURCE_COUNT = Counter(
 @app.before_request
 def _before_request():
     request._prom_start_time = _time.time()
-    IN_PROGRESS_REQUESTS.inc()
+    request._prom_track_in_progress = request.path != "/metrics"
+    if request._prom_track_in_progress:
+        IN_PROGRESS_REQUESTS.inc()
 
 
 def _safe_request_size_bytes() -> int:
@@ -407,10 +433,18 @@ def _record_route_search_source_metric(direction: str) -> None:
     ROUTE_SEARCH_SOURCE_COUNT.labels(direction=safe_direction, source=source).inc()
 
 
+def _metrics_registry():
+    multiproc_dir = os.environ.get(_PROMETHEUS_MULTIPROC_DIR_ENV, "").strip()
+    if not multiproc_dir:
+        return REGISTRY
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    return registry
+
+
 @app.after_request
 def _after_request(response):
     if request.path == "/metrics":
-        IN_PROGRESS_REQUESTS.dec()
         return response
     latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
     url_rule = getattr(request, "url_rule", None)
@@ -438,15 +472,16 @@ def _after_request(response):
         site_id = _extract_site_id_for_metrics(endpoint)
         if site_id:
             API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
-    IN_PROGRESS_REQUESTS.dec()
-    return response
+    if getattr(request, "_prom_track_in_progress", False):
+        IN_PROGRESS_REQUESTS.dec()
+    return _attach_history_visitor_cookie_if_needed(response)
 
 
 # ── Prometheus / Health 엔드포인트 ───────────────────────────
 @app.route("/metrics")
 def metrics():
     """Prometheus 메트릭 노출."""
-    return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
+    return Response(generate_latest(_metrics_registry()), mimetype=CONTENT_TYPE_LATEST)
 
 
 @app.route("/health")
@@ -1352,6 +1387,52 @@ def _clear_auth_session_cookie(resp) -> None:
     )
 
 
+def _normalize_history_visitor_cookie(raw_value: str | None) -> str:
+    value = str(raw_value or "").strip()
+    if not value or len(value) > 64:
+        return ""
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+    if any(ch not in allowed for ch in value):
+        return ""
+    return value
+
+
+def _ensure_history_visitor_id() -> str:
+    if getattr(request, "_history_visitor_loaded", False):
+        return str(getattr(request, "_history_visitor_id", "") or "")
+
+    visitor_id = _normalize_history_visitor_cookie(request.cookies.get(HISTORY_VISITOR_COOKIE_NAME))
+    should_set_cookie = False
+    if not visitor_id:
+        visitor_id = uuid.uuid4().hex
+        should_set_cookie = True
+
+    request._history_visitor_loaded = True
+    request._history_visitor_id = visitor_id
+    request._history_visitor_should_set_cookie = should_set_cookie
+    return visitor_id
+
+
+def _attach_history_visitor_cookie_if_needed(resp):
+    if not getattr(request, "_history_visitor_should_set_cookie", False):
+        return resp
+    visitor_id = str(getattr(request, "_history_visitor_id", "") or "").strip()
+    if not visitor_id:
+        return resp
+    resp.set_cookie(
+        HISTORY_VISITOR_COOKIE_NAME,
+        visitor_id,
+        max_age=60 * 60 * 24 * HISTORY_VISITOR_COOKIE_TTL_DAYS,
+        httponly=True,
+        secure=_auth_cookie_secure(),
+        samesite=_auth_cookie_samesite(),
+        domain=AUTH_COOKIE_DOMAIN,
+        path="/",
+    )
+    request._history_visitor_should_set_cookie = False
+    return resp
+
+
 def _session_token_from_request() -> str:
     return (request.cookies.get(AUTH_SESSION_COOKIE_NAME) or "").strip()
 
@@ -1580,7 +1661,14 @@ def _github_cleanup_labels_for_deleted_user(public_user_id: str) -> None:
 def _auth_cleanup_loop() -> None:
     while True:
         try:
-            user_store.cleanup_old_data(history_retention_days=AUTH_HISTORY_RETENTION_DAYS)
+            _run_exclusive_background_task(
+                "auth-cleanup",
+                lambda: user_store.cleanup_old_data(
+                    place_history_retention_months=PLACE_SEARCH_HISTORY_RETENTION_MONTHS,
+                    route_history_retention_months=ROUTE_SEARCH_HISTORY_RETENTION_MONTHS,
+                ),
+                stale_after_sec=AUTH_CLEANUP_LEASE_SEC,
+            )
         except Exception:
             app.logger.exception("Auth cleanup loop failed")
         _time.sleep(AUTH_CLEANUP_INTERVAL_SEC)
@@ -1595,23 +1683,64 @@ def _auth_metrics_loop() -> None:
         _time.sleep(AUTH_METRICS_REFRESH_SEC)
 
 
-def _github_cleanup_loop() -> None:
+def _bi_snapshot_loop() -> None:
     while True:
         try:
-            job = user_store.claim_due_github_cleanup_job()
-            if not job:
-                _time.sleep(AUTH_GITHUB_CLEANUP_INTERVAL_SEC)
-                continue
-            try:
-                _github_cleanup_labels_for_deleted_user(str(job.get("public_user_id") or ""))
-                user_store.complete_github_cleanup_job(int(job["id"]))
-            except Exception as exc:
-                attempts = int(job.get("attempts") or 1)
-                retry_after = min(60 * 60, max(30, attempts * 30))
-                user_store.fail_github_cleanup_job(int(job["id"]), str(exc), retry_after_sec=retry_after)
+            _run_exclusive_background_task(
+                "bi-snapshot",
+                user_store.refresh_bi_snapshot,
+                stale_after_sec=BI_SNAPSHOT_LEASE_SEC,
+            )
+        except Exception:
+            app.logger.exception("BI snapshot loop failed")
+        _time.sleep(BI_DB_SNAPSHOT_REFRESH_SEC)
+
+
+def _run_exclusive_background_task(
+    task_name: str,
+    callback: Callable[[], Any],
+    stale_after_sec: int = BACKGROUND_TASK_LEASE_STALE_SEC,
+) -> Any | None:
+    acquired = user_store.try_acquire_background_task_lease(
+        task_name,
+        BACKGROUND_WORKER_OWNER_ID,
+        stale_after_sec=stale_after_sec,
+    )
+    if not acquired:
+        return None
+    return callback()
+
+
+def _github_cleanup_loop() -> None:
+    while True:
+        sleep_for = 0.0
+        try:
+            result = _run_exclusive_background_task(
+                "github-cleanup",
+                _run_github_cleanup_once,
+                stale_after_sec=GITHUB_CLEANUP_LEASE_SEC,
+            )
+            if not result:
+                sleep_for = float(AUTH_GITHUB_CLEANUP_INTERVAL_SEC)
         except Exception:
             app.logger.exception("GitHub cleanup loop failed")
-            _time.sleep(AUTH_GITHUB_CLEANUP_INTERVAL_SEC)
+            sleep_for = float(AUTH_GITHUB_CLEANUP_INTERVAL_SEC)
+        if sleep_for > 0:
+            _time.sleep(sleep_for)
+
+
+def _run_github_cleanup_once() -> bool:
+    job = user_store.claim_due_github_cleanup_job()
+    if not job:
+        return False
+    try:
+        _github_cleanup_labels_for_deleted_user(str(job.get("public_user_id") or ""))
+        user_store.complete_github_cleanup_job(int(job["id"]))
+    except Exception as exc:
+        attempts = int(job.get("attempts") or 1)
+        retry_after = min(60 * 60, max(30, attempts * 30))
+        user_store.fail_github_cleanup_job(int(job["id"]), str(exc), retry_after_sec=retry_after)
+    return True
 
 
 def _start_auth_background_workers() -> None:
@@ -1622,6 +1751,7 @@ def _start_auth_background_workers() -> None:
         _auth_background_started = True
         threading.Thread(target=_auth_metrics_loop, daemon=True, name="auth-metrics-loop").start()
         threading.Thread(target=_auth_cleanup_loop, daemon=True, name="auth-cleanup-loop").start()
+        threading.Thread(target=_bi_snapshot_loop, daemon=True, name="bi-snapshot-loop").start()
         threading.Thread(target=_github_cleanup_loop, daemon=True, name="github-cleanup-loop").start()
 
 
@@ -2022,11 +2152,13 @@ def api_search():
         return jsonify({"documents": []})
     documents = search_places(q)
     user, _ = _get_current_user(with_touch=False)
-    if user is not None:
-        try:
+    try:
+        if user is not None:
             user_store.add_place_history(int(user["id"]), q)
-        except Exception:
-            app.logger.exception("Failed to save place search history")
+        else:
+            user_store.add_anonymous_place_history(_ensure_history_visitor_id(), q)
+    except Exception:
+        app.logger.exception("Failed to save place search history")
     return jsonify({"documents": documents})
 
 
@@ -2530,19 +2662,29 @@ def api_shuttle_depart_options():
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     def _record_route_search() -> None:
-        if auth_user is None:
-            return
         try:
-            user_store.add_route_history(
-                user_id=int(auth_user["id"]),
-                site_id=site_id,
-                day_type=day_type,
-                direction="depart",
-                lat=float(lat),
-                lng=float(lng),
-                selected_endpoints=selected_endpoints,
-                place_name=place_name,
-            )
+            if auth_user is not None:
+                user_store.add_route_history(
+                    user_id=int(auth_user["id"]),
+                    site_id=site_id,
+                    day_type=day_type,
+                    direction="depart",
+                    lat=float(lat),
+                    lng=float(lng),
+                    selected_endpoints=selected_endpoints,
+                    place_name=place_name,
+                )
+            else:
+                user_store.add_anonymous_route_history(
+                    visitor_id=_ensure_history_visitor_id(),
+                    site_id=site_id,
+                    day_type=day_type,
+                    direction="depart",
+                    lat=float(lat),
+                    lng=float(lng),
+                    selected_endpoints=selected_endpoints,
+                    place_name=place_name,
+                )
         except Exception:
             app.logger.exception("Failed to save depart route history")
 
@@ -2862,19 +3004,29 @@ def api_shuttle_arrive_options():
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     def _record_route_search() -> None:
-        if auth_user is None:
-            return
         try:
-            user_store.add_route_history(
-                user_id=int(auth_user["id"]),
-                site_id=site_id,
-                day_type=day_type,
-                direction="arrive",
-                lat=float(lat),
-                lng=float(lng),
-                selected_endpoints=selected_endpoints,
-                place_name=place_name,
-            )
+            if auth_user is not None:
+                user_store.add_route_history(
+                    user_id=int(auth_user["id"]),
+                    site_id=site_id,
+                    day_type=day_type,
+                    direction="arrive",
+                    lat=float(lat),
+                    lng=float(lng),
+                    selected_endpoints=selected_endpoints,
+                    place_name=place_name,
+                )
+            else:
+                user_store.add_anonymous_route_history(
+                    visitor_id=_ensure_history_visitor_id(),
+                    site_id=site_id,
+                    day_type=day_type,
+                    direction="arrive",
+                    lat=float(lat),
+                    lng=float(lng),
+                    selected_endpoints=selected_endpoints,
+                    place_name=place_name,
+                )
         except Exception:
             app.logger.exception("Failed to save arrive route history")
 
@@ -3180,6 +3332,14 @@ try:
     _refresh_auth_business_metrics()
 except Exception:
     app.logger.exception("Failed to initialize auth business metrics")
+try:
+    _run_exclusive_background_task(
+        "bi-snapshot",
+        user_store.refresh_bi_snapshot,
+        stale_after_sec=BI_SNAPSHOT_LEASE_SEC,
+    )
+except Exception:
+    app.logger.exception("Failed to initialize BI snapshot")
 try:
     warm_endpoint_cache()
 except Exception:

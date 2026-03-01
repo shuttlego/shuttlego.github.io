@@ -39,6 +39,12 @@ user-data/*.db-shm
 user-data/*.db-wal
 user-data/*.sqlite
 user-data/*.sqlite3
+user-data/.background-locks/
+user-bi-data/*.db
+user-bi-data/*.db-shm
+user-bi-data/*.db-wal
+user-bi-data/*.sqlite
+user-bi-data/*.sqlite3
 
 # Tool configs
 .claude/

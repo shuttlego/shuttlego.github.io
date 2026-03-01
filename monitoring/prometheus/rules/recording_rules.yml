@@ -47,6 +47,40 @@ groups:
           /
           (rate(shuttle_kakao_api_calls_total[5m]) > 0)
 
+  # ── 바이트 누적 롤업 규칙 (KST 월 누적) ─────────────────
+  - name: shuttle_byte_rollups
+    interval: 1m
+    rules:
+      - record: shuttle:request_size_bytes_delta_1m
+        expr: clamp_min(sum(increase(shuttle_http_request_size_bytes_total{endpoint!~"^/(health|metrics)$"}[1m])), 0)
+
+      - record: shuttle:response_size_bytes_delta_1m
+        expr: clamp_min(sum(increase(shuttle_http_response_size_bytes_total{endpoint!~"^/(health|metrics)$"}[1m])), 0)
+
+      - record: shuttle:request_size_bytes_mtd
+        expr: |
+          shuttle:request_size_bytes_delta_1m
+          +
+          (
+            ((shuttle:request_size_bytes_mtd offset 1m) or vector(0))
+            *
+            (year(vector(time() + 32400)) == bool year(vector(time() - 60 + 32400)))
+            *
+            (month(vector(time() + 32400)) == bool month(vector(time() - 60 + 32400)))
+          )
+
+      - record: shuttle:response_size_bytes_mtd
+        expr: |
+          shuttle:response_size_bytes_delta_1m
+          +
+          (
+            ((shuttle:response_size_bytes_mtd offset 1m) or vector(0))
+            *
+            (year(vector(time() + 32400)) == bool year(vector(time() - 60 + 32400)))
+            *
+            (month(vector(time() + 32400)) == bool month(vector(time() - 60 + 32400)))
+          )
+
   # ── 알림 규칙 ───────────────────────────────────────────
   - name: shuttle_alerts
     rules:
