@@ -1,0 +1,684 @@
+{
+  "uid": "shuttle-go-search-bi",
+  "title": "ShuttleGo - Search BI",
+  "tags": [
+    "shuttle-go",
+    "bi",
+    "search"
+  ],
+  "timezone": "Asia/Seoul",
+  "refresh": "",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "editable": true,
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "row",
+      "title": "검색 BI (SQLite)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "키워드 검색 수 (선택 기간)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH place_events AS (SELECT searched_at, keyword, 'authenticated' AS actor FROM place_search_history UNION ALL SELECT searched_at, keyword, 'anonymous' AS actor FROM anonymous_place_search_history) SELECT COUNT(*) AS value FROM place_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}');",
+          "queryText": "WITH place_events AS (SELECT searched_at, keyword, 'authenticated' AS actor FROM place_search_history UNION ALL SELECT searched_at, keyword, 'anonymous' AS actor FROM anonymous_place_search_history) SELECT COUNT(*) AS value FROM place_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}');"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "노선 검색 수 (선택 기간)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT COUNT(*) AS value FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]'));",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT COUNT(*) AS value FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]'));"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "로그인 비율 (노선 검색)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN actor = 'authenticated' THEN 1 ELSE 0 END) / COUNT(*), 1) END AS value FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]'));",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN actor = 'authenticated' THEN 1 ELSE 0 END) / COUNT(*), 1) END AS value FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]'));"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "green",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "옵션 필터 사용 비율 (노선 검색)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN selected_endpoints_json <> '[]' THEN 1 ELSE 0 END) / COUNT(*), 1) END AS value FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}');",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(100.0 * SUM(CASE WHEN selected_endpoints_json <> '[]' THEN 1 ELSE 0 END) / COUNT(*), 1) END AS value FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}');"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "상위 키워드 TOP 20",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH place_events AS (SELECT searched_at, keyword, 'authenticated' AS actor FROM place_search_history UNION ALL SELECT searched_at, keyword, 'anonymous' AS actor FROM anonymous_place_search_history) SELECT keyword AS keyword, COUNT(*) AS searches FROM place_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') GROUP BY keyword ORDER BY searches DESC, keyword ASC LIMIT 20;",
+          "queryText": "WITH place_events AS (SELECT searched_at, keyword, 'authenticated' AS actor FROM place_search_history UNION ALL SELECT searched_at, keyword, 'anonymous' AS actor FROM anonymous_place_search_history) SELECT keyword AS keyword, COUNT(*) AS searches FROM place_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') GROUP BY keyword ORDER BY searches DESC, keyword ASC LIMIT 20;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 6,
+      "title": "상위 노선 검색 목적지 TOP 20",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT COALESCE(NULLIF(place_name, ''), '선택한 위치') AS place_name, COUNT(*) AS searches FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY COALESCE(NULLIF(place_name, ''), '선택한 위치') ORDER BY searches DESC, place_name ASC LIMIT 20;",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT COALESCE(NULLIF(place_name, ''), '선택한 위치') AS place_name, COUNT(*) AS searches FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY COALESCE(NULLIF(place_name, ''), '선택한 위치') ORDER BY searches DESC, place_name ASC LIMIT 20;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 7,
+      "title": "사업장/방향/요일별 노선 검색 분포",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT CASE site_id WHEN '0000011' THEN '삼성전자(기흥/화성)' WHEN '0000012' THEN '삼성전자(온양/천안)' WHEN '0000013' THEN '삼성전자(수원)' WHEN '0000015' THEN '삼성디스플레이(아산)' WHEN '0000017' THEN '삼성SDI(천안)' WHEN '0000027' THEN '삼성전자(구미)' WHEN '0000028' THEN '삼성전자(광주)' WHEN '0000041' THEN '삼성전자(우면/서울대)' WHEN '0000042' THEN '삼성전자(평택)' WHEN '0000069' THEN '삼성디스플레이(기흥)' ELSE '기타(' || site_id || ')' END AS site_name, direction, day_type, COUNT(*) AS searches, ROUND(100.0 * SUM(CASE WHEN actor = 'authenticated' THEN 1 ELSE 0 END) / COUNT(*), 1) AS auth_ratio_pct FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY site_id, direction, day_type ORDER BY searches DESC, site_name ASC LIMIT 50;",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT CASE site_id WHEN '0000011' THEN '삼성전자(기흥/화성)' WHEN '0000012' THEN '삼성전자(온양/천안)' WHEN '0000013' THEN '삼성전자(수원)' WHEN '0000015' THEN '삼성디스플레이(아산)' WHEN '0000017' THEN '삼성SDI(천안)' WHEN '0000027' THEN '삼성전자(구미)' WHEN '0000028' THEN '삼성전자(광주)' WHEN '0000041' THEN '삼성전자(우면/서울대)' WHEN '0000042' THEN '삼성전자(평택)' WHEN '0000069' THEN '삼성디스플레이(기흥)' ELSE '기타(' || site_id || ')' END AS site_name, direction, day_type, COUNT(*) AS searches, ROUND(100.0 * SUM(CASE WHEN actor = 'authenticated' THEN 1 ELSE 0 END) / COUNT(*), 1) AS auth_ratio_pct FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DIRECTION:value}' = 'all' OR direction = '${BI_DIRECTION:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY site_id, direction, day_type ORDER BY searches DESC, site_name ASC LIMIT 50;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 8,
+      "title": "노선 검색 위치 분포 (대한민국)",
+      "type": "geomap",
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "SHUTTLE_USERDB_SQLITE"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT ROUND(lat, 3) AS lat, ROUND(lng, 3) AS lng, COUNT(*) AS searches, COALESCE(MAX(NULLIF(place_name, '')), '선택한 위치') AS sample_place FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_DIRECTION:value}' = 'all' OR '${BI_DIRECTION:value}' = 'depart') AND direction = 'depart' AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY ROUND(lat, 3), ROUND(lng, 3) ORDER BY searches DESC LIMIT 500;",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT ROUND(lat, 3) AS lat, ROUND(lng, 3) AS lng, COUNT(*) AS searches, COALESCE(MAX(NULLIF(place_name, '')), '선택한 위치') AS sample_place FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_DIRECTION:value}' = 'all' OR '${BI_DIRECTION:value}' = 'depart') AND direction = 'depart' AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY ROUND(lat, 3), ROUND(lng, 3) ORDER BY searches DESC LIMIT 500;"
+        },
+        {
+          "refId": "B",
+          "format": "table",
+          "queryType": "table",
+          "rawQueryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT ROUND(lat, 3) AS lat, ROUND(lng, 3) AS lng, COUNT(*) AS searches, COALESCE(MAX(NULLIF(place_name, '')), '선택한 위치') AS sample_place FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_DIRECTION:value}' = 'all' OR '${BI_DIRECTION:value}' = 'arrive') AND direction = 'arrive' AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY ROUND(lat, 3), ROUND(lng, 3) ORDER BY searches DESC LIMIT 500;",
+          "queryText": "WITH route_events AS (SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'authenticated' AS actor FROM route_search_history UNION ALL SELECT searched_at, site_id, day_type, direction, lat, lng, selected_endpoints_json, place_name, 'anonymous' AS actor FROM anonymous_route_search_history) SELECT ROUND(lat, 3) AS lat, ROUND(lng, 3) AS lng, COUNT(*) AS searches, COALESCE(MAX(NULLIF(place_name, '')), '선택한 위치') AS sample_place FROM route_events WHERE CAST(strftime('%s', searched_at) AS INTEGER) BETWEEN ${__from}/1000 AND ${__to}/1000 AND ('${BI_DIRECTION:value}' = 'all' OR '${BI_DIRECTION:value}' = 'arrive') AND direction = 'arrive' AND ('${BI_ACTOR:value}' = 'all' OR actor = '${BI_ACTOR:value}') AND ('${BI_SITE:value}' = 'all' OR site_id = '${BI_SITE:value}') AND ('${BI_DAY_TYPE:value}' = 'all' OR day_type = '${BI_DAY_TYPE:value}') AND ('${BI_ENDPOINT_FILTER:value}' = 'all' OR ('${BI_ENDPOINT_FILTER:value}' = 'filtered' AND selected_endpoints_json <> '[]') OR ('${BI_ENDPOINT_FILTER:value}' = 'all_selected' AND selected_endpoints_json = '[]')) GROUP BY ROUND(lat, 3), ROUND(lng, 3) ORDER BY searches DESC LIMIT 500;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "basemap": {
+          "type": "default",
+          "name": "Layer 0"
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false
+        },
+        "view": {
+          "id": "coords",
+          "lat": 36.2,
+          "lon": 127.8,
+          "zoom": 5
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "출발지",
+            "filterData": {
+              "id": "byRefId",
+              "options": "A"
+            },
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "lat",
+              "longitude": "lng"
+            },
+            "tooltip": true
+          },
+          {
+            "type": "markers",
+            "name": "목적지",
+            "filterData": {
+              "id": "byRefId",
+              "options": "B"
+            },
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "#FF9830",
+                  "mode": "fixed"
+                }
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "lat",
+              "longitude": "lng"
+            },
+            "tooltip": true
+          }
+        ]
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "BI_ACTOR",
+        "label": "이용자 구분",
+        "type": "custom",
+        "query": "전체 : all, 로그인 : authenticated, 비로그인 : anonymous",
+        "current": {
+          "selected": true,
+          "text": "전체",
+          "value": "all"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "전체",
+            "value": "all"
+          },
+          {
+            "selected": false,
+            "text": "로그인",
+            "value": "authenticated"
+          },
+          {
+            "selected": false,
+            "text": "비로그인",
+            "value": "anonymous"
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "BI_SITE",
+        "label": "사업장",
+        "type": "custom",
+        "query": "전체 : all, 삼성전자(기흥/화성) : 0000011, 삼성전자(온양/천안) : 0000012, 삼성전자(수원) : 0000013, 삼성디스플레이(아산) : 0000015, 삼성SDI(천안) : 0000017, 삼성전자(구미) : 0000027, 삼성전자(광주) : 0000028, 삼성전자(우면/서울대) : 0000041, 삼성전자(평택) : 0000042, 삼성디스플레이(기흥) : 0000069",
+        "current": {
+          "selected": true,
+          "text": "전체",
+          "value": "all"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "전체",
+            "value": "all"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(기흥/화성)",
+            "value": "0000011"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(온양/천안)",
+            "value": "0000012"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(수원)",
+            "value": "0000013"
+          },
+          {
+            "selected": false,
+            "text": "삼성디스플레이(아산)",
+            "value": "0000015"
+          },
+          {
+            "selected": false,
+            "text": "삼성SDI(천안)",
+            "value": "0000017"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(구미)",
+            "value": "0000027"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(광주)",
+            "value": "0000028"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(우면/서울대)",
+            "value": "0000041"
+          },
+          {
+            "selected": false,
+            "text": "삼성전자(평택)",
+            "value": "0000042"
+          },
+          {
+            "selected": false,
+            "text": "삼성디스플레이(기흥)",
+            "value": "0000069"
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "BI_DIRECTION",
+        "label": "검색 방향",
+        "type": "custom",
+        "query": "전체 : all, 출근 : depart, 퇴근 : arrive",
+        "current": {
+          "selected": true,
+          "text": "전체",
+          "value": "all"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "전체",
+            "value": "all"
+          },
+          {
+            "selected": false,
+            "text": "출근",
+            "value": "depart"
+          },
+          {
+            "selected": false,
+            "text": "퇴근",
+            "value": "arrive"
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "BI_DAY_TYPE",
+        "label": "운행일 구분",
+        "type": "custom",
+        "query": "전체 : all, 평일 : weekday, 토요일 : saturday, 휴일 : holiday, 일요일 : sunday",
+        "current": {
+          "selected": true,
+          "text": "전체",
+          "value": "all"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "전체",
+            "value": "all"
+          },
+          {
+            "selected": false,
+            "text": "평일",
+            "value": "weekday"
+          },
+          {
+            "selected": false,
+            "text": "토요일",
+            "value": "saturday"
+          },
+          {
+            "selected": false,
+            "text": "휴일",
+            "value": "holiday"
+          },
+          {
+            "selected": false,
+            "text": "일요일",
+            "value": "sunday"
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "BI_ENDPOINT_FILTER",
+        "label": "출발/도착 옵션 필터",
+        "type": "custom",
+        "query": "전체 : all, 전체 선택 : all_selected, 옵션 좁힘 : filtered",
+        "current": {
+          "selected": true,
+          "text": "전체",
+          "value": "all"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "전체",
+            "value": "all"
+          },
+          {
+            "selected": false,
+            "text": "전체 선택",
+            "value": "all_selected"
+          },
+          {
+            "selected": false,
+            "text": "옵션 좁힘",
+            "value": "filtered"
+          }
+        ],
+        "hide": 0,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  }
+}

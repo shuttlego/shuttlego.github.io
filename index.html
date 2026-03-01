@@ -9082,6 +9082,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         expandedOptionIndex = -1;
         routeSortBar.classList.add('show');
         updateSortButtons();
+        hideShuttleErrorOverlay();
         if (options.length === 0) {
           closeMaxDistancePopover();
           clearSearchOverlays();

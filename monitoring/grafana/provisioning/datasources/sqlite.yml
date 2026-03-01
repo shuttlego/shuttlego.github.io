@@ -1,0 +1,10 @@
+apiVersion: 1
+
+datasources:
+  - name: Shuttle User DB
+    uid: SHUTTLE_USERDB_SQLITE
+    type: frser-sqlite-datasource
+    access: proxy
+    editable: false
+    jsonData:
+      path: /var/lib/grafana/user-bi-data/user-bi.db

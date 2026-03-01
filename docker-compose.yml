@@ -58,6 +58,7 @@ services:
     volumes:
       - ./data:/app/data:ro
       - ./user-data:/app/user-data
+      - user-bi-data:/app/user-bi-data
     expose:
       - "8081"
     networks:
@@ -82,6 +83,7 @@ services:
     volumes:
       - ./data:/app/data:ro
       - ./user-data:/app/user-data
+      - user-bi-data:/app/user-bi-data
     expose:
       - "8081"
     networks:
@@ -189,9 +191,11 @@ services:
       - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/shuttle-go.json
+      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/provisioning/dashboards/shuttle-go.json:/var/lib/grafana/dashboards/shuttle-go.json:ro
+      - ./monitoring/grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
+      - user-bi-data:/var/lib/grafana/user-bi-data
       - grafana-data:/var/lib/grafana
     expose:
       - "3000"
@@ -226,6 +230,7 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  user-bi-data:
   traefik-certs:
 
 networks:

@@ -8,9 +8,12 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import sqlite3
+import tempfile
 import threading
 import unicodedata
+from calendar import monthrange
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,6 +21,8 @@ from typing import Iterator
 
 DEFAULT_USER_DB_DIR = Path(__file__).resolve().parent / "user-data"
 DEFAULT_USER_DB_PATH = DEFAULT_USER_DB_DIR / "user.db"
+DEFAULT_USER_BI_DB_DIR = Path(__file__).resolve().parent / "user-bi-data"
+DEFAULT_USER_BI_DB_PATH = DEFAULT_USER_BI_DB_DIR / "user-bi.db"
 
 _db_path_lock = threading.Lock()
 _db_path: Path = DEFAULT_USER_DB_PATH
@@ -46,6 +51,15 @@ def utc_now() -> datetime:
 def utc_iso(dt: datetime | None = None) -> str:
     value = dt or utc_now()
     return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _subtract_months(dt: datetime, months: int) -> datetime:
+    retention = max(1, int(months))
+    base_month = dt.year * 12 + (dt.month - 1) - retention
+    year = base_month // 12
+    month = base_month % 12 + 1
+    day = min(dt.day, monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
 
 
 def parse_iso(ts: str | None) -> datetime | None:
@@ -90,6 +104,19 @@ def configure(db_path: str | None = None) -> Path:
 def get_db_path() -> Path:
     with _db_path_lock:
         return _db_path
+
+
+def get_bi_db_path(db_path: str | None = None) -> Path:
+    if db_path:
+        target = Path(db_path).expanduser().resolve()
+    else:
+        target = Path(os.environ.get("USER_BI_DB_PATH", str(DEFAULT_USER_BI_DB_PATH))).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.chmod(0o775)
+    except OSError:
+        pass
+    return target
 
 
 def _connect() -> sqlite3.Connection:
@@ -216,6 +243,32 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS anonymous_place_search_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              visitor_id TEXT NOT NULL,
+              keyword TEXT NOT NULL,
+              searched_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS anonymous_route_search_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              visitor_id TEXT NOT NULL,
+              site_id TEXT NOT NULL,
+              day_type TEXT NOT NULL,
+              direction TEXT NOT NULL,
+              lat REAL NOT NULL,
+              lng REAL NOT NULL,
+              selected_endpoints_json TEXT NOT NULL,
+              place_name TEXT,
+              searched_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS consent_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id INTEGER NOT NULL,
@@ -269,6 +322,16 @@ def init_db(db_path: str | None = None) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS background_task_leases (
+              task_name TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL,
+              lease_until TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_social_provider_uid ON social_accounts(provider, provider_user_id)"
@@ -292,12 +355,114 @@ def init_db(db_path: str | None = None) -> None:
             "CREATE INDEX IF NOT EXISTS idx_route_history_searched_at ON route_search_history(searched_at)"
         )
         conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_anon_place_history_visitor_id_id ON anonymous_place_search_history(visitor_id, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_anon_place_history_searched_at ON anonymous_place_search_history(searched_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_anon_route_history_visitor_id_id ON anonymous_route_search_history(visitor_id, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_anon_route_history_searched_at ON anonymous_route_search_history(searched_at)"
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due ON github_cleanup_jobs(status, next_attempt_at, created_at)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_public_uid ON github_cleanup_jobs(public_user_id)"
         )
         conn.commit()
+
+
+def refresh_bi_snapshot(db_path: str | None = None) -> Path:
+    source_path = get_db_path()
+    target_path = get_bi_db_path(db_path)
+    temp_path = target_path.with_name(target_path.name + ".tmp")
+    for suffix in ("", "-wal", "-shm"):
+        candidate = Path(str(temp_path) + suffix)
+        try:
+            candidate.unlink()
+        except FileNotFoundError:
+            pass
+
+    with tempfile.TemporaryDirectory(prefix="user-bi-", dir="/tmp") as local_tmp_dir:
+        local_snapshot_path = Path(local_tmp_dir) / target_path.name
+        source = sqlite3.connect(str(source_path), timeout=10, check_same_thread=False)
+        source.execute("PRAGMA busy_timeout=5000")
+        dest = sqlite3.connect(str(local_snapshot_path), timeout=10, check_same_thread=False)
+        try:
+            # Write the snapshot on the container-local filesystem first.
+            # Docker Desktop bind mounts can raise sqlite disk I/O errors when
+            # SQLite writes the destination file directly during backup().
+            dest.execute("PRAGMA journal_mode=DELETE")
+            source.backup(dest)
+            dest.commit()
+        finally:
+            dest.close()
+            source.close()
+
+        shutil.copyfile(local_snapshot_path, temp_path)
+
+    os.replace(temp_path, target_path)
+    try:
+        target_path.chmod(0o664)
+    except OSError:
+        pass
+    for suffix in ("-wal", "-shm"):
+        try:
+            Path(str(target_path) + suffix).unlink()
+        except FileNotFoundError:
+            pass
+    return target_path
+
+
+def try_acquire_background_task_lease(
+    task_name: str,
+    owner_id: str,
+    stale_after_sec: int = 300,
+) -> bool:
+    task = str(task_name or "").strip()
+    owner = str(owner_id or "").strip()
+    if not task or not owner:
+        return False
+    lease_sec = max(30, int(stale_after_sec))
+    now_dt = utc_now()
+    now = utc_iso(now_dt)
+    lease_until = utc_iso(now_dt + timedelta(seconds=lease_sec))
+    with _conn_ctx() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT owner_id, lease_until FROM background_task_leases WHERE task_name = ? LIMIT 1",
+            (task,),
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                """
+                INSERT INTO background_task_leases(task_name, owner_id, lease_until, updated_at)
+                VALUES(?, ?, ?, ?)
+                """,
+                (task, owner, lease_until, now),
+            )
+            conn.commit()
+            return True
+
+        current_owner = str(row["owner_id"] or "")
+        current_lease_until = parse_iso(row["lease_until"])
+        if current_owner == owner or current_lease_until is None or current_lease_until <= now_dt:
+            conn.execute(
+                """
+                UPDATE background_task_leases
+                SET owner_id = ?, lease_until = ?, updated_at = ?
+                WHERE task_name = ?
+                """,
+                (owner, lease_until, now, task),
+            )
+            conn.commit()
+            return True
+
+        conn.rollback()
+        return False
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict | None:
@@ -886,6 +1051,23 @@ def add_place_history(user_id: int, keyword: str) -> None:
         conn.commit()
 
 
+def add_anonymous_place_history(visitor_id: str, keyword: str) -> None:
+    clean_visitor_id = str(visitor_id or "").strip()[:64]
+    clean_keyword = str(keyword or "").strip()
+    if not clean_visitor_id or not clean_keyword:
+        return
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        conn.execute(
+            """
+            INSERT INTO anonymous_place_search_history(visitor_id, keyword, searched_at)
+            VALUES(?, ?, ?)
+            """,
+            (clean_visitor_id, clean_keyword[:120], now),
+        )
+        conn.commit()
+
+
 def list_place_history(user_id: int, cursor: int | None, limit: int = 20) -> dict:
     page_limit = max(1, min(int(limit), 100))
     with _conn_ctx() as conn:
@@ -970,6 +1152,52 @@ def add_route_history(
             """,
             (
                 int(user_id),
+                str(site_id),
+                str(day_type),
+                str(direction),
+                float(lat),
+                float(lng),
+                payload,
+                (str(place_name).strip()[:120] if place_name else None),
+                utc_iso(),
+            ),
+        )
+        conn.commit()
+
+
+def add_anonymous_route_history(
+    visitor_id: str,
+    site_id: str,
+    day_type: str,
+    direction: str,
+    lat: float,
+    lng: float,
+    selected_endpoints: list[str] | None,
+    place_name: str | None,
+) -> None:
+    clean_visitor_id = str(visitor_id or "").strip()[:64]
+    if not clean_visitor_id:
+        return
+    if direction not in {"depart", "arrive"}:
+        return
+    selected = []
+    if isinstance(selected_endpoints, list):
+        for item in selected_endpoints:
+            value = str(item or "").strip()
+            if value and value not in selected:
+                selected.append(value)
+    payload = json.dumps(selected, ensure_ascii=False)
+    with _conn_ctx() as conn:
+        conn.execute(
+            """
+            INSERT INTO anonymous_route_search_history(
+              visitor_id, site_id, day_type, direction, lat, lng,
+              selected_endpoints_json, place_name, searched_at
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                clean_visitor_id,
                 str(site_id),
                 str(day_type),
                 str(direction),
@@ -1074,16 +1302,20 @@ def upsert_email_consent(user_id: int, consented: bool, context: str) -> None:
 
 
 def cleanup_old_data(
-    history_retention_days: int = 7,
+    place_history_retention_months: int = 1,
+    route_history_retention_months: int = 6,
     prune_auth_states: bool = True,
     prune_sessions: bool = True,
 ) -> None:
     now = utc_iso()
-    retention = max(1, int(history_retention_days))
-    cutoff = utc_iso(utc_now() - timedelta(days=retention))
+    current = utc_now()
+    place_cutoff = utc_iso(_subtract_months(current, place_history_retention_months))
+    route_cutoff = utc_iso(_subtract_months(current, route_history_retention_months))
     with _conn_ctx() as conn:
-        conn.execute("DELETE FROM place_search_history WHERE searched_at < ?", (cutoff,))
-        conn.execute("DELETE FROM route_search_history WHERE searched_at < ?", (cutoff,))
+        conn.execute("DELETE FROM place_search_history WHERE searched_at < ?", (place_cutoff,))
+        conn.execute("DELETE FROM route_search_history WHERE searched_at < ?", (route_cutoff,))
+        conn.execute("DELETE FROM anonymous_place_search_history WHERE searched_at < ?", (place_cutoff,))
+        conn.execute("DELETE FROM anonymous_route_search_history WHERE searched_at < ?", (route_cutoff,))
         if prune_auth_states:
             conn.execute("DELETE FROM oauth_states WHERE expires_at <= ?", (now,))
             conn.execute(
