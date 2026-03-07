@@ -5422,7 +5422,7 @@
         // 백엔드 API base URL
         API_BASE: isDev
           ? (apiBaseOverride || resolveDevApiBase()) // dev: override or Traefik
-          : 'https://api.shuttle-go.com'  // prd: Traefik HTTPS
+          : 'https://cloud-api.shuttle-go.com'  // prd: Traefik HTTPS
       };
       window.__SHUTTLE_ENV = ENV;
 
