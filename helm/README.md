@@ -27,17 +27,17 @@ Custom charts have matching override files:
 
 Context mapping:
 
-- `dev`: `arn:aws:eks:ap-northeast-1:499666785507:cluster/dev-bk-bot`
-- `prd`: `arn:aws:eks:ap-northeast-1:499666785507:cluster/bk-bot`
+- `dev`: `arn:aws:eks:ap-northeast-1:499666785507:cluster/dev-shuttle-go`
+- `prd`: `arn:aws:eks:ap-northeast-1:499666785507:cluster/shuttle-go`
 
 Use base + env values together:
 
 ```bash
 ENV=dev # dev | prd
 if [ "${ENV}" = "dev" ]; then
-  CTX=arn:aws:eks:ap-northeast-1:499666785507:cluster/dev-bk-bot
+  CTX=arn:aws:eks:ap-northeast-1:499666785507:cluster/dev-shuttle-go
 else
-  CTX=arn:aws:eks:ap-northeast-1:499666785507:cluster/bk-bot
+  CTX=arn:aws:eks:ap-northeast-1:499666785507:cluster/shuttle-go
 fi
 
 helm upgrade --install traefik traefik/traefik \
