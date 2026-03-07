@@ -1,0 +1,30 @@
+{{- if .Values.cluster.storage.staticPVs.enabled }}
+{{- $handles := .Values.cluster.storage.staticPVs.volumeHandles | default (list) }}
+{{- $names := .Values.cluster.storage.staticPVs.names | default (list) }}
+{{- if ne (len $handles) (len $names) }}
+{{- fail "cluster.storage.staticPVs.volumeHandles and names must have the same length" }}
+{{- end }}
+{{- range $i, $name := $names }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shuttle-cnpg.labels" $ | nindent 4 }}
+    {{- with $.Values.cluster.storage.staticPVs.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  capacity:
+    storage: {{ $.Values.cluster.storage.size }}
+  accessModes:
+    {{- toYaml $.Values.cluster.storage.staticPVs.accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ $.Values.cluster.storage.storageClass | quote }}
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: {{ index $handles $i | quote }}
+    fsType: {{ $.Values.cluster.storage.staticPVs.fsType | quote }}
+---
+{{- end }}
+{{- end }}

@@ -20,7 +20,7 @@ providers:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: bk.choi@kakao.com
+      email: support@shuttle-go.com
       storage: /letsencrypt/acme.json
       httpChallenge:
         entryPoint: web

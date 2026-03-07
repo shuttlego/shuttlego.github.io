@@ -1,0 +1,42 @@
+persistence:
+  enabled: false
+
+service:
+  type: ClusterIP
+
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+envFromSecret: grafana-env
+
+grafana.ini:
+  server:
+    root_url: https://grafana.example.com
+  users:
+    viewers_can_edit: false
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    searchNamespace: ALL
+    provider:
+      allowUiUpdates: false
+      foldersFromFilesStructure: true
+  datasources:
+    enabled: true
+    label: grafana_datasource
+    labelValue: "1"
+    searchNamespace: ALL
+
+nodeSelector:
+  workload: general
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: general
+    effect: NoSchedule

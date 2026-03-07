@@ -1,0 +1,44 @@
+nameOverride: api
+fullnameOverride: api
+
+image:
+  repository: ghcr.io/REPLACE_ME/shuttle-go
+  tag: latest
+  tags:
+    blue: latest
+    green: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull
+
+slotReplicas:
+  blue: 1
+  green: 0
+
+traffic:
+  blue: 100
+  green: 0
+
+backend:
+  existingSecret: backend-env
+  dataClaimName: app-db
+  mountDataVolume: false
+  appVersionBySlot:
+    blue: ""
+    green: ""
+  env:
+    APP_VERSION: ""
+    OTP_BASE_URL: http://otp:8082
+    USER_STORE_BACKEND: postgres
+    USER_STORE_POSTGRES_HOST: db-rw-pooler.data.svc.cluster.local
+    USER_STORE_POSTGRES_PORT: "5432"
+    USER_STORE_POSTGRES_DB: shuttlego
+    USER_STORE_POSTGRES_USER: shuttlego
+    CORS_ORIGINS: ""
+  warmEndpointCacheOnStartup: true
+  enableBackgroundWorkers: false
+  refreshAuthMetricsOnStartup: false
+
+ingress:
+  host: api.example.com

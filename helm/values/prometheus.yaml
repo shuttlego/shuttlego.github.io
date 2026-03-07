@@ -1,0 +1,227 @@
+alertmanager:
+  enabled: false
+
+kube-state-metrics:
+  enabled: true
+  nodeSelector:
+    workload: general
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: general
+      effect: NoSchedule
+
+prometheus-pushgateway:
+  enabled: true
+  nodeSelector:
+    workload: general
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: general
+      effect: NoSchedule
+
+prometheus-node-exporter:
+  enabled: true
+  tolerations:
+    - key: workload
+      operator: Exists
+      effect: NoSchedule
+
+server:
+  nodeSelector:
+    workload: general
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: general
+      effect: NoSchedule
+  persistentVolume:
+    enabled: true
+    existingClaim: prometheus-server-pvc
+    size: 50Gi
+    storageClass: gp2
+  retention: 14d
+  extraFlags:
+    - web.enable-lifecycle
+  global:
+    scrape_interval: 15s
+    evaluation_interval: 15s
+    scrape_timeout: 10s
+
+serverFiles:
+  prometheus.yml:
+    rule_files:
+      - /etc/config/recording_rules.yml
+    scrape_configs:
+      - job_name: cloudflared
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: cloudflared
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: cloudflared-metrics
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: service
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: cnpg
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: data
+          - source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster]
+            action: keep
+            regex: .+
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "9187"
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_cnpg_io_cluster]
+            target_label: cnpg_cluster
+      - job_name: pgbouncer
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: data
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: keep
+            regex: db-rw-pooler-.+
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:9127
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: cnpg-operator
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: cnpg-system
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: cloudnative-pg
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8080
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: shuttle-backend
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: app
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: api
+          - source_labels: [__meta_kubernetes_pod_label_shuttle_go_component]
+            action: keep
+            regex: backend
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "8081"
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_shuttle_go_slot]
+            target_label: slot
+          - target_label: app
+            replacement: shuttle-go
+  recording_rules.yml:
+    groups:
+      - name: shuttle_request_rates
+        interval: 1m
+        rules:
+          - record: shuttle:request_rate_5m
+            expr: sum(rate(shuttle_http_requests_total[5m]))
+          - record: shuttle:request_rate_by_endpoint_5m
+            expr: sum by (endpoint) (rate(shuttle_http_requests_total[5m]))
+          - record: shuttle:error_rate_5m
+            expr: |
+              sum(rate(shuttle_http_requests_total{status=~"4..|5.."}[5m]))
+              /
+              clamp_min(sum(rate(shuttle_http_requests_total[5m])), 1e-9)
+          - record: shuttle:latency_p50
+            expr: histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket[5m])))
+          - record: shuttle:latency_p90
+            expr: histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket[5m])))
+          - record: shuttle:latency_p99
+            expr: histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket[5m])))
+      - name: shuttle_alerts
+        rules:
+          - alert: BackendDown
+            expr: max(up{job="shuttle-backend"}) == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "백엔드 다운"
+              description: "활성 백엔드 슬롯이 1분 이상 응답하지 않습니다"
+
+extraManifests:
+  - |
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: prometheus-server-pv
+    spec:
+      capacity:
+        storage: 50Gi
+      accessModes:
+        - ReadWriteOnce
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: gp2
+      claimRef:
+        name: prometheus-server-pvc
+        namespace: {{ .Release.Namespace }}
+      csi:
+        driver: ebs.csi.aws.com
+        volumeHandle: vol-REPLACE_ME_PROMETHEUS
+        fsType: ext4
+  - |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: prometheus-server-pvc
+      namespace: {{ .Release.Namespace }}
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: gp2
+      volumeName: prometheus-server-pv

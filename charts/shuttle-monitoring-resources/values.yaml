@@ -1,0 +1,13 @@
+nameOverride: ops
+fullnameOverride: ops
+
+grafana:
+  host: grafana.example.com
+  serviceName: grafana
+  servicePort: 80
+  entryPoints:
+    web: web
+
+dashboardLabels:
+  dashboards: grafana_dashboard
+  datasources: grafana_datasource

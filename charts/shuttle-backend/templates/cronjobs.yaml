@@ -1,0 +1,111 @@
+{{- if .Values.cronJobs.authCleanup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "shuttle-backend.fullname" . }}-auth-cleanup
+  labels:
+    {{- include "shuttle-backend.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronJobs.authCleanup.schedule | quote }}
+  successfulJobsHistoryLimit: {{ .Values.cronJobs.authCleanup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJobs.authCleanup.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "shuttle-backend.labels" . | nindent 12 }}
+            shuttle-go/component: auth-cleanup
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.backend.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml .Values.imagePullSecrets | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: auth-cleanup
+              image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - python
+                - /app/run_auth_cleanup.py
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.backend.existingSecret }}
+              env:
+                - name: USER_STORE_BACKEND
+                  value: {{ .Values.backend.env.USER_STORE_BACKEND | quote }}
+                - name: USER_STORE_POSTGRES_HOST
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_HOST | quote }}
+                - name: USER_STORE_POSTGRES_PORT
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_PORT | quote }}
+                - name: USER_STORE_POSTGRES_DB
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_DB | quote }}
+                - name: USER_STORE_POSTGRES_USER
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_USER | quote }}
+{{- end }}
+{{- if .Values.cronJobs.githubCleanup.enabled }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "shuttle-backend.fullname" . }}-github-cleanup
+  labels:
+    {{- include "shuttle-backend.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronJobs.githubCleanup.schedule | quote }}
+  successfulJobsHistoryLimit: {{ .Values.cronJobs.githubCleanup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJobs.githubCleanup.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "shuttle-backend.labels" . | nindent 12 }}
+            shuttle-go/component: github-cleanup
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.backend.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml .Values.imagePullSecrets | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: github-cleanup
+              image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - python
+                - /app/run_github_cleanup.py
+                - --max-jobs
+                - {{ .Values.cronJobs.githubCleanup.maxJobsPerRun | quote }}
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.backend.existingSecret }}
+              env:
+                - name: USER_STORE_BACKEND
+                  value: {{ .Values.backend.env.USER_STORE_BACKEND | quote }}
+                - name: USER_STORE_POSTGRES_HOST
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_HOST | quote }}
+                - name: USER_STORE_POSTGRES_PORT
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_PORT | quote }}
+                - name: USER_STORE_POSTGRES_DB
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_DB | quote }}
+                - name: USER_STORE_POSTGRES_USER
+                  value: {{ .Values.backend.env.USER_STORE_POSTGRES_USER | quote }}
+{{- end }}

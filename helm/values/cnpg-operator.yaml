@@ -1,0 +1,10 @@
+replicaCount: 1
+
+nodeSelector:
+  workload: general
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: general
+    effect: NoSchedule

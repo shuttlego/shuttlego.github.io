@@ -1,0 +1,52 @@
+{{- define "shuttle-cnpg.pooler" -}}
+{{- $root := .root -}}
+{{- $pooler := .pooler -}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: {{ $pooler.name }}
+  labels:
+    {{- include "shuttle-cnpg.labels" $root | nindent 4 }}
+spec:
+  cluster:
+    name: {{ include "shuttle-cnpg.clusterName" $root }}
+  instances: {{ $pooler.instances }}
+  type: {{ $pooler.type }}
+  pgbouncer:
+    poolMode: {{ $pooler.pgbouncer.poolMode | quote }}
+    parameters:
+      max_client_conn: {{ $pooler.pgbouncer.maxClientConn | quote }}
+      default_pool_size: {{ $pooler.pgbouncer.defaultPoolSize | quote }}
+      reserve_pool_size: {{ $pooler.pgbouncer.reservePoolSize | quote }}
+  template:
+    spec:
+      {{- with $pooler.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pooler.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: pgbouncer
+          resources:
+            {{- with $pooler.resources.requests }}
+            requests:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+            {{- with $pooler.resources.limits }}
+            limits:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+{{- end }}
+
+{{- if .Values.pooler.enabled }}
+{{ include "shuttle-cnpg.pooler" (dict "root" . "pooler" .Values.pooler) }}
+{{- end }}
+{{- if and .Values.pooler.enabled .Values.poolerReadOnly.enabled }}
+---
+{{- end }}
+{{- if .Values.poolerReadOnly.enabled }}
+{{ include "shuttle-cnpg.pooler" (dict "root" . "pooler" .Values.poolerReadOnly) }}
+{{- end }}
