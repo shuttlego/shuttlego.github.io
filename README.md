@@ -40,6 +40,9 @@ BACKEND_HTTPS_PORT=443
 
 # 로컬 프론트엔드 포트 (run_dev.py)
 FRONTEND_PORT=8080
+# 로컬 프론트엔드 API base 오버라이드(선택)
+# 외부 API를 직접 붙일 때 사용 (예: https://api.example.com)
+FRONTEND_API_BASE=
 
 # OTP 설정
 # - prd(로컬 OTP 컨테이너 사용): OTP_BASE_URL=http://otp:8082
@@ -214,24 +217,56 @@ docker compose down -v
 
 ### build_db.py
 
-Raw HTML 파일(`data/raw/`)과 사업장 목록(`data/sites.csv`)을 파싱하여 SQLite DB(`data/data.db`)를 생성합니다.
-이때 인접 정류장 간 `encoded polyline`도 OTP HTTP API를 통해 미리 계산해 DB(`stop_segment_polyline`)에 저장합니다.
+Raw 파일(`data/raw/` 또는 지정 디렉토리)과 사업장 목록(`data/sites.csv`)을 파싱해 SQLite DB를 생성합니다.
+인접 정류장 간 `encoded polyline`도 OTP HTTP API로 계산/재사용하여 `stop_segment_polyline`에 저장합니다.
 
-- **입력**: `data/raw/` 안의 HTML 파일 + `data/sites.csv`
-- **출력**: `data/data.db`
-- **OTP 주소 환경변수(선택)**:
-  - `OTP_HTTP_BASE_URL` (기본 `http://localhost:8888`)
-  - `OTP_HTTP_PLAN_PATH` (기본 `/otp/gtfs/v1`)
-  - `OTP_HTTP_MAX_PARALLEL` (기본 `50`)
-  - `OTP_HTTP_MAX_RPS` (기본 `50`, req/s)
-  - `OTP_HTTP_REQUEST_RETRIES` (기본 `2`)
-  - `OTP_HTTP_FAILED_RETRY_ROUNDS` (기본 `2`)
+- **입력**: raw 파일 디렉토리(`.html`, `.json`) + `data/sites.csv`
+- **출력**:
+  - `--mode prepare`: 기본 `data/data.prepare.db`
+  - `--mode release`: 기본 `data/data.db`
+- **Identity 운영 파일**(`data/identity/`):
+  - `route_alias_override.csv`
+  - `stop_alias_override.csv`
+  - `identity-review-queue.jsonl`
+  - `identity-conflicts.jsonl`
+  - `identity-auto-applied.jsonl`
+
+#### 운영 절차 (v0.4.0+)
+
+1. `prepare` 실행 (1차 결과 + 리뷰 큐 생성)
 
 ```bash
-python build_db.py
+python build_db.py --mode prepare --raw-dir data/raw --baseline-db data/data.db
 ```
 
-새로운 노선 데이터를 반영할 때 이 스크립트 하나만 실행하면 됩니다.
+2. `data/identity/identity-review-queue.jsonl`, `identity-conflicts.jsonl` 확인
+3. 승인된 매핑을 override CSV에 반영
+   - 노선 ID 변경 승인: `route_alias_override.csv`에 `old_source_route_id,new_source_route_id` 추가
+   - 정류장 ID 변경 승인: `stop_alias_override.csv`에 `old_stop_code,new_stop_code` 추가
+4. `release` 실행 (미해결 review/conflict가 있으면 빌드 실패)
+
+```bash
+python build_db.py --mode release --raw-dir data/raw --baseline-db data/data.db
+```
+
+첫 v0.4 도입 시 기존 v0.3 형식 DB를 baseline으로 쓰면 identity 히스토리가 없으므로 신규 identity가 생성됩니다.
+이후 주간 업데이트는 직전 v0.4 `data.db`를 baseline으로 사용해야 변경 추적/리뷰 큐가 정상 동작합니다.
+
+#### 주요 옵션
+
+- `--mode {prepare,release}`: 2단계 빌드 모드
+- `--raw-dir <path>`: 입력 raw 디렉토리
+- `--output-db <path>`: 출력 DB 경로(기본값 override)
+- `--baseline-db <path>`: 기존 identity/segment cache 로드용 기준 DB
+
+#### OTP 관련 환경변수 (선택)
+
+- `OTP_HTTP_BASE_URL` (기본 `http://localhost:8888`)
+- `OTP_HTTP_PLAN_PATH` (기본 `/otp/gtfs/v1`)
+- `OTP_HTTP_MAX_PARALLEL` (기본 `50`)
+- `OTP_HTTP_MAX_RPS` (기본 `50`, req/s)
+- `OTP_HTTP_REQUEST_RETRIES` (기본 `2`)
+- `OTP_HTTP_FAILED_RETRY_ROUNDS` (기본 `2`)
 
 ### 실시간 도보 경로(선택 노선만)
 

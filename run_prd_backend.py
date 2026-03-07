@@ -43,9 +43,11 @@ BACKEND_GREEN_SERVICE = "backend-green"
 BACKEND_SERVICES = (BACKEND_BLUE_SERVICE, BACKEND_GREEN_SERVICE)
 BACKEND_ALIAS = "backend"
 GATEWAY_SERVICE = "traefik"
+POSTGRES_SERVICE = "postgres"
 
 SERVICE_ORDER = (
     "traefik",
+    POSTGRES_SERVICE,
     BACKEND_BLUE_SERVICE,
     BACKEND_GREEN_SERVICE,
     "prometheus",
@@ -151,6 +153,8 @@ def selected_services_from_args(args: argparse.Namespace) -> list[str]:
     selected: list[str] = []
     if args.traefik:
         selected.append("traefik")
+    if args.postgres:
+        selected.append(POSTGRES_SERVICE)
     if args.backend:
         selected.extend(BACKEND_SERVICES)
     if args.prometheus:
@@ -180,6 +184,18 @@ def ensure_gateway_running() -> None:
     gateway_ret = run(f"docker compose up -d {GATEWAY_SERVICE}")
     if gateway_ret.returncode != 0:
         err("traefik 시작 실패")
+        sys.exit(1)
+
+
+def ensure_postgres_running(timeout_sec: int) -> None:
+    if not is_service_running(POSTGRES_SERVICE):
+        log("postgres 미실행 상태 감지 -> 시작")
+        ret = run(f"docker compose up -d {POSTGRES_SERVICE}")
+        if ret.returncode != 0:
+            err("postgres 시작 실패")
+            sys.exit(1)
+    if not wait_service_healthy(POSTGRES_SERVICE, timeout_sec):
+        err("postgres health 확인 실패")
         sys.exit(1)
 
 
@@ -434,6 +450,7 @@ def ensure_initial_backend_active(timeout_sec: int, active_slot: str) -> bool:
 
 def compose_up_core(timeout_sec: int) -> None:
     ensure_gateway_running()
+    ensure_postgres_running(timeout_sec)
 
     if not is_service_running(BACKEND_BLUE_SERVICE) and not is_service_running(BACKEND_GREEN_SERVICE):
         initial_slot = detect_active_slot_from_file()
@@ -569,10 +586,14 @@ def compose_up_selected(services: list[str], timeout_sec: int) -> None:
     ordered = ordered_services(services)
     includes_backend = any(s in BACKEND_SERVICES for s in ordered)
     includes_gateway = GATEWAY_SERVICE in ordered
+    includes_postgres = POSTGRES_SERVICE in ordered
 
     if includes_backend:
         compose_up_core(timeout_sec)
-        ordered = [s for s in ordered if s not in BACKEND_SERVICES]
+        ordered = [s for s in ordered if s not in BACKEND_SERVICES and s != POSTGRES_SERVICE]
+    elif includes_postgres:
+        ensure_postgres_running(timeout_sec)
+        ordered = [s for s in ordered if s != POSTGRES_SERVICE]
 
     if not ordered:
         return
@@ -597,27 +618,21 @@ def compose_up_selected(services: list[str], timeout_sec: int) -> None:
 
 
 def compose_up_all(timeout_sec: int) -> None:
-    result = run("docker compose ps -q", capture_output=True, text=True)
-    if result.stdout.strip():
-        log("기존 컨테이너 감지 -> 전체 재시작")
-        run(
-            "docker compose down --remove-orphans",
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    log("Docker Compose 전체 빌드 & 시작 …")
-    ret = run("docker compose up -d --build")
-    if ret.returncode != 0:
-        err("docker compose up -d --build 실패")
-        sys.exit(1)
-
-    active_slot = detect_active_slot_from_file()
-    active_service = slot_to_service(active_slot)
-    if not wait_service_healthy(active_service, timeout_sec):
-        sys.exit(1)
-    if not wait_public_backend_healthy(min(timeout_sec, 30)):
-        sys.exit(1)
+    compose_up_core(timeout_sec)
+    extra_services = ordered_services(
+        [
+            name
+            for name in SERVICE_ORDER
+            if name not in {GATEWAY_SERVICE, POSTGRES_SERVICE, *BACKEND_SERVICES}
+        ]
+    )
+    service_expr = " ".join(extra_services)
+    if service_expr:
+        log(f"backend 외 구성요소 재시작 … ({service_expr})")
+        ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
+        if ret.returncode != 0:
+            err("backend 외 구성요소 docker compose up 실패")
+            sys.exit(1)
 
     print()
     log("═══════════════════════════════════════════")
@@ -629,18 +644,22 @@ def compose_up_all(timeout_sec: int) -> None:
 
 
 def compose_up_all_except_otp(timeout_sec: int) -> None:
-    service_expr = " ".join(ALL_EXCEPT_OTP_SERVICES)
-    log(f"OTP 제외 전체 구성요소 재시작 … ({service_expr})")
+    compose_up_core(timeout_sec)
+    service_expr = " ".join(
+        ordered_services(
+            [
+                name
+                for name in ALL_EXCEPT_OTP_SERVICES
+                if name not in {GATEWAY_SERVICE, POSTGRES_SERVICE, *BACKEND_SERVICES}
+            ]
+        )
+    )
+    if not service_expr:
+        return
+    log(f"OTP 제외 기타 구성요소 재시작 … ({service_expr})")
     ret = run(f"docker compose up -d --build --force-recreate {service_expr}")
     if ret.returncode != 0:
         err("OTP 제외 전체 구성요소 docker compose up 실패")
-        sys.exit(1)
-
-    active_slot = detect_active_slot_from_file()
-    active_service = slot_to_service(active_slot)
-    if not wait_service_healthy(active_service, timeout_sec):
-        sys.exit(1)
-    if not wait_public_backend_healthy(min(timeout_sec, 30)):
         sys.exit(1)
 
     print()
@@ -676,6 +695,7 @@ def main() -> None:
     parser.add_argument("--all", action="store_true", help="전체 스택 재시작/종료")
     parser.add_argument("--all-no-otp", action="store_true", help="otp 제외 전체 스택 재시작/종료")
     parser.add_argument("--traefik", action="store_true", help="traefik만 재시작/종료")
+    parser.add_argument("--postgres", action="store_true", help="postgres만 재시작/종료")
     parser.add_argument("--backend", action="store_true", help="backend blue/green 롤아웃")
     parser.add_argument("--prometheus", action="store_true", help="prometheus만 재시작/종료")
     parser.add_argument(
@@ -704,7 +724,7 @@ def main() -> None:
     if (args.all or args.all_no_otp) and selected_services:
         parser.error(
             "--all/--all-no-otp와 개별 컴포넌트 플래그("
-            "--traefik/--backend/--prometheus/--node-exporter/--grafana/--otp)"
+            "--traefik/--postgres/--backend/--prometheus/--node-exporter/--grafana/--otp)"
             "는 함께 사용할 수 없습니다."
         )
 

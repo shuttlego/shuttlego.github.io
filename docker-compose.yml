@@ -55,14 +55,24 @@ services:
       - .env
     environment:
       - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8082}
+      - USER_STORE_BACKEND=${USER_STORE_BACKEND:-sqlite}
+      - USER_STORE_READ_ONLY=${USER_STORE_READ_ONLY:-0}
+      - USER_STORE_SKIP_NONCRITICAL_WRITES=${USER_STORE_SKIP_NONCRITICAL_WRITES:-0}
+      - USER_STORE_POSTGRES_HOST=${USER_STORE_POSTGRES_HOST:-postgres}
+      - USER_STORE_POSTGRES_PORT=${USER_STORE_POSTGRES_PORT:-5432}
+      - USER_STORE_POSTGRES_DB=${USER_STORE_POSTGRES_DB:-shuttlego}
+      - USER_STORE_POSTGRES_USER=${USER_STORE_POSTGRES_USER:-shuttlego}
+      - USER_STORE_POSTGRES_PASSWORD=${USER_STORE_POSTGRES_PASSWORD:-shuttlego}
     volumes:
       - ./data:/app/data:ro
       - ./user-data:/app/user-data
-      - user-bi-data:/app/user-bi-data
     expose:
       - "8081"
     networks:
       - shuttle-net
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 30s
@@ -80,19 +90,54 @@ services:
       - .env
     environment:
       - OTP_BASE_URL=${OTP_BASE_URL:-http://otp:8082}
+      - USER_STORE_BACKEND=${USER_STORE_BACKEND:-sqlite}
+      - USER_STORE_READ_ONLY=${USER_STORE_READ_ONLY:-0}
+      - USER_STORE_SKIP_NONCRITICAL_WRITES=${USER_STORE_SKIP_NONCRITICAL_WRITES:-0}
+      - USER_STORE_POSTGRES_HOST=${USER_STORE_POSTGRES_HOST:-postgres}
+      - USER_STORE_POSTGRES_PORT=${USER_STORE_POSTGRES_PORT:-5432}
+      - USER_STORE_POSTGRES_DB=${USER_STORE_POSTGRES_DB:-shuttlego}
+      - USER_STORE_POSTGRES_USER=${USER_STORE_POSTGRES_USER:-shuttlego}
+      - USER_STORE_POSTGRES_PASSWORD=${USER_STORE_POSTGRES_PASSWORD:-shuttlego}
     volumes:
       - ./data:/app/data:ro
       - ./user-data:/app/user-data
-      - user-bi-data:/app/user-bi-data
     expose:
       - "8081"
     networks:
       - shuttle-net
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # ─── Postgres (user/account/activity store) ──────────────
+  postgres:
+    image: postgres:16
+    container_name: shuttle-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${USER_STORE_POSTGRES_DB:-shuttlego}
+      - POSTGRES_USER=${USER_STORE_POSTGRES_USER:-shuttlego}
+      - POSTGRES_PASSWORD=${USER_STORE_POSTGRES_PASSWORD:-shuttlego}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    networks:
+      - shuttle-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${USER_STORE_POSTGRES_USER:-shuttlego} -d ${USER_STORE_POSTGRES_DB:-shuttlego}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ─── Prometheus ────────────────────────────────────────
   # 호스트 localhost에서 직접 접근 가능
@@ -120,7 +165,7 @@ services:
   # backend는 내부 네트워크(http://otp:8080)로 호출하고,
   # 호스트에서는 localhost:${OTP_HOST_PORT}로 직접 호출 가능
   otp:
-    image: opentripplanner/opentripplanner
+    image: opentripplanner/opentripplanner:2.9.0_2026-02-20T12-02
     container_name: shuttle-otp
     restart: unless-stopped
     environment:
@@ -191,11 +236,14 @@ services:
       - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/shuttle-go.json
-      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
+      - USER_STORE_POSTGRES_HOST=${USER_STORE_POSTGRES_HOST:-postgres}
+      - USER_STORE_POSTGRES_PORT=${USER_STORE_POSTGRES_PORT:-5432}
+      - USER_STORE_POSTGRES_DB=${USER_STORE_POSTGRES_DB:-shuttlego}
+      - USER_STORE_POSTGRES_USER=${USER_STORE_POSTGRES_USER:-shuttlego}
+      - USER_STORE_POSTGRES_PASSWORD=${USER_STORE_POSTGRES_PASSWORD:-shuttlego}
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
-      - user-bi-data:/var/lib/grafana/user-bi-data
       - grafana-data:/var/lib/grafana
     expose:
       - "3000"
@@ -230,7 +278,7 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
-  user-bi-data:
+  postgres-data:
   traefik-certs:
 
 networks:

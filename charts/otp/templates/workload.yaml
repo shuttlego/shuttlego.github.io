@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "otp.fullname" . }}
+  labels:
+    {{- include "otp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "otp.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "otp.labels" . | nindent 8 }}
+    spec:
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- with .Values.otp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.otp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: otp
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ .Values.otp.javaToolOptions | quote }}
+          args:
+            {{- toYaml .Values.otp.command | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.otp.containerPort }}
+          resources:
+            {{- toYaml .Values.otp.resources | nindent 12 }}
+          volumeMounts:
+            - name: otp-data
+              mountPath: /var/opentripplanner
+      volumes:
+        - name: otp-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.otp.persistence.claimName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "otp.fullname" . }}
+  labels:
+    {{- include "otp.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "otp.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http

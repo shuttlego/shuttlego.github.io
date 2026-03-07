@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Shuttle User DB
+    uid: SHUTTLE_USERDB_POSTGRES
+    type: postgres
+    access: proxy
+    editable: false
+    url: ${USER_STORE_POSTGRES_HOST}:${USER_STORE_POSTGRES_PORT}
+    user: ${USER_STORE_POSTGRES_USER}
+    secureJsonData:
+      password: ${USER_STORE_POSTGRES_PASSWORD}
+    jsonData:
+      database: ${USER_STORE_POSTGRES_DB}
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false

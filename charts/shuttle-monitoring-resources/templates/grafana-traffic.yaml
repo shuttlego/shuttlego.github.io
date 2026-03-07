@@ -1,0 +1,15 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-web
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.grafana.entryPoints.web }}
+  routes:
+    - match: Host(`{{ .Values.grafana.host }}`)
+      kind: Rule
+      services:
+        - name: {{ .Values.grafana.serviceName }}
+          port: {{ .Values.grafana.servicePort }}

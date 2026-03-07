@@ -1,0 +1,95 @@
+nameOverride: api
+fullnameOverride: api
+
+image:
+  repository: shuttle-go/backend
+  tag: ""
+  tags:
+    blue: ""
+    green: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+slotReplicas:
+  blue: 1
+  green: 0
+
+rollout:
+  maxUnavailable: 0
+  maxSurge: 1
+
+traffic:
+  blue: 100
+  green: 0
+
+service:
+  port: 8081
+
+backend:
+  containerPort: 8081
+  existingSecret: backend-env
+  mountDataVolume: true
+  dataClaimName: app-db
+  dataMountPath: /app/data
+  appVersionBySlot:
+    blue: ""
+    green: ""
+  nodeSelector:
+    workload: general
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: general
+      effect: NoSchedule
+  resources: {}
+  warmEndpointCacheOnStartup: true
+  enableBackgroundWorkers: false
+  refreshAuthMetricsOnStartup: false
+  env:
+    APP_VERSION: ""
+    OTP_BASE_URL: http://otp.app.svc.cluster.local:8082
+    USER_STORE_BACKEND: postgres
+    USER_STORE_POSTGRES_HOST: db-rw-pooler.data.svc.cluster.local
+    USER_STORE_POSTGRES_PORT: "5432"
+    USER_STORE_POSTGRES_DB: shuttlego
+    USER_STORE_POSTGRES_USER: shuttlego
+    CORS_ORIGINS: ""
+  extraEnv: []
+
+health:
+  path: /health
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+ingress:
+  host: api.example.com
+  entryPoints:
+    web: web
+
+dataVolume:
+  createPv: true
+  createPvc: true
+  pvName: app-db
+  claimName: app-db
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp2
+  volumeHandle: vol-REPLACE_ME
+  fsType: ext4
+
+cronJobs:
+  authCleanup:
+    enabled: true
+    schedule: "17 * * * *"
+    successfulJobsHistoryLimit: 2
+    failedJobsHistoryLimit: 2
+  githubCleanup:
+    enabled: true
+    schedule: "*/5 * * * *"
+    maxJobsPerRun: 20
+    successfulJobsHistoryLimit: 2
+    failedJobsHistoryLimit: 2

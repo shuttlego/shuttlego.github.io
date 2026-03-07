@@ -1,0 +1,14 @@
+{{- if and .Values.cluster.backup.enabled .Values.cluster.backup.scheduled.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ include "shuttle-cnpg.clusterName" . }}-daily
+  labels:
+    {{- include "shuttle-cnpg.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cluster.backup.scheduled.schedule | quote }}
+  immediate: {{ .Values.cluster.backup.scheduled.immediate }}
+  backupOwnerReference: {{ .Values.cluster.backup.scheduled.ownerReference | quote }}
+  cluster:
+    name: {{ include "shuttle-cnpg.clusterName" . }}
+{{- end }}

@@ -20,7 +20,7 @@ providers:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: support-go.com
+      email: support@shuttle-go.com
       storage: /letsencrypt/acme.json
       httpChallenge:
         entryPoint: web
