@@ -37,6 +37,13 @@ jobs:
           cp walk_icon.png _site/walk_icon.png
           cp place_icon.png _site/place_icon.png
           cp current_position_icon.png _site/current_position_icon.png
+          cp rank_icon.png _site/rank_icon.png
+          cp profile_icon.png _site/profile_icon.png
+          cp report_departure_time_icon.png _site/report_departure_time_icon.png
+          cp report_issue_icon.svg _site/report_issue_icon.svg
+          cp gold_icon.png _site/gold_icon.png
+          cp silver_icon.png _site/silver_icon.png
+          cp bronze_icon.png _site/bronze_icon.png
           cp dev.config.js _site/dev.config.js
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
 
