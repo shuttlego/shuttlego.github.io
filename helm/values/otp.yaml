@@ -1,0 +1,19 @@
+image:
+  repository: opentripplanner/opentripplanner
+  tag: 2.9.0_2026-02-20T12-02
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+otp:
+  javaToolOptions: -Xms14g -Xmx14g
+  persistence:
+    createPv: true
+    pvName: otp-data-pv
+    claimName: otp-data
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: gp2
+    volumeHandle: vol-REPLACE_ME_OTP
+    fsType: ext4

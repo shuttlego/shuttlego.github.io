@@ -1,0 +1,13 @@
+{{- if .Values.cluster.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "shuttle-cnpg.clusterName" . }}-pdb
+  labels:
+    {{- include "shuttle-cnpg.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.cluster.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      cnpg.io/cluster: {{ include "shuttle-cnpg.clusterName" . }}
+{{- end }}

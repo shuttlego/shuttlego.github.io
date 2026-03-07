@@ -1,0 +1,164 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-datasources
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.datasources }}: "1"
+data:
+  prometheus.yaml: |
+{{ .Files.Get "files/grafana/datasources/prometheus.yaml" | indent 4 }}
+  postgres.yaml: |
+{{ .Files.Get "files/grafana/datasources/postgres.yaml" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-api-dashboard
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  shuttle-go.json: |
+{{ .Files.Get "files/grafana/dashboards/shuttle-go.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-search-bi
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  search-bi.json: |
+{{ .Files.Get "files/grafana/dashboards/search-bi.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-infra-runtime
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Infrastructure
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  infra-runtime.json: |
+{{ .Files.Get "files/grafana/dashboards/infra-runtime.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-cnpg-runtime
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/CNPG
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  cnpg-runtime.json: |
+{{ .Files.Get "files/grafana/dashboards/cnpg-runtime.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-k8s-resources-overview
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Kubernetes
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  k8s-resources-overview.json: |
+{{ .Files.Get "files/grafana/dashboards/k8s-resources-overview.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-k8s-workload-health
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Kubernetes
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  k8s-workload-health.json: |
+{{ .Files.Get "files/grafana/dashboards/k8s-workload-health.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-storage-capacity
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Kubernetes
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  storage-capacity.json: |
+{{ .Files.Get "files/grafana/dashboards/storage-capacity.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-traefik-runtime
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Infrastructure
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  traefik-runtime.json: |
+{{ .Files.Get "files/grafana/dashboards/traefik-runtime.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-cloudflared-runtime
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Infrastructure
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  cloudflared-runtime.json: |
+{{ .Files.Get "files/grafana/dashboards/cloudflared-runtime.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-pgbouncer-runtime
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/CNPG
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  pgbouncer-runtime.json: |
+{{ .Files.Get "files/grafana/dashboards/pgbouncer-runtime.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-prometheus-self
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Infrastructure
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  prometheus-self.json: |
+{{ .Files.Get "files/grafana/dashboards/prometheus-self.json" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shuttle-monitoring-resources.fullname" . }}-cnpg-backup-replication
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/CNPG
+  labels:
+    {{- include "shuttle-monitoring-resources.labels" . | nindent 4 }}
+    {{ .Values.dashboardLabels.dashboards }}: "1"
+data:
+  cnpg-backup-replication.json: |
+{{ .Files.Get "files/grafana/dashboards/cnpg-backup-replication.json" | indent 4 }}

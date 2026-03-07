@@ -1,0 +1,75 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "shuttle-cnpg.clusterName" . }}
+  labels:
+    {{- include "shuttle-cnpg.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.cluster.instances }}
+  imageName: {{ .Values.cluster.imageName | quote }}
+  enableSuperuserAccess: {{ .Values.cluster.enableSuperuserAccess }}
+  superuserSecret:
+    name: {{ .Values.cluster.superuserSecretName | quote }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.cluster.initdb.database | quote }}
+      owner: {{ .Values.cluster.initdb.owner | quote }}
+      secret:
+        name: {{ .Values.cluster.initdb.ownerSecretName | quote }}
+  postgresql:
+    parameters:
+      max_connections: {{ .Values.cluster.postgresParameters.maxConnections | quote }}
+      shared_buffers: {{ .Values.cluster.postgresParameters.sharedBuffers | quote }}
+      effective_cache_size: {{ .Values.cluster.postgresParameters.effectiveCacheSize | quote }}
+      work_mem: {{ .Values.cluster.postgresParameters.workMem | quote }}
+  resources:
+    {{- with .Values.cluster.resources.requests }}
+    requests:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.cluster.resources.limits }}
+    limits:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  affinity:
+    enablePodAntiAffinity: {{ .Values.cluster.affinity.enablePodAntiAffinity }}
+    podAntiAffinityType: {{ .Values.cluster.affinity.podAntiAffinityType | quote }}
+    topologyKey: {{ .Values.cluster.affinity.topologyKey | quote }}
+    {{- with .Values.cluster.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.cluster.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  storage:
+    size: {{ .Values.cluster.storage.size }}
+    storageClass: {{ .Values.cluster.storage.storageClass | quote }}
+    {{- with .Values.cluster.storage.pvcTemplate }}
+    pvcTemplate:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- if .Values.cluster.irsaRoleArn }}
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        {{ default "eks.amazonaws.com/role-arn" .Values.cluster.irsaRoleAnnotationKey }}: {{ .Values.cluster.irsaRoleArn | quote }}
+  {{- end }}
+  {{- if .Values.cluster.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ printf "s3://%s/%s" .Values.cluster.backup.bucketName (.Values.cluster.backup.destinationPrefix | trimPrefix "/") | quote }}
+      endpointURL: {{ .Values.cluster.backup.endpointURL | quote }}
+      {{- with .Values.cluster.backup.s3Credentials }}
+      s3Credentials:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      wal:
+        compression: {{ .Values.cluster.backup.wal.compression | quote }}
+        maxParallel: {{ .Values.cluster.backup.wal.maxParallel }}
+      data:
+        compression: {{ .Values.cluster.backup.data.compression | quote }}
+        immediateCheckpoint: {{ .Values.cluster.backup.data.immediateCheckpoint }}
+    retentionPolicy: {{ .Values.cluster.backup.retentionPolicy | quote }}
+  {{- end }}

@@ -1,0 +1,245 @@
+{
+  "uid": "shuttle-cnpg-runtime",
+  "title": "CNPG Runtime",
+  "tags": [
+    "shuttle-go",
+    "cnpg",
+    "postgres"
+  ],
+  "timezone": "Asia/Seoul",
+  "refresh": "15s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "editable": false,
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "cnpg_cluster",
+        "type": "query",
+        "label": "CNPG Cluster",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(up{job=\"cnpg\"}, cnpg_cluster)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 1
+      },
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "hide": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Exporter Up",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(up{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Ready Pods",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(kube_pod_status_ready{namespace=\"shuttle-data\",condition=\"true\",pod=~\"$cnpg_cluster.*\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Total Connections",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(cnpg_pg_stat_database_numbackends{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}) or sum(pg_stat_database_numbackends{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "TPS Commit",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (pod) (rate(cnpg_pg_stat_database_xact_commit{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])) or sum by (pod) (rate(pg_stat_database_xact_commit{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "TPS Rollback",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (pod) (rate(cnpg_pg_stat_database_xact_rollback{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])) or sum by (pod) (rate(pg_stat_database_xact_rollback{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Deadlocks",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (pod) (rate(cnpg_pg_stat_database_deadlocks{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])) or sum by (pod) (rate(pg_stat_database_deadlocks{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Database Size by DB",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (datname) (cnpg_pg_database_size_bytes{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}) or sum by (datname) (pg_database_size_bytes{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"})",
+          "legendFormat": "{{datname}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Cache Hit Ratio (%)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "(100 * sum(rate(cnpg_pg_stat_database_blks_hit{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])) / clamp_min(sum(rate(cnpg_pg_stat_database_blks_hit{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval]) + rate(cnpg_pg_stat_database_blks_read{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])), 1)) or (100 * sum(rate(pg_stat_database_blks_hit{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])) / clamp_min(sum(rate(pg_stat_database_blks_hit{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval]) + rate(pg_stat_database_blks_read{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\",datname!~\"template0|template1\"}[$__rate_interval])), 1))",
+          "legendFormat": "cluster",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      }
+    }
+  ]
+}

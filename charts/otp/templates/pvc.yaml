@@ -1,0 +1,43 @@
+{{- if .Values.otp.persistence.createPv }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.otp.persistence.pvName }}
+  labels:
+    {{- include "otp.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.otp.persistence.size }}
+  accessModes:
+    {{- toYaml .Values.otp.persistence.accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.otp.persistence.storageClassName | quote }}
+  claimRef:
+    name: {{ .Values.otp.persistence.claimName }}
+    namespace: {{ .Release.Namespace }}
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: {{ .Values.otp.persistence.volumeHandle | quote }}
+    fsType: {{ .Values.otp.persistence.fsType | quote }}
+{{- end }}
+{{- if and .Values.otp.persistence.createPv .Values.otp.persistence.createPvc }}
+---
+{{- end }}
+{{- if .Values.otp.persistence.createPvc }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.otp.persistence.claimName }}
+  labels:
+    {{- include "otp.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.otp.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.otp.persistence.size }}
+  storageClassName: {{ .Values.otp.persistence.storageClassName | quote }}
+  {{- if .Values.otp.persistence.createPv }}
+  volumeName: {{ .Values.otp.persistence.pvName }}
+  {{- end }}
+{{- end }}

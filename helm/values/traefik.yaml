@@ -1,0 +1,45 @@
+deployment:
+  replicas: 2
+
+providers:
+  kubernetesCRD:
+    enabled: true
+  kubernetesIngress:
+    enabled: true
+
+ingressClass:
+  enabled: true
+  isDefaultClass: false
+  name: traefik
+
+service:
+  type: ClusterIP
+
+ports:
+  web:
+    port: 8000
+    exposedPort: 80
+    expose:
+      default: true
+  websecure:
+    port: 8443
+    exposedPort: 443
+    expose:
+      default: false
+  metrics:
+    port: 9100
+    expose:
+      default: false
+
+additionalArguments:
+  - --metrics.prometheus=true
+  - --metrics.prometheus.entrypoint=metrics
+
+nodeSelector:
+  workload: ingress
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: ingress
+    effect: NoSchedule
