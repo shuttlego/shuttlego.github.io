@@ -35,6 +35,7 @@ et_xmlfile/
 
 data/
 user-data/*.db
+user-data/*.db.bak.*
 user-data/*.db-shm
 user-data/*.db-wal
 user-data/*.sqlite

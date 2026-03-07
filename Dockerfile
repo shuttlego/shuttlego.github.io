@@ -7,10 +7,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 애플리케이션 코드 복사
-COPY app.py load_data.py user_store.py gunicorn.conf.py start-backend.sh ./
+COPY app.py load_data.py user_store.py migrate_user_store_to_postgres.py run_auth_cleanup.py run_github_cleanup.py gunicorn.conf.py start-backend.sh ./
 RUN chmod +x /app/start-backend.sh
 
-# data/ 디렉토리는 볼륨으로 마운트 (이미지에 포함하지 않음)
+# 정적 노선 DB를 이미지에 포함
+RUN mkdir -p /app/data
+COPY data/data.db /app/data/data.db
 
 EXPOSE 8081
 
