@@ -161,6 +161,9 @@
         host.indexOf('192.168.') === 0
       );
       var devConfig = window.__SHUTTLE_DEV_CONFIG || {};
+      var apiBaseOverride = (typeof devConfig.API_BASE_OVERRIDE === 'string')
+        ? devConfig.API_BASE_OVERRIDE.trim()
+        : '';
       function resolveDevApiBase() {
         var useHttps = (location.protocol === 'https:');
         var scheme = useHttps ? 'https' : 'http';
@@ -170,7 +173,9 @@
         if (!isFinite(port) || port < 1 || port > 65535) port = defaultPort;
         return (port === defaultPort) ? (scheme + '://' + host) : (scheme + '://' + host + ':' + port);
       }
-      window.__AUTH_API_BASE = isDev ? resolveDevApiBase() : 'https://api.shuttle-go.com';
+      window.__AUTH_API_BASE = isDev
+        ? (apiBaseOverride || resolveDevApiBase())
+        : 'https://api.shuttle-go.com';
     })();
   </script>
   <script>

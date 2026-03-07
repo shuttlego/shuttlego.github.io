@@ -41,6 +41,12 @@ from load_data import (
     get_endpoint_route_ids,
     get_db_updated_at,
     get_nearest_departure_time,
+    get_report_candidate_options,
+    get_report_nearby_stops,
+    get_report_route_candidates_for_stop,
+    get_report_tuple_meta,
+    get_report_tuple_meta_by_uuid,
+    find_recent_report_stop_index_by_route,
     get_route_detail,
     get_sites,
     init_db,
@@ -121,6 +127,9 @@ AUTH_NICKNAME_MAX_LEN = max(AUTH_NICKNAME_MIN_LEN, _env_int("AUTH_NICKNAME_MAX_L
 AUTH_PENDING_SIGNUP_TTL_SEC = max(60, _env_int("AUTH_PENDING_SIGNUP_TTL_SEC", 900))
 AUTH_OAUTH_STATE_TTL_SEC = max(60, _env_int("AUTH_OAUTH_STATE_TTL_SEC", 600))
 AUTH_METRICS_REFRESH_SEC = max(30, _env_int("AUTH_METRICS_REFRESH_SEC", 300))
+APP_REFRESH_AUTH_METRICS_ON_STARTUP = _env_bool("APP_REFRESH_AUTH_METRICS_ON_STARTUP", True)
+APP_WARM_ENDPOINT_CACHE_ON_STARTUP = _env_bool("APP_WARM_ENDPOINT_CACHE_ON_STARTUP", True)
+APP_ENABLE_BACKGROUND_WORKERS = _env_bool("APP_ENABLE_BACKGROUND_WORKERS", True)
 AUTH_FRONTEND_CALLBACK_URL = os.environ.get(
     "AUTH_FRONTEND_CALLBACK_URL", "https://shuttle-go.com/auth-callback.html"
 ).strip()
@@ -182,7 +191,19 @@ _OPTIONS_CANDIDATE_LIMIT = 100
 _OPTIONS_RESPONSE_LIMIT = 3
 _DEFAULT_MAX_DISTANCE_KM = 3.0
 _MAX_DISTANCE_KM = 30.0
+_DEFAULT_ROUTE_SEARCH_MODE = "distance"
 _DEFAULT_SITE_ID = "0000011"
+_REPORT_PRIMARY_RADIUS_M = max(50.0, _env_float("ARRIVAL_REPORT_PRIMARY_RADIUS_M", 150.0))
+_REPORT_FALLBACK_RADIUS_M = max(
+    _REPORT_PRIMARY_RADIUS_M,
+    _env_float("ARRIVAL_REPORT_FALLBACK_RADIUS_M", 250.0),
+)
+_REPORT_TIME_SKEW_SEC = max(60, _env_int("ARRIVAL_REPORT_TIME_SKEW_SEC", 300))
+_REPORT_COOLDOWN_SEC = max(1, _env_int("ARRIVAL_REPORT_COOLDOWN_SEC", 180))
+_REPORT_ALLOWED_PAST_SEC = max(60, _env_int("ARRIVAL_REPORT_ALLOWED_PAST_SEC", 600))
+_REPORT_ALLOWED_FUTURE_SEC = max(0, _env_int("ARRIVAL_REPORT_ALLOWED_FUTURE_SEC", 180))
+_REPORT_EDIT_WINDOW_SEC = max(60, _env_int("ARRIVAL_REPORT_EDIT_WINDOW_SEC", 180))
+_KST = timezone(timedelta(hours=9))
 _SITE_ID_DEFAULT_ENDPOINTS = {
     "/api/shuttle/day-types",
     "/api/shuttle/endpoint-options",
@@ -385,6 +406,8 @@ def _extract_site_id_for_metrics(endpoint: str) -> str | None:
 
 
 def _user_db_size_bytes() -> int:
+    if not user_store.is_sqlite_backend():
+        return 0
     db_path = str(user_store.get_db_path())
     total = 0
     # -shm은 SQLite의 공유 메모리 보조 파일이라 저장 데이터 크기 지표로는 노이즈가 크다.
@@ -752,6 +775,65 @@ def _parse_max_distance_km(raw: str | None) -> float:
     if not math.isfinite(value) or value < 0 or value > _MAX_DISTANCE_KM:
         raise ValueError("max_distance_km은 0~30 범위여야 합니다.")
     return value
+
+
+def _parse_route_search_mode(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    return value if value in {"distance", "time"} else _DEFAULT_ROUTE_SEARCH_MODE
+
+
+def _clock_minutes_from_text(raw: str | None) -> int | None:
+    text = str(raw or "").strip()
+    parts = text.split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except (TypeError, ValueError):
+        return None
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return None
+    return (hour * 60) + minute
+
+
+def _signed_minutes_from_reference(target_time: str | None, reference_time: str | None) -> int | None:
+    target_minutes = _clock_minutes_from_text(target_time)
+    reference_minutes = _clock_minutes_from_text(reference_time)
+    if target_minutes is None or reference_minutes is None:
+        return None
+    delta = target_minutes - reference_minutes
+    while delta <= -720:
+        delta += 1440
+    while delta > 720:
+        delta -= 1440
+    return delta
+
+
+def _sort_route_options_by_search_mode(options: list[dict], search_mode: str, reference_time: str | None) -> list[dict]:
+    normalized_mode = _parse_route_search_mode(search_mode)
+    items = list(options or [])
+    if normalized_mode == "time" and reference_time:
+        def time_key(item: dict) -> tuple:
+            delta = _signed_minutes_from_reference(item.get("board_time"), reference_time)
+            if delta is None:
+                return (2, float(item.get("distance_m") or 0), str(item.get("route_name") or ""))
+            return (
+                0 if delta >= 0 else 1,
+                abs(delta),
+                float(item.get("distance_m") or 0),
+                str(item.get("board_time") or ""),
+                str(item.get("route_name") or ""),
+            )
+        return sorted(items, key=time_key)
+    return sorted(
+        items,
+        key=lambda item: (
+            float(item.get("distance_m") or 0),
+            str(item.get("board_time") or ""),
+            str(item.get("route_name") or ""),
+        ),
+    )
 
 
 def _parse_selected_endpoints() -> list[str] | None:
@@ -1500,6 +1582,174 @@ def _auth_required() -> tuple[dict | None, str | None, Response | None]:
     return user, token_hash, None
 
 
+def _is_dev_request() -> bool:
+    host = (request.host or "").split(":", 1)[0].strip().lower()
+    origin = (request.headers.get("Origin") or "").strip().lower()
+    if host in {"localhost", "127.0.0.1"} or host.startswith("192.168."):
+        return True
+    return (
+        origin.startswith("http://localhost")
+        or origin.startswith("http://127.0.0.1")
+        or origin.startswith("http://192.168.")
+    )
+
+
+def _is_mobile_report_request() -> bool:
+    if _is_dev_request():
+        return True
+    ch_mobile = (request.headers.get("Sec-CH-UA-Mobile") or "").strip()
+    ch_platform = (request.headers.get("Sec-CH-UA-Platform") or "").strip().strip('"').lower()
+    user_agent = (request.headers.get("User-Agent") or "").strip().lower()
+    if ch_mobile == "?1":
+        return True
+    if ch_platform in {"android", "ios", "ipados"}:
+        return True
+    mobile_tokens = ("android", "iphone", "ipad", "ipod", "mobile", "tablet", "; wv")
+    return any(token in user_agent for token in mobile_tokens)
+
+
+def _mobile_report_guard() -> Response | None:
+    if _is_mobile_report_request():
+        return None
+    return make_response(jsonify({"error": "모바일 기기에서만 사용할 수 있습니다."}), 403)
+
+
+def _parse_client_reported_at(raw_value: object) -> datetime | None:
+    dt = user_store.parse_iso(str(raw_value or "").strip())
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _service_date_from_client_reported_at(client_dt: datetime) -> tuple[str, int]:
+    local_dt = client_dt.astimezone(_KST)
+    if local_dt.hour < 4:
+        local_dt = local_dt - timedelta(days=1)
+    return local_dt.date().isoformat(), (local_dt.hour * 60 + local_dt.minute)
+
+
+def _is_client_reported_at_within_allowed_window(
+    client_dt: datetime,
+    server_dt: datetime,
+    *,
+    past_sec: int = _REPORT_ALLOWED_PAST_SEC,
+    future_sec: int = _REPORT_ALLOWED_FUTURE_SEC,
+) -> bool:
+    delta_sec = (client_dt - server_dt).total_seconds()
+    return (-float(past_sec) <= delta_sec <= float(future_sec))
+
+
+def _display_arrival_report_reason(reason: str | None) -> str:
+    code = str(reason or "").strip()
+    if code == "user_deleted":
+        return "사용자 삭제"
+    if code == "client_clock_skew":
+        return "기기 시각 오차 5분 초과"
+    if code == "superseded":
+        return "최신 제보로 대체됨"
+    return code
+
+
+def _serialize_arrival_report_item(
+    item: dict,
+    nickname_map: dict[int, str] | None = None,
+    like_state_map: dict[int, dict] | None = None,
+    viewer_user_id: int | None = None,
+    viewer_visitor_id: str | None = None,
+) -> dict:
+    nickname_map = nickname_map or {}
+    like_state_map = like_state_map or {}
+    user_id = item.get("user_id")
+    reporter_name = "-"
+    if user_id is not None:
+        try:
+            reporter_name = str(nickname_map.get(int(user_id)) or "").strip() or "-"
+        except (TypeError, ValueError):
+            reporter_name = "-"
+    try:
+        report_id = int(item["id"])
+    except (TypeError, ValueError):
+        report_id = 0
+    like_state = like_state_map.get(report_id) or {}
+    like_count = int(like_state.get("like_count") or 0)
+    liked_by_me = bool(like_state.get("liked_by_me"))
+    viewer_visitor = str(viewer_visitor_id or "").strip() or None
+    like_disabled = False
+    if viewer_user_id is not None:
+        try:
+            like_disabled = user_id is not None and int(user_id) == int(viewer_user_id)
+        except (TypeError, ValueError):
+            like_disabled = False
+    else:
+        owner_visitor_id = str(item.get("visitor_id") or "").strip() or None
+        like_disabled = (
+            user_id is None
+            and viewer_visitor is not None
+            and owner_visitor_id == viewer_visitor
+        )
+    if (not bool(item.get("eta_included"))) or bool(item.get("deleted_at")):
+        like_disabled = True
+    return {
+        "id": int(item["id"]),
+        "route_id": int(item["route_id"]),
+        "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
+        "route_name": str(item["route_name"]),
+        "route_type": str(item["route_type"]),
+        "day_type": str(item["day_type"]),
+        "direction": str(item["direction"]),
+        "departure_time": str(item["departure_time"]),
+        "stop_id": int(item["stop_id"]),
+        "stop_uuid": (str(item.get("stop_uuid") or "").strip() or None),
+        "stop_name": str(item["stop_name"]),
+        "stop_sequence": item.get("stop_sequence"),
+        "client_reported_at": str(item["client_reported_at"]),
+        "server_received_at": str(item["server_received_at"]),
+        "service_date": str(item["service_date"]),
+        "time_valid": bool(item.get("time_valid")),
+        "client_server_delta_sec": int(item.get("client_server_delta_sec") or 0),
+        "eta_included": bool(item.get("eta_included")),
+        "eta_excluded": bool(item.get("eta_excluded")),
+        "eta_exclude_reason": str(item.get("eta_exclude_reason") or ""),
+        "report_state": str(item.get("report_state") or ""),
+        "report_state_label": str(item.get("report_state_label") or ""),
+        "report_note": str(item.get("report_note") or ""),
+        "credit_awarded": bool(item.get("credit_awarded")),
+        "credit_value": round(float(item.get("credit_value") or 0.0), 6),
+        "is_deleted": bool(item.get("deleted_at")),
+        "deleted_at": item.get("deleted_at"),
+        "deleted_reason": _display_arrival_report_reason(item.get("deleted_reason")),
+        "reporter_name": reporter_name,
+        "like_count": like_count,
+        "liked_by_me": liked_by_me,
+        "like_disabled": bool(like_disabled),
+    }
+
+
+def _serialize_report_browser_detail_item(
+    item: dict,
+    *,
+    like_state_map: dict[int, dict] | None = None,
+) -> dict:
+    like_state_map = like_state_map or {}
+    try:
+        report_id = int(item.get("id") or 0)
+    except (TypeError, ValueError):
+        report_id = 0
+    like_state = like_state_map.get(report_id) or {}
+    return {
+        "id": report_id,
+        "client_reported_at": str(item.get("client_reported_at") or ""),
+        "report_state": str(item.get("report_state") or ""),
+        "report_state_label": str(item.get("report_state_label") or ""),
+        "report_note": str(item.get("report_note") or ""),
+        "credit_awarded": bool(item.get("credit_awarded")),
+        "credit_value": round(float(item.get("credit_value") or 0.0), 6),
+        "like_count": int(like_state.get("like_count") or 0),
+    }
+
+
 def _serialize_user_profile(user: dict) -> dict:
     return {
         "id": user.get("public_user_id"),
@@ -1717,7 +1967,7 @@ def _github_cleanup_loop() -> None:
         try:
             result = _run_exclusive_background_task(
                 "github-cleanup",
-                _run_github_cleanup_once,
+                run_github_cleanup_once,
                 stale_after_sec=GITHUB_CLEANUP_LEASE_SEC,
             )
             if not result:
@@ -1729,7 +1979,7 @@ def _github_cleanup_loop() -> None:
             _time.sleep(sleep_for)
 
 
-def _run_github_cleanup_once() -> bool:
+def run_github_cleanup_once() -> bool:
     job = user_store.claim_due_github_cleanup_job()
     if not job:
         return False
@@ -1751,8 +2001,41 @@ def _start_auth_background_workers() -> None:
         _auth_background_started = True
         threading.Thread(target=_auth_metrics_loop, daemon=True, name="auth-metrics-loop").start()
         threading.Thread(target=_auth_cleanup_loop, daemon=True, name="auth-cleanup-loop").start()
-        threading.Thread(target=_bi_snapshot_loop, daemon=True, name="bi-snapshot-loop").start()
         threading.Thread(target=_github_cleanup_loop, daemon=True, name="github-cleanup-loop").start()
+
+
+def _run_startup_hooks() -> None:
+    init_db()
+    user_store.init_db()
+    if APP_REFRESH_AUTH_METRICS_ON_STARTUP:
+        try:
+            _refresh_auth_business_metrics()
+        except Exception:
+            app.logger.exception("Failed to initialize auth business metrics")
+    if APP_WARM_ENDPOINT_CACHE_ON_STARTUP:
+        try:
+            warm_endpoint_cache()
+        except Exception:
+            app.logger.exception("Endpoint cache warm-up failed")
+    if APP_ENABLE_BACKGROUND_WORKERS:
+        _start_auth_background_workers()
+
+
+@app.errorhandler(user_store.ReadOnlyModeError)
+def handle_user_store_read_only(exc: user_store.ReadOnlyModeError):
+    message = str(exc) or "사용자 정보 갱신이 잠시 중단되었습니다. 잠시 후 다시 시도해 주세요."
+    wants_json = str(request.args.get("json", "")).strip().lower() in {"1", "true", "yes", "on"}
+    if request.path in {"/api/auth/google/start", "/api/auth/google/callback"} and (
+        request.path.endswith("/callback") or not wants_json
+    ):
+        redirect_url = _build_frontend_redirect(
+            _resolve_frontend_callback_url(request.args.get("next")),
+            {"result": "error", "message": message},
+        )
+        resp = make_response("", 302)
+        resp.headers["Location"] = redirect_url
+        return resp
+    return jsonify({"error": message, "code": "user_store_read_only"}), 503
 
 
 # ── API 엔드포인트 ───────────────────────────────────────────
@@ -1939,6 +2222,8 @@ def api_auth_signup_complete():
         return jsonify({"error": str(exc)}), 409
     except user_store.PendingSignupError as exc:
         return jsonify({"error": str(exc)}), 400
+    except user_store.ReadOnlyModeError:
+        raise
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception:
@@ -1957,7 +2242,11 @@ def api_auth_signup_complete():
             {
                 "ok": True,
                 "user": _serialize_user_profile(user),
-                "preferences": {"selected_site_id": prefs.get("selected_site_id")},
+                "preferences": {
+                    "selected_site_id": prefs.get("selected_site_id"),
+                    "route_search_mode": prefs.get("route_search_mode"),
+                    "route_max_distance_km": prefs.get("route_max_distance_km"),
+                },
             }
         )
     )
@@ -1978,7 +2267,11 @@ def api_auth_me():
         {
             "logged_in": True,
             "user": _serialize_user_profile(user),
-            "preferences": {"selected_site_id": prefs.get("selected_site_id")},
+            "preferences": {
+                "selected_site_id": prefs.get("selected_site_id"),
+                "route_search_mode": prefs.get("route_search_mode"),
+                "route_max_distance_km": prefs.get("route_max_distance_km"),
+            },
         }
     )
 
@@ -2007,6 +2300,8 @@ def api_me_profile():
         updated = user_store.set_user_nickname(int(user["id"]), nickname)
     except user_store.NicknameConflictError as exc:
         return jsonify({"error": str(exc)}), 409
+    except user_store.ReadOnlyModeError:
+        raise
     except Exception:
         app.logger.exception("profile update failed")
         return jsonify({"error": "닉네임 변경에 실패했습니다."}), 500
@@ -2022,14 +2317,44 @@ def api_me_preferences():
     user_id = int(user["id"])
     if request.method == "GET":
         prefs = user_store.get_preferences(user_id)
-        return jsonify({"selected_site_id": prefs.get("selected_site_id"), "updated_at": prefs.get("updated_at")})
+        return jsonify(
+            {
+                "selected_site_id": prefs.get("selected_site_id"),
+                "route_search_mode": prefs.get("route_search_mode"),
+                "route_max_distance_km": prefs.get("route_max_distance_km"),
+                "updated_at": prefs.get("updated_at"),
+            }
+        )
 
     payload = request.get_json(silent=True) or {}
-    selected_site_id = payload.get("selected_site_id")
-    if selected_site_id is not None:
+    pref_unset = user_store._PREFERENCE_UNSET
+    selected_site_id = payload.get("selected_site_id", pref_unset)
+    if selected_site_id is not pref_unset:
         selected_site_id = str(selected_site_id).strip() or None
-    prefs = user_store.set_selected_site(user_id, selected_site_id)
-    return jsonify({"ok": True, "selected_site_id": prefs.get("selected_site_id"), "updated_at": prefs.get("updated_at")})
+    route_search_mode = payload.get("route_search_mode", pref_unset)
+    if route_search_mode is not pref_unset:
+        route_search_mode = _parse_route_search_mode(route_search_mode)
+    route_max_distance_km = payload.get("route_max_distance_km", pref_unset)
+    if route_max_distance_km is not pref_unset:
+        try:
+            route_max_distance_km = _parse_max_distance_km(str(route_max_distance_km))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    prefs = user_store.set_preferences(
+        user_id,
+        selected_site_id=selected_site_id,
+        route_search_mode=route_search_mode,
+        route_max_distance_km=route_max_distance_km,
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "selected_site_id": prefs.get("selected_site_id"),
+            "route_search_mode": prefs.get("route_search_mode"),
+            "route_max_distance_km": prefs.get("route_max_distance_km"),
+            "updated_at": prefs.get("updated_at"),
+        }
+    )
 
 
 @app.route("/api/me/preferences/endpoint", methods=["GET", "PATCH"])
@@ -2111,6 +2436,266 @@ def api_me_route_search_history():
     limit = request.args.get("limit", default=20, type=int) or 20
     data = user_store.list_route_history(int(user["id"]), cursor=cursor, limit=limit)
     return jsonify(data)
+
+
+@app.route("/api/me/reports")
+def api_me_reports():
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        viewer_visitor_id = None
+    else:
+        user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+    cursor = request.args.get("cursor", default=None, type=int)
+    limit = request.args.get("limit", default=20, type=int) or 20
+    data = user_store.list_my_arrival_reports(user_id, cursor=cursor, limit=limit, visitor_id=viewer_visitor_id)
+    user_ids = [
+        int(item["user_id"])
+        for item in data.get("items", [])
+        if item.get("user_id") is not None
+    ]
+    like_state_map = user_store.get_arrival_report_like_state([
+        int(item["id"])
+        for item in data.get("items", [])
+        if item.get("id") is not None
+    ], user_id=user_id, visitor_id=viewer_visitor_id)
+    nickname_map = user_store.get_active_nickname_map_by_user_ids(user_ids)
+    resp = make_response(
+        jsonify(
+            {
+                "items": [
+                    _serialize_arrival_report_item(
+                        item,
+                        nickname_map=nickname_map,
+                        like_state_map=like_state_map,
+                        viewer_user_id=user_id,
+                        viewer_visitor_id=viewer_visitor_id,
+                    )
+                    for item in data.get("items", [])
+                ],
+                "next_cursor": data.get("next_cursor"),
+                "has_more": bool(data.get("has_more")),
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/me/reports/basic-index")
+def api_me_reports_basic_index():
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        viewer_visitor_id = None
+    else:
+        user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+    data = user_store.list_my_arrival_report_basic_index(
+        user_id,
+        visitor_id=viewer_visitor_id,
+    )
+    resp = make_response(jsonify(data))
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/me/reports/route-index")
+def api_me_reports_route_index():
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        viewer_visitor_id = None
+    else:
+        user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+    data = user_store.list_my_arrival_report_route_index(
+        user_id,
+        visitor_id=viewer_visitor_id,
+    )
+    resp = make_response(jsonify(data))
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/me/reports/basic-group")
+def api_me_reports_basic_group():
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        viewer_visitor_id = None
+    else:
+        user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+    route_id = request.args.get("route_id", type=int)
+    stop_id = request.args.get("stop_id", type=int)
+    route_uuid = request.args.get("route_uuid", default="", type=str).strip() or None
+    stop_uuid = request.args.get("stop_uuid", default="", type=str).strip() or None
+    day_type = str(request.args.get("day_type") or "").strip()
+    departure_time = str(request.args.get("departure_time") or "").strip()
+    has_id_pair = route_id is not None and stop_id is not None
+    has_uuid_pair = bool(route_uuid and stop_uuid)
+    if (not has_id_pair and not has_uuid_pair) or not day_type or not departure_time:
+        return jsonify({"error": "route_id/stop_id 또는 route_uuid/stop_uuid와 day_type, departure_time은 필수입니다."}), 400
+    cursor = request.args.get("cursor", default=None, type=int)
+    limit = request.args.get("limit", default=20, type=int) or 20
+    data = user_store.list_my_arrival_report_group_items(
+        user_id,
+        int(route_id or 0),
+        day_type,
+        departure_time,
+        int(stop_id or 0),
+        cursor,
+        limit=limit,
+        route_uuid=route_uuid,
+        stop_uuid=stop_uuid,
+        visitor_id=viewer_visitor_id,
+    )
+    like_state_map = user_store.get_arrival_report_like_state(
+        [
+            int(item["id"])
+            for item in data.get("items", [])
+            if item.get("id") is not None
+        ]
+    )
+    resp = make_response(
+        jsonify(
+            {
+                "items": [
+                    _serialize_report_browser_detail_item(
+                        item,
+                        like_state_map=like_state_map,
+                    )
+                    for item in data.get("items", [])
+                ],
+                "next_cursor": data.get("next_cursor"),
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/me/reports/route-group")
+def api_me_reports_route_group():
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        viewer_visitor_id = None
+    else:
+        user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+    route_id = request.args.get("route_id", type=int)
+    stop_id = request.args.get("stop_id", type=int)
+    route_uuid = request.args.get("route_uuid", default="", type=str).strip() or None
+    stop_uuid = request.args.get("stop_uuid", default="", type=str).strip() or None
+    day_type = str(request.args.get("day_type") or "").strip()
+    departure_time = str(request.args.get("departure_time") or "").strip()
+    has_id_pair = route_id is not None and stop_id is not None
+    has_uuid_pair = bool(route_uuid and stop_uuid)
+    if (not has_id_pair and not has_uuid_pair) or not day_type or not departure_time:
+        return jsonify({"error": "route_id/stop_id 또는 route_uuid/stop_uuid와 day_type, departure_time은 필수입니다."}), 400
+    cursor = request.args.get("cursor", default=None, type=int)
+    limit = request.args.get("limit", default=20, type=int) or 20
+    data = user_store.list_my_arrival_report_route_departure_items(
+        user_id,
+        int(route_id or 0),
+        int(stop_id or 0),
+        day_type,
+        departure_time,
+        cursor,
+        limit=limit,
+        route_uuid=route_uuid,
+        stop_uuid=stop_uuid,
+        visitor_id=viewer_visitor_id,
+    )
+    like_state_map = user_store.get_arrival_report_like_state(
+        [
+            int(item["id"])
+            for item in data.get("items", [])
+            if item.get("id") is not None
+        ]
+    )
+    resp = make_response(
+        jsonify(
+            {
+                "items": [
+                    _serialize_report_browser_detail_item(
+                        item,
+                        like_state_map=like_state_map,
+                    )
+                    for item in data.get("items", [])
+                ],
+                "next_cursor": data.get("next_cursor"),
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/me/reports/<int:report_id>", methods=["DELETE"])
+def api_me_reports_delete(report_id: int):
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+    ok = user_store.soft_delete_arrival_report(user_id, report_id, visitor_id=visitor_id)
+    if not ok:
+        return jsonify({"error": "해당 제보를 찾을 수 없습니다."}), 404
+    resp = make_response(jsonify({"ok": True}))
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/me/reports/<int:report_id>", methods=["PATCH"])
+def api_me_reports_update(report_id: int):
+    user, _ = _get_current_user(with_touch=False)
+    if user is not None:
+        user_id = int(user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+    payload = request.get_json(silent=True) or {}
+    arrival_time = str(payload.get("arrival_time") or "").strip()
+    if not arrival_time:
+        return jsonify({"error": "arrival_time이 필요합니다."}), 400
+    try:
+        item = user_store.update_arrival_report_time(
+            user_id,
+            report_id,
+            arrival_time,
+            visitor_id=visitor_id,
+            max_age_sec=(0 if _is_dev_request() else _REPORT_EDIT_WINDOW_SEC),
+            allowed_past_sec=(None if _is_dev_request() else _REPORT_ALLOWED_PAST_SEC),
+            allowed_future_sec=(None if _is_dev_request() else _REPORT_ALLOWED_FUTURE_SEC),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if item is None:
+        return jsonify({"error": "해당 제보를 찾을 수 없습니다."}), 404
+    nickname_map = {}
+    if item.get("user_id") is not None:
+        nickname_map = user_store.get_active_nickname_map_by_user_ids([int(item["user_id"])])
+    like_state_map = user_store.get_arrival_report_like_state(
+        [int(item["id"])],
+        user_id=user_id,
+        visitor_id=visitor_id,
+    )
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "report": _serialize_arrival_report_item(
+                    item,
+                    nickname_map=nickname_map,
+                    like_state_map=like_state_map,
+                    viewer_user_id=user_id,
+                    viewer_visitor_id=visitor_id,
+                ),
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
 
 
 @app.route("/api/me", methods=["DELETE"])
@@ -2226,6 +2811,476 @@ def api_shuttle_endpoint_options_search():
             "options": options,
         }
     )
+
+
+@app.route("/api/reports/candidates")
+def api_report_candidates():
+    report_guard = _mobile_report_guard()
+    if report_guard is not None:
+        return report_guard
+    site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
+    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    lat = request.args.get("lat", type=float)
+    lng = request.args.get("lng", type=float)
+    now_time = request.args.get("now_time", default="", type=str).strip()
+    if lat is None or lng is None or not now_time:
+        return jsonify({"error": "site_id, day_type, lat, lng, now_time은 필수입니다."}), 400
+    if not (math.isfinite(lat) and math.isfinite(lng)):
+        return jsonify({"error": "lat, lng는 유효한 숫자여야 합니다."}), 400
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+    data = get_report_candidate_options(
+        site_id=site_id,
+        day_type=day_type,
+        lat=float(lat),
+        lon=float(lng),
+        current_time=now_time,
+        primary_radius_m=_REPORT_PRIMARY_RADIUS_M,
+        fallback_radius_m=_REPORT_FALLBACK_RADIUS_M,
+        max_candidates=50,
+    )
+    candidates = list(data.get("candidates") or [])
+    route_ids = []
+    route_uuids: list[str] = []
+    for item in candidates:
+        try:
+            route_id = int(item.get("route_id"))
+        except (TypeError, ValueError):
+            route_id = None
+        if route_id is not None and route_id not in route_ids:
+            route_ids.append(route_id)
+        route_uuid = str(item.get("route_uuid") or "").strip()
+        if route_uuid and route_uuid not in route_uuids:
+            route_uuids.append(route_uuid)
+    preference = user_store.get_recent_arrival_report_hint(
+        user_id=user_id,
+        visitor_id=visitor_id,
+        site_id=site_id,
+        day_type=day_type,
+        route_ids=route_ids,
+        route_uuids=route_uuids,
+        within_hours=4,
+    )
+    history_applied = False
+    if preference:
+        preferred_route_id = int(preference["route_id"])
+        preferred_route_uuid = str(preference.get("route_uuid") or "").strip()
+        preferred_time = str(preference.get("departure_time") or "").strip()
+        prioritized: list[dict] = []
+        remainder: list[dict] = []
+        for item in candidates:
+            try:
+                route_id = int(item.get("route_id"))
+            except (TypeError, ValueError):
+                route_id = -1
+            item_route_uuid = str(item.get("route_uuid") or "").strip()
+            route_matched = False
+            if preferred_route_uuid and item_route_uuid:
+                route_matched = item_route_uuid == preferred_route_uuid
+            elif route_id > 0:
+                route_matched = route_id == preferred_route_id
+            if route_matched:
+                if preferred_time and preferred_time in (item.get("departure_times") or []):
+                    item["selected_departure_time"] = preferred_time
+                item["preferred_from_history"] = True
+                prioritized.append(item)
+                history_applied = True
+            else:
+                remainder.append(item)
+        if prioritized:
+            candidates = prioritized + remainder
+    data["history_applied"] = history_applied
+    data["candidates"] = candidates[:3]
+    resp = make_response(jsonify(data))
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/reports/nearby-stops")
+def api_report_nearby_stops():
+    report_guard = _mobile_report_guard()
+    if report_guard is not None:
+        return report_guard
+    site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
+    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    lat = request.args.get("lat", type=float)
+    lng = request.args.get("lng", type=float)
+    if lat is None or lng is None:
+        return jsonify({"error": "site_id, day_type, lat, lng는 필수입니다."}), 400
+    if not (math.isfinite(lat) and math.isfinite(lng)):
+        return jsonify({"error": "lat, lng는 유효한 숫자여야 합니다."}), 400
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+    data = get_report_nearby_stops(
+        site_id=site_id,
+        day_type=day_type,
+        lat=float(lat),
+        lon=float(lng),
+        primary_radius_m=_REPORT_PRIMARY_RADIUS_M,
+        fallback_radius_m=_REPORT_FALLBACK_RADIUS_M,
+    )
+    preference = user_store.get_recent_arrival_report_hint(
+        user_id=user_id,
+        visitor_id=visitor_id,
+        site_id=site_id,
+        day_type=day_type,
+        within_hours=4,
+    )
+    data["recent_preference"] = preference
+    preferred_stop_index = find_recent_report_stop_index_by_route(
+        site_id,
+        day_type,
+        data.get("stops") or [],
+        preference.get("route_id") if preference else None,
+        preference.get("route_uuid") if preference else None,
+    )
+    if preferred_stop_index >= 0:
+        data["preferred_stop_index"] = preferred_stop_index
+    resp = make_response(jsonify(data))
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/reports/candidate-routes")
+def api_report_candidate_routes():
+    report_guard = _mobile_report_guard()
+    if report_guard is not None:
+        return report_guard
+    site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
+    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    now_time = request.args.get("now_time", default="", type=str).strip()
+    stop_ids_param = request.args.get("stop_ids", default="", type=str).strip()
+    stop_ids: list[int] = []
+    if stop_ids_param:
+        for raw in stop_ids_param.split(","):
+            raw_value = str(raw or "").strip()
+            if not raw_value:
+                continue
+            try:
+                stop_value = int(raw_value)
+            except (TypeError, ValueError):
+                return jsonify({"error": "stop_ids는 정수 목록이어야 합니다."}), 400
+            if stop_value not in stop_ids:
+                stop_ids.append(stop_value)
+    else:
+        stop_id = request.args.get("stop_id", type=int)
+        if stop_id is not None:
+            stop_ids.append(int(stop_id))
+    if not stop_ids or not now_time:
+        return jsonify({"error": "site_id, day_type, stop_id(or stop_ids), now_time은 필수입니다."}), 400
+
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+
+    data = get_report_route_candidates_for_stop(
+        site_id=site_id,
+        day_type=day_type,
+        stop_id=stop_ids,
+        current_time=now_time,
+        primary_past_minutes=180,
+        primary_future_minutes=5,
+        fallback_windows=(),
+        max_candidates=50,
+    )
+    candidates = list(data.get("candidates") or [])
+    route_ids: list[int] = []
+    route_uuids: list[str] = []
+    for item in candidates:
+        try:
+            route_id = int(item.get("route_id"))
+        except (TypeError, ValueError):
+            route_id = None
+        if route_id is not None and route_id not in route_ids:
+            route_ids.append(route_id)
+        route_uuid = str(item.get("route_uuid") or "").strip()
+        if route_uuid and route_uuid not in route_uuids:
+            route_uuids.append(route_uuid)
+
+    preference = user_store.get_recent_arrival_report_hint(
+        user_id=user_id,
+        visitor_id=visitor_id,
+        site_id=site_id,
+        day_type=day_type,
+        route_ids=route_ids,
+        route_uuids=route_uuids,
+        within_hours=4,
+    )
+    history_applied = False
+    if preference:
+        preferred_route_id = int(preference["route_id"])
+        preferred_route_uuid = str(preference.get("route_uuid") or "").strip()
+        preferred_time = str(preference.get("departure_time") or "").strip()
+        prioritized: list[dict] = []
+        remainder: list[dict] = []
+        for item in candidates:
+            try:
+                route_id = int(item.get("route_id"))
+            except (TypeError, ValueError):
+                route_id = -1
+            item_route_uuid = str(item.get("route_uuid") or "").strip()
+            route_matched = False
+            if preferred_route_uuid and item_route_uuid:
+                route_matched = item_route_uuid == preferred_route_uuid
+            elif route_id > 0:
+                route_matched = route_id == preferred_route_id
+            if route_matched:
+                if preferred_time and preferred_time in (item.get("departure_times") or []):
+                    item["selected_departure_time"] = preferred_time
+                item["preferred_from_history"] = True
+                prioritized.append(item)
+                history_applied = True
+            else:
+                remainder.append(item)
+        if prioritized:
+            candidates = prioritized + remainder
+
+    data["history_applied"] = history_applied
+    data["recent_preference"] = preference
+    data["candidates"] = candidates
+    resp = make_response(jsonify(data))
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/reports", methods=["POST"])
+def api_submit_report():
+    report_guard = _mobile_report_guard()
+    if report_guard is not None:
+        return report_guard
+    payload = request.get_json(silent=True) or {}
+    site_id = str(payload.get("site_id") or "").strip() or _DEFAULT_SITE_ID
+    day_type = str(payload.get("day_type") or "").strip() or "weekday"
+    departure_time = str(payload.get("departure_time") or "").strip()
+    client_reported_at = _parse_client_reported_at(payload.get("client_reported_at"))
+    route_uuid = str(payload.get("route_uuid") or "").strip() or None
+    stop_uuid = str(payload.get("stop_uuid") or "").strip() or None
+    route_id: int | None = None
+    stop_id: int | None = None
+    try:
+        if payload.get("route_id") is not None:
+            route_id = int(payload.get("route_id"))
+        if payload.get("stop_id") is not None:
+            stop_id = int(payload.get("stop_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "route_id, stop_id는 정수여야 합니다."}), 400
+    if not departure_time or client_reported_at is None:
+        return jsonify({"error": "departure_time, client_reported_at은 필수입니다."}), 400
+    if (route_id is None or stop_id is None) and (not route_uuid or not stop_uuid):
+        return jsonify({"error": "route_id/stop_id 또는 route_uuid/stop_uuid가 필요합니다."}), 400
+
+    tuple_meta = None
+    if route_uuid and stop_uuid:
+        tuple_meta = get_report_tuple_meta_by_uuid(
+            site_id=site_id,
+            day_type=day_type,
+            route_uuid=route_uuid,
+            departure_time=departure_time,
+            stop_uuid=stop_uuid,
+        )
+    if tuple_meta is None and route_id is not None and stop_id is not None:
+        tuple_meta = get_report_tuple_meta(
+            site_id=site_id,
+            day_type=day_type,
+            route_id=route_id,
+            departure_time=departure_time,
+            stop_id=stop_id,
+        )
+    if not tuple_meta:
+        return jsonify({"error": "유효한 제보 대상이 아닙니다."}), 400
+    route_id = int(tuple_meta["route_id"])
+    stop_id = int(tuple_meta["stop_id"])
+    route_uuid = str(tuple_meta.get("route_uuid") or "").strip() or None
+    stop_uuid = str(tuple_meta.get("stop_uuid") or "").strip() or None
+
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+
+    service_date, reported_clock_minutes = _service_date_from_client_reported_at(client_reported_at)
+    server_received_dt = _utc_now()
+    if (not _is_dev_request()) and (not _is_client_reported_at_within_allowed_window(client_reported_at, server_received_dt)):
+        return jsonify({"error": "정류장 도착 시간은 현재 시각 기준 10분 전부터 3분 후까지만 제보할 수 있습니다."}), 400
+    client_server_delta_sec = int(abs((server_received_dt - client_reported_at).total_seconds()))
+    wait_sec = user_store.get_arrival_report_cooldown_wait_seconds(
+        user_id=user_id,
+        visitor_id=visitor_id,
+        route_id=route_id,
+        route_uuid=route_uuid,
+        departure_time=departure_time,
+        stop_id=stop_id,
+        stop_uuid=stop_uuid,
+        service_date=service_date,
+        cooldown_sec=_REPORT_COOLDOWN_SEC,
+    )
+    if wait_sec > 0:
+        if user_id is not None:
+            return (
+                jsonify(
+                    {
+                        "error": "같은 노선/출발시각/정류장 제보는 3분 안에 반복할 수 없습니다. 제보 기록 메뉴에서 제보 시각을 수정할 수 있습니다."
+                    }
+                ),
+                429,
+            )
+        return jsonify({"error": "같은 노선/출발시각/정류장 제보는 3분 안에 반복할 수 없습니다."}), 429
+
+    time_valid = True
+
+    item = user_store.add_arrival_report(
+        user_id=user_id,
+        visitor_id=visitor_id,
+        site_id=site_id,
+        day_type=day_type,
+        direction=str(tuple_meta["direction"]),
+        route_id=route_id,
+        route_uuid=route_uuid,
+        route_name=str(tuple_meta["route_name"]),
+        route_type=str(tuple_meta["route_type"]),
+        departure_time=departure_time,
+        stop_id=stop_id,
+        stop_uuid=stop_uuid,
+        stop_name=str(tuple_meta["stop_name"]),
+        stop_sequence=tuple_meta.get("stop_sequence"),
+        stop_lat=tuple_meta.get("stop_lat"),
+        stop_lng=tuple_meta.get("stop_lng"),
+        client_reported_at=user_store.utc_iso(client_reported_at),
+        server_received_at=user_store.utc_iso(server_received_dt),
+        service_date=service_date,
+        reported_clock_minutes=reported_clock_minutes,
+        client_server_delta_sec=client_server_delta_sec,
+        time_valid=time_valid,
+    )
+    nickname_map = {}
+    if item.get("user_id") is not None:
+        nickname_map = user_store.get_active_nickname_map_by_user_ids([int(item["user_id"])])
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "report": _serialize_arrival_report_item(item, nickname_map=nickname_map),
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/reports/eta-detail")
+def api_report_eta_detail():
+    route_id = request.args.get("route_id", type=int)
+    stop_id = request.args.get("stop_id", type=int)
+    route_uuid = request.args.get("route_uuid", default="", type=str).strip() or None
+    stop_uuid = request.args.get("stop_uuid", default="", type=str).strip() or None
+    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    departure_time = request.args.get("departure_time", default="", type=str).strip()
+    has_id_pair = route_id is not None and stop_id is not None
+    has_uuid_pair = bool(route_uuid and stop_uuid)
+    if (not has_id_pair and not has_uuid_pair) or not departure_time:
+        return jsonify({"error": "route_id/stop_id 또는 route_uuid/stop_uuid와 departure_time은 필수입니다."}), 400
+    items = user_store.list_arrival_reports_for_tuple(
+        route_id=int(route_id or 0),
+        route_uuid=route_uuid,
+        day_type=day_type,
+        departure_time=departure_time,
+        stop_id=int(stop_id or 0),
+        stop_uuid=stop_uuid,
+        limit=200,
+    )
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        viewer_user_id = int(auth_user["id"])
+        viewer_visitor_id = None
+    else:
+        viewer_user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+    user_ids = [
+        int(item["user_id"])
+        for item in items
+        if item.get("user_id") is not None
+    ]
+    like_state_map = user_store.get_arrival_report_like_state(
+        [int(item["id"]) for item in items if item.get("id") is not None],
+        user_id=viewer_user_id,
+        visitor_id=viewer_visitor_id,
+    )
+    nickname_map = user_store.get_active_nickname_map_by_user_ids(user_ids)
+    resp = make_response(
+        jsonify(
+            {
+                "items": [
+                    _serialize_arrival_report_item(
+                        item,
+                        nickname_map=nickname_map,
+                        like_state_map=like_state_map,
+                        viewer_user_id=viewer_user_id,
+                        viewer_visitor_id=viewer_visitor_id,
+                    )
+                    for item in items
+                ]
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/reports/<int:report_id>/like", methods=["POST"])
+def api_report_like_toggle(report_id: int):
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+    try:
+        result = user_store.toggle_arrival_report_like(
+            report_id,
+            user_id=user_id,
+            visitor_id=visitor_id,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "self_like_not_allowed":
+            return jsonify({"error": "본인 제보에는 좋아요를 누를 수 없습니다."}), 400
+        if code == "like_not_allowed_for_previous":
+            return jsonify({"error": "현재 ETA에 반영되지 않는 이전 제보에는 좋아요를 누를 수 없습니다."}), 400
+        return jsonify({"error": "좋아요를 처리하지 못했습니다."}), 400
+    if result is None:
+        return jsonify({"error": "해당 제보를 찾을 수 없습니다."}), 404
+    resp = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "report_id": int(result["report_id"]),
+                "liked": bool(result["liked"]),
+                "like_count": int(result["like_count"]),
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/reports/leaderboard")
+def api_report_leaderboard():
+    window = request.args.get("window", default="all", type=str).strip().lower() or "all"
+    if window not in {"all", "7d", "30d"}:
+        return jsonify({"error": "window는 all|7d|30d만 지원합니다."}), 400
+    return jsonify({"items": user_store.list_arrival_leaderboard(window=window, limit=100)})
 
 
 @app.route("/api/shuttle/walk-path")
@@ -2649,6 +3704,7 @@ def api_shuttle_depart_options():
     selected_endpoints = _parse_selected_endpoints()
     auth_user, _ = _get_current_user(with_touch=False)
     max_distance_raw = request.args.get("max_distance_km")
+    search_mode = _parse_route_search_mode(request.args.get("search_mode"))
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
     try:
@@ -2848,10 +3904,9 @@ def api_shuttle_depart_options():
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
-        if len(options) >= _OPTIONS_RESPONSE_LIMIT:
-            break
 
-    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
+    options = _sort_route_options_by_search_mode(options, search_mode, time_param)[:_OPTIONS_RESPONSE_LIMIT]
+    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED, "search_mode": search_mode}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
     _record_route_search()
@@ -2991,6 +4046,7 @@ def api_shuttle_arrive_options():
     selected_endpoints = _parse_selected_endpoints()
     auth_user, _ = _get_current_user(with_touch=False)
     max_distance_raw = request.args.get("max_distance_km")
+    search_mode = _parse_route_search_mode(request.args.get("search_mode"))
     if lat is None or lng is None:
         return jsonify({"error": "lat, lng required"}), 400
     try:
@@ -3188,10 +4244,9 @@ def api_shuttle_arrive_options():
         if board_time is not None:
             payload["board_time"] = board_time
         options.append(payload)
-        if len(options) >= _OPTIONS_RESPONSE_LIMIT:
-            break
 
-    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED}
+    options = _sort_route_options_by_search_mode(options, search_mode, time_param)[:_OPTIONS_RESPONSE_LIMIT]
+    resp = {"options": options, "walk_otp_enabled": OTP_WALK_ENABLED, "search_mode": search_mode}
     if not options and all_last_times:
         resp["last_departure_time"] = sorted(set(all_last_times))[-1]
     _record_route_search()
@@ -3316,35 +4371,51 @@ def api_shuttle_arrive():
 
 
 @app.route("/api/route/<int:route_id>/detail")
+@app.route("/api/route/<int:route_id>/variant-detail")
 def api_route_detail(route_id: int):
-    """특정 route의 전체 시간표 + 경유지."""
+    """특정 route의 전체 시간표 + 선택 출발편 경유지 + ETA."""
     day_type = request.args.get("day_type", default="weekday")
-    detail = get_route_detail(route_id, day_type)
+    departure_time = request.args.get("departure_time", default="", type=str).strip() or None
+    detail = get_route_detail(route_id, day_type, departure_time=departure_time)
     if not detail:
         return jsonify({"error": "노선을 찾을 수 없습니다."}), 404
+    selected_departure_time = str(detail.get("selected_departure_time") or "").strip()
+    route_uuid = str(detail.get("route_uuid") or "").strip() or None
+    stop_ids = []
+    stop_uuid_by_id: dict[int, str] = {}
+    for stop in detail.get("route_stops", []) or []:
+        try:
+            stop_id_value = int(stop.get("stop_id"))
+        except (TypeError, ValueError):
+            continue
+        stop_ids.append(stop_id_value)
+        stop_uuid = str(stop.get("stop_uuid") or "").strip()
+        if stop_uuid:
+            stop_uuid_by_id[stop_id_value] = stop_uuid
+    if selected_departure_time and stop_ids:
+        eta_map = user_store.get_arrival_eta_map(
+            route_id=route_id,
+            route_uuid=route_uuid,
+            day_type=day_type,
+            departure_time=selected_departure_time,
+            stop_ids=stop_ids,
+            stop_uuid_by_id=stop_uuid_by_id,
+        )
+        for stop in detail.get("route_stops", []) or []:
+            try:
+                stop_id = int(stop.get("stop_id"))
+            except (TypeError, ValueError):
+                continue
+            eta = eta_map.get(stop_id)
+            if not eta:
+                continue
+            stop["eta_time"] = eta.get("eta_time")
+            stop["eta_report_count"] = int(eta.get("report_count") or 0)
     return jsonify(detail)
 
 
 # ── 시작 시 DB 초기화 ─────────────────────────────────────────
-init_db()
-user_store.init_db()
-try:
-    _refresh_auth_business_metrics()
-except Exception:
-    app.logger.exception("Failed to initialize auth business metrics")
-try:
-    _run_exclusive_background_task(
-        "bi-snapshot",
-        user_store.refresh_bi_snapshot,
-        stale_after_sec=BI_SNAPSHOT_LEASE_SEC,
-    )
-except Exception:
-    app.logger.exception("Failed to initialize BI snapshot")
-try:
-    warm_endpoint_cache()
-except Exception:
-    app.logger.exception("Endpoint cache warm-up failed")
-_start_auth_background_workers()
+_run_startup_hooks()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True, port=8081)

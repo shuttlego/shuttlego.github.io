@@ -3,6 +3,7 @@ SQLite 기반 데이터 접근 레이어.
 data/data.db 를 read-only로 열어 검색 쿼리를 수행한다.
 """
 
+import logging
 import math
 import os
 import re
@@ -12,41 +13,238 @@ from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from prometheus_client import Counter
+
 DATA_DIR = Path(__file__).resolve().parent / "data"
 DB_PATH = DATA_DIR / "data.db"
 
-_conn: sqlite3.Connection | None = None
+_logger = logging.getLogger(__name__)
+_db_path = str(DB_PATH)
+_db_state_lock = threading.Lock()
+_db_local = threading.local()
 _has_stop_scope: bool | None = None
 _has_stop_segment_polyline: bool | None = None
+_has_variant_stop_estimated_elapsed_min: bool | None = None
+_has_route_uuid: bool | None = None
+_has_route_source_route_id: bool | None = None
+_has_stop_uuid: bool | None = None
+_has_stop_code: bool | None = None
 _endpoint_cache_lock = threading.Lock()
 _endpoint_cache: dict[tuple[str, str, str], dict] = {}
+_route_metadata_cache_lock = threading.Lock()
+_route_metadata_cache: dict[tuple[int, str], dict | None] = {}
+_report_stop_exclusion_lock = threading.Lock()
+_report_stop_exclusion_cache: dict[tuple[str, str], set[int]] = {}
 _ENDPOINT_GROUP_DISTANCE_M = 100.0
 _ENDPOINT_GRID_CELL_DEG = _ENDPOINT_GROUP_DISTANCE_M / 111000.0
+_REPORT_SAME_NAME_GROUP_DISTANCE_M = 20.0
+_REPORT_ESTIMATED_MINUTES_PER_KM = 2.0
+ROUTE_OPTION_SKIPS = Counter(
+    "shuttle_route_option_candidate_skipped_total",
+    "Route option candidates skipped while building route options",
+    ["reason"],
+)
+
+
+def _record_route_option_skip(reason: str) -> None:
+    safe_reason = str(reason or "").strip() or "unknown"
+    ROUTE_OPTION_SKIPS.labels(reason=safe_reason).inc()
+
+
+def _open_connection(path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only=ON")
+    return conn
 
 
 def init_db(db_path: str | None = None) -> None:
-    """SQLite DB 연결. 앱 시작 시 1회 호출."""
-    global _conn, _has_stop_scope, _has_stop_segment_polyline
+    """SQLite DB 연결 설정. 각 스레드는 자체 read-only connection을 사용한다."""
+    global _db_path
+    global _has_stop_scope
+    global _has_stop_segment_polyline
+    global _has_variant_stop_estimated_elapsed_min
+    global _has_route_uuid
+    global _has_route_source_route_id
+    global _has_stop_uuid
+    global _has_stop_code
     path = db_path or str(DB_PATH)
-    _conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, check_same_thread=False)
-    _conn.row_factory = sqlite3.Row
-    _conn.execute("PRAGMA query_only=ON")
+    current_conn = getattr(_db_local, "conn", None)
+    if current_conn is not None:
+        try:
+            current_conn.close()
+        except sqlite3.Error:
+            pass
+    with _db_state_lock:
+        _db_path = path
+        conn = _open_connection(path)
+    with _route_metadata_cache_lock:
+        _route_metadata_cache.clear()
+    setattr(_db_local, "conn_path", path)
+    setattr(_db_local, "conn", conn)
     _has_stop_scope = bool(
-        _conn.execute(
+        conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_scope' LIMIT 1"
         ).fetchone()
     )
     _has_stop_segment_polyline = bool(
-        _conn.execute(
+        conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_segment_polyline' LIMIT 1"
         ).fetchone()
     )
+    variant_stop_columns = {
+        str(row["name"] or "")
+        for row in conn.execute("PRAGMA table_info(variant_stop)").fetchall()
+    }
+    _has_variant_stop_estimated_elapsed_min = "estimated_elapsed_min" in variant_stop_columns
+    route_columns = {
+        str(row["name"] or "")
+        for row in conn.execute("PRAGMA table_info(route)").fetchall()
+    }
+    stop_columns = {
+        str(row["name"] or "")
+        for row in conn.execute("PRAGMA table_info(stop)").fetchall()
+    }
+    _has_route_uuid = "route_uuid" in route_columns
+    _has_route_source_route_id = "source_route_id" in route_columns
+    _has_stop_uuid = "stop_uuid" in stop_columns
+    _has_stop_code = "stop_code" in stop_columns
 
 
 def _db() -> sqlite3.Connection:
-    if _conn is None:
-        init_db()
-    return _conn
+    conn = getattr(_db_local, "conn", None)
+    conn_path = getattr(_db_local, "conn_path", None)
+    if conn is None or conn_path != _db_path:
+        with _db_state_lock:
+            conn = _open_connection(_db_path)
+        setattr(_db_local, "conn", conn)
+        setattr(_db_local, "conn_path", _db_path)
+    return conn
+
+
+def _row_get(row, key: str, index: int | None = None, default=None):
+    if row is None:
+        return default
+    try:
+        if isinstance(row, sqlite3.Row):
+            value = row[key]
+            return default if value is None else value
+    except (IndexError, KeyError, TypeError):
+        pass
+    if isinstance(row, dict):
+        value = row.get(key, default)
+        return default if value is None else value
+    if index is not None and isinstance(row, (tuple, list)):
+        if 0 <= index < len(row):
+            value = row[index]
+            return default if value is None else value
+    try:
+        value = row[key]
+    except Exception:
+        return default
+    return default if value is None else value
+
+
+def _coerce_float(value) -> float | None:
+    try:
+        if value is None:
+            return None
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return numeric
+
+
+def _coerce_int(value) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _route_metadata_cache_key(route_id: int, day_type: str) -> tuple[int, str]:
+    return int(route_id), str(day_type)
+
+
+def _clone_route_metadata(payload: dict) -> dict:
+    return {
+        "all_departure_times": list(payload.get("all_departure_times", [])),
+        "companies": list(payload.get("companies", [])),
+        "route_stops": [dict(stop) for stop in payload.get("route_stops", [])],
+        "first_variant_id": _coerce_int(payload.get("first_variant_id")),
+    }
+
+
+def _get_route_metadata(
+    db: sqlite3.Connection,
+    route_id: int,
+    day_type: str,
+) -> dict | None:
+    cache_key = _route_metadata_cache_key(route_id, day_type)
+    with _route_metadata_cache_lock:
+        cached = _route_metadata_cache.get(cache_key)
+    if cached is not None:
+        return _clone_route_metadata(cached)
+
+    rows = db.execute(
+        """
+        SELECT variant_id, departure_time, company, bus_count
+        FROM service_variant
+        WHERE route_id = ? AND day_type = ?
+        ORDER BY departure_time
+        """,
+        (route_id, day_type),
+    ).fetchall()
+    if not rows:
+        _record_route_option_skip("missing_variants")
+        return None
+
+    all_times = sorted(
+        {
+            str(value).strip()
+            for row in rows
+            for value in [_row_get(row, "departure_time", index=1)]
+            if str(value).strip()
+        }
+    )
+    companies = sorted(
+        {
+            str(value).strip()
+            for row in rows
+            for value in [_row_get(row, "company", index=2)]
+            if str(value).strip()
+        }
+    )
+    first_variant_id = None
+    for row in rows:
+        first_variant_id = _coerce_int(_row_get(row, "variant_id", index=0))
+        if first_variant_id is not None:
+            break
+    if first_variant_id is None:
+        _record_route_option_skip("missing_variant_id")
+        return None
+
+    route_stops = _get_variant_stops(db, first_variant_id)
+    if not route_stops:
+        _record_route_option_skip("missing_route_stops")
+        return None
+
+    payload = {
+        "all_departure_times": all_times,
+        "companies": companies,
+        "route_stops": [dict(stop) for stop in route_stops],
+        "first_variant_id": first_variant_id,
+    }
+    with _route_metadata_cache_lock:
+        existing = _route_metadata_cache.get(cache_key)
+        if existing is not None:
+            return _clone_route_metadata(existing)
+        _route_metadata_cache[cache_key] = dict(payload)
+    return _clone_route_metadata(payload)
 
 
 def _supports_stop_scope() -> bool:
@@ -73,6 +271,66 @@ def _supports_stop_segment_polyline() -> bool:
     return bool(_has_stop_segment_polyline)
 
 
+def _supports_variant_stop_estimated_elapsed_min() -> bool:
+    global _has_variant_stop_estimated_elapsed_min
+    if _has_variant_stop_estimated_elapsed_min is None:
+        db = _db()
+        columns = {
+            str(row["name"] or "")
+            for row in db.execute("PRAGMA table_info(variant_stop)").fetchall()
+        }
+        _has_variant_stop_estimated_elapsed_min = "estimated_elapsed_min" in columns
+    return bool(_has_variant_stop_estimated_elapsed_min)
+
+
+def _supports_route_uuid() -> bool:
+    global _has_route_uuid
+    if _has_route_uuid is None:
+        db = _db()
+        columns = {
+            str(row["name"] or "")
+            for row in db.execute("PRAGMA table_info(route)").fetchall()
+        }
+        _has_route_uuid = "route_uuid" in columns
+    return bool(_has_route_uuid)
+
+
+def _supports_route_source_route_id() -> bool:
+    global _has_route_source_route_id
+    if _has_route_source_route_id is None:
+        db = _db()
+        columns = {
+            str(row["name"] or "")
+            for row in db.execute("PRAGMA table_info(route)").fetchall()
+        }
+        _has_route_source_route_id = "source_route_id" in columns
+    return bool(_has_route_source_route_id)
+
+
+def _supports_stop_uuid() -> bool:
+    global _has_stop_uuid
+    if _has_stop_uuid is None:
+        db = _db()
+        columns = {
+            str(row["name"] or "")
+            for row in db.execute("PRAGMA table_info(stop)").fetchall()
+        }
+        _has_stop_uuid = "stop_uuid" in columns
+    return bool(_has_stop_uuid)
+
+
+def _supports_stop_code() -> bool:
+    global _has_stop_code
+    if _has_stop_code is None:
+        db = _db()
+        columns = {
+            str(row["name"] or "")
+            for row in db.execute("PRAGMA table_info(stop)").fetchall()
+        }
+        _has_stop_code = "stop_code" in columns
+    return bool(_has_stop_code)
+
+
 # ── 유틸리티 ───────────────────────────────────────────────────
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
@@ -91,15 +349,25 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _get_variant_stops(db: sqlite3.Connection, variant_id: int) -> list[dict]:
     has_polyline = _supports_stop_segment_polyline()
+    has_estimated_elapsed = _supports_variant_stop_estimated_elapsed_min()
+    stop_uuid_sql = "s.stop_uuid AS stop_uuid,\n                " if _supports_stop_uuid() else "NULL AS stop_uuid,\n                "
+    stop_code_sql = "s.stop_code AS stop_code,\n                " if _supports_stop_code() else "NULL AS stop_code,\n                "
+    estimated_elapsed_sql = (
+        "vs.estimated_elapsed_min AS estimated_elapsed_min,\n                "
+        if has_estimated_elapsed
+        else "NULL AS estimated_elapsed_min,\n                "
+    )
     if has_polyline:
-        rows = db.execute(
-            """
+        query = """
             SELECT
                 vs.seq,
                 vs.stop_id,
                 s.name,
                 s.lat,
                 s.lon,
+                {stop_uuid_sql}
+                {stop_code_sql}
+                {estimated_elapsed_sql}
                 sp.encoded_polyline AS next_encoded_polyline
             FROM variant_stop vs
             JOIN stop s ON s.stop_id = vs.stop_id
@@ -107,42 +375,86 @@ def _get_variant_stops(db: sqlite3.Connection, variant_id: int) -> list[dict]:
                 ON vs_next.variant_id = vs.variant_id
                AND vs_next.seq = vs.seq + 1
             LEFT JOIN stop_segment_polyline sp
-                ON sp.from_stop_id = vs.stop_id
+               ON sp.from_stop_id = vs.stop_id
                AND sp.to_stop_id = vs_next.stop_id
             WHERE vs.variant_id = ?
             ORDER BY vs.seq
-            """,
-            (variant_id,),
-        ).fetchall()
+            """.format(
+                stop_uuid_sql=stop_uuid_sql,
+                stop_code_sql=stop_code_sql,
+                estimated_elapsed_sql=estimated_elapsed_sql,
+            )
+        rows = db.execute(query, (variant_id,)).fetchall()
     else:
-        rows = db.execute(
-            """
+        query = """
             SELECT
                 vs.seq,
                 vs.stop_id,
                 s.name,
                 s.lat,
                 s.lon,
+                {stop_uuid_sql}
+                {stop_code_sql}
+                {estimated_elapsed_sql}
                 NULL AS next_encoded_polyline
             FROM variant_stop vs
             JOIN stop s ON s.stop_id = vs.stop_id
             WHERE vs.variant_id = ?
             ORDER BY vs.seq
-            """,
-            (variant_id,),
-        ).fetchall()
+            """.format(
+                stop_uuid_sql=stop_uuid_sql,
+                stop_code_sql=stop_code_sql,
+                estimated_elapsed_sql=estimated_elapsed_sql,
+            )
+        rows = db.execute(query, (variant_id,)).fetchall()
 
-    return [
-        {
-            "sequence": sr["seq"],
-            "stop_id": sr["stop_id"],
-            "stop_name": sr["name"],
-            "lat": sr["lat"],
-            "lng": sr["lon"],
-            "next_encoded_polyline": str(sr["next_encoded_polyline"] or ""),
-        }
-        for sr in rows
-    ]
+    items: list[dict] = []
+    for sr in rows:
+        lat = _coerce_float(_row_get(sr, "lat", index=3))
+        lng = _coerce_float(_row_get(sr, "lon", index=4))
+        seq = _coerce_int(_row_get(sr, "seq", index=0))
+        stop_id = _coerce_int(_row_get(sr, "stop_id", index=1))
+        stop_name = str(_row_get(sr, "name", index=2, default="") or "").strip()
+        if seq is None or stop_id is None or not stop_name:
+            _record_route_option_skip("invalid_variant_stop_shape")
+            continue
+        if lat is None or lng is None:
+            _record_route_option_skip("invalid_variant_stop_coords")
+            continue
+        stop_uuid = str(_row_get(sr, "stop_uuid", default="") or "").strip() or None
+        stop_code = str(_row_get(sr, "stop_code", default="") or "").strip() or None
+        estimated_elapsed = _coerce_int(_row_get(sr, "estimated_elapsed_min"))
+        next_encoded_polyline = str(_row_get(sr, "next_encoded_polyline", default="") or "")
+        items.append(
+            {
+                "sequence": seq,
+                "stop_id": stop_id,
+                "stop_uuid": stop_uuid,
+                "stop_code": stop_code,
+                "stop_name": stop_name,
+                "lat": lat,
+                "lng": lng,
+                "estimated_elapsed_min": estimated_elapsed,
+                "next_encoded_polyline": next_encoded_polyline,
+            }
+        )
+    if not items:
+        return []
+    cumulative_distance_m = 0.0
+    prev_lat: float | None = None
+    prev_lng: float | None = None
+    for item in items:
+        lat = float(item["lat"])
+        lng = float(item["lng"])
+        if prev_lat is not None and prev_lng is not None:
+            cumulative_distance_m += _haversine_m(prev_lat, prev_lng, lat, lng)
+        if item.get("estimated_elapsed_min") is None:
+            item["estimated_elapsed_min"] = int(
+                round((cumulative_distance_m / 1000.0) * _REPORT_ESTIMATED_MINUTES_PER_KM)
+            )
+        prev_lat = lat
+        prev_lng = lng
+    return items
 
 
 # ── 공개 API ──────────────────────────────────────────────────
@@ -592,6 +904,8 @@ def _find_nearby_stops(
                 WHERE ss.site_id = ?
                   AND ss.route_type = ?
                   AND ss.day_type = ?
+                  AND s.lat IS NOT NULL
+                  AND s.lon IS NOT NULL
                   AND r.min_lat >= ? AND r.max_lat <= ?
                   AND r.min_lon >= ? AND r.max_lon <= ?
                 """,
@@ -618,6 +932,8 @@ def _find_nearby_stops(
                 WHERE ro.site_id = ?
                   AND ro.route_type = ?
                   AND sv.day_type = ?
+                  AND s.lat IS NOT NULL
+                  AND s.lon IS NOT NULL
                   AND r.min_lat >= ? AND r.max_lat <= ?
                   AND r.min_lon >= ? AND r.max_lon <= ?
                 """,
@@ -637,7 +953,9 @@ def _find_nearby_stops(
                 SELECT s.stop_id, s.name, s.lat, s.lon
                 FROM stop_rtree r
                 JOIN stop s ON s.stop_id = r.stop_id
-                WHERE r.min_lat >= ? AND r.max_lat <= ?
+                WHERE s.lat IS NOT NULL
+                  AND s.lon IS NOT NULL
+                  AND r.min_lat >= ? AND r.max_lat <= ?
                   AND r.min_lon >= ? AND r.max_lon <= ?
                 """,
                 (lat - delta, lat + delta, lon - delta, lon + delta),
@@ -648,8 +966,15 @@ def _find_nearby_stops(
 
     results = []
     for r in rows:
-        d = _haversine_m(lat, lon, r["lat"], r["lon"])
-        results.append((r["stop_id"], r["name"], r["lat"], r["lon"], d))
+        stop_lat = _coerce_float(_row_get(r, "lat", index=2))
+        stop_lon = _coerce_float(_row_get(r, "lon", index=3))
+        stop_id = _coerce_int(_row_get(r, "stop_id", index=0))
+        stop_name = str(_row_get(r, "name", index=1, default="") or "").strip()
+        if stop_lat is None or stop_lon is None or stop_id is None or not stop_name:
+            _record_route_option_skip("invalid_nearby_stop")
+            continue
+        d = _haversine_m(lat, lon, stop_lat, stop_lon)
+        results.append((stop_id, stop_name, stop_lat, stop_lon, d))
     results.sort(key=lambda x: x[4])
     return results[:max_stops]
 
@@ -687,13 +1012,17 @@ def _find_routes_from_stops(
 
     route_best: dict[int, tuple[float, int, str]] = {}
     for r in rows:
-        rid = r["route_id"]
-        rname = r["route_name"]
+        rid = _coerce_int(_row_get(r, "route_id", index=0))
+        rname = str(_row_get(r, "route_name", index=1, default="") or "")
+        route_type_value = str(_row_get(r, "route_type", index=2, default="") or "")
+        sid = _coerce_int(_row_get(r, "stop_id", index=3))
+        if rid is None or sid is None or sid not in stop_dist or not rname or not route_type_value:
+            _record_route_option_skip("invalid_route_lookup_row")
+            continue
         if include_route_ids is not None and rid not in include_route_ids:
             continue
         if exclude_route_name_keyword and exclude_route_name_keyword in rname:
             continue
-        sid = r["stop_id"]
         dist = stop_dist[sid][3]
         if rid not in route_best or dist < route_best[rid][0]:
             route_best[rid] = (dist, sid, rname)
@@ -795,59 +1124,92 @@ def find_nearest_route_options(
 
     # 거리순 정렬, 상위 max_routes
     sorted_routes = sorted(route_best.items(), key=lambda x: x[1][0])[:max_routes]
+    route_uuid_by_id: dict[int, str] = {}
+    if sorted_routes and _supports_route_uuid():
+        route_ids = [int(route_id) for route_id, _info in sorted_routes]
+        placeholders = ",".join("?" for _ in route_ids)
+        rows = db.execute(
+            f"SELECT route_id, route_uuid FROM route WHERE route_id IN ({placeholders})",
+            tuple(route_ids),
+        ).fetchall()
+        for row in rows:
+            route_uuid = str(_row_get(row, "route_uuid", default="") or "").strip()
+            if not route_uuid:
+                continue
+            route_uuid_by_id[int(_row_get(row, "route_id", default=0) or 0)] = route_uuid
+
+    stop_uuid_by_id: dict[int, str] = {}
+    stop_code_by_id: dict[int, str] = {}
+    if sorted_routes and (_supports_stop_uuid() or _supports_stop_code()):
+        stop_ids = [int(best_stop_id) for _route_id, (_dist, best_stop_id, _name) in sorted_routes]
+        placeholders = ",".join("?" for _ in stop_ids)
+        select_cols = ["stop_id"]
+        if _supports_stop_uuid():
+            select_cols.append("stop_uuid")
+        if _supports_stop_code():
+            select_cols.append("stop_code")
+        rows = db.execute(
+            f"SELECT {', '.join(select_cols)} FROM stop WHERE stop_id IN ({placeholders})",
+            tuple(stop_ids),
+        ).fetchall()
+        for row in rows:
+            stop_id = int(_row_get(row, "stop_id", default=0) or 0)
+            if stop_id <= 0:
+                continue
+            stop_uuid = str(_row_get(row, "stop_uuid", default="") or "").strip()
+            stop_code = str(_row_get(row, "stop_code", default="") or "").strip()
+            if stop_uuid:
+                stop_uuid_by_id[stop_id] = stop_uuid
+            if stop_code:
+                stop_code_by_id[stop_id] = stop_code
 
     results = []
     for route_id, (dist, best_stop_id, route_name) in sorted_routes:
         sname, slat, slon, sdist = stop_dist[best_stop_id]
-
-        # 전체 출발시간 + 업체 목록
-        variants = db.execute(
-            """
-            SELECT departure_time, company, bus_count
-            FROM service_variant
-            WHERE route_id = ? AND day_type = ?
-            ORDER BY departure_time
-            """,
-            (route_id, day_type),
-        ).fetchall()
-
-        all_times = sorted(set(v["departure_time"] for v in variants))
-        companies = sorted(set(v["company"] for v in variants if v["company"]))
-
-        # 대표 경유지 (첫 variant의 stops)
-        first_variant = db.execute(
-            "SELECT variant_id FROM service_variant WHERE route_id = ? AND day_type = ? LIMIT 1",
-            (route_id, day_type),
-        ).fetchone()
-
-        route_stops = _get_variant_stops(db, int(first_variant["variant_id"])) if first_variant else []
+        metadata = _get_route_metadata(db, route_id, day_type)
+        if metadata is None:
+            _logger.warning(
+                "Skipping route option candidate due to invalid route metadata",
+                extra={"route_id": route_id, "day_type": day_type},
+            )
+            continue
 
         results.append(
             {
                 "route_id": route_id,
+                "route_uuid": route_uuid_by_id.get(int(route_id)),
                 "route_name": route_name,
                 "route_type": route_type,
                 "nearest_stop": {
                     "stop_id": best_stop_id,
+                    "stop_uuid": stop_uuid_by_id.get(int(best_stop_id)),
+                    "stop_code": stop_code_by_id.get(int(best_stop_id)),
                     "name": sname,
                     "lat": slat,
                     "lon": slon,
                 },
                 "distance_m": round(sdist),
-                "all_departure_times": all_times,
-                "companies": companies,
-                "route_stops": route_stops,
+                "all_departure_times": list(metadata["all_departure_times"]),
+                "companies": list(metadata["companies"]),
+                "route_stops": [dict(stop) for stop in metadata["route_stops"]],
             }
         )
 
     return results
 
 
-def get_route_detail(route_id: int, day_type: str = "weekday") -> dict | None:
-    """특정 route의 전체 출발시간표 + 전체 경유지 반환."""
+def get_route_detail(
+    route_id: int,
+    day_type: str = "weekday",
+    departure_time: str | None = None,
+) -> dict | None:
+    """특정 route의 전체 출발시간표 + 선택 출발편의 전체 경유지 반환."""
     db = _db()
+    route_uuid_sql = ", route_uuid" if _supports_route_uuid() else ", NULL AS route_uuid"
+    source_route_id_sql = ", source_route_id" if _supports_route_source_route_id() else ", NULL AS source_route_id"
     route = db.execute(
-        "SELECT route_id, site_id, route_name, route_type FROM route WHERE route_id = ?",
+        f"SELECT route_id, site_id, route_name, route_type{route_uuid_sql}{source_route_id_sql} "
+        "FROM route WHERE route_id = ?",
         (route_id,),
     ).fetchone()
     if not route:
@@ -863,25 +1225,1171 @@ def get_route_detail(route_id: int, day_type: str = "weekday") -> dict | None:
         (route_id, day_type),
     ).fetchall()
 
-    timetable = [
-        {
-            "departure_time": v["departure_time"],
-            "company": v["company"],
-            "bus_count": v["bus_count"],
-        }
-        for v in variants
-    ]
+    timetable = []
+    for v in variants:
+        departure_time_value = str(_row_get(v, "departure_time", index=1, default="") or "").strip()
+        if not departure_time_value:
+            _record_route_option_skip("invalid_timetable_departure")
+            continue
+        timetable.append(
+            {
+                "departure_time": departure_time_value,
+                "company": _row_get(v, "company", index=2),
+                "bus_count": _row_get(v, "bus_count", index=3),
+            }
+        )
 
-    # 대표 경유지
-    route_stops = _get_variant_stops(db, int(variants[0]["variant_id"])) if variants else []
+    selected_variant = None
+    if variants:
+        if departure_time:
+            clean_departure_time = str(departure_time).strip()
+            for variant in variants:
+                if str(_row_get(variant, "departure_time", index=1, default="") or "").strip() == clean_departure_time:
+                    selected_variant = variant
+                    break
+        if selected_variant is None:
+            selected_variant = variants[0]
+
+    selected_variant_id = (
+        _coerce_int(_row_get(selected_variant, "variant_id", index=0))
+        if selected_variant is not None
+        else None
+    )
+    route_stops = _get_variant_stops(db, selected_variant_id) if selected_variant_id is not None else []
+    selected_departure_time_value = (
+        str(_row_get(selected_variant, "departure_time", index=1, default="") or "").strip()
+        if selected_variant
+        else None
+    )
+    selected_companies = []
+    if selected_departure_time_value:
+        selected_companies = sorted(
+            set(
+                str(_row_get(v, "company", index=2, default="") or "").strip()
+                for v in variants
+                if str(_row_get(v, "departure_time", index=1, default="") or "").strip() == selected_departure_time_value
+                and str(_row_get(v, "company", index=2, default="") or "").strip()
+            )
+        )
 
     return {
         "route_id": route["route_id"],
+        "route_uuid": (str(route["route_uuid"] or "").strip() or None),
+        "source_route_id": (str(route["source_route_id"] or "").strip() or None),
         "site_id": route["site_id"],
         "route_name": route["route_name"],
         "route_type": route["route_type"],
+        "selected_departure_time": selected_departure_time_value,
+        "selected_variant_id": selected_variant_id,
+        "selected_operator": ", ".join(selected_companies),
         "timetable": timetable,
         "route_stops": route_stops,
+    }
+
+
+def _clock_diff_minutes(a: str, b: str) -> int:
+    a_m = _time_to_minutes(a)
+    b_m = _time_to_minutes(b)
+    if a_m < 0 or b_m < 0:
+        return 10**9
+    diff = abs(a_m - b_m)
+    return min(diff, 1440 - diff)
+
+
+def _time_to_service_day_minutes(t: str) -> int:
+    """04:00를 0분으로 보는 서비스일 축(0~1439)으로 변환."""
+    raw_minutes = _time_to_minutes(t)
+    if raw_minutes < 0:
+        return -1
+    if raw_minutes < 240:
+        raw_minutes += 1440
+    return raw_minutes - 240
+
+
+def _service_day_delta_minutes(current_time: str, departure_time: str) -> int:
+    """
+    current_time 기준으로 가장 가까운 departure_time occurrence와의 signed delta.
+    음수면 과거 출발편, 양수면 미래 출발편.
+    """
+    now_minutes = _time_to_service_day_minutes(current_time)
+    dep_minutes = _time_to_service_day_minutes(departure_time)
+    if now_minutes < 0 or dep_minutes < 0:
+        return 10**9
+    candidates = (
+        dep_minutes - now_minutes,
+        (dep_minutes + 1440) - now_minutes,
+        (dep_minutes - 1440) - now_minutes,
+    )
+    return min(candidates, key=lambda value: abs(value))
+
+
+def _is_departure_in_report_window(
+    current_time: str,
+    departure_time: str,
+    past_minutes: int,
+    future_minutes: int,
+) -> bool:
+    delta = _service_day_delta_minutes(current_time, departure_time)
+    if delta == 10**9:
+        return False
+    return (-int(past_minutes)) <= delta <= int(future_minutes)
+
+
+def _get_report_excluded_stop_ids(site_id: str, day_type: str) -> set[int]:
+    key = (str(site_id), str(day_type))
+    with _report_stop_exclusion_lock:
+        cached = _report_stop_exclusion_cache.get(key)
+        if cached is not None:
+            return set(cached)
+
+    db = _db()
+    excluded: set[int] = set()
+    for direction in ("depart", "arrive"):
+        route_type = _endpoint_route_type(direction)
+        endpoint_seq_col = "es.max_seq" if direction == "depart" else "es.min_seq"
+        rows = db.execute(
+            f"""
+            WITH target_routes AS (
+                SELECT route_id
+                FROM route
+                WHERE site_id = ?
+                  AND route_type = ?
+                  AND route_name NOT LIKE '%테스트%'
+            ),
+            first_variant AS (
+                SELECT sv.route_id, MIN(sv.variant_id) AS variant_id
+                FROM service_variant sv
+                JOIN target_routes tr ON tr.route_id = sv.route_id
+                WHERE sv.day_type = ?
+                GROUP BY sv.route_id
+            ),
+            endpoint_seq AS (
+                SELECT vs.variant_id, MIN(vs.seq) AS min_seq, MAX(vs.seq) AS max_seq
+                FROM variant_stop vs
+                JOIN first_variant fv ON fv.variant_id = vs.variant_id
+                GROUP BY vs.variant_id
+            )
+            SELECT DISTINCT vs_ep.stop_id AS endpoint_stop_id
+            FROM first_variant fv
+            JOIN endpoint_seq es ON es.variant_id = fv.variant_id
+            JOIN variant_stop vs_ep
+              ON vs_ep.variant_id = fv.variant_id
+             AND vs_ep.seq = {endpoint_seq_col}
+            """,
+            (site_id, route_type, day_type),
+        ).fetchall()
+        excluded.update(int(row["endpoint_stop_id"]) for row in rows)
+
+    with _report_stop_exclusion_lock:
+        existing = _report_stop_exclusion_cache.get(key)
+        if existing is not None:
+            return set(existing)
+        _report_stop_exclusion_cache[key] = set(excluded)
+    return excluded
+
+
+def get_report_nearby_stops(
+    site_id: str,
+    day_type: str,
+    lat: float,
+    lon: float,
+    primary_radius_m: float = 150.0,
+    fallback_radius_m: float = 250.0,
+) -> dict:
+    """
+    도착시간 제보용 근처 정류장 후보를 반환한다.
+    - 출근 종착지 / 퇴근 출발지(endpoint 정류장)는 제외한다.
+    """
+    excluded_stop_ids = _get_report_excluded_stop_ids(site_id, day_type)
+    nearby_in = _find_nearby_stops(
+        lat,
+        lon,
+        max_stops=150,
+        site_id=site_id,
+        route_type="commute_in",
+        day_type=day_type,
+    )
+    nearby_out = _find_nearby_stops(
+        lat,
+        lon,
+        max_stops=150,
+        site_id=site_id,
+        route_type="commute_out",
+        day_type=day_type,
+    )
+
+    stop_map: dict[int, tuple[str, float, float, float]] = {}
+    for sid, name, slat, slon, dist in nearby_in + nearby_out:
+        stop_id = int(sid)
+        if stop_id in excluded_stop_ids:
+            continue
+        if stop_id not in stop_map or dist < stop_map[stop_id][3]:
+            stop_map[stop_id] = (str(name or "").strip(), float(slat), float(slon), float(dist))
+
+    if not stop_map:
+        return {"radius_m": float(primary_radius_m), "used_fallback_radius": False, "stops": []}
+
+    def _group_named_stops(items: list[dict]) -> list[dict]:
+        grouped_items: list[dict] = []
+        grouped_by_name: dict[str, list[dict]] = {}
+        for item in sorted(
+            items,
+            key=lambda value: (
+                int(value["distance_m"]),
+                str(value["stop_name"]),
+                int(value["stop_id"]),
+            ),
+        ):
+            stop_name = str(item["stop_name"] or "").strip()
+            group_key = stop_name if stop_name else f"__stop_{int(item['stop_id'])}"
+            candidates = grouped_by_name.get(group_key) or []
+            group = None
+            for existing in candidates:
+                for plat, plng in existing["_points"]:
+                    if _haversine_m(
+                        float(item["lat"]),
+                        float(item["lng"]),
+                        float(plat),
+                        float(plng),
+                    ) <= _REPORT_SAME_NAME_GROUP_DISTANCE_M:
+                        group = existing
+                        break
+                if group is not None:
+                    break
+            if group is None:
+                group = {
+                    "stop_id": int(item["stop_id"]),
+                    "stop_ids": [int(item["stop_id"])],
+                    "stop_name": stop_name,
+                    "lat": float(item["lat"]),
+                    "lng": float(item["lng"]),
+                    "distance_m": int(item["distance_m"]),
+                    "_points": [(float(item["lat"]), float(item["lng"]))],
+                }
+                grouped_by_name.setdefault(group_key, []).append(group)
+                grouped_items.append(group)
+                continue
+            stop_id = int(item["stop_id"])
+            if stop_id not in group["stop_ids"]:
+                group["stop_ids"].append(stop_id)
+                group["_points"].append((float(item["lat"]), float(item["lng"])))
+        grouped_items.sort(
+            key=lambda item: (
+                int(item["distance_m"]),
+                str(item["stop_name"]),
+                int(item["stop_id"]),
+            )
+        )
+        for item in grouped_items:
+            item.pop("_points", None)
+        return grouped_items
+
+    def _stops_within(limit_m: float) -> list[dict]:
+        items: list[dict] = []
+        for stop_id, (name, slat, slon, dist_m) in stop_map.items():
+            if dist_m <= float(limit_m):
+                items.append(
+                    {
+                        "stop_id": int(stop_id),
+                        "stop_name": str(name),
+                        "lat": float(slat),
+                        "lng": float(slon),
+                        "distance_m": int(round(dist_m)),
+                    }
+                )
+        return _group_named_stops(items)
+
+    stops = _stops_within(primary_radius_m)
+    used_fallback = False
+    if not stops and fallback_radius_m > primary_radius_m:
+        stops = _stops_within(fallback_radius_m)
+        used_fallback = bool(stops)
+
+    return {
+        "radius_m": float(fallback_radius_m if used_fallback else primary_radius_m),
+        "used_fallback_radius": used_fallback,
+        "stops": stops,
+    }
+
+
+def find_recent_report_stop_index_by_route(
+    site_id: str,
+    day_type: str,
+    grouped_stops: list[dict] | tuple[dict, ...] | None,
+    route_id: int | None,
+    route_uuid: str | None = None,
+) -> int:
+    if not grouped_stops:
+        return -1
+    clean_route_uuid = str(route_uuid or "").strip()
+    try:
+        preferred_route_id = int(route_id or 0)
+    except (TypeError, ValueError):
+        preferred_route_id = 0
+    use_route_uuid = bool(clean_route_uuid and _supports_route_uuid())
+    if (not use_route_uuid) and preferred_route_id <= 0:
+        return -1
+
+    stop_id_to_index: dict[int, int] = {}
+    normalized_stop_ids: list[int] = []
+    for index, stop in enumerate(grouped_stops):
+        stop = stop or {}
+        raw_stop_ids = list(stop.get("stop_ids") or [])
+        if not raw_stop_ids and stop.get("stop_id") is not None:
+            raw_stop_ids = [stop.get("stop_id")]
+        for raw_value in raw_stop_ids:
+            try:
+                stop_id = int(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if stop_id <= 0:
+                continue
+            if stop_id not in stop_id_to_index:
+                stop_id_to_index[stop_id] = index
+            if stop_id not in normalized_stop_ids:
+                normalized_stop_ids.append(stop_id)
+
+    if not normalized_stop_ids:
+        return -1
+
+    db = _db()
+    placeholders = ",".join("?" for _ in normalized_stop_ids)
+    if use_route_uuid:
+        rows = db.execute(
+            f"""
+            SELECT DISTINCT vs.stop_id
+            FROM variant_stop vs
+            JOIN service_variant sv ON sv.variant_id = vs.variant_id
+            JOIN route r ON r.route_id = sv.route_id
+            WHERE vs.stop_id IN ({placeholders})
+              AND r.site_id = ?
+              AND sv.day_type = ?
+              AND r.route_uuid = ?
+              AND r.route_type IN ('commute_in', 'commute_out')
+              AND r.route_name NOT LIKE '%테스트%'
+            """,
+            tuple(normalized_stop_ids + [site_id, day_type, clean_route_uuid]),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""
+            SELECT DISTINCT vs.stop_id
+            FROM variant_stop vs
+            JOIN service_variant sv ON sv.variant_id = vs.variant_id
+            JOIN route r ON r.route_id = sv.route_id
+            WHERE vs.stop_id IN ({placeholders})
+              AND r.site_id = ?
+              AND sv.day_type = ?
+              AND r.route_id = ?
+              AND r.route_type IN ('commute_in', 'commute_out')
+              AND r.route_name NOT LIKE '%테스트%'
+            """,
+            tuple(normalized_stop_ids + [site_id, day_type, preferred_route_id]),
+        ).fetchall()
+    if not rows:
+        return -1
+
+    matching_indices: set[int] = set()
+    for row in rows:
+        try:
+            stop_id = int(row["stop_id"])
+        except (TypeError, ValueError):
+            continue
+        group_index = stop_id_to_index.get(stop_id)
+        if group_index is not None:
+            matching_indices.add(group_index)
+
+    if not matching_indices:
+        return -1
+
+    for index in range(len(grouped_stops)):
+        if index in matching_indices:
+            return index
+    return -1
+
+
+def _sort_report_departure_times(values: set[str]) -> list[str]:
+    def _time_sort_key(value: str) -> tuple[int, str]:
+        clean = str(value or "").strip()
+        minutes = _time_to_minutes(clean)
+        return (minutes if minutes >= 0 else 9999, clean)
+
+    return sorted(
+        {str(value or "").strip() for value in values if str(value or "").strip()},
+        key=_time_sort_key,
+    )
+
+
+def _service_day_minutes_to_time(minutes: int) -> str:
+    normalized = int(minutes) % 1440
+    clock_minutes = (normalized + 240) % 1440
+    return f"{clock_minutes // 60:02d}:{clock_minutes % 60:02d}"
+
+
+def _shift_service_day_time(time_value: str, delta_minutes: int) -> str:
+    base_minutes = _time_to_service_day_minutes(time_value)
+    if base_minutes < 0:
+        return str(time_value or "").strip()
+    return _service_day_minutes_to_time(base_minutes + int(delta_minutes))
+
+
+def _select_default_report_time(
+    available_times: list[str],
+    current_time: str,
+    preferred_time: str | None = None,
+) -> str:
+    if preferred_time:
+        clean_preferred = str(preferred_time).strip()
+        if clean_preferred and clean_preferred in available_times:
+            return clean_preferred
+    best_value = ""
+    best_abs_delta = 10**9
+    for value in available_times:
+        delta = _service_day_delta_minutes(current_time, value)
+        if abs(delta) < best_abs_delta:
+            best_abs_delta = abs(delta)
+            best_value = value
+    if best_value:
+        return best_value
+    return str(available_times[0] if available_times else "")
+
+
+def _select_default_report_time_with_elapsed(
+    available_times: list[str],
+    current_time: str,
+    elapsed_minutes_by_time: list[int | None] | tuple[int | None, ...] | None = None,
+) -> str:
+    if not available_times:
+        return ""
+    elapsed_values = list(elapsed_minutes_by_time or [])
+    best_value = ""
+    best_abs_delta = 10**9
+    best_elapsed = -1
+    for idx, value in enumerate(available_times):
+        elapsed_minutes = elapsed_values[idx] if idx < len(elapsed_values) else None
+        elapsed_int = int(elapsed_minutes) if elapsed_minutes is not None else 0
+        reference_time = (
+            _shift_service_day_time(current_time, -elapsed_int)
+            if elapsed_int > 0
+            else current_time
+        )
+        delta = _service_day_delta_minutes(reference_time, value)
+        if (
+            abs(delta) < best_abs_delta
+            or (abs(delta) == best_abs_delta and elapsed_int > best_elapsed)
+        ):
+            best_abs_delta = abs(delta)
+            best_value = value
+            best_elapsed = elapsed_int
+    if best_value:
+        return str(best_value)
+    return str(available_times[0] if available_times else "")
+
+
+def get_report_route_candidates_for_stop(
+    site_id: str,
+    day_type: str,
+    stop_id: int | list[int] | tuple[int, ...],
+    current_time: str,
+    primary_past_minutes: int = 20,
+    primary_future_minutes: int = 5,
+    fallback_windows: list[tuple[int, int]] | tuple[tuple[int, int], ...] | None = None,
+    max_candidates: int = 50,
+) -> dict:
+    """
+    선택한 정류장(동일명 그룹 가능)을 기준으로 도착시간 제보 노선 후보를 반환한다.
+    - 각 route의 출발시각 중 하나라도 시간 윈도우에 포함되면 후보로 남긴다.
+    - 별도 예외 없이 항상 주어진 시간 윈도우를 적용한다.
+    """
+    db = _db()
+    if isinstance(stop_id, (list, tuple)):
+        requested_stop_ids = [int(value) for value in stop_id]
+    else:
+        requested_stop_ids = [int(stop_id)]
+
+    normalized_stop_ids: list[int] = []
+    excluded_stop_ids = _get_report_excluded_stop_ids(site_id, day_type)
+    for value in requested_stop_ids:
+        if value in excluded_stop_ids or value in normalized_stop_ids:
+            continue
+        normalized_stop_ids.append(value)
+
+    if not normalized_stop_ids:
+        return {
+            "stop_id": int(requested_stop_ids[0]) if requested_stop_ids else 0,
+            "stop_ids": [int(value) for value in requested_stop_ids],
+            "stop_name": "",
+            "candidates": [],
+            "total_route_count": 0,
+            "time_filter_applied": False,
+            "window_past_minutes": int(primary_past_minutes),
+            "window_future_minutes": int(primary_future_minutes),
+            "window_relaxed": False,
+        }
+
+    stop_placeholders = ",".join("?" for _ in normalized_stop_ids)
+    route_uuid_select = "r.route_uuid AS route_uuid," if _supports_route_uuid() else "NULL AS route_uuid,"
+    stop_uuid_select = "s.stop_uuid AS stop_uuid," if _supports_stop_uuid() else "NULL AS stop_uuid,"
+    rows = db.execute(
+        f"""
+        SELECT
+            r.route_id,
+            {route_uuid_select}
+            r.route_name,
+            r.route_type,
+            sv.departure_time,
+            MIN(sv.variant_id) AS variant_id,
+            vs.stop_id,
+            {stop_uuid_select}
+            MIN(vs.seq) AS stop_sequence,
+            s.name AS stop_name
+        FROM variant_stop vs
+        JOIN service_variant sv ON sv.variant_id = vs.variant_id
+        JOIN route r ON r.route_id = sv.route_id
+        JOIN stop s ON s.stop_id = vs.stop_id
+        WHERE vs.stop_id IN ({stop_placeholders})
+          AND r.site_id = ?
+          AND r.route_type IN ('commute_in', 'commute_out')
+          AND sv.day_type = ?
+          AND r.route_name NOT LIKE '%테스트%'
+        GROUP BY
+            r.route_id,
+            route_uuid,
+            r.route_name,
+            r.route_type,
+            sv.departure_time,
+            vs.stop_id,
+            stop_uuid,
+            s.name
+        """,
+        (*normalized_stop_ids, site_id, day_type),
+    ).fetchall()
+    if not rows:
+        return {
+            "stop_id": int(normalized_stop_ids[0]),
+            "stop_ids": list(normalized_stop_ids),
+            "stop_name": "",
+            "candidates": [],
+            "total_route_count": 0,
+            "time_filter_applied": False,
+            "window_past_minutes": int(primary_past_minutes),
+            "window_future_minutes": int(primary_future_minutes),
+            "window_relaxed": False,
+        }
+
+    raw_items: list[dict] = []
+    stop_name = str(rows[0]["stop_name"] or "").strip()
+    for row in rows:
+        departure_time = str(row["departure_time"] or "").strip()
+        raw_items.append(
+            {
+                "route_id": int(row["route_id"]),
+                "route_uuid": (str(row["route_uuid"] or "").strip() or None),
+                "route_name": str(row["route_name"] or "").strip(),
+                "route_type": str(row["route_type"] or "").strip(),
+                "direction": "depart" if str(row["route_type"]) == "commute_in" else "arrive",
+                "departure_time": departure_time,
+                "variant_id": int(row["variant_id"]),
+                "stop_id": int(row["stop_id"]),
+                "stop_uuid": (str(row["stop_uuid"] or "").strip() or None),
+                "stop_name": str(row["stop_name"] or "").strip(),
+                "stop_sequence": int(row["stop_sequence"] or 0),
+                "_delta_minutes": _service_day_delta_minutes(current_time, departure_time),
+            }
+        )
+
+    total_route_count = len({int(item["route_id"]) for item in raw_items})
+    time_filter_applied = True
+    windows: list[tuple[int, int]] = [(int(primary_past_minutes), int(primary_future_minutes))]
+    fallback_window_values = ((30, 5), (45, 5)) if fallback_windows is None else fallback_windows
+    for past_minutes, future_minutes in fallback_window_values:
+        pair = (int(past_minutes), int(future_minutes))
+        if pair not in windows:
+            windows.append(pair)
+
+    filtered_items: list[dict] = []
+    applied_window = windows[0]
+    window_relaxed = False
+    for idx, (past_minutes, future_minutes) in enumerate(windows):
+        current_filtered = [
+            item for item in raw_items
+            if _is_departure_in_report_window(
+                current_time,
+                str(item["departure_time"]),
+                past_minutes,
+                future_minutes,
+            )
+        ]
+        if current_filtered:
+            filtered_items = current_filtered
+            applied_window = (past_minutes, future_minutes)
+            window_relaxed = idx > 0
+            break
+    if not filtered_items:
+        last_window = windows[-1]
+        return {
+            "stop_id": int(normalized_stop_ids[0]),
+            "stop_ids": list(normalized_stop_ids),
+            "stop_name": stop_name,
+            "candidates": [],
+            "total_route_count": int(total_route_count),
+            "time_filter_applied": True,
+            "window_past_minutes": int(last_window[0]),
+            "window_future_minutes": int(last_window[1]),
+            "window_relaxed": bool(len(windows) > 1),
+        }
+
+    grouped_by_route: dict[int, list[dict]] = defaultdict(list)
+    for item in filtered_items:
+        grouped_by_route[int(item["route_id"])].append(item)
+
+    route_candidates: list[dict] = []
+    for route_items in grouped_by_route.values():
+        route_items_sorted = sorted(
+            route_items,
+            key=lambda item: (
+                abs(int(item["_delta_minutes"])),
+                int(item["stop_sequence"]),
+                str(item["departure_time"]),
+                str(item["route_name"]),
+            ),
+        )
+        if not route_items_sorted:
+            continue
+        best_item = route_items_sorted[0]
+        available_times = _sort_report_departure_times(
+            {str(item["departure_time"]) for item in route_items_sorted}
+        )
+        sequence_by_time: dict[str, int] = {}
+        context_source_by_time: dict[str, dict] = {}
+        for item in route_items_sorted:
+            departure_time = str(item["departure_time"])
+            stop_sequence = int(item["stop_sequence"])
+            existing_sequence = sequence_by_time.get(departure_time)
+            if existing_sequence is None or stop_sequence < existing_sequence:
+                sequence_by_time[departure_time] = stop_sequence
+                context_source_by_time[departure_time] = item
+        departure_sequences = [
+            str(sequence_by_time.get(str(value), ""))
+            for value in available_times
+        ]
+        variant_stop_cache: dict[int, list[dict]] = {}
+
+        def _serialize_context_stop(stop_row: dict | None) -> dict | None:
+            if not stop_row:
+                return None
+            return {
+                "sequence": int(stop_row["sequence"]),
+                "stop_id": int(stop_row["stop_id"]),
+                "stop_uuid": (str(stop_row.get("stop_uuid") or "").strip() or None),
+                "stop_name": str(stop_row["stop_name"] or "").strip(),
+            }
+
+        def _build_departure_context(source_item: dict | None) -> dict:
+            if not source_item:
+                return {
+                    "prev": None,
+                    "current": None,
+                    "next": None,
+                    "has_before": False,
+                    "has_after": False,
+                    "estimated_elapsed_min": 0,
+                }
+            variant_id = int(source_item["variant_id"])
+            variant_stops = variant_stop_cache.get(variant_id)
+            if variant_stops is None:
+                variant_stops = _get_variant_stops(db, variant_id)
+                variant_stop_cache[variant_id] = variant_stops
+            target_index = -1
+            target_stop_id = int(source_item["stop_id"])
+            target_sequence = int(source_item["stop_sequence"])
+            for idx, stop_row in enumerate(variant_stops):
+                if int(stop_row["stop_id"]) == target_stop_id and int(stop_row["sequence"]) == target_sequence:
+                    target_index = idx
+                    break
+            if target_index < 0:
+                for idx, stop_row in enumerate(variant_stops):
+                    if int(stop_row["sequence"]) == target_sequence:
+                        target_index = idx
+                        break
+            if target_index < 0:
+                for idx, stop_row in enumerate(variant_stops):
+                    if int(stop_row["stop_id"]) == target_stop_id:
+                        target_index = idx
+                        break
+            if target_index < 0:
+                return {
+                    "prev": None,
+                    "current": None,
+                    "next": None,
+                    "has_before": False,
+                    "has_after": False,
+                    "estimated_elapsed_min": 0,
+                }
+            prev_stop = variant_stops[target_index - 1] if target_index > 0 else None
+            current_stop = variant_stops[target_index]
+            next_stop = variant_stops[target_index + 1] if target_index + 1 < len(variant_stops) else None
+            return {
+                "prev": _serialize_context_stop(prev_stop),
+                "current": _serialize_context_stop(current_stop),
+                "next": _serialize_context_stop(next_stop),
+                "has_before": bool(target_index > 1),
+                "has_after": bool(target_index + 2 < len(variant_stops)),
+                "estimated_elapsed_min": int(current_stop.get("estimated_elapsed_min") or 0),
+            }
+
+        departure_contexts: list[dict] = []
+        departure_elapsed_minutes: list[int] = []
+        for value in available_times:
+            context = _build_departure_context(context_source_by_time.get(str(value)))
+            departure_contexts.append(context)
+            departure_elapsed_minutes.append(int(context.get("estimated_elapsed_min") or 0))
+        route_candidates.append(
+            {
+                "route_id": int(best_item["route_id"]),
+                "route_uuid": (str(best_item.get("route_uuid") or "").strip() or None),
+                "route_name": str(best_item["route_name"]),
+                "route_type": str(best_item["route_type"]),
+                "direction": str(best_item["direction"]),
+                "stop_id": int(best_item["stop_id"]),
+                "stop_uuid": (str(best_item.get("stop_uuid") or "").strip() or None),
+                "stop_name": str(best_item["stop_name"]),
+                "stop_sequence": int(best_item["stop_sequence"]),
+                "departure_times": available_times,
+                "departure_sequences": departure_sequences,
+                "departure_contexts": departure_contexts,
+                "selected_departure_time": _select_default_report_time_with_elapsed(
+                    available_times,
+                    current_time,
+                    departure_elapsed_minutes,
+                ),
+                "_best_abs_delta_m": abs(int(best_item["_delta_minutes"])),
+            }
+        )
+
+    ranked = sorted(
+        route_candidates,
+        key=lambda item: (
+            int(item["_best_abs_delta_m"]),
+            str(item["route_name"]),
+            int(item["stop_sequence"]),
+        ),
+    )[: max(1, int(max_candidates))]
+
+    return {
+        "stop_id": int(normalized_stop_ids[0]),
+        "stop_ids": list(normalized_stop_ids),
+        "stop_name": stop_name,
+        "candidates": [
+            {
+                "route_id": int(item["route_id"]),
+                "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
+                "route_name": str(item["route_name"]),
+                "route_type": str(item["route_type"]),
+                "direction": str(item["direction"]),
+                "stop_id": int(item["stop_id"]),
+                "stop_uuid": (str(item.get("stop_uuid") or "").strip() or None),
+                "stop_name": str(item["stop_name"]),
+                "stop_sequence": int(item["stop_sequence"]),
+                "departure_times": list(item["departure_times"]),
+                "departure_sequences": list(item.get("departure_sequences") or []),
+                "departure_contexts": list(item.get("departure_contexts") or []),
+                "selected_departure_time": str(item["selected_departure_time"]),
+            }
+            for item in ranked
+        ],
+        "total_route_count": int(total_route_count),
+        "time_filter_applied": bool(time_filter_applied),
+        "window_past_minutes": int(applied_window[0]),
+        "window_future_minutes": int(applied_window[1]),
+        "window_relaxed": bool(window_relaxed),
+    }
+
+
+def get_report_candidate_options(
+    site_id: str,
+    day_type: str,
+    lat: float,
+    lon: float,
+    current_time: str,
+    primary_radius_m: float = 150.0,
+    fallback_radius_m: float = 250.0,
+    max_candidates: int = 3,
+) -> dict:
+    """
+    현재 위치 근처 정류장 기반 제보 후보를 반환한다.
+
+    반환:
+    {
+        "radius_m": float,
+        "used_fallback_radius": bool,
+        "candidates": [
+            {
+                "route_id": int,
+                "route_name": str,
+                "route_type": str,
+                "direction": "depart" | "arrive",
+                "stop_id": int,
+                "stop_name": str,
+                "stop_sequence": int,
+                "distance_m": int,
+                "departure_times": [str, ...],
+                "selected_departure_time": str,
+            },
+            ...
+        ],
+    }
+    """
+    db = _db()
+    nearby = _find_nearby_stops(
+        lat,
+        lon,
+        max_stops=150,
+        site_id=site_id,
+        route_type="commute_in",
+        day_type=day_type,
+    )
+    nearby_out = _find_nearby_stops(
+        lat,
+        lon,
+        max_stops=150,
+        site_id=site_id,
+        route_type="commute_out",
+        day_type=day_type,
+    )
+
+    stop_map: dict[int, tuple[str, float, float, float]] = {}
+    for sid, name, slat, slon, dist in nearby + nearby_out:
+        if sid not in stop_map or dist < stop_map[sid][3]:
+            stop_map[sid] = (name, slat, slon, dist)
+
+    if not stop_map:
+        return {"radius_m": float(primary_radius_m), "used_fallback_radius": False, "candidates": []}
+
+    def stop_ids_within(limit_m: float) -> list[int]:
+        return [sid for sid, data in stop_map.items() if data[3] <= limit_m]
+
+    candidate_stop_ids = stop_ids_within(primary_radius_m)
+    used_fallback = False
+    if not candidate_stop_ids and fallback_radius_m > primary_radius_m:
+        candidate_stop_ids = stop_ids_within(fallback_radius_m)
+        used_fallback = bool(candidate_stop_ids)
+    if not candidate_stop_ids:
+        return {
+            "radius_m": float(fallback_radius_m if used_fallback else primary_radius_m),
+            "used_fallback_radius": used_fallback,
+            "candidates": [],
+        }
+
+    placeholders = ",".join("?" * len(candidate_stop_ids))
+    route_uuid_select = "r.route_uuid AS route_uuid," if _supports_route_uuid() else "NULL AS route_uuid,"
+    stop_uuid_select = "s.stop_uuid AS stop_uuid," if _supports_stop_uuid() else "NULL AS stop_uuid,"
+    rows = db.execute(
+        f"""
+        SELECT
+            r.route_id,
+            {route_uuid_select}
+            r.route_name,
+            r.route_type,
+            sv.departure_time,
+            MIN(sv.variant_id) AS variant_id,
+            vs.stop_id,
+            {stop_uuid_select}
+            MIN(vs.seq) AS stop_sequence,
+            s.name AS stop_name
+        FROM variant_stop vs
+        JOIN service_variant sv ON sv.variant_id = vs.variant_id
+        JOIN route r ON r.route_id = sv.route_id
+        JOIN stop s ON s.stop_id = vs.stop_id
+        WHERE vs.stop_id IN ({placeholders})
+          AND r.site_id = ?
+          AND r.route_type IN ('commute_in', 'commute_out')
+          AND sv.day_type = ?
+          AND r.route_name NOT LIKE '%테스트%'
+        GROUP BY
+            r.route_id,
+            route_uuid,
+            r.route_name,
+            r.route_type,
+            sv.departure_time,
+            vs.stop_id,
+            stop_uuid,
+            s.name
+        """,
+        tuple(candidate_stop_ids + [site_id, day_type]),
+    ).fetchall()
+
+    deduped: dict[tuple[int, str, int], dict] = {}
+    for row in rows:
+        stop_id = int(row["stop_id"])
+        stop_info = stop_map.get(stop_id)
+        if stop_info is None:
+            continue
+        key = (int(row["route_id"]), str(row["departure_time"] or "").strip(), stop_id)
+        candidate = {
+            "route_id": int(row["route_id"]),
+            "route_uuid": (str(row["route_uuid"] or "").strip() or None),
+            "route_name": str(row["route_name"] or "").strip(),
+            "route_type": str(row["route_type"] or "").strip(),
+            "direction": "depart" if str(row["route_type"]) == "commute_in" else "arrive",
+            "departure_time": str(row["departure_time"] or "").strip(),
+            "variant_id": int(row["variant_id"]),
+            "stop_id": stop_id,
+            "stop_uuid": (str(row["stop_uuid"] or "").strip() or None),
+            "stop_name": str(row["stop_name"] or stop_info[0] or "").strip(),
+            "stop_sequence": int(row["stop_sequence"] or 0),
+            "distance_m": round(stop_info[3]),
+            "time_diff_m": _clock_diff_minutes(current_time, str(row["departure_time"] or "").strip()),
+        }
+        existing = deduped.get(key)
+        if existing is None:
+            deduped[key] = candidate
+            continue
+        existing_key = (
+            int(existing["distance_m"]),
+            int(existing["time_diff_m"]),
+            int(existing["stop_sequence"]),
+            str(existing["route_name"]),
+        )
+        next_key = (
+            int(candidate["distance_m"]),
+            int(candidate["time_diff_m"]),
+            int(candidate["stop_sequence"]),
+            str(candidate["route_name"]),
+        )
+        if next_key < existing_key:
+            deduped[key] = candidate
+
+    route_candidates: list[dict] = []
+    grouped_by_route: dict[int, list[dict]] = defaultdict(list)
+    for item in deduped.values():
+        grouped_by_route[int(item["route_id"])].append(item)
+
+    def _time_sort_key(value: str) -> tuple[int, str]:
+        t = str(value or "").strip()
+        mins = _time_to_minutes(t)
+        return (mins if mins >= 0 else 9999, t)
+
+    for route_items in grouped_by_route.values():
+        sorted_items = sorted(
+            route_items,
+            key=lambda item: (
+                int(item["distance_m"]),
+                int(item["time_diff_m"]),
+                int(item["stop_sequence"]),
+                str(item["departure_time"]),
+                str(item["stop_name"]),
+            ),
+        )
+        if not sorted_items:
+            continue
+        best_item = sorted_items[0]
+        chosen_stop_id = int(best_item["stop_id"])
+        same_stop_items = [
+            item for item in sorted_items
+            if int(item["stop_id"]) == chosen_stop_id
+        ]
+        available_times = sorted(
+            {
+                str(item["departure_time"] or "").strip()
+                for item in same_stop_items
+                if str(item["departure_time"] or "").strip()
+            },
+            key=_time_sort_key,
+        )
+        default_time = get_nearest_departure_time(available_times, current_time) if available_times else None
+        if default_time is None and available_times:
+            default_time = available_times[0]
+        route_candidates.append(
+            {
+                "route_id": int(best_item["route_id"]),
+                "route_uuid": (str(best_item.get("route_uuid") or "").strip() or None),
+                "route_name": str(best_item["route_name"]),
+                "route_type": str(best_item["route_type"]),
+                "direction": str(best_item["direction"]),
+                "stop_id": chosen_stop_id,
+                "stop_uuid": (str(best_item.get("stop_uuid") or "").strip() or None),
+                "stop_name": str(best_item["stop_name"]),
+                "stop_sequence": int(best_item["stop_sequence"]),
+                "distance_m": int(best_item["distance_m"]),
+                "departure_times": available_times,
+                "selected_departure_time": str(default_time or ""),
+                "_best_time_diff_m": int(best_item["time_diff_m"]),
+            }
+        )
+
+    ranked = sorted(
+        route_candidates,
+        key=lambda item: (
+            int(item["distance_m"]),
+            int(item["_best_time_diff_m"]),
+            str(item["route_name"]),
+            int(item["stop_sequence"]),
+        ),
+    )[: max(1, int(max_candidates))]
+
+    return {
+        "radius_m": float(fallback_radius_m if used_fallback else primary_radius_m),
+        "used_fallback_radius": used_fallback,
+        "candidates": [
+            {
+                "route_id": int(item["route_id"]),
+                "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
+                "route_name": str(item["route_name"]),
+                "route_type": str(item["route_type"]),
+                "direction": str(item["direction"]),
+                "stop_id": int(item["stop_id"]),
+                "stop_uuid": (str(item.get("stop_uuid") or "").strip() or None),
+                "stop_name": str(item["stop_name"]),
+                "stop_sequence": int(item["stop_sequence"]),
+                "distance_m": int(item["distance_m"]),
+                "departure_times": list(item["departure_times"]),
+                "selected_departure_time": str(item["selected_departure_time"]),
+            }
+            for item in ranked
+        ],
+    }
+
+
+def get_report_tuple_meta(
+    site_id: str,
+    day_type: str,
+    route_id: int,
+    departure_time: str,
+    stop_id: int,
+) -> dict | None:
+    """제보 가능한 (route, departure_time, stop) 조합을 검증한다."""
+    db = _db()
+    route_uuid_sql = ", r.route_uuid AS route_uuid" if _supports_route_uuid() else ", NULL AS route_uuid"
+    source_route_id_sql = ", r.source_route_id AS source_route_id" if _supports_route_source_route_id() else ", NULL AS source_route_id"
+    stop_uuid_sql = ", s.stop_uuid AS stop_uuid" if _supports_stop_uuid() else ", NULL AS stop_uuid"
+    stop_code_sql = ", s.stop_code AS stop_code" if _supports_stop_code() else ", NULL AS stop_code"
+    row = db.execute(
+        f"""
+        SELECT
+            r.route_id,
+            r.route_name,
+            r.route_type,
+            sv.variant_id,
+            sv.departure_time,
+            vs.stop_id,
+            vs.seq AS stop_sequence,
+            s.name AS stop_name,
+            s.lat,
+            s.lon
+            {route_uuid_sql}
+            {source_route_id_sql}
+            {stop_uuid_sql}
+            {stop_code_sql}
+        FROM route r
+        JOIN service_variant sv ON sv.route_id = r.route_id
+        JOIN variant_stop vs ON vs.variant_id = sv.variant_id
+        JOIN stop s ON s.stop_id = vs.stop_id
+        WHERE r.site_id = ?
+          AND r.route_id = ?
+          AND r.route_type IN ('commute_in', 'commute_out')
+          AND sv.day_type = ?
+          AND sv.departure_time = ?
+          AND vs.stop_id = ?
+          AND r.route_name NOT LIKE '%테스트%'
+        ORDER BY sv.variant_id ASC
+        LIMIT 1
+        """,
+        (site_id, int(route_id), str(day_type), str(departure_time), int(stop_id)),
+    ).fetchone()
+    if row is None:
+        return None
+    route_type = str(row["route_type"] or "").strip()
+    return {
+        "route_id": int(row["route_id"]),
+        "route_uuid": (str(row["route_uuid"] or "").strip() or None),
+        "source_route_id": (str(row["source_route_id"] or "").strip() or None),
+        "route_name": str(row["route_name"] or "").strip(),
+        "route_type": route_type,
+        "direction": "depart" if route_type == "commute_in" else "arrive",
+        "variant_id": int(row["variant_id"]),
+        "departure_time": str(row["departure_time"] or "").strip(),
+        "stop_id": int(row["stop_id"]),
+        "stop_uuid": (str(row["stop_uuid"] or "").strip() or None),
+        "stop_code": (str(row["stop_code"] or "").strip() or None),
+        "stop_name": str(row["stop_name"] or "").strip(),
+        "stop_sequence": int(row["stop_sequence"] or 0),
+        "stop_lat": float(row["lat"]),
+        "stop_lng": float(row["lon"]),
+    }
+
+
+def get_report_tuple_meta_by_uuid(
+    site_id: str,
+    day_type: str,
+    route_uuid: str,
+    departure_time: str,
+    stop_uuid: str,
+) -> dict | None:
+    """UUID 기준으로 제보 가능한 (route, departure_time, stop) 조합을 검증한다."""
+    if not (_supports_route_uuid() and _supports_stop_uuid()):
+        return None
+
+    clean_route_uuid = str(route_uuid or "").strip()
+    clean_stop_uuid = str(stop_uuid or "").strip()
+    if not clean_route_uuid or not clean_stop_uuid:
+        return None
+
+    db = _db()
+    source_route_id_sql = ", r.source_route_id AS source_route_id" if _supports_route_source_route_id() else ", NULL AS source_route_id"
+    stop_code_sql = ", s.stop_code AS stop_code" if _supports_stop_code() else ", NULL AS stop_code"
+    row = db.execute(
+        f"""
+        SELECT
+            r.route_id,
+            r.route_uuid,
+            r.route_name,
+            r.route_type,
+            sv.variant_id,
+            sv.departure_time,
+            vs.stop_id,
+            vs.seq AS stop_sequence,
+            s.stop_uuid,
+            s.name AS stop_name,
+            s.lat,
+            s.lon
+            {source_route_id_sql}
+            {stop_code_sql}
+        FROM route r
+        JOIN service_variant sv ON sv.route_id = r.route_id
+        JOIN variant_stop vs ON vs.variant_id = sv.variant_id
+        JOIN stop s ON s.stop_id = vs.stop_id
+        WHERE r.site_id = ?
+          AND r.route_uuid = ?
+          AND r.route_type IN ('commute_in', 'commute_out')
+          AND sv.day_type = ?
+          AND sv.departure_time = ?
+          AND s.stop_uuid = ?
+          AND r.route_name NOT LIKE '%테스트%'
+        ORDER BY sv.variant_id ASC
+        LIMIT 1
+        """,
+        (site_id, clean_route_uuid, str(day_type), str(departure_time), clean_stop_uuid),
+    ).fetchone()
+    if row is None:
+        return None
+    route_type = str(row["route_type"] or "").strip()
+    return {
+        "route_id": int(row["route_id"]),
+        "route_uuid": (str(row["route_uuid"] or "").strip() or None),
+        "source_route_id": (str(row["source_route_id"] or "").strip() or None),
+        "route_name": str(row["route_name"] or "").strip(),
+        "route_type": route_type,
+        "direction": "depart" if route_type == "commute_in" else "arrive",
+        "variant_id": int(row["variant_id"]),
+        "departure_time": str(row["departure_time"] or "").strip(),
+        "stop_id": int(row["stop_id"]),
+        "stop_uuid": (str(row["stop_uuid"] or "").strip() or None),
+        "stop_code": (str(row["stop_code"] or "").strip() or None),
+        "stop_name": str(row["stop_name"] or "").strip(),
+        "stop_sequence": int(row["stop_sequence"] or 0),
+        "stop_lat": float(row["lat"]),
+        "stop_lng": float(row["lon"]),
     }
 
 
