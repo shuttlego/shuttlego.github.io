@@ -1,0 +1,7 @@
+nameOverride: ops
+fullnameOverride: ops
+
+grafana:
+  host: grafana.example.com
+  serviceName: grafana
+  servicePort: 80

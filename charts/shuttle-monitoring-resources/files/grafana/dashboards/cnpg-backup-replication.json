@@ -1,0 +1,232 @@
+{
+  "uid": "shuttle-cnpg-backup",
+  "title": "CNPG Backup & Replication",
+  "tags": [
+    "shuttle-go",
+    "cnpg",
+    "backup",
+    "replication"
+  ],
+  "timezone": "Asia/Seoul",
+  "refresh": "15s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "editable": false,
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "cnpg_cluster",
+        "type": "query",
+        "label": "CNPG Cluster",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(up{job=\"cnpg\"}, cnpg_cluster)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 1
+      },
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "hide": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Replication Lag (seconds)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max by (pod) (cnpg_pg_replication_lag{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}) or max by (pod) (pg_replication_lag{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Streaming Replicas Connected",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max by (pod) (cnpg_pg_replication_streaming_replicas{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}) or max by (pod) (pg_replication_streaming_replicas{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "WAL Archived Rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(cnpg_pg_stat_archiver_archived_count{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}[$__rate_interval])) or sum(rate(pg_stat_archiver_archived_count{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}[$__rate_interval]))",
+          "legendFormat": "archived",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "WAL Archive Failures Rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(cnpg_pg_stat_archiver_failed_count{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}[$__rate_interval])) or sum(rate(pg_stat_archiver_failed_count{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}[$__rate_interval]))",
+          "legendFormat": "failed",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Seconds Since Last Archival",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max by (pod) (cnpg_pg_stat_archiver_seconds_since_last_archival{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}) or max by (pod) (pg_stat_archiver_seconds_since_last_archival{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Replication Replay Lag (bytes)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max by (application_name) (cnpg_pg_stat_replication_replay_diff_bytes{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"}) or max by (application_name) (pg_stat_replication_replay_diff_bytes{job=\"cnpg\",cnpg_cluster=~\"$cnpg_cluster\"})",
+          "legendFormat": "{{application_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "CNPG Operator Reconcile Errors",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (controller) (rate(controller_runtime_reconcile_errors_total{job=\"cnpg-operator\"}[$__rate_interval]))",
+          "legendFormat": "{{controller}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    }
+  ]
+}

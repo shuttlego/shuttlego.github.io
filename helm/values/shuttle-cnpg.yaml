@@ -1,0 +1,116 @@
+nameOverride: db
+fullnameOverride: db
+
+cluster:
+  name: db
+  instances: 3
+  nodeSelector:
+    workload: postgres
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: postgres
+      effect: NoSchedule
+  storage:
+    size: 200Gi
+    storageClass: gp2
+    pvcTemplate:
+      selector:
+        matchLabels:
+          platform/storage-role: db
+    staticPVs:
+      enabled: true
+      names:
+        - db-data-1-pv
+        - db-data-2-pv
+        - db-data-3-pv
+      volumeHandles:
+        - vol-REPLACE_ME_CNPG_1
+        - vol-REPLACE_ME_CNPG_2
+        - vol-REPLACE_ME_CNPG_3
+      accessModes:
+        - ReadWriteOnce
+      fsType: ext4
+      labels:
+        platform/storage-role: db
+  resources:
+    requests:
+      cpu: "3000m"
+      memory: 12Gi
+    limits:
+      cpu: "3000m"
+      memory: 12Gi
+  irsaRoleArn: ""
+  irsaRoleAnnotationKey: eks.samsungspc.com/role-arn
+  initdb:
+    database: shuttlego
+    owner: shuttlego
+    ownerSecretName: db-app
+  superuserSecretName: db-superuser
+  postgresParameters:
+    # Keep sharedBuffers lower than cluster.resources.requests.memory.
+    # If an env override reduces memory requests, it must also override these.
+    maxConnections: "500"
+    sharedBuffers: "3GB"
+    effectiveCacheSize: "9GB"
+    workMem: "16MB"
+  backup:
+    enabled: false
+    bucketName: your-backup-bucket
+    destinationPrefix: platform/prod/db
+    endpointURL: https://s3.ap-northeast-1.amazonaws.com
+    s3Credentials:
+      inheritFromIAMRole: true
+    retentionPolicy: 30d
+    scheduled:
+      schedule: "0 0 3 * * *"
+
+pooler:
+  enabled: true
+  name: db-rw-pooler
+  instances: 2
+  type: rw
+  nodeSelector:
+    workload: postgres
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: postgres
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 300m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  pgbouncer:
+    poolMode: transaction
+    maxClientConn: "2000"
+    defaultPoolSize: "30"
+    reservePoolSize: "15"
+
+poolerReadOnly:
+  enabled: true
+  name: db-ro-pooler
+  instances: 2
+  type: ro
+  nodeSelector:
+    workload: postgres
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: postgres
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 300m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  pgbouncer:
+    poolMode: transaction
+    maxClientConn: "2000"
+    defaultPoolSize: "30"
+    reservePoolSize: "15"

@@ -1,0 +1,138 @@
+{{- range $slot := list "blue" "green" }}
+{{- $replicas := ternary $.Values.slotReplicas.blue $.Values.slotReplicas.green (eq $slot "blue") }}
+{{- $imageTags := default (dict) $.Values.image.tags }}
+{{- $slotTag := ternary (get $imageTags "blue") (get $imageTags "green") (eq $slot "blue") }}
+{{- $defaultTag := default $.Chart.AppVersion $.Values.image.tag }}
+{{- $effectiveTag := default $defaultTag $slotTag }}
+{{- $appVersionBySlot := default (dict) $.Values.backend.appVersionBySlot }}
+{{- $slotAppVersion := ternary (get $appVersionBySlot "blue") (get $appVersionBySlot "green") (eq $slot "blue") }}
+{{- $globalAppVersion := default "" $.Values.backend.env.APP_VERSION }}
+{{- $effectiveAppVersion := default (default $effectiveTag $globalAppVersion) $slotAppVersion }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shuttle-backend.fullname" $ }}-{{ $slot }}
+  labels:
+    {{- include "shuttle-backend.labels" $ | nindent 4 }}
+    shuttle-go/slot: {{ $slot }}
+spec:
+  replicas: {{ $replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ $.Values.rollout.maxUnavailable }}
+      maxSurge: {{ $.Values.rollout.maxSurge }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "shuttle-backend.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      shuttle-go/component: backend
+      shuttle-go/slot: {{ $slot }}
+  template:
+    metadata:
+      labels:
+        {{- include "shuttle-backend.labels" $ | nindent 8 }}
+        shuttle-go/component: backend
+        shuttle-go/slot: {{ $slot }}
+    spec:
+      {{- if $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $.Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: "{{ $.Values.image.repository }}:{{ $effectiveTag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $.Values.backend.containerPort }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.backend.existingSecret }}
+          env:
+            - name: APP_VERSION
+              value: {{ $effectiveAppVersion | quote }}
+            - name: OTP_BASE_URL
+              value: {{ $.Values.backend.env.OTP_BASE_URL | quote }}
+            - name: USER_STORE_BACKEND
+              value: {{ $.Values.backend.env.USER_STORE_BACKEND | quote }}
+            - name: USER_STORE_POSTGRES_HOST
+              value: {{ $.Values.backend.env.USER_STORE_POSTGRES_HOST | quote }}
+            - name: USER_STORE_POSTGRES_PORT
+              value: {{ $.Values.backend.env.USER_STORE_POSTGRES_PORT | quote }}
+            - name: USER_STORE_POSTGRES_DB
+              value: {{ $.Values.backend.env.USER_STORE_POSTGRES_DB | quote }}
+            - name: USER_STORE_POSTGRES_USER
+              value: {{ $.Values.backend.env.USER_STORE_POSTGRES_USER | quote }}
+            {{- if $.Values.backend.env.CORS_ORIGINS }}
+            - name: CORS_ORIGINS
+              value: {{ $.Values.backend.env.CORS_ORIGINS | quote }}
+            {{- end }}
+            - name: APP_ENABLE_BACKGROUND_WORKERS
+              value: {{ ternary "1" "0" $.Values.backend.enableBackgroundWorkers | quote }}
+            - name: APP_REFRESH_AUTH_METRICS_ON_STARTUP
+              value: {{ ternary "1" "0" $.Values.backend.refreshAuthMetricsOnStartup | quote }}
+            - name: APP_WARM_ENDPOINT_CACHE_ON_STARTUP
+              value: {{ ternary "1" "0" $.Values.backend.warmEndpointCacheOnStartup | quote }}
+            {{- with $.Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if $.Values.backend.mountDataVolume }}
+          volumeMounts:
+            - name: data-db
+              mountPath: {{ $.Values.backend.dataMountPath }}
+              readOnly: true
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ $.Values.health.path }}
+              port: http
+            initialDelaySeconds: {{ $.Values.health.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.health.periodSeconds }}
+            timeoutSeconds: {{ $.Values.health.timeoutSeconds }}
+            failureThreshold: {{ $.Values.health.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ $.Values.health.path }}
+              port: http
+            initialDelaySeconds: {{ $.Values.health.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.health.periodSeconds }}
+            timeoutSeconds: {{ $.Values.health.timeoutSeconds }}
+            failureThreshold: {{ $.Values.health.failureThreshold }}
+          resources:
+            {{- toYaml $.Values.backend.resources | nindent 12 }}
+      {{- if $.Values.backend.mountDataVolume }}
+      volumes:
+        - name: data-db
+          persistentVolumeClaim:
+            claimName: {{ $.Values.backend.dataClaimName }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shuttle-backend.fullname" $ }}-{{ $slot }}
+  labels:
+    {{- include "shuttle-backend.labels" $ | nindent 4 }}
+    shuttle-go/slot: {{ $slot }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "shuttle-backend.name" $ }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    shuttle-go/component: backend
+    shuttle-go/slot: {{ $slot }}
+  ports:
+    - name: http
+      port: {{ $.Values.service.port }}
+      targetPort: http
+---
+{{- end }}

@@ -1,0 +1,1961 @@
+{
+  "uid": "shuttle-go-main",
+  "title": "API Monitoring",
+  "tags": [
+    "shuttle-go",
+    "backend"
+  ],
+  "timezone": "Asia/Seoul",
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "editable": true,
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "row",
+      "title": "요청 개요",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "모든 요청 req/s (경로별, stacked)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint!~\"^/(health|metrics)$\"}[$__rate_interval])) > 0",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "모든 요청 HTTP 상태 코드 req/s",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(shuttle_http_requests_total{endpoint!~\"^/(health|metrics)$\"}[$__rate_interval]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "비즈니스 메트릭",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "title": "일반 API req/s (issue/auth-callback/otp 제외, 경로별)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])) > 0",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Issue/Auth 콜백 API req/s (경로별)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])) > 0",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "OTP API req/s (경로별)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(shuttle_http_requests_total{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])) > 0",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "일반 API latency (issue/auth-callback/otp 제외, p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "legendFormat": "p90",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Issue/Auth 콜백 API latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
+          "legendFormat": "p90",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "OTP API latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])))",
+          "legendFormat": "p90",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "일반 API 경로별 p99 latency (issue/auth-callback/otp 제외)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/.*\",endpoint!~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback|/api/shuttle/walk-path|/api/otp($|/.*)\",endpoint!=\"/api/_unmatched\"}[$__rate_interval])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Issue/Auth 콜백 API 경로별 p99 latency",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/issues($|/.*)|/api/github/webhook|/api/auth/google/callback\"}[$__rate_interval])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "OTP API 경로별 p99 latency",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(shuttle_http_request_duration_seconds_bucket{endpoint=~\"/api/shuttle/walk-path|/api/otp($|/.*)\"}[$__rate_interval])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "출근/퇴근 req/s",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_search_total{direction=\"depart\"}[$__rate_interval]))",
+          "legendFormat": "출근",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_search_total{direction=\"arrive\"}[$__rate_interval]))",
+          "legendFormat": "퇴근",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 35,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "카카오 API 호출 req/s (success/error)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(shuttle_kakao_api_calls_total[$__rate_interval]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "카카오 API 호출 수 (최근 7일, 일 단위)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(shuttle_kakao_api_calls_total[1d]))",
+          "legendFormat": "일별 호출 수",
+          "refId": "A",
+          "interval": "1d"
+        }
+      ],
+      "timeFrom": "7d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 70,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "누적 신규 가입자 수",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 66
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "SHUTTLE_USERDB_POSTGRES"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT now() AS \"time\", GREATEST(COALESCE(MAX(id), 0), COUNT(*) FILTER (WHERE status = 'active')) AS \"누적 신규 가입자 수\" FROM users;",
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT now() AS \"time\", GREATEST(COALESCE(MAX(id), 0) - COUNT(*) FILTER (WHERE status = 'active'), 0) AS \"누적 탈퇴자 수\" FROM users;",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 24,
+      "title": "일별 신규 가입자 수 (최근 7일, 일 단위)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 66
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "SHUTTLE_USERDB_POSTGRES"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', created_at::timestamptz) AS \"time\", COUNT(*) AS \"일간 신규 가입자 수\" FROM users WHERE $__timeFilter(created_at::timestamptz) GROUP BY 1 ORDER BY 1",
+          "refId": "A",
+          "interval": "1d"
+        }
+      ],
+      "timeFrom": "7d/d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 70,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 26,
+      "title": "로그인/비로그인 API 요청 비율",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 0,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_api_requests_by_auth_total{auth_state=\"authenticated\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_api_requests_by_auth_total[$__rate_interval])), 1e-9)",
+          "legendFormat": "로그인",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_api_requests_by_auth_total{auth_state=\"anonymous\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_api_requests_by_auth_total[$__rate_interval])), 1e-9)",
+          "legendFormat": "비로그인",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "로그인"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "비로그인"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "title": "로그인/비로그인 API 요청 비율 (원형)",
+      "type": "piechart",
+      "gridPos": {
+        "h": 8,
+        "w": 3,
+        "x": 9,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "(clamp_min(avg_over_time((sum(rate(shuttle_api_requests_by_auth_total{auth_state=\"authenticated\"}[$__rate_interval])) )[$__range:]), 0)) or on() vector(0)",
+          "instant": true,
+          "legendFormat": "로그인",
+          "refId": "A"
+        },
+        {
+          "expr": "(clamp_min(avg_over_time((sum(rate(shuttle_api_requests_by_auth_total{auth_state=\"anonymous\"}[$__rate_interval])) )[$__range:]), 0)) or on() vector(0)",
+          "instant": true,
+          "legendFormat": "비로그인",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "로그인"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "비로그인"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "pieType": "pie",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "values": [
+            "percent"
+          ]
+        },
+        "displayLabels": [
+          "percent"
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "title": "사업장별 API 요청 req/s",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 12,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (site_name) (\n  label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000011\"}[$__rate_interval])), \"site_name\", \"삼성전자(기흥/화성)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000012\"}[$__rate_interval])), \"site_name\", \"삼성전자(온양/천안)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000013\"}[$__rate_interval])), \"site_name\", \"삼성전자(수원)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000015\"}[$__rate_interval])), \"site_name\", \"삼성디스플레이(아산)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000017\"}[$__rate_interval])), \"site_name\", \"삼성SDI(천안)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000027\"}[$__rate_interval])), \"site_name\", \"삼성전자(구미)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000028\"}[$__rate_interval])), \"site_name\", \"삼성전자(광주)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000041\"}[$__rate_interval])), \"site_name\", \"삼성전자(우면/서울대)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000042\"}[$__rate_interval])), \"site_name\", \"삼성전자(평택)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000069\"}[$__rate_interval])), \"site_name\", \"삼성디스플레이(기흥)\", \"site_id\", \".*\")\n  or label_replace(sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id!~\"0000011|0000012|0000013|0000015|0000017|0000027|0000028|0000041|0000042|0000069\"}[$__rate_interval])), \"site_name\", \"기타($1)\", \"site_id\", \"(.*)\")\n)",
+          "legendFormat": "{{site_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 35,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(기흥/화성)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(온양/천안)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(수원)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8AB8FF",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성디스플레이(아산)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FF9830",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성SDI(천안)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2495C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(구미)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(광주)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#B877D9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(우면/서울대)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FADE2A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(평택)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#70DBED",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성디스플레이(기흥)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FF7383",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^기타\\(.*\\)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C8F2C2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "title": "사업장별 API 요청 비율 (원형)",
+      "type": "piechart",
+      "gridPos": {
+        "h": 8,
+        "w": 3,
+        "x": 21,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (site_name) (\n  label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000011\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(기흥/화성)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000012\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(온양/천안)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000013\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(수원)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000015\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성디스플레이(아산)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000017\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성SDI(천안)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000027\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(구미)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000028\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(광주)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000041\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(우면/서울대)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000042\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성전자(평택)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id=\"0000069\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"삼성디스플레이(기흥)\", \"site_id\", \".*\")\n  or label_replace(avg_over_time((sum by (site_id) (rate(shuttle_api_requests_by_site_total{site_id!~\"0000011|0000012|0000013|0000015|0000017|0000027|0000028|0000041|0000042|0000069\"}[$__rate_interval])) )[$__range:]), \"site_name\", \"기타($1)\", \"site_id\", \"(.*)\")\n)",
+          "instant": true,
+          "legendFormat": "{{site_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(기흥/화성)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(온양/천안)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(수원)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8AB8FF",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성디스플레이(아산)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FF9830",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성SDI(천안)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2495C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(구미)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(광주)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#B877D9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(우면/서울대)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FADE2A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성전자(평택)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#70DBED",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "삼성디스플레이(기흥)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FF7383",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^기타\\(.*\\)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C8F2C2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "pieType": "pie",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "values": [
+            "percent"
+          ]
+        },
+        "displayLabels": [
+          "percent"
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "title": "출근 검색 소스 비율 (장소검색 vs 지도선택)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=\"search\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "장소검색",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=\"map\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "지도선택",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "장소검색"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "지도선택"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "title": "출근 검색 소스 비율 (원형)",
+      "type": "piechart",
+      "gridPos": {
+        "h": 8,
+        "w": 3,
+        "x": 12,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "(clamp_min(avg_over_time((sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=\"search\"}[$__rate_interval])) )[$__range:]), 0)) or on() vector(0)",
+          "instant": true,
+          "legendFormat": "장소검색",
+          "refId": "A"
+        },
+        {
+          "expr": "(clamp_min(avg_over_time((sum(rate(shuttle_route_search_by_source_total{direction=\"depart\",source=\"map\"}[$__rate_interval])) )[$__range:]), 0)) or on() vector(0)",
+          "instant": true,
+          "legendFormat": "지도선택",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "장소검색"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "지도선택"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "pieType": "pie",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "values": [
+            "percent"
+          ]
+        },
+        "displayLabels": [
+          "percent"
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "title": "퇴근 검색 소스 비율 (장소검색 vs 지도선택)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 15,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=\"search\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "장소검색",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=\"map\"}[$__rate_interval])) / clamp_min(sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=~\"search|map\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "지도선택",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "장소검색"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "지도선택"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 36,
+      "title": "퇴근 검색 소스 비율 (원형)",
+      "type": "piechart",
+      "gridPos": {
+        "h": 8,
+        "w": 3,
+        "x": 21,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "(clamp_min(avg_over_time((sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=\"search\"}[$__rate_interval])) )[$__range:]), 0)) or on() vector(0)",
+          "instant": true,
+          "legendFormat": "장소검색",
+          "refId": "A"
+        },
+        {
+          "expr": "(clamp_min(avg_over_time((sum(rate(shuttle_route_search_by_source_total{direction=\"arrive\",source=\"map\"}[$__rate_interval])) )[$__range:]), 0)) or on() vector(0)",
+          "instant": true,
+          "legendFormat": "지도선택",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "장소검색"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#F2CC0C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "지도선택"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "pieType": "pie",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "values": [
+            "percent"
+          ]
+        },
+        "displayLabels": [
+          "percent"
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "title": "DAU (일간 활성 사용자 수, 최근 7일)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 66
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "SHUTTLE_USERDB_POSTGRES"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', s.last_login_at::timestamptz) AS \"time\", COUNT(DISTINCT s.user_id) AS \"DAU\" FROM social_accounts s JOIN users u ON u.id = s.user_id WHERE u.status = 'active' AND s.last_login_at IS NOT NULL AND $__timeFilter(s.last_login_at::timestamptz) GROUP BY 1 ORDER BY 1",
+          "refId": "A",
+          "interval": "1d"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 70,
+            "showPoints": "never",
+            "drawStyle": "bars"
+          }
+        }
+      },
+      "timeFrom": "7d/d"
+    },
+    {
+      "id": 31,
+      "title": "MAU (월간 활성 사용자 수)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 66
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "SHUTTLE_USERDB_POSTGRES"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT now() AS \"time\", COUNT(DISTINCT s.user_id) AS \"MAU\" FROM social_accounts s JOIN users u ON u.id = s.user_id WHERE u.status = 'active' AND s.last_login_at IS NOT NULL AND s.last_login_at::timestamptz >= now() - interval '30 days'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "인프라 (노드 메트릭)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 82
+      },
+      "collapsed": false
+    },
+    {
+      "id": 14,
+      "title": "Node CPU 사용률",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 83
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[$__rate_interval])) * 100)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Node 메모리 사용률",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 83
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Node 디스크 사용률",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 83
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max by (instance) ((1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs|fuse.*|fakeowner|selfowner\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs|fuse.*|fakeowner|selfowner\"})) * 100)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "Node 네트워크 I/O (10s 수집 기반)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 83
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(irate(node_network_receive_bytes_total{device!~\"lo|veth.*|docker.*|br.*|virbr.*|tun.*|tap.*\"}[30s]))",
+          "legendFormat": "receive",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(irate(node_network_transmit_bytes_total{device!~\"lo|veth.*|docker.*|br.*|virbr.*|tun.*|tap.*\"}[30s]))",
+          "legendFormat": "transmit",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 37,
+      "title": "Node 디스크 I/O (read/write)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 91
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(node_disk_read_bytes_total{device!~\"loop.*|ram.*\"}[$__rate_interval]))",
+          "legendFormat": "read",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_disk_written_bytes_total{device!~\"loop.*|ram.*\"}[$__rate_interval]))",
+          "legendFormat": "write",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 38,
+      "title": "Node 루트 디스크 용량 (used/free)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 91
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max(node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs|fuse.*|fakeowner|selfowner\"} - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs|fuse.*|fakeowner|selfowner\"})",
+          "legendFormat": "used",
+          "refId": "A"
+        },
+        {
+          "expr": "max(node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs|fuse.*|fakeowner|selfowner\"})",
+          "legendFormat": "available",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "id": 18,
+      "title": "백엔드 슬롯 상태",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (slot) (up{job=\"shuttle-backend\"})",
+          "legendFormat": "{{slot}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never"
+          }
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "hide": 2
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{{- if and .Values.backend.mountDataVolume .Values.dataVolume.createPv }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.dataVolume.pvName }}
+  labels:
+    {{- include "shuttle-backend.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.dataVolume.size }}
+  accessModes:
+    {{- toYaml .Values.dataVolume.accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.dataVolume.storageClassName | quote }}
+  claimRef:
+    name: {{ .Values.dataVolume.claimName }}
+    namespace: {{ .Release.Namespace }}
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: {{ .Values.dataVolume.volumeHandle | quote }}
+    fsType: {{ .Values.dataVolume.fsType | quote }}
+{{- end }}
+{{- if and .Values.backend.mountDataVolume .Values.dataVolume.createPv .Values.dataVolume.createPvc }}
+---
+{{- end }}
+{{- if and .Values.backend.mountDataVolume .Values.dataVolume.createPvc }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.dataVolume.claimName }}
+  labels:
+    {{- include "shuttle-backend.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.dataVolume.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.dataVolume.size }}
+  storageClassName: {{ .Values.dataVolume.storageClassName | quote }}
+  volumeName: {{ .Values.dataVolume.pvName }}
+{{- end }}

@@ -1,0 +1,48 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: opentripplanner/opentripplanner
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 3
+
+service:
+  port: 8082
+
+otp:
+  containerPort: 8082
+  javaToolOptions: -Xms14g -Xmx14g
+  command:
+    - --load
+    - --serve
+    - --port
+    - "8082"
+  persistence:
+    createPv: false
+    createPvc: true
+    pvName: ""
+    claimName: otp-data
+    size: 100Gi
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: gp2
+    volumeHandle: vol-REPLACE_ME
+    fsType: ext4
+  nodeSelector:
+    workload: heavy
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: heavy
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: "4"
+      memory: 16Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
