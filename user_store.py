@@ -675,6 +675,15 @@ def init_db(db_path: str | None = None) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_runtime_kv (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_social_provider_uid ON social_accounts(provider, provider_user_id)"
@@ -839,6 +848,57 @@ def try_acquire_background_task_lease(
 
         conn.rollback()
         return False
+
+
+def get_runtime_kv_value(key: str, default: str = "") -> str:
+    normalized_key = str(key or "").strip()
+    if not normalized_key:
+        return str(default or "")
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_runtime_kv WHERE key = ? LIMIT 1",
+            (normalized_key,),
+        ).fetchone()
+    if row is None:
+        return str(default or "")
+    try:
+        raw_value = row.get("value") if isinstance(row, dict) else row["value"]
+    except (TypeError, KeyError, IndexError):
+        raw_value = None
+    return str(raw_value or "")
+
+
+def get_issue_cache_version() -> int:
+    raw = get_runtime_kv_value("issue_cache_version", "0")
+    try:
+        return max(0, int(str(raw).strip() or "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def bump_issue_cache_version() -> int:
+    _ensure_writes_allowed()
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO app_runtime_kv(key, value, updated_at)
+            VALUES(?, '1', ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value = CAST(CAST(COALESCE(app_runtime_kv.value, '0') AS INTEGER) + 1 AS TEXT),
+              updated_at = excluded.updated_at
+            RETURNING value
+            """,
+            ("issue_cache_version", now),
+        ).fetchone()
+        conn.commit()
+    if row is None:
+        return get_issue_cache_version()
+    raw_value = row.get("value") if isinstance(row, dict) else row["value"]
+    try:
+        return max(0, int(str(raw_value).strip() or "0"))
+    except (TypeError, ValueError):
+        return get_issue_cache_version()
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict | None:
@@ -2546,6 +2606,8 @@ def list_my_arrival_report_basic_index(
                 "route_id": int(item.get("route_id") or 0),
                 "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
                 "route_name": str(item.get("route_name") or "").strip(),
+                "route_type": str(item.get("route_type") or "").strip(),
+                "direction": str(item.get("direction") or "").strip(),
                 "day_type": str(item.get("day_type") or "").strip(),
                 "departure_time": str(item.get("departure_time") or "").strip(),
                 "stop_id": int(item.get("stop_id") or 0),
@@ -2596,6 +2658,8 @@ def list_my_arrival_report_route_index(
                 "route_id": int(item.get("route_id") or 0),
                 "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
                 "route_name": str(item.get("route_name") or "").strip(),
+                "route_type": str(item.get("route_type") or "").strip(),
+                "direction": str(item.get("direction") or "").strip(),
                 "latest_client_reported_at": str(item.get("client_reported_at") or "").strip(),
                 "item_count": 0,
                 "stop_count": 0,

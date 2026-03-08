@@ -2224,8 +2224,68 @@
       font-size: 13px;
       line-height: 1.55;
       color: #444;
-      white-space: pre-wrap;
+      white-space: normal;
       word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .issue-detail-body > :first-child { margin-top: 0; }
+    .issue-detail-body > :last-child { margin-bottom: 0; }
+    .issue-detail-body p {
+      margin: 0 0 10px;
+    }
+    .issue-detail-body h1,
+    .issue-detail-body h2,
+    .issue-detail-body h3 {
+      margin: 14px 0 8px;
+      color: #1f2937;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+    .issue-detail-body h1 { font-size: 18px; }
+    .issue-detail-body h2 { font-size: 16px; }
+    .issue-detail-body h3 { font-size: 15px; }
+    .issue-detail-body ul,
+    .issue-detail-body ol {
+      margin: 0 0 10px 18px;
+      padding: 0;
+    }
+    .issue-detail-body li {
+      margin: 3px 0;
+    }
+    .issue-detail-body blockquote {
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      border-left: 3px solid #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+      border-radius: 6px;
+    }
+    .issue-detail-body hr {
+      border: 0;
+      border-top: 1px solid #e5e7eb;
+      margin: 12px 0;
+    }
+    .issue-inline-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      background: #eef2f7;
+      color: #111827;
+      border-radius: 6px;
+      padding: 1px 5px;
+    }
+    .issue-code-block {
+      margin: 0 0 10px;
+      border: 1px solid #e5e7eb;
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 10px;
+      overflow-x: auto;
+    }
+    .issue-code-block code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      white-space: pre;
+      color: #111827;
     }
     .issue-body-image {
       display: block;
@@ -4583,9 +4643,23 @@
       font-weight: 800;
       line-height: 1.4;
       color: #0f172a;
+      min-width: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .report-history-route-with-direction {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .report-history-route-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .report-history-group-meta {
       margin-top: 4px;
@@ -4749,7 +4823,19 @@
       color: #64748b;
     }
     .report-history-item-like {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       font-weight: 700;
+    }
+    .report-history-item-like .report-like-icon {
+      width: 14px;
+      height: 14px;
+      color: #6b7280;
+    }
+    .report-history-item-like .report-like-icon svg {
+      width: 14px;
+      height: 14px;
     }
     .report-history-load-more {
       width: 100%;
@@ -4828,33 +4914,33 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      min-width: 54px;
-      height: 28px;
-      padding: 0 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      background: #ffffff;
-      color: #64748b;
+      gap: 6px;
+      min-width: 0;
+      height: auto;
+      padding: 2px 0;
+      border: none;
+      background: transparent;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1;
       cursor: pointer;
-      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      transition: color .15s ease;
+      -webkit-tap-highlight-color: transparent;
     }
     .report-like-btn:hover {
-      border-color: #94a3b8;
-      color: #334155;
-      background: #f8fafc;
+      color: #111827;
     }
     .report-like-btn.is-liked {
-      border-color: #f59e0b;
-      background: #fff7ed;
-      color: #d97706;
+      color: #e11d48;
+    }
+    .report-like-btn.is-liked .report-like-icon {
+      fill: currentColor;
     }
     .report-like-btn:disabled,
     .report-like-btn.disabled {
       cursor: default;
       opacity: 0.55;
-      background: #f8fafc;
-      border-color: #e2e8f0;
+      background: transparent;
       color: #94a3b8;
     }
     .report-like-btn.pending {
@@ -4862,20 +4948,25 @@
     }
     .report-like-icon {
       display: inline-flex;
-      width: 14px;
-      height: 14px;
+      width: 20px;
+      height: 20px;
       flex: 0 0 auto;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .report-like-icon svg {
       display: block;
-      width: 14px;
-      height: 14px;
+      width: 20px;
+      height: 20px;
     }
     .report-like-count {
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 600;
       line-height: 1;
-      min-width: 10px;
+      min-width: 8px;
       text-align: center;
     }
     .route-detail-note-divider {
@@ -6795,6 +6886,27 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           escapeHtml(sourceText.slice(0, matchInfo.start)) +
           '<mark class="report-route-highlight">' + escapeHtml(sourceText.slice(matchInfo.start, matchInfo.end)) + '</mark>' +
           escapeHtml(sourceText.slice(matchInfo.end))
+        );
+      }
+
+      function resolveReportDirectionValue(direction, routeType) {
+        var directionValue = String(direction || '').trim();
+        if (directionValue) return directionValue;
+        var normalizedRouteType = String(routeType || '').toLowerCase();
+        if (normalizedRouteType === 'commute_out' || normalizedRouteType === '2') return 'arrive';
+        if (normalizedRouteType === 'commute_in' || normalizedRouteType === '1') return 'depart';
+        return '';
+      }
+
+      function buildReportHistoryRouteTitleHtml(routeName, matchInfo, direction, routeType) {
+        var routeNameHtml = buildHighlightedRouteNameHtml(routeName || '-', matchInfo);
+        var directionValue = resolveReportDirectionValue(direction, routeType);
+        if (!directionValue) return routeNameHtml;
+        return (
+          '<span class="report-history-route-with-direction">' +
+            buildDirectionBadgeHtml(directionValue) +
+            '<span class="report-history-route-name">' + routeNameHtml + '</span>' +
+          '</span>'
         );
       }
 
@@ -8828,35 +8940,202 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         }
       }
 
+      function buildIssueImageSrc(rawUrl) {
+        var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+        if (!safeUrl) return '';
+        try {
+          var parsed = new URL(safeUrl);
+          var host = String(parsed.hostname || '').toLowerCase().replace(/\.$/, '');
+          var isGithubImageHost =
+            host === 'github.com' ||
+            host === 'raw.githubusercontent.com' ||
+            host === 'user-images.githubusercontent.com' ||
+            host === 'private-user-images.githubusercontent.com' ||
+            host === 'objects.githubusercontent.com' ||
+            host === 'camo.githubusercontent.com' ||
+            host === 'media.githubusercontent.com' ||
+            host.endsWith('.githubusercontent.com');
+          if (!isGithubImageHost) return safeUrl;
+          return API_BASE + '/api/github/image-proxy?url=' + encodeURIComponent(safeUrl);
+        } catch (e) {
+          return safeUrl;
+        }
+      }
+
+      function extractIssueHtmlAttribute(tagText, attrName) {
+        var safeName = String(attrName || '').replace(/[^a-z0-9_-]/gi, '');
+        if (!safeName) return '';
+        var pattern = new RegExp(
+          '\\b' + safeName + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'=<>`]+))',
+          'i'
+        );
+        var match = String(tagText || '').match(pattern);
+        if (!match) return '';
+        return String(match[1] || match[2] || match[3] || '').trim();
+      }
+
+      function stripIssueHtmlTags(text) {
+        return String(text || '').replace(/<[^>]+>/g, '').trim();
+      }
+
+      function renderIssueInlineMarkdown(text) {
+        var escaped = escapeHtml(text);
+        escaped = escaped.replace(/`([^`\n]+)`/g, '<code class="issue-inline-code">$1</code>');
+        escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+        escaped = escaped.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+        escaped = escaped.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+        escaped = escaped.replace(/(https?:\/\/[^\s<]+)/gi, function(match) {
+          var safeUrl = sanitizeIssueExternalUrl(match);
+          if (!safeUrl) return match;
+          return '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(match) + '</a>';
+        });
+        return escaped;
+      }
+
       function renderIssueBodyHtml(text) {
         var source = String(text || '').replace(/\r\n?/g, '\n');
         if (!source.trim()) return '-';
         var tokenItems = [];
-        source = source.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/gi, function(match, alt, rawUrl) {
-          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
-          if (!safeUrl) return match;
+
+        function issueTokenize(html) {
           var token = '__ISSUE_TOKEN_' + tokenItems.length + '__';
-          tokenItems.push({
-            token: token,
-            html: '<img class="issue-body-image" src="' + escapeAttr(safeUrl) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
-          });
+          tokenItems.push({ token: token, html: String(html || '') });
           return token;
+        }
+
+        source = source.replace(/```(?:[a-z0-9_-]+)?\n([\s\S]*?)```/gi, function(match, codeBody) {
+          var safeCode = escapeHtml(String(codeBody || '').replace(/\n+$/, ''));
+          return issueTokenize('<pre class="issue-code-block"><code>' + safeCode + '</code></pre>');
         });
+
+        source = source.replace(/<img\b[^>]*>/gi, function(tag) {
+          var rawUrl = extractIssueHtmlAttribute(tag, 'src');
+          var imageSrc = buildIssueImageSrc(rawUrl);
+          if (!imageSrc) return '';
+          var alt = extractIssueHtmlAttribute(tag, 'alt');
+          return issueTokenize(
+            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
+          );
+        });
+
+        source = source.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+(?:\?[^)\s]*)?)\)/gi, function(match, alt, rawUrl) {
+          var imageSrc = buildIssueImageSrc(rawUrl);
+          if (!imageSrc) return match;
+          return issueTokenize(
+            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
+          );
+        });
+
+        source = source.replace(/<a\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi, function(match, href1, href2, href3, labelRaw) {
+          var rawUrl = href1 || href2 || href3 || '';
+          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+          if (!safeUrl) return stripIssueHtmlTags(labelRaw);
+          var label = stripIssueHtmlTags(labelRaw) || safeUrl;
+          return issueTokenize(
+            '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              escapeHtml(label) +
+            '</a>'
+          );
+        });
+
         source = source.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, function(match, label, rawUrl) {
           var safeUrl = sanitizeIssueExternalUrl(rawUrl);
           if (!safeUrl) return match;
-          var token = '__ISSUE_TOKEN_' + tokenItems.length + '__';
-          tokenItems.push({
-            token: token,
-            html: '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(String(label || safeUrl)) + '</a>'
-          });
-          return token;
+          return issueTokenize(
+            '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              escapeHtml(String(label || safeUrl)) +
+            '</a>'
+          );
         });
-        var html = escapeHtml(source).replace(/\n/g, '<br>');
+
+        var lines = source.split('\n');
+        var html = [];
+        var inUl = false;
+        var inOl = false;
+        function closeLists() {
+          if (inUl) {
+            html.push('</ul>');
+            inUl = false;
+          }
+          if (inOl) {
+            html.push('</ol>');
+            inOl = false;
+          }
+        }
+
+        lines.forEach(function(line) {
+          var rawLine = String(line || '');
+          var trimmed = rawLine.trim();
+          var match = null;
+          if (!trimmed) {
+            closeLists();
+            return;
+          }
+          if (/^__ISSUE_TOKEN_\d+__$/.test(trimmed)) {
+            closeLists();
+            html.push(trimmed);
+            return;
+          }
+          if (/^-{3,}$/.test(trimmed)) {
+            closeLists();
+            html.push('<hr>');
+            return;
+          }
+          match = trimmed.match(/^###\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h3>' + renderIssueInlineMarkdown(match[1]) + '</h3>');
+            return;
+          }
+          match = trimmed.match(/^##\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h2>' + renderIssueInlineMarkdown(match[1]) + '</h2>');
+            return;
+          }
+          match = trimmed.match(/^#\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h1>' + renderIssueInlineMarkdown(match[1]) + '</h1>');
+            return;
+          }
+          match = trimmed.match(/^>\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<blockquote>' + renderIssueInlineMarkdown(match[1]) + '</blockquote>');
+            return;
+          }
+          match = trimmed.match(/^\d+\.\s+(.+)$/);
+          if (match) {
+            if (!inOl) {
+              closeLists();
+              html.push('<ol>');
+              inOl = true;
+            }
+            html.push('<li>' + renderIssueInlineMarkdown(match[1]) + '</li>');
+            return;
+          }
+          match = trimmed.match(/^[-*+]\s+(.+)$/);
+          if (match) {
+            if (!inUl) {
+              closeLists();
+              html.push('<ul>');
+              inUl = true;
+            }
+            html.push('<li>' + renderIssueInlineMarkdown(match[1]) + '</li>');
+            return;
+          }
+          closeLists();
+          html.push('<p>' + renderIssueInlineMarkdown(trimmed) + '</p>');
+        });
+        closeLists();
+        html = html.join('');
         tokenItems.forEach(function(item) {
           html = html.split(item.token).join(item.html);
         });
-        return html;
+        return html || '<p>-</p>';
       }
 
       function setIssueView(view) {
@@ -15232,9 +15511,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (disabled && item && item.report_state === 'previous') {
           disabledTitle = ' title="현재 ETA에 반영되지 않는 이전 제보입니다."';
         }
-        var iconSvg = liked
-          ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>'
-          : '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>';
+        var heartSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
         return '<span class="report-like-wrap"><button type="button" class="report-like-btn' +
           (liked ? ' is-liked' : '') +
           (disabled ? ' disabled' : '') +
@@ -15243,7 +15520,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           '" data-like-count="' + escapeAttr(String(likeCount)) +
           '" aria-pressed="' + (liked ? 'true' : 'false') +
           '"' + disabledTitle + (disabled ? ' disabled' : '') + '>' +
-          '<span class="report-like-icon">' + iconSvg + '</span>' +
+          '<span class="report-like-icon">' + heartSvg + '</span>' +
           '<span class="report-like-count">' + escapeHtml(String(likeCount)) + '</span>' +
           '</button></span>';
       }
@@ -15256,12 +15533,6 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         btn.setAttribute('data-liked', normalizedLiked ? '1' : '0');
         btn.setAttribute('data-like-count', String(normalizedCount));
         btn.setAttribute('aria-pressed', normalizedLiked ? 'true' : 'false');
-        var iconEl = btn.querySelector('.report-like-icon');
-        if (iconEl) {
-          iconEl.innerHTML = normalizedLiked
-            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>'
-            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>';
-        }
         var countEl = btn.querySelector('.report-like-count');
         if (countEl) countEl.textContent = String(normalizedCount);
       }
@@ -15480,6 +15751,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function buildMyReportRawItemHtml(item) {
         var noteHtml = buildReportNoteHtml(item);
         var creditHtml = item.credit_awarded ? '<span class="report-badge credit">' + escapeHtml(formatCreditValue(item.credit_value || 0)) + '</span>' : '-';
+        var historyLikeCount = Math.max(0, Number(item.like_count || 0) || 0);
+        var historyLikeIcon = '<span class="report-like-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></span>';
         return '<div class="report-history-item' + (item.report_state === 'previous' ? ' is-previous' : '') + '" data-report-id="' + escapeAttr(item.id) + '">' +
           '<div class="report-history-item-main">' +
             '<div class="report-history-item-topline">' +
@@ -15488,7 +15761,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             '</div>' +
             '<div class="report-history-item-meta">' +
               '<span>' + creditHtml + '</span>' +
-              '<span class="report-history-item-like">좋아요 ' + escapeHtml(String(Math.max(0, Number(item.like_count || 0) || 0))) + '</span>' +
+              '<span class="report-history-item-like">' + historyLikeIcon + escapeHtml(String(historyLikeCount)) + '</span>' +
             '</div>' +
             noteHtml +
           '</div>' +
@@ -15629,7 +15902,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           html += '<div class="report-history-group' + (isExpanded ? ' expanded' : '') + '" data-group-key="' + escapeAttr(group.key) + '">' +
             '<button type="button" class="report-history-group-head" data-group-key="' + escapeAttr(group.key) + '">' +
               '<div class="report-history-group-main">' +
-                '<div class="report-history-group-route">' + buildHighlightedRouteNameHtml(group.route_name || '-', group.__routeMatch) + '</div>' +
+                '<div class="report-history-group-route">' + buildReportHistoryRouteTitleHtml(group.route_name || '-', group.__routeMatch, group.direction, group.route_type) + '</div>' +
                 '<div class="report-history-group-meta">' +
                   escapeHtml(String(DAY_TYPE_LABEL_MAP[group.day_type] || group.day_type || '-')) + ' ' +
                   escapeHtml(String(group.departure_time || '-')) + '분 · ' +
@@ -15845,7 +16118,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           html += '<div class="report-history-group' + (isExpanded ? ' expanded' : '') + '" data-route-key="' + escapeAttr(routeGroup.key) + '">' +
             '<button type="button" class="report-history-group-head" data-route-key="' + escapeAttr(routeGroup.key) + '">' +
               '<div class="report-history-group-main">' +
-                '<div class="report-history-group-route">' + buildHighlightedRouteNameHtml(routeGroup.route_name || '-', routeGroup.__routeMatch) + '</div>' +
+                '<div class="report-history-group-route">' + buildReportHistoryRouteTitleHtml(routeGroup.route_name || '-', routeGroup.__routeMatch, routeGroup.direction, routeGroup.route_type) + '</div>' +
                 '<div class="report-history-group-meta">정류장 ' + escapeHtml(String(routeGroup.stop_count || 0)) + '곳 · 제보 ' + escapeHtml(String(routeGroup.item_count || 0)) + '건</div>' +
               '</div>' +
               '<div class="report-history-group-side">' +
