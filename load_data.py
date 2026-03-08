@@ -566,10 +566,10 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
     규칙:
     - 동일 명칭 정규화(_normalize_endpoint_name)
     - endpoint 정류장끼리 100m 이내면 하나의 옵션 그룹으로 병합
-    - 옵션별 route 집합은, 해당 방향의 실제 endpoint(기점/종점)가
-      그룹 구성요소 이름과 일치하는 노선만 포함한다.
-      (중간 정류장 경유만으로는 포함하지 않는다.)
     - 옵션명 구성요소는 반드시 같은 방향 노선의 실제 endpoint 명칭만 사용
+    - 옵션별 route 집합은 "선택된 사업장 기점을 해당 노선이 1회 이상 포함하는지"
+      기준으로 매핑한다.
+      (즉, 실제 시/종점뿐 아니라 같은 노선 내 경유 기점도 포함한다.)
     """
     db = _db()
     route_type = _endpoint_route_type(direction)
@@ -642,6 +642,39 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
 
     if not name_to_direct_routes:
         return {"options": [], "endpoint_to_routes": {}}
+
+    # 옵션 구성요소로 사용되는 endpoint 명칭(정규화값)만 별도 집계한다.
+    candidate_component_names = set(name_to_direct_routes.keys())
+    component_name_to_serviceable_routes: dict[str, set[int]] = defaultdict(set)
+
+    # "선택한 기점을 포함하는 모든 노선" 매핑을 위해,
+    # day_type의 모든 variant 정류장을 스캔해 옵션 구성요소 명칭과 일치하는 route를 수집한다.
+    serviceable_rows = db.execute(
+        """
+        SELECT DISTINCT
+            sv.route_id,
+            ro.route_name,
+            st.name AS stop_name
+        FROM route ro
+        JOIN service_variant sv ON sv.route_id = ro.route_id
+        JOIN variant_stop vs ON vs.variant_id = sv.variant_id
+        JOIN stop st ON st.stop_id = vs.stop_id
+        WHERE ro.site_id = ?
+          AND ro.route_type = ?
+          AND sv.day_type = ?
+          AND ro.route_name NOT LIKE '%테스트%'
+        """,
+        (site_id, route_type, day_type),
+    ).fetchall()
+
+    for row in serviceable_rows:
+        normalized = _normalize_endpoint_name(row["stop_name"])
+        if not normalized or normalized not in candidate_component_names:
+            continue
+        rid = int(row["route_id"])
+        component_name_to_serviceable_routes[normalized].add(rid)
+        if rid not in route_name_by_id:
+            route_name_by_id[rid] = str(row["route_name"] or "").strip()
 
     stop_grid: dict[tuple[int, int], list[int]] = defaultdict(list)
     for sid, (lat, lon) in stop_coords.items():
@@ -742,7 +775,15 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
         while dedup_name in endpoint_to_routes:
             dedup_name = f"{option_name} ({suffix})"
             suffix += 1
-        endpoint_to_routes[dedup_name] = set(direct_route_ids)
+        # route 매핑은 canonical endpoint만이 아니라,
+        # 동일 사업장 기점을 경유/포함하는 노선까지 포함한다.
+        mapped_route_ids: set[int] = set()
+        for name in clustered_names:
+            mapped_route_ids.update(component_name_to_serviceable_routes.get(name, set()))
+        if not mapped_route_ids:
+            # 예외적으로 서비스 가능 매핑이 비어 있으면 기존 canonical 매핑을 폴백으로 사용한다.
+            mapped_route_ids = set(direct_route_ids)
+        endpoint_to_routes[dedup_name] = mapped_route_ids
         display_lines = [primary_name] + [f"  {name}" for name in ordered_names[1:]]
         endpoint_option_meta[dedup_name] = {
             "endpoint_primary_name": primary_name,
@@ -851,6 +892,7 @@ def get_endpoint_route_ids(
 ) -> set[int]:
     """
     선택 endpoint에 매핑되는 route_id 집합을 반환.
+    route 매핑 기준은 "해당 endpoint 구성요소(사업장 기점)를 노선이 1회 이상 포함하는가"이다.
     - selected_endpoints is None: 해당 방향의 전체 endpoint(route) 반환
     - selected_endpoints == []: 빈 집합 반환
     """
@@ -891,38 +933,61 @@ def _find_nearby_stops(
     """
     db = _db()
     delta = 0.01  # 약 1.1km
-    use_scope = site_id is not None and route_type is not None and day_type is not None
+    clean_day_type = str(day_type or "").strip() or None
+    use_scope = site_id is not None and route_type is not None
     use_scope_table = use_scope and _supports_stop_scope()
     for _ in range(8):  # 최대 약 2.56도 확장
         if use_scope_table:
+            day_type_scope_sql = "AND ss.day_type = ?" if clean_day_type else ""
+            params: list[object] = [
+                site_id,
+                route_type,
+            ]
+            if clean_day_type:
+                params.append(clean_day_type)
+            params.extend(
+                [
+                    lat - delta,
+                    lat + delta,
+                    lon - delta,
+                    lon + delta,
+                ]
+            )
             rows = db.execute(
-                """
+                f"""
                 SELECT DISTINCT s.stop_id, s.name, s.lat, s.lon
                 FROM stop_scope ss
                 JOIN stop_rtree r ON r.stop_id = ss.stop_id
                 JOIN stop s ON s.stop_id = ss.stop_id
                 WHERE ss.site_id = ?
                   AND ss.route_type = ?
-                  AND ss.day_type = ?
+                  {day_type_scope_sql}
                   AND s.lat IS NOT NULL
                   AND s.lon IS NOT NULL
                   AND r.min_lat >= ? AND r.max_lat <= ?
                   AND r.min_lon >= ? AND r.max_lon <= ?
                 """,
-                (
-                    site_id,
-                    route_type,
-                    day_type,
+                tuple(params),
+            ).fetchall()
+        elif use_scope:
+            # stop_scope 없는 구버전 DB 호환용 폴백
+            day_type_scope_sql = "AND sv.day_type = ?" if clean_day_type else ""
+            params = [
+                site_id,
+                route_type,
+            ]
+            if clean_day_type:
+                params.append(clean_day_type)
+            params.extend(
+                [
                     lat - delta,
                     lat + delta,
                     lon - delta,
                     lon + delta,
-                ),
-            ).fetchall()
-        elif use_scope:
-            # stop_scope 없는 구버전 DB 호환용 폴백
+                ]
+            )
             rows = db.execute(
-                """
+                f"""
                 SELECT DISTINCT s.stop_id, s.name, s.lat, s.lon
                 FROM route ro
                 JOIN service_variant sv ON sv.route_id = ro.route_id
@@ -931,21 +996,13 @@ def _find_nearby_stops(
                 JOIN stop_rtree r ON r.stop_id = s.stop_id
                 WHERE ro.site_id = ?
                   AND ro.route_type = ?
-                  AND sv.day_type = ?
+                  {day_type_scope_sql}
                   AND s.lat IS NOT NULL
                   AND s.lon IS NOT NULL
                   AND r.min_lat >= ? AND r.max_lat <= ?
                   AND r.min_lon >= ? AND r.max_lon <= ?
                 """,
-                (
-                    site_id,
-                    route_type,
-                    day_type,
-                    lat - delta,
-                    lat + delta,
-                    lon - delta,
-                    lon + delta,
-                ),
+                tuple(params),
             ).fetchall()
         else:
             rows = db.execute(
@@ -1335,8 +1392,10 @@ def _is_departure_in_report_window(
     return (-int(past_minutes)) <= delta <= int(future_minutes)
 
 
-def _get_report_excluded_stop_ids(site_id: str, day_type: str) -> set[int]:
-    key = (str(site_id), str(day_type))
+def _get_report_excluded_stop_ids(site_id: str, day_type: str | None) -> set[int]:
+    clean_day_type = str(day_type or "").strip()
+    cache_day_key = clean_day_type if clean_day_type else "__all__"
+    key = (str(site_id), cache_day_key)
     with _report_stop_exclusion_lock:
         cached = _report_stop_exclusion_cache.get(key)
         if cached is not None:
@@ -1347,6 +1406,10 @@ def _get_report_excluded_stop_ids(site_id: str, day_type: str) -> set[int]:
     for direction in ("depart", "arrive"):
         route_type = _endpoint_route_type(direction)
         endpoint_seq_col = "es.max_seq" if direction == "depart" else "es.min_seq"
+        day_type_filter_sql = "AND sv.day_type = ?" if clean_day_type else ""
+        params: list[object] = [site_id, route_type]
+        if clean_day_type:
+            params.append(clean_day_type)
         rows = db.execute(
             f"""
             WITH target_routes AS (
@@ -1356,27 +1419,27 @@ def _get_report_excluded_stop_ids(site_id: str, day_type: str) -> set[int]:
                   AND route_type = ?
                   AND route_name NOT LIKE '%테스트%'
             ),
-            first_variant AS (
-                SELECT sv.route_id, MIN(sv.variant_id) AS variant_id
+            filtered_variant AS (
+                SELECT DISTINCT sv.variant_id
                 FROM service_variant sv
                 JOIN target_routes tr ON tr.route_id = sv.route_id
-                WHERE sv.day_type = ?
-                GROUP BY sv.route_id
+                WHERE 1 = 1
+                  {day_type_filter_sql}
             ),
             endpoint_seq AS (
                 SELECT vs.variant_id, MIN(vs.seq) AS min_seq, MAX(vs.seq) AS max_seq
                 FROM variant_stop vs
-                JOIN first_variant fv ON fv.variant_id = vs.variant_id
+                JOIN filtered_variant fv ON fv.variant_id = vs.variant_id
                 GROUP BY vs.variant_id
             )
             SELECT DISTINCT vs_ep.stop_id AS endpoint_stop_id
-            FROM first_variant fv
+            FROM filtered_variant fv
             JOIN endpoint_seq es ON es.variant_id = fv.variant_id
             JOIN variant_stop vs_ep
               ON vs_ep.variant_id = fv.variant_id
              AND vs_ep.seq = {endpoint_seq_col}
             """,
-            (site_id, route_type, day_type),
+            tuple(params),
         ).fetchall()
         excluded.update(int(row["endpoint_stop_id"]) for row in rows)
 
@@ -1390,7 +1453,7 @@ def _get_report_excluded_stop_ids(site_id: str, day_type: str) -> set[int]:
 
 def get_report_nearby_stops(
     site_id: str,
-    day_type: str,
+    day_type: str | None,
     lat: float,
     lon: float,
     primary_radius_m: float = 150.0,
@@ -1400,14 +1463,15 @@ def get_report_nearby_stops(
     도착시간 제보용 근처 정류장 후보를 반환한다.
     - 출근 종착지 / 퇴근 출발지(endpoint 정류장)는 제외한다.
     """
-    excluded_stop_ids = _get_report_excluded_stop_ids(site_id, day_type)
+    clean_day_type = str(day_type or "").strip() or None
+    excluded_stop_ids = _get_report_excluded_stop_ids(site_id, clean_day_type)
     nearby_in = _find_nearby_stops(
         lat,
         lon,
         max_stops=150,
         site_id=site_id,
         route_type="commute_in",
-        day_type=day_type,
+        day_type=clean_day_type,
     )
     nearby_out = _find_nearby_stops(
         lat,
@@ -1415,7 +1479,7 @@ def get_report_nearby_stops(
         max_stops=150,
         site_id=site_id,
         route_type="commute_out",
-        day_type=day_type,
+        day_type=clean_day_type,
     )
 
     stop_map: dict[int, tuple[str, float, float, float]] = {}
@@ -1425,9 +1489,6 @@ def get_report_nearby_stops(
             continue
         if stop_id not in stop_map or dist < stop_map[stop_id][3]:
             stop_map[stop_id] = (str(name or "").strip(), float(slat), float(slon), float(dist))
-
-    if not stop_map:
-        return {"radius_m": float(primary_radius_m), "used_fallback_radius": False, "stops": []}
 
     def _group_named_stops(items: list[dict]) -> list[dict]:
         grouped_items: list[dict] = []
@@ -1500,13 +1561,14 @@ def get_report_nearby_stops(
         return _group_named_stops(items)
 
     stops = _stops_within(primary_radius_m)
-    used_fallback = False
+    fallback_attempted = False
     if not stops and fallback_radius_m > primary_radius_m:
+        fallback_attempted = True
         stops = _stops_within(fallback_radius_m)
-        used_fallback = bool(stops)
+    used_fallback = fallback_attempted and bool(stops)
 
     return {
-        "radius_m": float(fallback_radius_m if used_fallback else primary_radius_m),
+        "radius_m": float(fallback_radius_m if fallback_attempted else primary_radius_m),
         "used_fallback_radius": used_fallback,
         "stops": stops,
     }
@@ -1514,7 +1576,7 @@ def get_report_nearby_stops(
 
 def find_recent_report_stop_index_by_route(
     site_id: str,
-    day_type: str,
+    day_type: str | None,
     grouped_stops: list[dict] | tuple[dict, ...] | None,
     route_id: int | None,
     route_uuid: str | None = None,
@@ -1554,7 +1616,14 @@ def find_recent_report_stop_index_by_route(
 
     db = _db()
     placeholders = ",".join("?" for _ in normalized_stop_ids)
+    clean_day_type = str(day_type or "").strip()
+    day_filter_sql = "AND sv.day_type = ?" if clean_day_type else ""
     if use_route_uuid:
+        params: list[object] = list(normalized_stop_ids)
+        params.append(site_id)
+        if clean_day_type:
+            params.append(clean_day_type)
+        params.append(clean_route_uuid)
         rows = db.execute(
             f"""
             SELECT DISTINCT vs.stop_id
@@ -1563,14 +1632,19 @@ def find_recent_report_stop_index_by_route(
             JOIN route r ON r.route_id = sv.route_id
             WHERE vs.stop_id IN ({placeholders})
               AND r.site_id = ?
-              AND sv.day_type = ?
+              {day_filter_sql}
               AND r.route_uuid = ?
               AND r.route_type IN ('commute_in', 'commute_out')
               AND r.route_name NOT LIKE '%테스트%'
             """,
-            tuple(normalized_stop_ids + [site_id, day_type, clean_route_uuid]),
+            tuple(params),
         ).fetchall()
     else:
+        params = list(normalized_stop_ids)
+        params.append(site_id)
+        if clean_day_type:
+            params.append(clean_day_type)
+        params.append(preferred_route_id)
         rows = db.execute(
             f"""
             SELECT DISTINCT vs.stop_id
@@ -1579,12 +1653,12 @@ def find_recent_report_stop_index_by_route(
             JOIN route r ON r.route_id = sv.route_id
             WHERE vs.stop_id IN ({placeholders})
               AND r.site_id = ?
-              AND sv.day_type = ?
+              {day_filter_sql}
               AND r.route_id = ?
               AND r.route_type IN ('commute_in', 'commute_out')
               AND r.route_name NOT LIKE '%테스트%'
             """,
-            tuple(normalized_stop_ids + [site_id, day_type, preferred_route_id]),
+            tuple(params),
         ).fetchall()
     if not rows:
         return -1
@@ -1688,7 +1762,7 @@ def _select_default_report_time_with_elapsed(
 
 def get_report_route_candidates_for_stop(
     site_id: str,
-    day_type: str,
+    day_type: str | None,
     stop_id: int | list[int] | tuple[int, ...],
     current_time: str,
     primary_past_minutes: int = 20,
@@ -1702,13 +1776,14 @@ def get_report_route_candidates_for_stop(
     - 별도 예외 없이 항상 주어진 시간 윈도우를 적용한다.
     """
     db = _db()
+    clean_day_type = str(day_type or "").strip()
     if isinstance(stop_id, (list, tuple)):
         requested_stop_ids = [int(value) for value in stop_id]
     else:
         requested_stop_ids = [int(stop_id)]
 
     normalized_stop_ids: list[int] = []
-    excluded_stop_ids = _get_report_excluded_stop_ids(site_id, day_type)
+    excluded_stop_ids = _get_report_excluded_stop_ids(site_id, clean_day_type or None)
     for value in requested_stop_ids:
         if value in excluded_stop_ids or value in normalized_stop_ids:
             continue
@@ -1719,6 +1794,7 @@ def get_report_route_candidates_for_stop(
             "stop_id": int(requested_stop_ids[0]) if requested_stop_ids else 0,
             "stop_ids": [int(value) for value in requested_stop_ids],
             "stop_name": "",
+            "day_type": (clean_day_type or None),
             "candidates": [],
             "total_route_count": 0,
             "time_filter_applied": False,
@@ -1730,6 +1806,11 @@ def get_report_route_candidates_for_stop(
     stop_placeholders = ",".join("?" for _ in normalized_stop_ids)
     route_uuid_select = "r.route_uuid AS route_uuid," if _supports_route_uuid() else "NULL AS route_uuid,"
     stop_uuid_select = "s.stop_uuid AS stop_uuid," if _supports_stop_uuid() else "NULL AS stop_uuid,"
+    day_type_filter_sql = "AND sv.day_type = ?" if clean_day_type else ""
+    params: list[object] = list(normalized_stop_ids)
+    params.append(site_id)
+    if clean_day_type:
+        params.append(clean_day_type)
     rows = db.execute(
         f"""
         SELECT
@@ -1737,6 +1818,7 @@ def get_report_route_candidates_for_stop(
             {route_uuid_select}
             r.route_name,
             r.route_type,
+            sv.day_type AS day_type,
             sv.departure_time,
             MIN(sv.variant_id) AS variant_id,
             vs.stop_id,
@@ -1750,25 +1832,27 @@ def get_report_route_candidates_for_stop(
         WHERE vs.stop_id IN ({stop_placeholders})
           AND r.site_id = ?
           AND r.route_type IN ('commute_in', 'commute_out')
-          AND sv.day_type = ?
+          {day_type_filter_sql}
           AND r.route_name NOT LIKE '%테스트%'
         GROUP BY
             r.route_id,
             route_uuid,
             r.route_name,
             r.route_type,
+            sv.day_type,
             sv.departure_time,
             vs.stop_id,
             stop_uuid,
             s.name
         """,
-        (*normalized_stop_ids, site_id, day_type),
+        tuple(params),
     ).fetchall()
     if not rows:
         return {
             "stop_id": int(normalized_stop_ids[0]),
             "stop_ids": list(normalized_stop_ids),
             "stop_name": "",
+            "day_type": (clean_day_type or None),
             "candidates": [],
             "total_route_count": 0,
             "time_filter_applied": False,
@@ -1788,6 +1872,7 @@ def get_report_route_candidates_for_stop(
                 "route_name": str(row["route_name"] or "").strip(),
                 "route_type": str(row["route_type"] or "").strip(),
                 "direction": "depart" if str(row["route_type"]) == "commute_in" else "arrive",
+                "day_type": str(row["day_type"] or "").strip(),
                 "departure_time": departure_time,
                 "variant_id": int(row["variant_id"]),
                 "stop_id": int(row["stop_id"]),
@@ -1812,7 +1897,8 @@ def get_report_route_candidates_for_stop(
     window_relaxed = False
     for idx, (past_minutes, future_minutes) in enumerate(windows):
         current_filtered = [
-            item for item in raw_items
+            item
+            for item in raw_items
             if _is_departure_in_report_window(
                 current_time,
                 str(item["departure_time"]),
@@ -1831,6 +1917,7 @@ def get_report_route_candidates_for_stop(
             "stop_id": int(normalized_stop_ids[0]),
             "stop_ids": list(normalized_stop_ids),
             "stop_name": stop_name,
+            "day_type": (clean_day_type or None),
             "candidates": [],
             "total_route_count": int(total_route_count),
             "time_filter_applied": True,
@@ -1838,6 +1925,14 @@ def get_report_route_candidates_for_stop(
             "window_future_minutes": int(last_window[1]),
             "window_relaxed": bool(len(windows) > 1),
         }
+
+    day_type_rank = {"weekday": 1, "monday": 2, "saturday": 3, "holiday": 4, "familyday": 5}
+
+    def _sort_day_types(values: set[str]) -> list[str]:
+        return sorted(
+            {str(value or "").strip() for value in values if str(value or "").strip()},
+            key=lambda value: (day_type_rank.get(value, 99), value),
+        )
 
     grouped_by_route: dict[int, list[dict]] = defaultdict(list)
     for item in filtered_items:
@@ -1857,22 +1952,7 @@ def get_report_route_candidates_for_stop(
         if not route_items_sorted:
             continue
         best_item = route_items_sorted[0]
-        available_times = _sort_report_departure_times(
-            {str(item["departure_time"]) for item in route_items_sorted}
-        )
-        sequence_by_time: dict[str, int] = {}
-        context_source_by_time: dict[str, dict] = {}
-        for item in route_items_sorted:
-            departure_time = str(item["departure_time"])
-            stop_sequence = int(item["stop_sequence"])
-            existing_sequence = sequence_by_time.get(departure_time)
-            if existing_sequence is None or stop_sequence < existing_sequence:
-                sequence_by_time[departure_time] = stop_sequence
-                context_source_by_time[departure_time] = item
-        departure_sequences = [
-            str(sequence_by_time.get(str(value), ""))
-            for value in available_times
-        ]
+        day_type_options = _sort_day_types({str(item.get("day_type") or "") for item in route_items_sorted})
         variant_stop_cache: dict[int, list[dict]] = {}
 
         def _serialize_context_stop(stop_row: dict | None) -> dict | None:
@@ -1938,6 +2018,45 @@ def get_report_route_candidates_for_stop(
                 "estimated_elapsed_min": int(current_stop.get("estimated_elapsed_min") or 0),
             }
 
+        if not clean_day_type:
+            preview_context = _build_departure_context(best_item)
+            route_candidates.append(
+                {
+                    "route_id": int(best_item["route_id"]),
+                    "route_uuid": (str(best_item.get("route_uuid") or "").strip() or None),
+                    "route_name": str(best_item["route_name"]),
+                    "route_type": str(best_item["route_type"]),
+                    "direction": str(best_item["direction"]),
+                    "day_type": None,
+                    "day_type_options": list(day_type_options),
+                    "selected_day_type": str(day_type_options[0] if day_type_options else ""),
+                    "stop_id": int(best_item["stop_id"]),
+                    "stop_uuid": (str(best_item.get("stop_uuid") or "").strip() or None),
+                    "stop_name": str(best_item["stop_name"]),
+                    "stop_sequence": int(best_item["stop_sequence"]),
+                    "departure_times": [],
+                    "departure_sequences": [],
+                    "departure_contexts": [preview_context],
+                    "selected_departure_time": "",
+                    "_best_abs_delta_m": abs(int(best_item["_delta_minutes"])),
+                }
+            )
+            continue
+
+        available_times = _sort_report_departure_times(
+            {str(item["departure_time"]) for item in route_items_sorted}
+        )
+        sequence_by_time: dict[str, int] = {}
+        context_source_by_time: dict[str, dict] = {}
+        for item in route_items_sorted:
+            departure_time = str(item["departure_time"])
+            stop_sequence = int(item["stop_sequence"])
+            existing_sequence = sequence_by_time.get(departure_time)
+            if existing_sequence is None or stop_sequence < existing_sequence:
+                sequence_by_time[departure_time] = stop_sequence
+                context_source_by_time[departure_time] = item
+        departure_sequences = [str(sequence_by_time.get(str(value), "")) for value in available_times]
+
         departure_contexts: list[dict] = []
         departure_elapsed_minutes: list[int] = []
         for value in available_times:
@@ -1951,6 +2070,9 @@ def get_report_route_candidates_for_stop(
                 "route_name": str(best_item["route_name"]),
                 "route_type": str(best_item["route_type"]),
                 "direction": str(best_item["direction"]),
+                "day_type": clean_day_type,
+                "day_type_options": [clean_day_type],
+                "selected_day_type": clean_day_type,
                 "stop_id": int(best_item["stop_id"]),
                 "stop_uuid": (str(best_item.get("stop_uuid") or "").strip() or None),
                 "stop_name": str(best_item["stop_name"]),
@@ -1980,6 +2102,7 @@ def get_report_route_candidates_for_stop(
         "stop_id": int(normalized_stop_ids[0]),
         "stop_ids": list(normalized_stop_ids),
         "stop_name": stop_name,
+        "day_type": (clean_day_type or None),
         "candidates": [
             {
                 "route_id": int(item["route_id"]),
@@ -1987,6 +2110,13 @@ def get_report_route_candidates_for_stop(
                 "route_name": str(item["route_name"]),
                 "route_type": str(item["route_type"]),
                 "direction": str(item["direction"]),
+                "day_type": (str(item.get("day_type") or "").strip() or None),
+                "day_type_options": [
+                    str(value or "").strip()
+                    for value in list(item.get("day_type_options") or [])
+                    if str(value or "").strip()
+                ],
+                "selected_day_type": str(item.get("selected_day_type") or "").strip(),
                 "stop_id": int(item["stop_id"]),
                 "stop_uuid": (str(item.get("stop_uuid") or "").strip() or None),
                 "stop_name": str(item["stop_name"]),

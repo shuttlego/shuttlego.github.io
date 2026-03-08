@@ -16,7 +16,7 @@ import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 from flask import Flask, jsonify, make_response, request, Response
@@ -104,7 +104,7 @@ GITHUB_INSTALLATION_ID = os.environ.get("GITHUB_INSTALLATION_ID", "").strip()
 GITHUB_REPO_OWNER = os.environ.get("GITHUB_REPO_OWNER", "").strip()
 GITHUB_REPO_NAME = os.environ.get("GITHUB_REPO_NAME", "").strip()
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
-GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 60)
+GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 300)
 ISSUE_SUBMIT_RATE_LIMIT_SEC = _env_int("ISSUE_SUBMIT_RATE_LIMIT_SEC", 10)
 ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
 
@@ -179,6 +179,8 @@ _github_token_cache = {"token": "", "expires_at": 0.0}
 _github_token_lock = threading.Lock()
 _issue_cache: dict[str, tuple[float, dict]] = {}
 _issue_cache_lock = threading.Lock()
+_issue_cache_version_local = 0
+_issue_cache_version_lock = threading.Lock()
 _issue_submit_tracker_lock = threading.Lock()
 _issue_submit_recent_by_client: dict[str, float] = {}
 _issue_submit_recent_hash: dict[str, float] = {}
@@ -191,7 +193,7 @@ _OPTIONS_CANDIDATE_LIMIT = 100
 _OPTIONS_RESPONSE_LIMIT = 3
 _DEFAULT_MAX_DISTANCE_KM = 3.0
 _MAX_DISTANCE_KM = 30.0
-_DEFAULT_ROUTE_SEARCH_MODE = "distance"
+_DEFAULT_ROUTE_SEARCH_MODE = "time"
 _DEFAULT_SITE_ID = "0000011"
 _REPORT_PRIMARY_RADIUS_M = max(50.0, _env_float("ARRIVAL_REPORT_PRIMARY_RADIUS_M", 150.0))
 _REPORT_FALLBACK_RADIUS_M = max(
@@ -1018,6 +1020,38 @@ def _extract_github_error_message(resp: requests.Response) -> str:
     return message or "GitHub API 요청에 실패했습니다."
 
 
+def _is_allowed_github_image_host(hostname: str) -> bool:
+    host = str(hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return False
+    if host in {
+        "github.com",
+        "raw.githubusercontent.com",
+        "user-images.githubusercontent.com",
+        "private-user-images.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "camo.githubusercontent.com",
+        "media.githubusercontent.com",
+    }:
+        return True
+    return host.endswith(".githubusercontent.com")
+
+
+def _normalize_github_image_url(raw_url: str) -> str:
+    parsed = urlparse(str(raw_url or "").strip())
+    host = str(parsed.hostname or "").strip().lower().rstrip(".")
+    if host != "github.com":
+        return parsed.geturl()
+    path = str(parsed.path or "")
+    if not path.startswith("/user-attachments/assets/"):
+        return parsed.geturl()
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    has_raw = any(str(k).strip().lower() == "raw" for k, _ in query_items)
+    if not has_raw:
+        query_items.append(("raw", "1"))
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
 def _github_headers(access_token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {access_token}",
@@ -1205,6 +1239,22 @@ def _normalize_issue(issue: dict, nickname_by_public_user_id: dict[str, str] | N
     }
 
 
+def _with_issue_like_state(issues: list[dict], like_state_map: dict[int, dict] | None = None) -> list[dict]:
+    like_state_map = like_state_map or {}
+    enriched: list[dict] = []
+    for issue in issues or []:
+        item = dict(issue or {})
+        try:
+            issue_number = int(item.get("number") or 0)
+        except (TypeError, ValueError):
+            issue_number = 0
+        like_state = like_state_map.get(issue_number) or {}
+        item["like_count"] = int(like_state.get("like_count") or 0)
+        item["liked_by_me"] = bool(like_state.get("liked_by_me"))
+        enriched.append(item)
+    return enriched
+
+
 def _normalize_comment(comment: dict) -> dict:
     user = comment.get("user") or {}
     login = str(user.get("login") or "")
@@ -1255,15 +1305,123 @@ def _issue_cache_get(cache_key: str) -> dict | None:
         return payload
 
 
+def _issue_cache_get_allow_stale(cache_key: str) -> tuple[dict | None, bool]:
+    with _issue_cache_lock:
+        cached = _issue_cache.get(cache_key)
+        if not cached:
+            return None, False
+        expires_at, payload = cached
+        return payload, expires_at > _time.time()
+
+
 def _issue_cache_set(cache_key: str, payload: dict, ttl_sec: int | None = None) -> None:
     ttl = GITHUB_ISSUE_CACHE_TTL_SEC if ttl_sec is None else max(1, ttl_sec)
     with _issue_cache_lock:
         _issue_cache[cache_key] = (_time.time() + ttl, payload)
 
 
-def _invalidate_issue_cache() -> None:
+def _clear_issue_cache_local() -> None:
     with _issue_cache_lock:
         _issue_cache.clear()
+
+
+def _set_local_issue_cache_version(version: int) -> bool:
+    global _issue_cache_version_local
+    next_version = max(0, int(version or 0))
+    with _issue_cache_version_lock:
+        changed = next_version != _issue_cache_version_local
+        _issue_cache_version_local = next_version
+        return changed
+
+
+def _sync_issue_cache_version() -> None:
+    try:
+        shared_version = int(user_store.get_issue_cache_version() or 0)
+    except Exception:
+        app.logger.exception("Failed to fetch issue cache version")
+        return
+    if _set_local_issue_cache_version(shared_version):
+        _clear_issue_cache_local()
+
+
+def _invalidate_issue_cache(distributed: bool = True) -> None:
+    _clear_issue_cache_local()
+    if not distributed:
+        return
+    try:
+        shared_version = int(user_store.bump_issue_cache_version() or 0)
+    except Exception:
+        app.logger.exception("Failed to bump issue cache version")
+        return
+    _set_local_issue_cache_version(shared_version)
+
+
+def _load_notice_head_cache(*, per_page: int = 100) -> list[dict]:
+    _sync_issue_cache_version()
+    capped_per_page = max(1, min(int(per_page or 100), 100))
+    cache_key = f"issues:v6:notice-head:{capped_per_page}"
+    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+    if not is_fresh_cache:
+        owner = (GITHUB_REPO_OWNER or "").strip()
+        try:
+            if not owner:
+                notice_rows: list[dict] = []
+            else:
+                notice_rows = []
+                max_pages = 5
+                for page in range(1, max_pages + 1):
+                    raw_items = _github_api_request(
+                        "GET",
+                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                        params={
+                            "state": "all",
+                            "page": page,
+                            "per_page": capped_per_page,
+                            "sort": "created",
+                            "direction": "desc",
+                            "creator": owner,
+                        },
+                    )
+                    if not isinstance(raw_items, list):
+                        raw_items = []
+                    for item in raw_items:
+                        if item.get("pull_request"):
+                            continue
+                        normalized = _normalize_issue(item)
+                        if not normalized.get("is_notice"):
+                            continue
+                        try:
+                            issue_number = int(normalized.get("number") or 0)
+                        except (TypeError, ValueError):
+                            issue_number = 0
+                        if issue_number <= 0:
+                            continue
+                        notice_rows.append(
+                            {
+                                "number": issue_number,
+                                "title": str(normalized.get("title") or "").strip(),
+                                "created_at": normalized.get("created_at"),
+                            }
+                        )
+                    if len(raw_items) < capped_per_page:
+                        break
+                notice_rows.sort(key=lambda row: int(row.get("number") or 0), reverse=True)
+        except GitHubAPIError as exc:
+            if cached is None:
+                raise
+            app.logger.warning("Falling back to stale notice head cache for %s due to GitHub error: %s", cache_key, exc)
+        else:
+            cached = {"notices": notice_rows}
+            _issue_cache_set(cache_key, cached)
+
+    return list((cached or {}).get("notices") or [])
+
+
+def _resolve_notice_actor() -> tuple[dict | None, int | None, str | None]:
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        return auth_user, int(auth_user["id"]), None
+    return None, None, _ensure_history_visitor_id()
 
 
 def _compact_meta_label_part(raw: object) -> str:
@@ -2906,11 +3064,11 @@ def api_report_nearby_stops():
     if report_guard is not None:
         return report_guard
     site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
-    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    day_type = request.args.get("day_type", default="", type=str).strip() or None
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
     if lat is None or lng is None:
-        return jsonify({"error": "site_id, day_type, lat, lng는 필수입니다."}), 400
+        return jsonify({"error": "site_id, lat, lng는 필수입니다."}), 400
     if not (math.isfinite(lat) and math.isfinite(lng)):
         return jsonify({"error": "lat, lng는 유효한 숫자여야 합니다."}), 400
     auth_user, _ = _get_current_user(with_touch=False)
@@ -2936,9 +3094,13 @@ def api_report_nearby_stops():
         within_hours=4,
     )
     data["recent_preference"] = preference
+    data["requested_day_type"] = str(day_type or "")
+    preferred_day_type = ""
+    if preference:
+        preferred_day_type = str(preference.get("day_type") or "").strip()
     preferred_stop_index = find_recent_report_stop_index_by_route(
         site_id,
-        day_type,
+        preferred_day_type or day_type,
         data.get("stops") or [],
         preference.get("route_id") if preference else None,
         preference.get("route_uuid") if preference else None,
@@ -2955,7 +3117,7 @@ def api_report_candidate_routes():
     if report_guard is not None:
         return report_guard
     site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
-    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    day_type = request.args.get("day_type", default="", type=str).strip() or None
     now_time = request.args.get("now_time", default="", type=str).strip()
     stop_ids_param = request.args.get("stop_ids", default="", type=str).strip()
     stop_ids: list[int] = []
@@ -2975,7 +3137,7 @@ def api_report_candidate_routes():
         if stop_id is not None:
             stop_ids.append(int(stop_id))
     if not stop_ids or not now_time:
-        return jsonify({"error": "site_id, day_type, stop_id(or stop_ids), now_time은 필수입니다."}), 400
+        return jsonify({"error": "site_id, stop_id(or stop_ids), now_time은 필수입니다."}), 400
 
     auth_user, _ = _get_current_user(with_touch=False)
     if auth_user is not None:
@@ -3023,6 +3185,7 @@ def api_report_candidate_routes():
         preferred_route_id = int(preference["route_id"])
         preferred_route_uuid = str(preference.get("route_uuid") or "").strip()
         preferred_time = str(preference.get("departure_time") or "").strip()
+        preferred_day_type = str(preference.get("day_type") or "").strip()
         prioritized: list[dict] = []
         remainder: list[dict] = []
         for item in candidates:
@@ -3037,8 +3200,16 @@ def api_report_candidate_routes():
             elif route_id > 0:
                 route_matched = route_id == preferred_route_id
             if route_matched:
-                if preferred_time and preferred_time in (item.get("departure_times") or []):
+                if (
+                    day_type
+                    and preferred_time
+                    and preferred_time in (item.get("departure_times") or [])
+                ):
                     item["selected_departure_time"] = preferred_time
+                elif (not day_type) and preferred_day_type:
+                    option_values = [str(value or "").strip() for value in list(item.get("day_type_options") or [])]
+                    if preferred_day_type in option_values:
+                        item["selected_day_type"] = preferred_day_type
                 item["preferred_from_history"] = True
                 prioritized.append(item)
                 history_applied = True
@@ -3049,6 +3220,7 @@ def api_report_candidate_routes():
 
     data["history_applied"] = history_applied
     data["recent_preference"] = preference
+    data["requested_day_type"] = str(day_type or "")
     data["candidates"] = candidates
     resp = make_response(jsonify(data))
     return _attach_history_visitor_cookie_if_needed(resp)
@@ -3418,6 +3590,8 @@ def api_issues():
 
         _invalidate_issue_cache()
         normalized = _normalize_issue(created)
+        normalized["like_count"] = 0
+        normalized["liked_by_me"] = False
         response = make_response(
             jsonify(
                 {
@@ -3437,138 +3611,134 @@ def api_issues():
     except GitHubConfigError as exc:
         return jsonify({"error": str(exc)}), 503
 
+    _sync_issue_cache_version()
+
     state = request.args.get("state", default="all", type=str).strip().lower()
     if state not in {"open", "closed", "all"}:
         return jsonify({"error": "state는 open|closed|all만 허용됩니다."}), 400
+
+    kind = request.args.get("kind", default="all", type=str).strip().lower()
+    if kind not in {"all", "issue", "notice"}:
+        return jsonify({"error": "kind는 all|issue|notice만 허용됩니다."}), 400
 
     labels_raw = request.args.get("labels", default="", type=str)
     labels = [s.strip() for s in labels_raw.split(",") if s.strip()]
     q = request.args.get("q", default="", type=str).strip()
     page = max(1, request.args.get("page", default=1, type=int) or 1)
     per_page = request.args.get("per_page", default=10, type=int) or 10
-    per_page = max(1, min(per_page, 50))
+    per_page = max(1, min(per_page, 100))
 
-    cache_key = f"issues:v4:list:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
-    cached = _issue_cache_get(cache_key)
-    if cached is not None:
-        return jsonify(cached)
-
-    base_cache_key = f"issues:v4:base:{state}:{','.join(labels)}:{q}"
-    base_cached = _issue_cache_get(base_cache_key)
-    if base_cached is None:
+    cache_key = f"issues:v6:list:{kind}:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
+    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+    if not is_fresh_cache:
+        owner = (GITHUB_REPO_OWNER or "").strip()
+        q_lower = q.casefold()
+        list_page_size = min(100, max(1, per_page + 1))
         try:
-            raw_items: list[dict] = []
-            fetch_per_page = 100
-            if q:
-                query_parts = [f"repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}", "is:issue"]
-                if state in {"open", "closed"}:
-                    query_parts.append(f"is:{state}")
-                for label in labels:
-                    query_parts.append(f'label:"{label}"')
-                query_parts.append(q)
-
-                fetch_page = 1
-                fetch_limit = 1000  # GitHub Search API cap
-                while True:
-                    search_payload = _github_api_request(
-                        "GET",
-                        "/search/issues",
-                        params={
-                            "q": " ".join(query_parts),
-                            "sort": "created",
-                            "order": "desc",
-                            "page": fetch_page,
-                            "per_page": fetch_per_page,
-                        },
-                    )
-                    page_items = search_payload.get("items") or []
-                    if not isinstance(page_items, list):
-                        page_items = []
-                    raw_items.extend(page_items)
-
-                    total_hits = int(search_payload.get("total_count", 0) or 0)
-                    fetch_limit = min(fetch_limit, max(0, total_hits))
-                    if len(raw_items) >= fetch_limit or len(page_items) < fetch_per_page:
-                        break
-                    fetch_page += 1
+            if kind == "notice" and not owner:
+                raw_items: list[dict] = []
+                has_next = False
             else:
-                fetch_page = 1
-                while True:
-                    list_params = {
-                        "state": state,
-                        "page": fetch_page,
-                        "per_page": fetch_per_page,
-                        "sort": "created",
-                        "direction": "desc",
-                    }
-                    if labels:
-                        list_params["labels"] = ",".join(labels)
-                    page_items = _github_api_request(
-                        "GET",
-                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                        params=list_params,
-                    )
-                    if not isinstance(page_items, list):
-                        page_items = []
-                    raw_items.extend(page_items)
-                    if len(page_items) < fetch_per_page:
-                        break
-                    fetch_page += 1
-        except GitHubAPIError as exc:
-            return jsonify({"error": str(exc)}), exc.status_code
-
-        nickname_by_public_user_id: dict[str, str] = {}
-        try:
-            author_user_ids = _collect_issue_author_user_ids(raw_items)
-            if author_user_ids:
-                nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
-        except Exception:
-            app.logger.exception("Failed to resolve issue author nicknames")
-
-        normalized_issues: list[dict] = []
-        for item in raw_items:
-            if item.get("pull_request"):
-                continue
-            normalized = _normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id)
-            if state in {"open", "closed"} and normalized.get("is_notice"):
-                continue
-            normalized_issues.append(normalized)
-
-        if state == "all":
-            normalized_issues.sort(
-                key=lambda issue: (
-                    0 if issue.get("is_notice") else 1,
-                    -int(issue.get("number") or 0),
+                list_params: dict[str, object] = {
+                    "state": state,
+                    "page": page,
+                    "per_page": list_page_size,
+                    "sort": "created",
+                    "direction": "desc",
+                }
+                if labels:
+                    list_params["labels"] = ",".join(labels)
+                if kind == "notice" and owner:
+                    list_params["creator"] = owner
+                raw_items = _github_api_request(
+                    "GET",
+                    f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                    params=list_params,
                 )
-            )
+                if not isinstance(raw_items, list):
+                    raw_items = []
+                has_next = len(raw_items) > per_page
+                if has_next:
+                    raw_items = raw_items[:per_page]
+        except GitHubAPIError as exc:
+            if cached is None:
+                return jsonify({"error": str(exc)}), exc.status_code
+            app.logger.warning("Falling back to stale issue cache for %s due to GitHub error: %s", cache_key, exc)
         else:
-            normalized_issues.sort(key=lambda issue: -int(issue.get("number") or 0))
+            nickname_by_public_user_id: dict[str, str] = {}
+            try:
+                author_user_ids = _collect_issue_author_user_ids(raw_items)
+                if author_user_ids:
+                    nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
+            except Exception:
+                app.logger.exception("Failed to resolve issue author nicknames")
 
-        base_cached = {
-            "issues": normalized_issues,
-            "total_count": len(normalized_issues),
-        }
-        _issue_cache_set(base_cache_key, base_cached)
+            normalized_issues: list[dict] = []
+            for item in raw_items:
+                if item.get("pull_request"):
+                    continue
+                normalized = _normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id)
+                if kind == "issue" and normalized.get("is_notice"):
+                    continue
+                if kind == "notice" and not normalized.get("is_notice"):
+                    continue
+                if kind == "all" and state in {"open", "closed"} and normalized.get("is_notice"):
+                    # Backward compatibility: 기존 open/closed 조회에서는 공지를 제외했다.
+                    continue
+                if q_lower:
+                    haystack = (
+                        f"{normalized.get('title') or ''}\n"
+                        f"{normalized.get('body') or ''}\n"
+                        f"{normalized.get('display_name') or ''}\n"
+                        f"{normalized.get('user') or ''}"
+                    ).casefold()
+                    if q_lower not in haystack:
+                        continue
+                normalized_issues.append(normalized)
 
-    normalized_issues = list(base_cached.get("issues") or [])
-    total_count = int(base_cached.get("total_count") or len(normalized_issues))
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    issues = normalized_issues[start_idx:end_idx]
-    has_next = end_idx < total_count
+            cached = {
+                "issues": normalized_issues,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "has_prev": page > 1,
+                    "has_next": bool(has_next),
+                    "total_count": None,
+                },
+            }
+            _issue_cache_set(cache_key, cached)
+
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        viewer_user_id = int(auth_user["id"])
+        viewer_visitor_id = None
+    else:
+        viewer_user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+
+    cached_issues = list(cached.get("issues") or [])
+    issue_numbers: list[int] = []
+    for issue in cached_issues:
+        try:
+            issue_number = int((issue or {}).get("number") or 0)
+        except (TypeError, ValueError):
+            issue_number = 0
+        if issue_number > 0:
+            issue_numbers.append(issue_number)
+    like_state_map = user_store.get_issue_like_state(
+        issue_numbers,
+        user_id=viewer_user_id,
+        visitor_id=viewer_visitor_id,
+    )
 
     response_payload = {
-        "issues": issues,
-        "pagination": {
-            "page": page,
-            "per_page": per_page,
-            "has_prev": page > 1,
-            "has_next": has_next,
-            "total_count": total_count,
-        },
+        "issues": _with_issue_like_state(cached_issues, like_state_map=like_state_map),
+        "pagination": dict(cached.get("pagination") or {}),
     }
-    _issue_cache_set(cache_key, response_payload)
-    return jsonify(response_payload)
+    response = make_response(jsonify(response_payload))
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
 
 
 @app.route("/api/issues/<int:issue_number>")
@@ -3578,41 +3748,183 @@ def api_issue_detail(issue_number: int):
     except GitHubConfigError as exc:
         return jsonify({"error": str(exc)}), 503
 
+    _sync_issue_cache_version()
+
     cache_key = f"issues:detail:{issue_number}"
-    cached = _issue_cache_get(cache_key)
-    if cached is not None:
-        return jsonify(cached)
+    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+    if not is_fresh_cache:
+        try:
+            issue = _github_api_request(
+                "GET",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}",
+            )
+            comments = _github_api_request(
+                "GET",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
+                params={"page": 1, "per_page": 100, "sort": "created", "direction": "asc"},
+            )
+        except GitHubAPIError as exc:
+            if cached is None:
+                return jsonify({"error": str(exc)}), exc.status_code
+            app.logger.warning("Falling back to stale issue detail cache for %s due to GitHub error: %s", cache_key, exc)
+        else:
+            if not isinstance(comments, list):
+                comments = []
+
+            issue_nickname_map: dict[str, str] = {}
+            try:
+                issue_author_user_ids = _collect_issue_author_user_ids([issue])
+                if issue_author_user_ids:
+                    issue_nickname_map = user_store.get_active_nickname_map_by_public_user_ids(issue_author_user_ids)
+            except Exception:
+                app.logger.exception("Failed to resolve issue author nickname in detail")
+
+            cached = {
+                "issue": _normalize_issue(issue, nickname_by_public_user_id=issue_nickname_map),
+                "comments": [_normalize_comment(c) for c in comments],
+            }
+            _issue_cache_set(cache_key, cached)
+
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        viewer_user_id = int(auth_user["id"])
+        viewer_visitor_id = None
+    else:
+        viewer_user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+
+    cached_issue = dict(cached.get("issue") or {})
+    try:
+        normalized_issue_number = int(cached_issue.get("number") or issue_number)
+    except (TypeError, ValueError):
+        normalized_issue_number = int(issue_number)
+    like_state_map = user_store.get_issue_like_state(
+        [normalized_issue_number],
+        user_id=viewer_user_id,
+        visitor_id=viewer_visitor_id,
+    )
+    issue_with_like = _with_issue_like_state([cached_issue], like_state_map=like_state_map)
+    response_payload = {
+        "issue": issue_with_like[0] if issue_with_like else cached_issue,
+        "comments": list(cached.get("comments") or []),
+    }
+    response = make_response(jsonify(response_payload))
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
+
+
+@app.route("/api/notices/hint")
+def api_notice_hint():
+    try:
+        _ensure_github_issue_config()
+    except GitHubConfigError as exc:
+        return jsonify({"error": str(exc)}), 503
 
     try:
-        issue = _github_api_request(
-            "GET",
-            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}",
-        )
-        comments = _github_api_request(
-            "GET",
-            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
-            params={"page": 1, "per_page": 100, "sort": "created", "direction": "asc"},
-        )
+        notices = _load_notice_head_cache(per_page=100)
     except GitHubAPIError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
-    if not isinstance(comments, list):
-        comments = []
-
-    issue_nickname_map: dict[str, str] = {}
+    auth_user, user_id, visitor_id = _resolve_notice_actor()
     try:
-        issue_author_user_ids = _collect_issue_author_user_ids([issue])
-        if issue_author_user_ids:
-            issue_nickname_map = user_store.get_active_nickname_map_by_public_user_ids(issue_author_user_ids)
+        last_ack_notice_number = int(
+            user_store.get_notice_ack_number(user_id=user_id, visitor_id=visitor_id) or 0
+        )
     except Exception:
-        app.logger.exception("Failed to resolve issue author nickname in detail")
+        app.logger.exception("Failed to read notice ack state")
+        last_ack_notice_number = 0
 
-    response_payload = {
-        "issue": _normalize_issue(issue, nickname_by_public_user_id=issue_nickname_map),
-        "comments": [_normalize_comment(c) for c in comments],
-    }
-    _issue_cache_set(cache_key, response_payload)
-    return jsonify(response_payload)
+    latest_notice_number = 0
+    latest_notice_title = ""
+    unseen_count = 0
+    latest_unseen_notice_number = 0
+    latest_unseen_notice_title = ""
+    for notice in notices:
+        try:
+            notice_number = int(notice.get("number") or 0)
+        except (TypeError, ValueError):
+            continue
+        if notice_number <= 0:
+            continue
+        if latest_notice_number <= 0:
+            latest_notice_number = notice_number
+            latest_notice_title = str(notice.get("title") or "").strip()
+        if notice_number > last_ack_notice_number:
+            unseen_count += 1
+            if latest_unseen_notice_number <= 0:
+                latest_unseen_notice_number = notice_number
+                latest_unseen_notice_title = str(notice.get("title") or "").strip()
+
+    response = make_response(
+        jsonify(
+            {
+                "unseen_count": int(unseen_count),
+                "latest_notice_number": int(latest_notice_number),
+                "latest_notice_title": latest_notice_title,
+                "latest_unseen_notice_number": int(latest_unseen_notice_number),
+                "latest_unseen_notice_title": latest_unseen_notice_title,
+                "last_ack_notice_number": int(max(0, last_ack_notice_number)),
+            }
+        )
+    )
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
+
+
+@app.route("/api/notices/ack", methods=["POST"])
+def api_notice_ack():
+    auth_user, user_id, visitor_id = _resolve_notice_actor()
+    payload = request.get_json(silent=True) or {}
+    raw_notice_number = payload.get("notice_number")
+    ack_notice_number = None
+    if raw_notice_number is not None and raw_notice_number != "":
+        try:
+            ack_notice_number = max(0, int(raw_notice_number))
+        except (TypeError, ValueError):
+            return jsonify({"error": "notice_number는 0 이상의 정수여야 합니다."}), 400
+
+    if ack_notice_number is None:
+        try:
+            _ensure_github_issue_config()
+            notices = _load_notice_head_cache(per_page=100)
+        except GitHubConfigError:
+            notices = []
+        except GitHubAPIError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+        if notices:
+            try:
+                ack_notice_number = max(0, int(notices[0].get("number") or 0))
+            except (TypeError, ValueError):
+                ack_notice_number = 0
+        else:
+            ack_notice_number = 0
+
+    try:
+        saved_ack_number = int(
+            user_store.ack_notice_number(
+                int(ack_notice_number),
+                user_id=user_id,
+                visitor_id=visitor_id,
+            )
+        )
+    except ValueError as exc:
+        if str(exc) == "ack_actor_required":
+            return jsonify({"error": "공지 확인 사용자 식별에 실패했습니다."}), 400
+        return jsonify({"error": "공지 확인 상태 저장에 실패했습니다."}), 400
+
+    response = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "ack_notice_number": int(saved_ack_number),
+            }
+        )
+    )
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
 
 
 @app.route("/api/issues/<int:issue_number>/comments", methods=["POST"])
@@ -3661,6 +3973,168 @@ def api_issue_comment_create(issue_number: int):
 
     _invalidate_issue_cache()
     return jsonify({"comment": _normalize_comment(comment)}), 201
+
+
+@app.route("/api/issues/<int:issue_number>/like", methods=["POST"])
+def api_issue_like_toggle(issue_number: int):
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+
+    try:
+        result = user_store.toggle_issue_like(
+            int(issue_number),
+            user_id=user_id,
+            visitor_id=visitor_id,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "invalid_issue_number":
+            return jsonify({"error": "유효하지 않은 이슈 번호입니다."}), 400
+        if code == "like_actor_required":
+            return jsonify({"error": "좋아요 사용자 식별에 실패했습니다."}), 400
+        return jsonify({"error": "좋아요를 처리하지 못했습니다."}), 400
+
+    response = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "issue_number": int(result["issue_number"]),
+                "liked": bool(result["liked"]),
+                "like_count": int(result["like_count"]),
+            }
+        )
+    )
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
+
+
+@app.route("/api/github/image-proxy")
+def api_github_image_proxy():
+    raw_url = str(request.args.get("url", "") or "").strip()
+    if not raw_url:
+        return jsonify({"error": "url 쿼리 파라미터가 필요합니다."}), 400
+    if len(raw_url) > 2048:
+        return jsonify({"error": "url 길이가 너무 깁니다."}), 400
+
+    parsed = urlparse(raw_url)
+    scheme = str(parsed.scheme or "").lower()
+    hostname = str(parsed.hostname or "").strip().lower().rstrip(".")
+    if scheme not in {"http", "https"}:
+        return jsonify({"error": "http/https URL만 허용됩니다."}), 400
+    if not _is_allowed_github_image_host(hostname):
+        return jsonify({"error": "허용되지 않은 이미지 호스트입니다."}), 403
+
+    target_url = _normalize_github_image_url(raw_url)
+    max_image_bytes = 20 * 1024 * 1024
+    timeout_sec = 20
+    method_error = "GitHub 이미지 요청에 실패했습니다."
+
+    forward_headers: dict[str, str] = {
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "User-Agent": "shuttle-go-image-proxy/1.0",
+    }
+    if_none_match = str(request.headers.get("If-None-Match", "") or "").strip()
+    if if_none_match:
+        forward_headers["If-None-Match"] = if_none_match
+    if_modified_since = str(request.headers.get("If-Modified-Since", "") or "").strip()
+    if if_modified_since:
+        forward_headers["If-Modified-Since"] = if_modified_since
+
+    should_try_auth = bool(
+        GITHUB_APP_ID and GITHUB_INSTALLATION_ID and GITHUB_REPO_OWNER and GITHUB_REPO_NAME and jwt is not None
+    )
+
+    def _fetch_image(force_refresh: bool = False) -> requests.Response:
+        req_headers = dict(forward_headers)
+        if should_try_auth:
+            try:
+                token = _get_github_installation_token(force_refresh=force_refresh)
+            except (GitHubAPIError, GitHubConfigError):
+                token = ""
+            if token:
+                req_headers["Authorization"] = f"Bearer {token}"
+        return requests.get(
+            target_url,
+            headers=req_headers,
+            timeout=timeout_sec,
+            stream=True,
+            allow_redirects=True,
+        )
+
+    try:
+        resp = _fetch_image(force_refresh=False)
+    except requests.RequestException as exc:
+        return jsonify({"error": f"{method_error}: {exc}"}), 502
+
+    if resp.status_code == 401 and should_try_auth:
+        resp.close()
+        try:
+            resp = _fetch_image(force_refresh=True)
+        except requests.RequestException as exc:
+            return jsonify({"error": f"{method_error}: {exc}"}), 502
+
+    if resp.status_code == 304:
+        proxy_resp = make_response("", 304)
+        for header_name in ("Cache-Control", "ETag", "Last-Modified", "Expires"):
+            header_value = str(resp.headers.get(header_name, "") or "").strip()
+            if header_value:
+                proxy_resp.headers[header_name] = header_value
+        resp.close()
+        return proxy_resp
+
+    if resp.status_code >= 400:
+        status_code = int(resp.status_code)
+        resp.close()
+        return jsonify({"error": f"GitHub 이미지 응답 실패({status_code})"}), status_code
+
+    final_url = str(resp.url or "").strip()
+    final_host = str(urlparse(final_url).hostname or "").strip().lower().rstrip(".")
+    if not _is_allowed_github_image_host(final_host):
+        resp.close()
+        return jsonify({"error": "GitHub 이미지 리다이렉트 대상이 허용되지 않았습니다."}), 502
+
+    content_type = str(resp.headers.get("Content-Type", "") or "").strip()
+    lowered_type = content_type.lower()
+    if not lowered_type.startswith("image/"):
+        resp.close()
+        return jsonify({"error": "이미지 콘텐츠 타입이 아닙니다."}), 502
+
+    content_length_raw = str(resp.headers.get("Content-Length", "") or "").strip()
+    if content_length_raw.isdigit() and int(content_length_raw) > max_image_bytes:
+        resp.close()
+        return jsonify({"error": "이미지 파일이 너무 큽니다."}), 413
+
+    data_chunks: list[bytes] = []
+    total_size = 0
+    try:
+        for chunk in resp.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total_size += len(chunk)
+            if total_size > max_image_bytes:
+                resp.close()
+                return jsonify({"error": "이미지 파일이 너무 큽니다."}), 413
+            data_chunks.append(chunk)
+    except requests.RequestException as exc:
+        resp.close()
+        return jsonify({"error": f"이미지 다운로드 중 오류가 발생했습니다: {exc}"}), 502
+    finally:
+        resp.close()
+
+    response = Response(b"".join(data_chunks), content_type=content_type or "application/octet-stream")
+    response.headers["Cache-Control"] = str(resp.headers.get("Cache-Control", "public, max-age=3600"))
+    for header_name in ("ETag", "Last-Modified", "Expires"):
+        header_value = str(resp.headers.get(header_name, "") or "").strip()
+        if header_value:
+            response.headers[header_name] = header_value
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/api/github/webhook", methods=["POST"])

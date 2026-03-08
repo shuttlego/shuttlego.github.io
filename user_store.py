@@ -34,7 +34,7 @@ DEFAULT_USER_DB_PATH = DEFAULT_USER_DB_DIR / "user.db"
 DEFAULT_USER_BI_DB_DIR = Path(__file__).resolve().parent / "user-bi-data"
 DEFAULT_USER_BI_DB_PATH = DEFAULT_USER_BI_DB_DIR / "user-bi.db"
 _KST = timezone(timedelta(hours=9))
-DEFAULT_ROUTE_SEARCH_MODE = "distance"
+DEFAULT_ROUTE_SEARCH_MODE = "time"
 DEFAULT_ROUTE_MAX_DISTANCE_KM = 3.0
 ARRIVAL_REPORT_CREDIT_WINDOW_DAYS = 30
 ARRIVAL_REPORT_CREDIT_MIN_VALUE = 0.125
@@ -58,6 +58,7 @@ _IDENTITY_TABLES = {
     "anonymous_route_search_history",
     "arrival_reports",
     "arrival_report_likes",
+    "issue_likes",
     "consent_events",
     "github_cleanup_jobs",
 }
@@ -597,6 +598,32 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS issue_likes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              issue_number INTEGER NOT NULL,
+              actor_key TEXT NOT NULL,
+              user_id INTEGER,
+              visitor_id TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(issue_number, actor_key),
+              FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notice_ack_state (
+              actor_key TEXT PRIMARY KEY,
+              user_id INTEGER,
+              visitor_id TEXT,
+              last_ack_notice_number INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS consent_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id INTEGER NOT NULL,
@@ -660,6 +687,15 @@ def init_db(db_path: str | None = None) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_runtime_kv (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_social_provider_uid ON social_accounts(provider, provider_user_id)"
@@ -714,6 +750,18 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_arrival_report_likes_actor_key ON arrival_report_likes(actor_key, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_likes_issue_number ON issue_likes(issue_number, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_likes_actor_key ON issue_likes(actor_key, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notice_ack_state_user_id ON notice_ack_state(user_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notice_ack_state_visitor_id ON notice_ack_state(visitor_id)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due ON github_cleanup_jobs(status, next_attempt_at, created_at)"
@@ -818,6 +866,57 @@ def try_acquire_background_task_lease(
 
         conn.rollback()
         return False
+
+
+def get_runtime_kv_value(key: str, default: str = "") -> str:
+    normalized_key = str(key or "").strip()
+    if not normalized_key:
+        return str(default or "")
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_runtime_kv WHERE key = ? LIMIT 1",
+            (normalized_key,),
+        ).fetchone()
+    if row is None:
+        return str(default or "")
+    try:
+        raw_value = row.get("value") if isinstance(row, dict) else row["value"]
+    except (TypeError, KeyError, IndexError):
+        raw_value = None
+    return str(raw_value or "")
+
+
+def get_issue_cache_version() -> int:
+    raw = get_runtime_kv_value("issue_cache_version", "0")
+    try:
+        return max(0, int(str(raw).strip() or "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def bump_issue_cache_version() -> int:
+    _ensure_writes_allowed()
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO app_runtime_kv(key, value, updated_at)
+            VALUES(?, '1', ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value = CAST(CAST(COALESCE(app_runtime_kv.value, '0') AS INTEGER) + 1 AS TEXT),
+              updated_at = excluded.updated_at
+            RETURNING value
+            """,
+            ("issue_cache_version", now),
+        ).fetchone()
+        conn.commit()
+    if row is None:
+        return get_issue_cache_version()
+    raw_value = row.get("value") if isinstance(row, dict) else row["value"]
+    try:
+        return max(0, int(str(raw_value).strip() or "0"))
+    except (TypeError, ValueError):
+        return get_issue_cache_version()
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict | None:
@@ -2525,6 +2624,8 @@ def list_my_arrival_report_basic_index(
                 "route_id": int(item.get("route_id") or 0),
                 "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
                 "route_name": str(item.get("route_name") or "").strip(),
+                "route_type": str(item.get("route_type") or "").strip(),
+                "direction": str(item.get("direction") or "").strip(),
                 "day_type": str(item.get("day_type") or "").strip(),
                 "departure_time": str(item.get("departure_time") or "").strip(),
                 "stop_id": int(item.get("stop_id") or 0),
@@ -2575,6 +2676,8 @@ def list_my_arrival_report_route_index(
                 "route_id": int(item.get("route_id") or 0),
                 "route_uuid": (str(item.get("route_uuid") or "").strip() or None),
                 "route_name": str(item.get("route_name") or "").strip(),
+                "route_type": str(item.get("route_type") or "").strip(),
+                "direction": str(item.get("direction") or "").strip(),
                 "latest_client_reported_at": str(item.get("client_reported_at") or "").strip(),
                 "item_count": 0,
                 "stop_count": 0,
@@ -3282,6 +3385,201 @@ def get_arrival_report_like_state(
         if actor_key and str(row["actor_key"] or "") == actor_key:
             state["liked_by_me"] = True
     return state_map
+
+
+def get_notice_ack_number(
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> int:
+    actor_key, _, _ = _normalize_arrival_like_actor(user_id, visitor_id)
+    if not actor_key:
+        return 0
+
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            """
+            SELECT last_ack_notice_number
+            FROM notice_ack_state
+            WHERE actor_key = ?
+            LIMIT 1
+            """,
+            (actor_key,),
+        ).fetchone()
+
+    if row is None:
+        return 0
+    try:
+        return max(0, int(row["last_ack_notice_number"] or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def ack_notice_number(
+    notice_number: int,
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> int:
+    _ensure_writes_allowed()
+    normalized_notice_number = max(0, int(notice_number))
+    actor_key, normalized_user_id, normalized_visitor_id = _normalize_arrival_like_actor(user_id, visitor_id)
+    if not actor_key:
+        raise ValueError("ack_actor_required")
+
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        existing = conn.execute(
+            """
+            SELECT last_ack_notice_number
+            FROM notice_ack_state
+            WHERE actor_key = ?
+            LIMIT 1
+            """,
+            (actor_key,),
+        ).fetchone()
+        current_ack = 0
+        if existing is not None:
+            try:
+                current_ack = max(0, int(existing["last_ack_notice_number"] or 0))
+            except (TypeError, ValueError):
+                current_ack = 0
+        next_ack = max(current_ack, normalized_notice_number)
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO notice_ack_state(actor_key, user_id, visitor_id, last_ack_notice_number, updated_at)
+                VALUES(?, ?, ?, ?, ?)
+                """,
+                (
+                    actor_key,
+                    normalized_user_id,
+                    normalized_visitor_id,
+                    int(next_ack),
+                    now,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE notice_ack_state
+                SET last_ack_notice_number = ?, updated_at = ?
+                WHERE actor_key = ?
+                """,
+                (
+                    int(next_ack),
+                    now,
+                    actor_key,
+                ),
+            )
+        conn.commit()
+
+    return int(next_ack)
+
+
+def get_issue_like_state(
+    issue_numbers: list[int] | tuple[int, ...] | None,
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> dict[int, dict]:
+    normalized_issue_numbers: list[int] = []
+    seen: set[int] = set()
+    for raw in issue_numbers or []:
+        try:
+            issue_number = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if issue_number <= 0 or issue_number in seen:
+            continue
+        seen.add(issue_number)
+        normalized_issue_numbers.append(issue_number)
+    if not normalized_issue_numbers:
+        return {}
+
+    actor_key, _, _ = _normalize_arrival_like_actor(user_id, visitor_id)
+    placeholders = ",".join("?" for _ in normalized_issue_numbers)
+    with _conn_ctx() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT issue_number, actor_key
+            FROM issue_likes
+            WHERE issue_number IN ({placeholders})
+            """,
+            tuple(normalized_issue_numbers),
+        ).fetchall()
+
+    state_map: dict[int, dict] = {
+        int(issue_number): {"like_count": 0, "liked_by_me": False}
+        for issue_number in normalized_issue_numbers
+    }
+    for row in rows:
+        issue_number = int(row["issue_number"])
+        state = state_map.setdefault(issue_number, {"like_count": 0, "liked_by_me": False})
+        state["like_count"] = int(state["like_count"]) + 1
+        if actor_key and str(row["actor_key"] or "") == actor_key:
+            state["liked_by_me"] = True
+    return state_map
+
+
+def toggle_issue_like(
+    issue_number: int,
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> dict:
+    _ensure_writes_allowed()
+    normalized_issue_number = int(issue_number)
+    if normalized_issue_number <= 0:
+        raise ValueError("invalid_issue_number")
+
+    actor_key, normalized_user_id, normalized_visitor_id = _normalize_arrival_like_actor(user_id, visitor_id)
+    if not actor_key:
+        raise ValueError("like_actor_required")
+
+    with _conn_ctx() as conn:
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM issue_likes
+            WHERE issue_number = ? AND actor_key = ?
+            LIMIT 1
+            """,
+            (normalized_issue_number, actor_key),
+        ).fetchone()
+        liked = False
+        if existing is not None:
+            conn.execute(
+                "DELETE FROM issue_likes WHERE id = ?",
+                (int(existing["id"]),),
+            )
+            liked = False
+        else:
+            conn.execute(
+                """
+                INSERT INTO issue_likes(issue_number, actor_key, user_id, visitor_id, created_at)
+                VALUES(?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_issue_number,
+                    actor_key,
+                    normalized_user_id,
+                    normalized_visitor_id,
+                    utc_iso(),
+                ),
+            )
+            liked = True
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS like_count FROM issue_likes WHERE issue_number = ?",
+            (normalized_issue_number,),
+        ).fetchone()
+        conn.commit()
+
+    return {
+        "issue_number": normalized_issue_number,
+        "liked": bool(liked),
+        "like_count": int(count_row["like_count"] if count_row is not None else 0),
+    }
 
 
 def toggle_arrival_report_like(

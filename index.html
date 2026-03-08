@@ -337,6 +337,160 @@
       font-weight: 700;
       line-height: 1;
     }
+    .notice-open-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      min-width: 44px;
+      height: 42px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #374151;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: inherit;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    .notice-open-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .notice-open-btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    .notice-open-btn.notice-spotlight-target {
+      position: relative;
+      z-index: 115;
+      background: #fff;
+      border-color: #fff;
+      color: #0b1220;
+      box-shadow:
+        0 0 0 2px rgba(255, 255, 255, 0.96),
+        0 10px 22px rgba(9, 13, 30, 0.4);
+    }
+    .notice-spotlight-root {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 109;
+      pointer-events: none;
+    }
+    .notice-spotlight-root.show {
+      display: block;
+      pointer-events: auto;
+    }
+    .notice-spotlight-dim {
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 12, 25, 0.64);
+    }
+    .notice-spotlight-bubble {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      width: min(clamp(238px, 34vw, 336px), calc(100vw - 24px));
+      padding: clamp(14px, 1.35vw, 18px);
+      border-radius: 14px;
+      background: #0a2b63;
+      color: #f8fbff;
+      box-shadow: 0 18px 34px rgba(7, 13, 29, 0.45);
+      pointer-events: auto;
+      word-break: keep-all;
+    }
+    .notice-spotlight-bubble::after {
+      content: "";
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: #0a2b63;
+      transform: rotate(45deg);
+    }
+    .notice-spotlight-bubble.placement-right::after {
+      left: -7px;
+      top: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-bubble.placement-left::after {
+      right: -7px;
+      top: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-bubble.placement-bottom::after {
+      top: -7px;
+      left: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-bubble.placement-top::after {
+      bottom: -7px;
+      left: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.16);
+      color: #eff6ff;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .notice-spotlight-close:hover {
+      background: rgba(255, 255, 255, 0.24);
+    }
+    .notice-spotlight-title {
+      margin: 0 32px 8px 0;
+      font-size: clamp(15px, 0.86rem + 0.38vw, 17px);
+      line-height: 1.35;
+      font-weight: 800;
+      letter-spacing: -0.015em;
+    }
+    .notice-spotlight-body {
+      margin: 0;
+      font-size: clamp(14px, 0.82rem + 0.28vw, 15px);
+      line-height: 1.45;
+      color: #dbeafe;
+    }
+    .notice-spotlight-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .notice-spotlight-action-btn {
+      border: none;
+      border-radius: 9px;
+      padding: 10px 12px;
+      font-size: clamp(13px, 0.78rem + 0.22vw, 14px);
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      min-height: 40px;
+      white-space: nowrap;
+    }
+    .notice-spotlight-action-btn.ghost {
+      background: rgba(255, 255, 255, 0.15);
+      color: #eff6ff;
+    }
+    .notice-spotlight-action-btn.primary {
+      background: #fff;
+      color: #0b1f46;
+    }
+    .notice-open-btn-mobile {
+      display: none;
+    }
+    .notice-open-btn-desktop {
+      display: inline-flex;
+    }
     .search-bar .mobile-menu-btn:hover {
       background: #e2e8f0;
       border-color: #c5ceda;
@@ -379,8 +533,11 @@
       display: block;
       margin-left: 0;
     }
-    .header.route-mode .profile-menu-trigger {
+    .header.route-mode .notice-open-btn-desktop {
       order: 2;
+    }
+    .header.route-mode .profile-menu-trigger {
+      order: 3;
     }
     .route-mode-topline {
       display: contents;
@@ -1895,6 +2052,37 @@
       border-radius: 10px;
       padding: 12px;
       background: #fff;
+      transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+    }
+    .issue-card.issue-card-clickable {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .issue-card.issue-card-clickable:focus-visible {
+      outline: none;
+      border-color: #cbd5e1;
+      box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.28);
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .issue-card.issue-card-clickable:hover {
+        border-color: #cfd8e3;
+        background: #f8fafc;
+        box-shadow: 0 3px 12px rgba(15, 23, 42, 0.06);
+      }
+    }
+    @media (hover: none) and (pointer: coarse) {
+      .issue-card.issue-card-clickable:focus-visible {
+        border-color: #ebebeb;
+        box-shadow: none;
+      }
+    }
+    .issue-card.notice-list-card {
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+    .issue-card.notice-list-card .issue-card-title-row {
+      margin-bottom: 2px;
     }
     .issue-card-top {
       display: flex;
@@ -1980,9 +2168,80 @@
       margin-top: 10px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       gap: 10px;
       font-size: 12px;
+    }
+    .issue-card-footer.notice-list-footer {
+      margin-top: 6px;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .issue-card-time {
+      color: #777;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .issue-card-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: #555;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .issue-like-btn {
+      border: none;
+      background: transparent;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 2px 0;
+      font-size: 13px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: inherit;
+      transition: color .15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .issue-like-btn:hover {
+      color: #111827;
+      text-decoration: none;
+    }
+    .issue-like-btn:focus-visible {
+      outline: none;
+      border-radius: 999px;
+      box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.28);
+    }
+    .issue-like-icon {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+      transition: stroke .15s ease, fill .15s ease;
+    }
+    .issue-like-count {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .issue-like-btn.is-liked {
+      color: #e11d48;
+    }
+    .issue-like-btn.is-liked .issue-like-icon {
+      fill: currentColor;
+    }
+    .issue-like-btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      text-decoration: none;
     }
     .issue-detail-btn,
     .issue-external-link {
@@ -2083,8 +2342,83 @@
       font-size: 13px;
       line-height: 1.55;
       color: #444;
-      white-space: pre-wrap;
+      white-space: normal;
       word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .issue-detail-body > :first-child { margin-top: 0; }
+    .issue-detail-body > :last-child { margin-bottom: 0; }
+    .issue-detail-body p {
+      margin: 0 0 10px;
+    }
+    .issue-detail-body h1,
+    .issue-detail-body h2,
+    .issue-detail-body h3 {
+      margin: 14px 0 8px;
+      color: #1f2937;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+    .issue-detail-body h1 { font-size: 18px; }
+    .issue-detail-body h2 { font-size: 16px; }
+    .issue-detail-body h3 { font-size: 15px; }
+    .issue-detail-body ul,
+    .issue-detail-body ol {
+      margin: 0 0 10px 18px;
+      padding: 0;
+    }
+    .issue-detail-body li {
+      margin: 3px 0;
+    }
+    .issue-detail-body blockquote {
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      border-left: 3px solid #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+      border-radius: 6px;
+    }
+    .issue-detail-body hr {
+      border: 0;
+      border-top: 1px solid #e5e7eb;
+      margin: 12px 0;
+    }
+    .issue-inline-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      background: #eef2f7;
+      color: #111827;
+      border-radius: 6px;
+      padding: 1px 5px;
+    }
+    .issue-code-block {
+      margin: 0 0 10px;
+      border: 1px solid #e5e7eb;
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 10px;
+      overflow-x: auto;
+    }
+    .issue-code-block code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      white-space: pre;
+      color: #111827;
+    }
+    .issue-body-image {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #eee;
+      background: #fff;
+    }
+    .issue-like-summary {
+      margin-top: -2px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: #666;
     }
     .issue-comments-title {
       margin: 14px 0 8px;
@@ -3239,6 +3573,53 @@
         padding: 0;
         font-size: 18px;
       }
+      .search-bar .notice-open-btn-mobile {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+        border: 1px solid #d1d5db;
+        border-color: #d1d5db;
+        background: #eceff3;
+        color: #374151;
+      }
+      .search-bar .notice-open-btn-mobile:hover {
+        background: #e2e8f0;
+        border-color: #c5ceda;
+      }
+      .search-bar .notice-open-btn-mobile svg {
+        width: 21px;
+        height: 21px;
+      }
+      .search-bar .notice-open-btn-mobile.notice-spotlight-target {
+        background: #fff;
+        border-color: #fff;
+        color: #0b1220;
+        box-shadow:
+          0 0 0 2px rgba(255, 255, 255, 0.96),
+          0 10px 22px rgba(9, 13, 30, 0.4);
+      }
+      .notice-spotlight-bubble {
+        width: min(clamp(224px, 88vw, 360px), calc(100vw - 24px));
+        padding: clamp(14px, 4vw, 18px);
+      }
+      .notice-spotlight-title {
+        font-size: clamp(15px, 4vw, 16px);
+      }
+      .notice-spotlight-body {
+        font-size: clamp(14px, 3.8vw, 15px);
+      }
+      .notice-spotlight-actions {
+        justify-content: stretch;
+      }
+      .notice-spotlight-action-btn {
+        flex: 1;
+      }
+      .site-profile-wrap .notice-open-btn-desktop {
+        display: none;
+      }
       .site-profile-wrap {
         order: 3;
         flex: 1 1 0;
@@ -3265,6 +3646,10 @@
       }
       .header.route-mode .profile-menu-trigger {
         order: 3;
+      }
+      .header.route-mode .notice-open-btn-mobile,
+      .header.route-mode .notice-open-btn-desktop {
+        display: none !important;
       }
       .site-selector-wrap select { min-width: 0; width: 100%; }
       .site-selector-trigger {
@@ -4020,6 +4405,80 @@
       color: #071f4e;
       transform: scale(1.02);
     }
+    .report-schedule-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .report-schedule-summary-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .report-schedule-summary-label {
+      flex: 0 0 82px;
+      font-size: 12px;
+      line-height: 1.3;
+      font-weight: 700;
+      color: #c62828;
+    }
+    .report-schedule-summary-value {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .report-daytype-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+    .report-schedule-keyword {
+      color: #c62828;
+      font-weight: 700;
+    }
+    .report-daytype-option {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .report-daytype-option.active {
+      border-color: #bfdbfe;
+      background: #e8f0ff;
+      color: #1d4ed8;
+    }
+    .report-daytype-option:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+    .report-schedule-loading {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #64748b;
+      font-weight: 700;
+      padding: 6px 0;
+    }
     .report-confirm-body {
       padding: 18px 22px;
       overflow-y: auto;
@@ -4326,9 +4785,23 @@
       font-weight: 800;
       line-height: 1.4;
       color: #0f172a;
+      min-width: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .report-history-route-with-direction {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .report-history-route-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .report-history-group-meta {
       margin-top: 4px;
@@ -4492,7 +4965,19 @@
       color: #64748b;
     }
     .report-history-item-like {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       font-weight: 700;
+    }
+    .report-history-item-like .report-like-icon {
+      width: 14px;
+      height: 14px;
+      color: #6b7280;
+    }
+    .report-history-item-like .report-like-icon svg {
+      width: 14px;
+      height: 14px;
     }
     .report-history-load-more {
       width: 100%;
@@ -4571,33 +5056,33 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      min-width: 54px;
-      height: 28px;
-      padding: 0 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      background: #ffffff;
-      color: #64748b;
+      gap: 6px;
+      min-width: 0;
+      height: auto;
+      padding: 2px 0;
+      border: none;
+      background: transparent;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1;
       cursor: pointer;
-      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      transition: color .15s ease;
+      -webkit-tap-highlight-color: transparent;
     }
     .report-like-btn:hover {
-      border-color: #94a3b8;
-      color: #334155;
-      background: #f8fafc;
+      color: #111827;
     }
     .report-like-btn.is-liked {
-      border-color: #f59e0b;
-      background: #fff7ed;
-      color: #d97706;
+      color: #e11d48;
+    }
+    .report-like-btn.is-liked .report-like-icon {
+      fill: currentColor;
     }
     .report-like-btn:disabled,
     .report-like-btn.disabled {
       cursor: default;
       opacity: 0.55;
-      background: #f8fafc;
-      border-color: #e2e8f0;
+      background: transparent;
       color: #94a3b8;
     }
     .report-like-btn.pending {
@@ -4605,20 +5090,25 @@
     }
     .report-like-icon {
       display: inline-flex;
-      width: 14px;
-      height: 14px;
+      width: 20px;
+      height: 20px;
       flex: 0 0 auto;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .report-like-icon svg {
       display: block;
-      width: 14px;
-      height: 14px;
+      width: 20px;
+      height: 20px;
     }
     .report-like-count {
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 600;
       line-height: 1;
-      min-width: 10px;
+      min-width: 8px;
       text-align: center;
     }
     .route-detail-note-divider {
@@ -4815,7 +5305,7 @@
       bottom: calc(env(safe-area-inset-bottom) + 104px);
       z-index: 25;
       display: none;
-      width: min(64px, calc(100% - 24px));
+      width: min(84px, calc(100% - 24px));
       padding: 8px;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.96);
@@ -4826,11 +5316,33 @@
     .dev-debug-panel.show {
       display: block;
     }
+    .dev-debug-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
     .dev-debug-title {
       font-size: 10px;
       font-weight: 800;
       color: #071f4e;
-      margin-bottom: 5px;
+      margin-bottom: 0;
+    }
+    .dev-debug-close-btn {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      border: 1px solid #d8e0ec;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
     .dev-debug-grid {
       display: flex;
@@ -4848,6 +5360,10 @@
       text-align: center;
       appearance: none;
       -webkit-appearance: none;
+    }
+    .dev-debug-grid input[type="time"]::-webkit-calendar-picker-indicator {
+      opacity: 0.8;
+      cursor: pointer;
     }
     .dev-debug-actions {
       display: flex;
@@ -4996,7 +5512,7 @@
         padding-right: 12px;
       }
       .dev-debug-panel {
-        width: min(92px, calc(100% - 24px));
+        width: min(90px, calc(100% - 24px));
       }
     }
   </style>
@@ -5012,6 +5528,12 @@
       <div class="header-center">
         <div class="search-bar">
           <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
+          <button type="button" class="notice-open-btn notice-open-btn-mobile" id="mobileNoticeOpenBtn" title="공지" aria-label="공지">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
+              <path d="M20 9a4 4 0 0 1 0 6"></path>
+            </svg>
+          </button>
           <button type="button" class="mobile-menu-btn" id="mobileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
         </div>
       </div>
@@ -5025,6 +5547,12 @@
           <span class="site-trigger-arrow"></span>
         </button>
       </div>
+      <button type="button" class="notice-open-btn notice-open-btn-desktop" id="noticeOpenBtn" title="공지" aria-label="공지">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
+          <path d="M20 9a4 4 0 0 1 0 6"></path>
+        </svg>
+      </button>
       <button type="button" class="profile-menu-trigger" id="profileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
     </div>
     <div class="route-mode-header" id="routeModeHeader" aria-hidden="true">
@@ -5052,6 +5580,19 @@
       </div>
     </div>
   </header>
+
+  <div class="notice-spotlight-root" id="noticeSpotlightRoot" aria-hidden="true">
+    <div class="notice-spotlight-dim" id="noticeSpotlightDim"></div>
+    <section class="notice-spotlight-bubble placement-right" id="noticeSpotlightBubble" role="dialog" aria-label="새 공지 안내">
+      <button type="button" class="notice-spotlight-close" id="noticeSpotlightCloseBtn" aria-label="공지 안내 닫기">×</button>
+      <h2 class="notice-spotlight-title" id="noticeSpotlightTitle">새 공지가 올라왔어요</h2>
+      <p class="notice-spotlight-body" id="noticeSpotlightBody">공지 버튼에서 내용을 확인해 주세요.</p>
+      <div class="notice-spotlight-actions">
+        <button type="button" class="notice-spotlight-action-btn ghost" id="noticeSpotlightDismissBtn">닫기</button>
+        <button type="button" class="notice-spotlight-action-btn primary" id="noticeSpotlightOpenBtn">공지 보기</button>
+      </div>
+    </section>
+  </div>
 
   <div class="time-picker-backdrop" id="timePickerBackdrop" aria-hidden="true"></div>
   <div class="time-picker-modal" id="timePickerModal" role="dialog" aria-label="요일/출발 시간 선택" style="top: 56px;">
@@ -5260,6 +5801,33 @@
     </div>
   </div>
 
+  <div class="issue-modal-backdrop" id="noticeModalBackdrop" aria-hidden="true"></div>
+  <div class="issue-modal" id="noticeModal" role="dialog" aria-label="공지">
+    <div class="issue-modal-header">
+      <h2 class="issue-modal-title" id="noticeModalTitle">공지</h2>
+      <div class="issue-modal-header-actions">
+        <button type="button" class="issue-close-btn" id="noticeModalCloseBtn" aria-label="닫기">×</button>
+      </div>
+    </div>
+    <div class="issue-modal-body">
+      <div class="issue-feedback" id="noticeFeedback"></div>
+
+      <section class="issue-view show" id="noticeListView" aria-label="공지 목록">
+        <div class="issue-list" id="noticeList"></div>
+        <div class="issue-pagination" id="noticePagination">
+          <button type="button" class="issue-page-btn" id="noticePrevPageBtn">이전</button>
+          <span class="issue-page-info" id="noticePageInfo">1페이지</span>
+          <button type="button" class="issue-page-btn" id="noticeNextPageBtn">다음</button>
+        </div>
+      </section>
+
+      <section class="issue-view" id="noticeDetailView" aria-label="공지 상세">
+        <button type="button" class="issue-back-btn" id="noticeDetailBackBtn">← 목록으로</button>
+        <div id="noticeDetailContent"></div>
+      </section>
+    </div>
+  </div>
+
   <div class="report-modal-backdrop" id="arrivalReportBackdrop" aria-hidden="true"></div>
   <div class="report-modal" id="arrivalReportModal" role="dialog" aria-label="도착 시간 제보">
     <div class="report-modal-header">
@@ -5292,6 +5860,19 @@
     <div class="report-modal-actions">
       <button type="button" class="report-modal-btn" id="arrivalReportCancelBtn">닫기</button>
       <button type="button" class="report-modal-btn primary" id="arrivalReportSubmitBtn">제보하기</button>
+    </div>
+  </div>
+
+  <div class="report-confirm-backdrop" id="arrivalReportScheduleBackdrop" aria-hidden="true"></div>
+  <div class="report-confirm-modal" id="arrivalReportScheduleModal" role="dialog" aria-label="제보 요일 및 출발시각 선택">
+    <div class="report-modal-header">
+      <div class="report-modal-title" id="arrivalReportScheduleTitle">어느 요일의 노선인가요?</div>
+      <button type="button" class="report-modal-close-btn" id="arrivalReportScheduleCloseBtn" aria-label="닫기">×</button>
+    </div>
+    <div class="report-confirm-body" id="arrivalReportScheduleBody"></div>
+    <div class="report-modal-actions">
+      <button type="button" class="report-modal-btn" id="arrivalReportScheduleCancelBtn">이전</button>
+      <button type="button" class="report-modal-btn primary" id="arrivalReportSchedulePrimaryBtn">다음</button>
     </div>
   </div>
 
@@ -5331,8 +5912,8 @@
         <div class="results-placeholder" id="resultsPlaceholder">검색어를 입력한 뒤 검색하면 여기에 표시됩니다.</div>
         <div class="results-list" id="resultsList" style="display: none;"></div>
         <div class="route-sort-bar" id="routeSortBar">
-          <button type="button" class="route-sort-btn active" id="sortByDistance" data-sort="distance">거리순</button>
-          <button type="button" class="route-sort-btn" id="sortByTime" data-sort="time">시간순</button>
+          <button type="button" class="route-sort-btn" id="sortByDistance" data-sort="distance">거리순</button>
+          <button type="button" class="route-sort-btn active" id="sortByTime" data-sort="time">시간순</button>
           <div class="route-sort-spacer"></div>
           <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">최대 반경 3 km 이내</button>
           <div class="route-distance-popover" id="maxDistancePopover" role="dialog" aria-hidden="true">
@@ -5379,13 +5960,15 @@
         </div>
       </div>
       <div class="dev-debug-panel" id="devDebugPanel" aria-label="DEV Debug">
-        <div class="dev-debug-title">DEV Debug</div>
+        <div class="dev-debug-head">
+          <div class="dev-debug-title">DEV Debug</div>
+          <button type="button" class="dev-debug-close-btn" id="devDebugCloseBtn" aria-label="DEV Debug 닫기">×</button>
+        </div>
         <div class="dev-debug-grid">
-          <input type="text" inputmode="numeric" maxlength="5" id="devTimeInput" aria-label="DEV 시간 설정" placeholder="09:49" />
+          <input type="time" step="60" id="devTimeInput" aria-label="DEV 시간 설정" />
         </div>
         <div class="dev-debug-actions">
           <button type="button" id="devDebugCenterBtn">지도 중심</button>
-          <button type="button" id="devDebugApplyBtn">적용</button>
         </div>
       </div>
     </div>
@@ -5475,6 +6058,8 @@
       var departureTriggerText = document.getElementById('departureTriggerText');
       var dayTypeList = document.getElementById('dayTypeList');
       var shuttleMessage = document.getElementById('shuttleMessage');
+      var noticeOpenBtn = document.getElementById('noticeOpenBtn');
+      var mobileNoticeOpenBtn = document.getElementById('mobileNoticeOpenBtn');
       var mobileMenuTrigger = document.getElementById('mobileMenuTrigger');
       var profileMenuTrigger = document.getElementById('profileMenuTrigger');
       var routeProfileMenuTrigger = document.getElementById('routeProfileMenuTrigger');
@@ -5502,6 +6087,26 @@
       var issueNicknameInputGroup = document.getElementById('issueNicknameInputGroup');
       var issueNicknameFixedGroup = document.getElementById('issueNicknameFixedGroup');
       var issueNicknameFixedText = document.getElementById('issueNicknameFixedText');
+      var noticeModalBackdrop = document.getElementById('noticeModalBackdrop');
+      var noticeModal = document.getElementById('noticeModal');
+      var noticeModalCloseBtn = document.getElementById('noticeModalCloseBtn');
+      var noticeFeedback = document.getElementById('noticeFeedback');
+      var noticeListView = document.getElementById('noticeListView');
+      var noticeDetailView = document.getElementById('noticeDetailView');
+      var noticeListEl = document.getElementById('noticeList');
+      var noticePrevPageBtn = document.getElementById('noticePrevPageBtn');
+      var noticeNextPageBtn = document.getElementById('noticeNextPageBtn');
+      var noticePageInfo = document.getElementById('noticePageInfo');
+      var noticeDetailBackBtn = document.getElementById('noticeDetailBackBtn');
+      var noticeDetailContent = document.getElementById('noticeDetailContent');
+      var noticeSpotlightRoot = document.getElementById('noticeSpotlightRoot');
+      var noticeSpotlightDim = document.getElementById('noticeSpotlightDim');
+      var noticeSpotlightBubble = document.getElementById('noticeSpotlightBubble');
+      var noticeSpotlightTitle = document.getElementById('noticeSpotlightTitle');
+      var noticeSpotlightBody = document.getElementById('noticeSpotlightBody');
+      var noticeSpotlightCloseBtn = document.getElementById('noticeSpotlightCloseBtn');
+      var noticeSpotlightDismissBtn = document.getElementById('noticeSpotlightDismissBtn');
+      var noticeSpotlightOpenBtn = document.getElementById('noticeSpotlightOpenBtn');
       var mapControls = document.querySelector('.map-controls');
       var routeModeHeader = document.getElementById('routeModeHeader');
       var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
@@ -5569,6 +6174,13 @@
       var arrivalReportCloseBtn = document.getElementById('arrivalReportCloseBtn');
       var arrivalReportCancelBtn = document.getElementById('arrivalReportCancelBtn');
       var arrivalReportSubmitBtn = document.getElementById('arrivalReportSubmitBtn');
+      var arrivalReportScheduleBackdrop = document.getElementById('arrivalReportScheduleBackdrop');
+      var arrivalReportScheduleModal = document.getElementById('arrivalReportScheduleModal');
+      var arrivalReportScheduleTitle = document.getElementById('arrivalReportScheduleTitle');
+      var arrivalReportScheduleBody = document.getElementById('arrivalReportScheduleBody');
+      var arrivalReportScheduleCloseBtn = document.getElementById('arrivalReportScheduleCloseBtn');
+      var arrivalReportScheduleCancelBtn = document.getElementById('arrivalReportScheduleCancelBtn');
+      var arrivalReportSchedulePrimaryBtn = document.getElementById('arrivalReportSchedulePrimaryBtn');
       var arrivalReportConfirmBackdrop = document.getElementById('arrivalReportConfirmBackdrop');
       var arrivalReportConfirmModal = document.getElementById('arrivalReportConfirmModal');
       var arrivalReportConfirmTitle = document.getElementById('arrivalReportConfirmTitle');
@@ -5585,7 +6197,7 @@
       var devDebugPanel = document.getElementById('devDebugPanel');
       var devTimeInput = document.getElementById('devTimeInput');
       var devDebugCenterBtn = document.getElementById('devDebugCenterBtn');
-      var devDebugApplyBtn = document.getElementById('devDebugApplyBtn');
+      var devDebugCloseBtn = document.getElementById('devDebugCloseBtn');
       var placeHistoryPopover = document.getElementById('placeHistoryPopover');
 
       var map = null;
@@ -5630,11 +6242,11 @@
       var routeOptionsWrap = document.getElementById('routeOptionsWrap');
       var routeSortBar = document.getElementById('routeSortBar');
       var routeSearchModeIndicator = document.getElementById('routeSearchModeIndicator');
-      var currentSortMode = 'distance';
-      var defaultRouteSearchMode = 'distance';
-      var activeRouteSearchMode = 'distance';
-      var currentRouteSearchModeUsed = 'distance';
-      var settingsDraftRouteSearchMode = 'distance';
+      var currentSortMode = 'time';
+      var defaultRouteSearchMode = 'time';
+      var activeRouteSearchMode = 'time';
+      var currentRouteSearchModeUsed = 'time';
+      var settingsDraftRouteSearchMode = 'time';
       var maxDistanceTrigger = document.getElementById('maxDistanceTrigger');
       var maxDistancePopover = document.getElementById('maxDistancePopover');
       var maxDistanceSlider = document.getElementById('maxDistanceSlider');
@@ -5652,6 +6264,19 @@
       var issueHasNextPage = false;
       var issueCurrentState = 'all';
       var issueCurrentView = 'list';
+      var noticeCurrentPage = 1;
+      var noticeHasNextPage = false;
+      var noticeCurrentView = 'list';
+      var noticeSpotlightState = {
+        visible: false,
+        unseenCount: 0,
+        latestNoticeNumber: 0,
+        latestNoticeTitle: '',
+        lastAckNoticeNumber: 0,
+        ackPending: false,
+        hintLoading: false,
+        targetBtn: null
+      };
       var routeModeDirection = null;
       var routeModePlaceName = '';
       var routePlaceInputSubmitting = false;
@@ -5702,6 +6327,7 @@
         lat: null,
         lng: null
       };
+      var devDebugDismissed = false;
       var arrivalReportState = {
         loading: false,
         step: 'stops',
@@ -5716,13 +6342,25 @@
         clientLat: null,
         clientLng: null,
         recentPreference: null,
+        allowRecentFastForward: true,
         historyApplied: false,
         usedFallbackRadius: false,
         radiusM: 150,
         timeFilterApplied: false,
         timeWindowPastMinutes: 180,
         timeWindowFutureMinutes: 5,
-        timeWindowRelaxed: false
+        timeWindowRelaxed: false,
+        totalRouteCount: 0,
+        routeRequestTime: ''
+      };
+      var arrivalReportScheduleState = {
+        step: 'day-types',
+        loading: false,
+        candidate: null,
+        selectedDayType: '',
+        preferredDepartureTime: '',
+        routeDayCache: {},
+        recentPreferenceApplied: false
       };
       var arrivalReportConfirmMode = 'confirm';
       var arrivalReportPendingTarget = null;
@@ -5740,6 +6378,8 @@
       var arrivalReportConfirmReconfirmRequired = false;
       var arrivalReportConfirmRefreshNote = '';
       var arrivalReportModalHiddenForConfirm = false;
+      var arrivalReportModalHiddenForSchedule = false;
+      var arrivalReportScheduleModalHiddenForConfirm = false;
       var reportDataState = {
         mode: '',
         leaderboardWindow: 'all',
@@ -6180,6 +6820,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportState.clientLat = null;
         arrivalReportState.clientLng = null;
         arrivalReportState.recentPreference = null;
+        arrivalReportState.allowRecentFastForward = true;
         arrivalReportState.historyApplied = false;
         arrivalReportState.usedFallbackRadius = false;
         arrivalReportState.radiusM = 150;
@@ -6187,6 +6828,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportState.timeWindowPastMinutes = 180;
         arrivalReportState.timeWindowFutureMinutes = 5;
         arrivalReportState.timeWindowRelaxed = false;
+        arrivalReportState.totalRouteCount = 0;
+        arrivalReportState.routeRequestTime = '';
+        arrivalReportScheduleState.step = 'day-types';
+        arrivalReportScheduleState.loading = false;
+        arrivalReportScheduleState.candidate = null;
+        arrivalReportScheduleState.selectedDayType = '';
+        arrivalReportScheduleState.preferredDepartureTime = '';
+        arrivalReportScheduleState.routeDayCache = {};
+        arrivalReportScheduleState.recentPreferenceApplied = false;
         arrivalReportPendingTarget = null;
         arrivalReportPendingDate = null;
         arrivalReportConfirmMode = 'confirm';
@@ -6196,6 +6846,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportConfirmReconfirmRequired = false;
         arrivalReportConfirmRefreshNote = '';
         arrivalReportModalHiddenForConfirm = false;
+        arrivalReportModalHiddenForSchedule = false;
+        arrivalReportScheduleModalHiddenForConfirm = false;
         clearArrivalReportConfirmCountdown();
         clearArrivalReportConfirmFreshnessTimer();
         if (arrivalReportModal) {
@@ -6207,6 +6859,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setArrivalReportSearchVisible(false);
         if (arrivalReportSearchInput) arrivalReportSearchInput.value = '';
         if (arrivalReportCandidateList) arrivalReportCandidateList.classList.remove('stop-mode');
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.remove('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.remove('show');
         showArrivalReportStopMap(false);
         clearArrivalReportStopMapOverlays();
         clearArrivalReportStopMapCurrentOverlay();
@@ -6250,8 +6904,6 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (preference) {
           if (preference.site_id && preference.site_id !== selectedSiteId) {
             preference = null;
-          } else if (preference.day_type && preference.day_type !== selectedDayType) {
-            preference = null;
           }
         }
         arrivalReportState.recentPreference = preference;
@@ -6283,22 +6935,73 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           return null;
         }
         var preferredRouteId = Number(preference.route_id);
+        var preferredDayType = String(preference.day_type || '').trim();
         var preferredTime = String(preference.departure_time || '').trim();
         for (var idx = 0; idx < candidates.length; idx++) {
           var candidate = candidates[idx] || {};
           if (Number(candidate.route_id) !== preferredRouteId) continue;
+          var selectedCandidateDayType = '';
+          if (preferredDayType && Array.isArray(candidate.day_type_options) && candidate.day_type_options.indexOf(preferredDayType) >= 0) {
+            selectedCandidateDayType = preferredDayType;
+          } else if (preferredDayType && String(candidate.day_type || '').trim() === preferredDayType) {
+            selectedCandidateDayType = preferredDayType;
+          } else if (Array.isArray(candidate.day_type_options) && candidate.day_type_options.length === 1) {
+            selectedCandidateDayType = String(candidate.day_type_options[0] || '').trim();
+          } else if (candidate.day_type) {
+            selectedCandidateDayType = String(candidate.day_type || '').trim();
+          }
+          if (selectedCandidateDayType) {
+            candidate.selected_day_type = selectedCandidateDayType;
+          }
           var timeMatched = false;
-          if (preferredTime && Array.isArray(candidate.departure_times) && candidate.departure_times.indexOf(preferredTime) >= 0) {
+          if (
+            preferredTime &&
+            selectedCandidateDayType &&
+            Array.isArray(candidate.departure_times) &&
+            candidate.departure_times.indexOf(preferredTime) >= 0
+          ) {
             candidate.selected_departure_time = preferredTime;
             timeMatched = true;
           }
           return {
             index: idx,
             candidate: candidate,
+            preferred_day_type: selectedCandidateDayType,
+            preferred_departure_time: preferredTime,
             timeMatched: timeMatched
           };
         }
         return null;
+      }
+
+      function getReportDayTypeSortKey(value) {
+        var clean = String(value || '').trim();
+        if (clean === 'weekday') return '01';
+        if (clean === 'monday') return '02';
+        if (clean === 'saturday') return '03';
+        if (clean === 'holiday') return '04';
+        if (clean === 'familyday') return '05';
+        return '99-' + clean;
+      }
+
+      function getCandidateDayTypeOptions(candidate) {
+        candidate = candidate || {};
+        var options = [];
+        if (Array.isArray(candidate.day_type_options)) {
+          candidate.day_type_options.forEach(function(raw) {
+            var value = String(raw || '').trim();
+            if (!value || options.indexOf(value) >= 0) return;
+            options.push(value);
+          });
+        }
+        var dayTypeValue = String(candidate.day_type || '').trim();
+        if (dayTypeValue && options.indexOf(dayTypeValue) < 0) {
+          options.push(dayTypeValue);
+        }
+        options.sort(function(a, b) {
+          return getReportDayTypeSortKey(a).localeCompare(getReportDayTypeSortKey(b));
+        });
+        return options;
       }
 
       function normalizeRouteSearchQuery(value) {
@@ -6356,6 +7059,27 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           escapeHtml(sourceText.slice(0, matchInfo.start)) +
           '<mark class="report-route-highlight">' + escapeHtml(sourceText.slice(matchInfo.start, matchInfo.end)) + '</mark>' +
           escapeHtml(sourceText.slice(matchInfo.end))
+        );
+      }
+
+      function resolveReportDirectionValue(direction, routeType) {
+        var directionValue = String(direction || '').trim();
+        if (directionValue) return directionValue;
+        var normalizedRouteType = String(routeType || '').toLowerCase();
+        if (normalizedRouteType === 'commute_out' || normalizedRouteType === '2') return 'arrive';
+        if (normalizedRouteType === 'commute_in' || normalizedRouteType === '1') return 'depart';
+        return '';
+      }
+
+      function buildReportHistoryRouteTitleHtml(routeName, matchInfo, direction, routeType) {
+        var routeNameHtml = buildHighlightedRouteNameHtml(routeName || '-', matchInfo);
+        var directionValue = resolveReportDirectionValue(direction, routeType);
+        if (!directionValue) return routeNameHtml;
+        return (
+          '<span class="report-history-route-with-direction">' +
+            buildDirectionBadgeHtml(directionValue) +
+            '<span class="report-history-route-name">' + routeNameHtml + '</span>' +
+          '</span>'
         );
       }
 
@@ -6512,12 +7236,40 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var now = new Date();
         var hour = devOverrides.hour != null ? pad2(Number(devOverrides.hour) || 0) : pad2(now.getHours());
         var minute = devOverrides.minute != null ? pad2(Number(devOverrides.minute) || 0) : pad2(now.getMinutes());
-        devTimeInput.value = String(devTimeInput.value || (hour + ':' + minute));
+        var nextValue = hour + ':' + minute;
+        if (devOverrides.hour != null && devOverrides.minute != null) {
+          devTimeInput.value = nextValue;
+          return;
+        }
+        if (!String(devTimeInput.value || '').trim()) {
+          devTimeInput.value = nextValue;
+        }
+      }
+
+      function applyDevDebugTimeInput() {
+        var timeText = String(devTimeInput && devTimeInput.value || '').trim();
+        var match = timeText.match(/^(\d{1,2}):(\d{2})$/);
+        var hour = match ? parseInt(match[1], 10) : NaN;
+        var minute = match ? parseInt(match[2], 10) : NaN;
+        devOverrides.hour = isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
+        devOverrides.minute = isFinite(minute) && minute >= 0 && minute <= 59 ? minute : null;
+        syncDevDebugInputs();
+      }
+
+      function closeDevDebugPanel() {
+        devDebugDismissed = true;
+        updateDevDebugUi();
+      }
+
+      function reopenDevDebugPanel() {
+        devDebugDismissed = false;
+        updateDevDebugUi();
       }
 
       function updateDevDebugUi() {
         if (!devDebugPanel) return;
-        devDebugPanel.classList.toggle('show', isDevHost());
+        var shouldShow = isDevHost() && !devDebugDismissed;
+        devDebugPanel.classList.toggle('show', shouldShow);
         syncDevDebugInputs();
       }
 
@@ -6703,6 +7455,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             if (!authState.logged_in) resetPlaceHistoryState();
             updateAccountMenuUi();
             refreshAccountMenuRankBadge();
+            refreshNoticeSpotlightHint();
             return authState;
           })
           .catch(function() {
@@ -6711,6 +7464,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             resetPlaceHistoryState();
             updateAccountMenuUi();
             refreshAccountMenuRankBadge();
+            refreshNoticeSpotlightHint();
             return authState;
           });
       }
@@ -8235,11 +8989,448 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         issueFeedback.textContent = message;
       }
 
+      function setNoticeFeedback(type, message) {
+        if (!noticeFeedback) return;
+        if (!message) {
+          noticeFeedback.className = 'issue-feedback';
+          noticeFeedback.textContent = '';
+          return;
+        }
+        noticeFeedback.className = 'issue-feedback show ' + (type || 'info');
+        noticeFeedback.textContent = message;
+      }
+
       function formatIssueDate(iso) {
         if (!iso) return '-';
         var d = new Date(iso);
         if (isNaN(d.getTime())) return '-';
         return d.getFullYear() + '.' + pad2(d.getMonth() + 1) + '.' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+
+      function normalizeIssueLikeCount(raw) {
+        var value = Number(raw || 0);
+        if (!isFinite(value)) return 0;
+        return Math.max(0, Math.floor(value));
+      }
+
+      function buildIssueLikeButtonHtml(issueNumber, liked, likeCount) {
+        var normalizedLiked = !!liked;
+        var normalizedCount = normalizeIssueLikeCount(likeCount);
+        return '<button type="button" class="issue-like-btn' +
+          (normalizedLiked ? ' is-liked' : '') +
+          '" data-number="' + escapeAttr(String(issueNumber || '')) +
+          '" data-liked="' + (normalizedLiked ? '1' : '0') +
+          '" data-like-count="' + escapeAttr(String(normalizedCount)) +
+          '" aria-pressed="' + (normalizedLiked ? 'true' : 'false') +
+          '">' +
+            '<svg class="issue-like-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+              '<path d="m20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>' +
+            '</svg>' +
+            '<span class="issue-like-count">' + escapeHtml(String(normalizedCount)) + '</span>' +
+          '</button>';
+      }
+
+      function setIssueLikeButtonState(btn, liked, likeCount) {
+        if (!btn) return;
+        var normalizedLiked = !!liked;
+        var normalizedCount = normalizeIssueLikeCount(likeCount);
+        btn.classList.toggle('is-liked', normalizedLiked);
+        btn.setAttribute('data-liked', normalizedLiked ? '1' : '0');
+        btn.setAttribute('data-like-count', String(normalizedCount));
+        btn.setAttribute('aria-pressed', normalizedLiked ? 'true' : 'false');
+        var countEl = btn.querySelector('.issue-like-count');
+        if (countEl) countEl.textContent = String(normalizedCount);
+      }
+
+      function bindIssueLikeButtons(rootEl, feedbackFn, onAfterLike) {
+        if (!rootEl) return;
+        rootEl.querySelectorAll('.issue-like-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var issueNumber = parseInt(String(btn.getAttribute('data-number') || '0'), 10);
+            if (!issueNumber || btn.classList.contains('pending')) return;
+            btn.classList.add('pending');
+            btn.disabled = true;
+            fetchJson(API_BASE + '/api/issues/' + encodeURIComponent(issueNumber) + '/like', {
+              method: 'POST'
+            })
+              .then(function(result) {
+                if (!result.ok) {
+                  throw new Error(result.data.error || '좋아요 처리에 실패했습니다.');
+                }
+                setIssueLikeButtonState(btn, !!result.data.liked, Number(result.data.like_count || 0));
+                if (typeof onAfterLike === 'function') onAfterLike(issueNumber, result.data || {});
+              })
+              .catch(function(err) {
+                if (typeof feedbackFn === 'function') feedbackFn('error', err.message || '좋아요 처리에 실패했습니다.');
+              })
+              .finally(function() {
+                btn.disabled = false;
+                btn.classList.remove('pending');
+              });
+          });
+        });
+      }
+
+      function bindIssueCardOpen(rootEl, openDetailFn) {
+        if (!rootEl || typeof openDetailFn !== 'function') return;
+        rootEl.querySelectorAll('.issue-card-clickable[data-number]').forEach(function(card) {
+          if (card.getAttribute('data-card-open-bound') === '1') return;
+          card.setAttribute('data-card-open-bound', '1');
+
+          var triggerOpen = function() {
+            var no = parseInt(String(card.getAttribute('data-number') || '0'), 10);
+            if (!no) return;
+            openDetailFn(no);
+          };
+
+          card.addEventListener('click', function(e) {
+            if (e.defaultPrevented) return;
+            var target = e.target;
+            if (target && typeof target.closest === 'function' &&
+              target.closest('.issue-like-btn, a, button, input, textarea, select, label')) {
+              return;
+            }
+            triggerOpen();
+          });
+
+          card.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            if (e.defaultPrevented) return;
+            if (e.target && e.target !== card) return;
+            e.preventDefault();
+            triggerOpen();
+          });
+        });
+      }
+
+      function sanitizeIssueExternalUrl(rawUrl) {
+        var value = String(rawUrl || '').trim();
+        if (!value) return '';
+        try {
+          var url = new URL(value, window.location.origin);
+          if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+          return url.href;
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function buildIssueImageSrc(rawUrl) {
+        var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+        if (!safeUrl) return '';
+        try {
+          var parsed = new URL(safeUrl);
+          var host = String(parsed.hostname || '').toLowerCase().replace(/\.$/, '');
+          var isGithubImageHost =
+            host === 'github.com' ||
+            host === 'raw.githubusercontent.com' ||
+            host === 'user-images.githubusercontent.com' ||
+            host === 'private-user-images.githubusercontent.com' ||
+            host === 'objects.githubusercontent.com' ||
+            host === 'camo.githubusercontent.com' ||
+            host === 'media.githubusercontent.com' ||
+            host.endsWith('.githubusercontent.com');
+          if (!isGithubImageHost) return safeUrl;
+          return API_BASE + '/api/github/image-proxy?url=' + encodeURIComponent(safeUrl);
+        } catch (e) {
+          return safeUrl;
+        }
+      }
+
+      function extractIssueHtmlAttribute(tagText, attrName) {
+        var safeName = String(attrName || '').replace(/[^a-z0-9_-]/gi, '');
+        if (!safeName) return '';
+        var pattern = new RegExp(
+          '\\b' + safeName + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'=<>`]+))',
+          'i'
+        );
+        var match = String(tagText || '').match(pattern);
+        if (!match) return '';
+        return String(match[1] || match[2] || match[3] || '').trim();
+      }
+
+      function sanitizeIssueImageDimension(rawValue) {
+        var value = String(rawValue || '').trim().toLowerCase();
+        if (!value) return '';
+        if (/^\d{1,4}$/.test(value)) {
+          var px = parseInt(value, 10);
+          if (isFinite(px) && px >= 1 && px <= 2400) return String(px);
+          return '';
+        }
+        if (/^\d{1,3}%$/.test(value)) {
+          var percent = parseInt(value.slice(0, -1), 10);
+          if (isFinite(percent) && percent >= 1 && percent <= 100) {
+            return String(percent) + '%';
+          }
+        }
+        return '';
+      }
+
+      function sanitizeIssueImageStyle(rawStyle) {
+        var styleText = String(rawStyle || '').trim();
+        if (!styleText) return '';
+        var allowedProps = {
+          'width': true,
+          'min-width': true,
+          'max-width': true,
+          'height': true,
+          'min-height': true,
+          'max-height': true,
+          'display': true,
+          'margin': true,
+          'margin-top': true,
+          'margin-right': true,
+          'margin-bottom': true,
+          'margin-left': true,
+          'border': true,
+          'border-radius': true,
+          'object-fit': true
+        };
+        var safeRules = [];
+        styleText.split(';').forEach(function(rawRule) {
+          var rule = String(rawRule || '').trim();
+          if (!rule) return;
+          var sep = rule.indexOf(':');
+          if (sep <= 0) return;
+          var prop = String(rule.slice(0, sep) || '').trim().toLowerCase();
+          var value = String(rule.slice(sep + 1) || '').trim();
+          if (!prop || !value || !allowedProps[prop]) return;
+          if (/url\s*\(|expression\s*\(|javascript:|data:/i.test(value)) return;
+          if (!/^[a-z0-9#.,()%\s_\/+\-]+$/i.test(value)) return;
+          safeRules.push(prop + ': ' + value);
+        });
+        return safeRules.join('; ');
+      }
+
+      function stripIssueHtmlTags(text) {
+        return String(text || '').replace(/<[^>]+>/g, '').trim();
+      }
+
+      function renderIssueInlineMarkdown(text) {
+        var escaped = escapeHtml(text);
+        escaped = escaped.replace(/`([^`\n]+)`/g, '<code class="issue-inline-code">$1</code>');
+        escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+        escaped = escaped.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+        escaped = escaped.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+        escaped = escaped.replace(/(https?:\/\/[^\s<]+)/gi, function(match) {
+          var safeUrl = sanitizeIssueExternalUrl(match);
+          if (!safeUrl) return match;
+          return '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(match) + '</a>';
+        });
+        return escaped;
+      }
+
+      function renderIssueBodyHtml(text) {
+        var source = String(text || '').replace(/\r\n?/g, '\n');
+        if (!source.trim()) return '-';
+        var tokenItems = [];
+
+        function issueTokenize(html) {
+          var token = '__ISSUE_TOKEN_' + tokenItems.length + '__';
+          tokenItems.push({ token: token, html: String(html || '') });
+          return token;
+        }
+
+        source = source.replace(/```(?:[a-z0-9_-]+)?\n([\s\S]*?)```/gi, function(match, codeBody) {
+          var safeCode = escapeHtml(String(codeBody || '').replace(/\n+$/, ''));
+          return issueTokenize('<pre class="issue-code-block"><code>' + safeCode + '</code></pre>');
+        });
+
+        source = source.replace(/<img\b[^>]*>/gi, function(tag) {
+          var rawUrl = extractIssueHtmlAttribute(tag, 'src');
+          var imageSrc = buildIssueImageSrc(rawUrl);
+          if (!imageSrc) return '';
+          var alt = extractIssueHtmlAttribute(tag, 'alt');
+          var width = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'width'));
+          var height = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'height'));
+          var style = sanitizeIssueImageStyle(extractIssueHtmlAttribute(tag, 'style'));
+          var extraAttrs = '';
+          if (width) extraAttrs += ' width="' + escapeAttr(width) + '"';
+          if (height) extraAttrs += ' height="' + escapeAttr(height) + '"';
+          if (style) extraAttrs += ' style="' + escapeAttr(style) + '"';
+          return issueTokenize(
+            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy"' + extraAttrs + ' />'
+          );
+        });
+
+        source = source.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+(?:\?[^)\s]*)?)\)/gi, function(match, alt, rawUrl) {
+          var imageSrc = buildIssueImageSrc(rawUrl);
+          if (!imageSrc) return match;
+          return issueTokenize(
+            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
+          );
+        });
+
+        source = source.replace(/<a\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi, function(match, href1, href2, href3, labelRaw) {
+          var rawUrl = href1 || href2 || href3 || '';
+          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+          if (!safeUrl) return stripIssueHtmlTags(labelRaw);
+          var label = stripIssueHtmlTags(labelRaw) || safeUrl;
+          return issueTokenize(
+            '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              escapeHtml(label) +
+            '</a>'
+          );
+        });
+
+        source = source.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, function(match, label, rawUrl) {
+          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+          if (!safeUrl) return match;
+          return issueTokenize(
+            '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+              escapeHtml(String(label || safeUrl)) +
+            '</a>'
+          );
+        });
+
+        var lines = source.split('\n');
+        var html = [];
+        var listStack = [];
+        function closeListItemAt(depth) {
+          if (depth < 0 || depth >= listStack.length) return;
+          if (!listStack[depth].liOpen) return;
+          html.push('</li>');
+          listStack[depth].liOpen = false;
+        }
+        function closeLists() {
+          while (listStack.length > 0) {
+            var depth = listStack.length - 1;
+            closeListItemAt(depth);
+            html.push('</' + listStack[depth].type + '>');
+            listStack.pop();
+          }
+        }
+        function appendToCurrentListItem(contentHtml, prependBreak) {
+          if (!listStack.length) return false;
+          var depth = listStack.length - 1;
+          if (!listStack[depth].liOpen) {
+            html.push('<li>');
+            listStack[depth].liOpen = true;
+          }
+          html.push((prependBreak ? '<br>' : '') + String(contentHtml || ''));
+          return true;
+        }
+        function startListItem(depth, type, contentHtml) {
+          var parsedDepth = Number(depth);
+          if (!isFinite(parsedDepth)) parsedDepth = 0;
+          var targetDepth = Math.max(0, Math.floor(parsedDepth));
+          var listType = (type === 'ol') ? 'ol' : 'ul';
+          if (targetDepth > listStack.length) {
+            targetDepth = listStack.length;
+          }
+
+          while (listStack.length - 1 > targetDepth) {
+            var closeDepth = listStack.length - 1;
+            closeListItemAt(closeDepth);
+            html.push('</' + listStack[closeDepth].type + '>');
+            listStack.pop();
+          }
+
+          if (listStack.length - 1 === targetDepth && listStack.length > 0) {
+            closeListItemAt(targetDepth);
+            if (listStack[targetDepth].type !== listType) {
+              html.push('</' + listStack[targetDepth].type + '>');
+              listStack.pop();
+            }
+          }
+
+          while (listStack.length > 0 && (listStack.length - 1 < targetDepth)) {
+            var parentDepth = listStack.length - 1;
+            if (parentDepth >= 0 && !listStack[parentDepth].liOpen) {
+              html.push('<li>');
+              listStack[parentDepth].liOpen = true;
+            }
+            var nextListType = (listStack.length === targetDepth) ? listType : 'ul';
+            html.push('<' + nextListType + '>');
+            listStack.push({ type: nextListType, liOpen: false });
+          }
+
+          if (!listStack.length || listStack[listStack.length - 1].type !== listType) {
+            html.push('<' + listType + '>');
+            listStack.push({ type: listType, liOpen: false });
+          }
+
+          var depthNow = listStack.length - 1;
+          html.push('<li>' + String(contentHtml || ''));
+          listStack[depthNow].liOpen = true;
+        }
+        function getListDepthFromIndent(rawIndent) {
+          var spaces = String(rawIndent || '').replace(/\t/g, '  ').length;
+          return Math.floor(Math.max(0, spaces) / 2);
+        }
+
+        lines.forEach(function(line) {
+          var rawLine = String(line || '');
+          var trimmed = rawLine.trim();
+          var match = null;
+          if (!trimmed) {
+            if (listStack.length) {
+              appendToCurrentListItem('', true);
+            } else {
+              closeLists();
+            }
+            return;
+          }
+          if (/^__ISSUE_TOKEN_\d+__$/.test(trimmed)) {
+            if (!appendToCurrentListItem(trimmed, true)) {
+              closeLists();
+              html.push(trimmed);
+            }
+            return;
+          }
+          if (/^-{3,}$/.test(trimmed)) {
+            closeLists();
+            html.push('<hr>');
+            return;
+          }
+          match = trimmed.match(/^###\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h3>' + renderIssueInlineMarkdown(match[1]) + '</h3>');
+            return;
+          }
+          match = trimmed.match(/^##\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h2>' + renderIssueInlineMarkdown(match[1]) + '</h2>');
+            return;
+          }
+          match = trimmed.match(/^#\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<h1>' + renderIssueInlineMarkdown(match[1]) + '</h1>');
+            return;
+          }
+          match = trimmed.match(/^>\s+(.+)$/);
+          if (match) {
+            closeLists();
+            html.push('<blockquote>' + renderIssueInlineMarkdown(match[1]) + '</blockquote>');
+            return;
+          }
+          match = rawLine.match(/^(\s*)\d+\.\s+(.+)$/);
+          if (match) {
+            startListItem(getListDepthFromIndent(match[1]), 'ol', renderIssueInlineMarkdown(match[2]));
+            return;
+          }
+          match = rawLine.match(/^(\s*)[-*+]\s+(.+)$/);
+          if (match) {
+            startListItem(getListDepthFromIndent(match[1]), 'ul', renderIssueInlineMarkdown(match[2]));
+            return;
+          }
+          if (appendToCurrentListItem(renderIssueInlineMarkdown(trimmed), true)) {
+            return;
+          }
+          closeLists();
+          html.push('<p>' + renderIssueInlineMarkdown(trimmed) + '</p>');
+        });
+        closeLists();
+        html = html.join('');
+        tokenItems.forEach(function(item) {
+          html = html.split(item.token).join(item.html);
+        });
+        return html || '<p>-</p>';
       }
 
       function setIssueView(view) {
@@ -8248,6 +9439,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (issueDetailView) issueDetailView.classList.toggle('show', view === 'detail');
         if (issueFormView) issueFormView.classList.toggle('show', view === 'form');
         if (issueComposeBtn) issueComposeBtn.style.display = (view === 'list') ? '' : 'none';
+      }
+
+      function setNoticeView(view) {
+        noticeCurrentView = view;
+        if (noticeListView) noticeListView.classList.toggle('show', view === 'list');
+        if (noticeDetailView) noticeDetailView.classList.toggle('show', view === 'detail');
       }
 
       function renderIssuePagination(pagination) {
@@ -8265,6 +9462,25 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             issuePageInfo.textContent = page + ' / ' + totalPages + '페이지';
           } else {
             issuePageInfo.textContent = page + '페이지';
+          }
+        }
+      }
+
+      function renderNoticePagination(pagination) {
+        var page = pagination && pagination.page ? pagination.page : 1;
+        var hasPrev = !!(pagination && pagination.has_prev);
+        var hasNext = !!(pagination && pagination.has_next);
+        var totalCount = pagination ? pagination.total_count : null;
+        noticeCurrentPage = page;
+        noticeHasNextPage = hasNext;
+        if (noticePrevPageBtn) noticePrevPageBtn.disabled = !hasPrev;
+        if (noticeNextPageBtn) noticeNextPageBtn.disabled = !hasNext;
+        if (noticePageInfo) {
+          if (typeof totalCount === 'number' && totalCount >= 0) {
+            var totalPages = Math.max(1, Math.ceil(totalCount / ISSUE_PAGE_SIZE));
+            noticePageInfo.textContent = page + ' / ' + totalPages + '페이지';
+          } else {
+            noticePageInfo.textContent = page + '페이지';
           }
         }
       }
@@ -8290,8 +9506,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             : '';
           var bodyPreview = (issue.body || '').trim();
           if (bodyPreview.length > 180) bodyPreview = bodyPreview.slice(0, 180) + '...';
+          var likeHtml = buildIssueLikeButtonHtml(issue.number, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
           var card = document.createElement('article');
-          card.className = 'issue-card';
+          card.className = 'issue-card issue-card-clickable';
+          card.setAttribute('data-number', String(issue.number || ''));
+          card.setAttribute('role', 'button');
+          card.setAttribute('tabindex', '0');
+          card.setAttribute('aria-label', '이슈 상세 보기');
           card.innerHTML =
             '<div class="issue-card-top">' +
               '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
@@ -8304,19 +9525,50 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             '</div>' +
             '<div class="issue-card-body">' + (bodyPreview ? escapeHtml(bodyPreview).replace(/\n/g, '<br>') : '-') + '</div>' +
             '<div class="issue-card-footer">' +
-              '<button type="button" class="issue-detail-btn" data-number="' + issue.number + '">내용/댓글 보기</button>' +
-              '<div>댓글 ' + (issue.comments || 0) + '개</div>' +
+              '<div class="issue-card-meta">' +
+                likeHtml +
+                '<span>댓글 ' + normalizeIssueLikeCount(issue.comments || 0) + '개</span>' +
+              '</div>' +
             '</div>';
           issueListEl.appendChild(card);
         });
 
-        issueListEl.querySelectorAll('.issue-detail-btn').forEach(function(btn) {
-          btn.addEventListener('click', function() {
-            var no = this.getAttribute('data-number');
-            if (!no) return;
-            openIssueDetail(parseInt(no, 10));
-          });
+        bindIssueCardOpen(issueListEl, openIssueDetail);
+        bindIssueLikeButtons(issueListEl, setIssueFeedback);
+      }
+
+      function renderNoticeList(issues) {
+        if (!noticeListEl) return;
+        noticeListEl.innerHTML = '';
+        if (!issues || issues.length === 0) {
+          noticeListEl.innerHTML = '<div class="issue-empty">등록된 공지가 없습니다.</div>';
+          return;
+        }
+
+        issues.forEach(function(issue) {
+          var likeHtml = buildIssueLikeButtonHtml(issue.number, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
+          var card = document.createElement('article');
+          card.className = 'issue-card issue-card-clickable notice-list-card';
+          card.setAttribute('data-number', String(issue.number || ''));
+          card.setAttribute('role', 'button');
+          card.setAttribute('tabindex', '0');
+          card.setAttribute('aria-label', '공지 상세 보기');
+          card.innerHTML =
+            '<div class="issue-card-title-row">' +
+              '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
+            '</div>' +
+            '<div class="issue-card-footer notice-list-footer">' +
+              '<span class="issue-card-time">' + formatIssueDate(issue.created_at) + '</span>' +
+              '<div class="issue-card-meta">' +
+                likeHtml +
+                '<span>댓글 ' + normalizeIssueLikeCount(issue.comments || 0) + '개</span>' +
+              '</div>' +
+            '</div>';
+          noticeListEl.appendChild(card);
         });
+
+        bindIssueCardOpen(noticeListEl, openNoticeDetail);
+        bindIssueLikeButtons(noticeListEl, setNoticeFeedback);
       }
 
       function loadIssues(page, preserveFeedback) {
@@ -8325,16 +9577,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!preserveFeedback) setIssueFeedback('info', '이슈 목록을 불러오는 중입니다...');
         issueListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
 
-        var url = API_BASE + '/api/issues?state=' + encodeURIComponent(issueCurrentState) +
+        var url = API_BASE + '/api/issues?kind=issue&state=' + encodeURIComponent(issueCurrentState) +
           '&page=' + targetPage +
           '&per_page=' + ISSUE_PAGE_SIZE;
 
-        fetch(url)
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
+        fetchJson(url)
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data.error || '이슈 목록 조회에 실패했습니다.');
@@ -8353,34 +9600,128 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           });
       }
 
+      function loadNotices(page, preserveFeedback) {
+        if (!noticeListEl) return;
+        var targetPage = page || 1;
+        if (!preserveFeedback) setNoticeFeedback('info', '공지 목록을 불러오는 중입니다...');
+        noticeListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
+
+        var url = API_BASE + '/api/issues?kind=notice&state=all' +
+          '&page=' + targetPage +
+          '&per_page=' + ISSUE_PAGE_SIZE;
+
+        fetchJson(url)
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '공지 목록 조회에 실패했습니다.');
+            }
+            var data = result.data || {};
+            var issues = Array.isArray(data.issues) ? data.issues : [];
+            var pagination = data.pagination || {};
+            renderNoticeList(issues);
+            renderNoticePagination(pagination);
+            if (!preserveFeedback) setNoticeFeedback('', '');
+          })
+          .catch(function(err) {
+            noticeListEl.innerHTML = '<div class="issue-empty">목록을 불러오지 못했습니다.</div>';
+            renderNoticePagination({ page: targetPage, has_prev: targetPage > 1, has_next: false });
+            setNoticeFeedback('error', err.message || '공지 목록 조회에 실패했습니다.');
+          });
+      }
+
+      function buildIssueDetailHtml(issue, comments, commentAuthorFieldHtml, commentBodyId, commentSubmitId, commentNicknameId) {
+        var isNotice = !!issue.is_notice;
+        var status = (issue.state || 'open').toLowerCase();
+        var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
+        var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
+        var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
+        var issueDisplayName = String(issue.display_name || '').trim();
+        var issueAuthorClass = 'issue-detail-author' + ((issue.is_repo_owner || isNotice) ? ' owner' : '');
+        var issueAuthorHtml = issueDisplayName
+          ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
+          : '';
+        var commentsHtml = '';
+        if (!comments.length) {
+          commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
+        } else {
+          var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
+          var currentPublicUserId = isLoggedInCommentWriter
+            ? String((authState.user && authState.user.id) || '').trim()
+            : '';
+          commentsHtml = comments.map(function(comment) {
+            var rawUser = String(comment.user || 'unknown');
+            var isBotAuthor = !!comment.is_bot;
+            var displayUser = String(comment.display_name || '');
+            if (!displayUser.trim() && !isBotAuthor) {
+              displayUser = rawUser || 'unknown';
+            }
+            var commentUserId = String(comment.user_id || '').trim();
+            var isRepoOwner = !!comment.is_repo_owner;
+            var isSelfAuthor = !!(currentPublicUserId && commentUserId && commentUserId === currentPublicUserId);
+            if (!isSelfAuthor && isLoggedInCommentWriter && !commentUserId) {
+              var currentNickname = String((authState.user && authState.user.nickname) || '').trim();
+              if (currentNickname && displayUser.trim() === currentNickname) isSelfAuthor = true;
+            }
+            var currentNicknameForRender = isLoggedInCommentWriter
+              ? String((authState.user && authState.user.nickname) || '').trim()
+              : '';
+            if (isSelfAuthor && currentNicknameForRender) {
+              displayUser = currentNicknameForRender;
+            }
+            var safeDisplayUser = displayUser.trim();
+            var authorClass = isRepoOwner ? 'issue-owner-name' : 'issue-comment-author';
+            var metaParts = [];
+            if (isSelfAuthor) metaParts.push('<span class="issue-self-mark">*</span>');
+            if (safeDisplayUser) {
+              metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
+              metaParts.push('<span class="issue-comment-separator">·</span>');
+            }
+            metaParts.push('<span>' + formatIssueDate(comment.created_at) + '</span>');
+            return (
+              '<div class="issue-comment-item">' +
+                '<div class="issue-comment-meta">' + metaParts.join('') + '</div>' +
+                '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
+              '</div>'
+            );
+          }).join('');
+        }
+        var likeHtml = buildIssueLikeButtonHtml(issue.number, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
+        return '' +
+          '<div class="issue-card-top">' +
+            '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
+            '<div>' + formatIssueDate(issue.created_at) + '</div>' +
+          '</div>' +
+          '<div class="issue-detail-title-row">' +
+            '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
+            issueAuthorHtml +
+          '</div>' +
+          '<div class="issue-like-summary"><span class="issue-card-meta">' + likeHtml + '<span>댓글 ' + normalizeIssueLikeCount(comments.length) + '개</span></span></div>' +
+          '<div class="issue-detail-body">' + renderIssueBodyHtml(issue.body || '') + '</div>' +
+          '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
+          '<div class="issue-comments-list">' + commentsHtml + '</div>' +
+          '<div class="issue-comment-compose">' +
+            '<div class="issue-comment-compose-title">댓글 작성</div>' +
+            commentAuthorFieldHtml +
+            '<textarea id="' + commentBodyId + '" placeholder="댓글을 입력해 주세요."></textarea>' +
+            '<div class="issue-comment-compose-actions">' +
+              '<button type="button" class="issue-form-btn primary" id="' + commentSubmitId + '">댓글 등록</button>' +
+            '</div>' +
+          '</div>';
+      }
+
       function openIssueDetail(issueNumber) {
         if (!issueDetailContent || !issueNumber) return;
         setIssueView('detail');
         issueDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
 
-        fetch(API_BASE + '/api/issues/' + issueNumber)
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
+        fetchJson(API_BASE + '/api/issues/' + issueNumber)
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data.error || '이슈 상세 조회에 실패했습니다.');
             }
             var payload = result.data || {};
             var issue = payload.issue || {};
-            var comments = payload.comments || [];
-            var isNotice = !!issue.is_notice;
-            var status = (issue.state || 'open').toLowerCase();
-            var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
-            var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
-            var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
-            var issueDisplayName = String(issue.display_name || '').trim();
-            var issueAuthorClass = 'issue-detail-author' + ((issue.is_repo_owner || isNotice) ? ' owner' : '');
-            var issueAuthorHtml = issueDisplayName
-              ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
-              : '';
+            var comments = Array.isArray(payload.comments) ? payload.comments : [];
             var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
             var fixedCommentNickname = isLoggedInCommentWriter
               ? String(authState.user.nickname || '').trim()
@@ -8393,74 +9734,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                     '<input type="text" id="issueDetailCommentNickname" maxlength="40" placeholder="예: 셔틀러버" />' +
                   '</div>'
                 );
-            var commentsHtml = '';
-            if (!comments.length) {
-              commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
-            } else {
-              var currentPublicUserId = isLoggedInCommentWriter
-                ? String((authState.user && authState.user.id) || '').trim()
-                : '';
-              commentsHtml = comments.map(function(comment) {
-                var rawUser = String(comment.user || 'unknown');
-                var isBotAuthor = !!comment.is_bot;
-                var displayUser = String(comment.display_name || '');
-                if (!displayUser.trim() && !isBotAuthor) {
-                  displayUser = rawUser || 'unknown';
-                }
-                var commentUserId = String(comment.user_id || '').trim();
-                var isRepoOwner = !!comment.is_repo_owner;
-                var isSelfAuthor = !!(currentPublicUserId && commentUserId && commentUserId === currentPublicUserId);
-                if (!isSelfAuthor && isLoggedInCommentWriter && !commentUserId) {
-                  var currentNickname = String((authState.user && authState.user.nickname) || '').trim();
-                  if (currentNickname && displayUser.trim() === currentNickname) isSelfAuthor = true;
-                }
-                var currentNicknameForRender = isLoggedInCommentWriter
-                  ? String((authState.user && authState.user.nickname) || '').trim()
-                  : '';
-                if (isSelfAuthor && currentNicknameForRender) {
-                  displayUser = currentNicknameForRender;
-                }
-                var safeDisplayUser = displayUser.trim();
-                var authorClass = isRepoOwner ? 'issue-owner-name' : 'issue-comment-author';
-                var metaParts = [];
-                if (isSelfAuthor) metaParts.push('<span class="issue-self-mark">*</span>');
-                if (safeDisplayUser) {
-                  metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
-                  metaParts.push('<span class="issue-comment-separator">·</span>');
-                }
-                metaParts.push('<span>' + formatIssueDate(comment.created_at) + '</span>');
-                var metaText = metaParts.join('');
-                return (
-                  '<div class="issue-comment-item">' +
-                    '<div class="issue-comment-meta">' +
-                      metaText +
-                    '</div>' +
-                    '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
-                  '</div>'
-                );
-              }).join('');
-            }
-
-            issueDetailContent.innerHTML =
-              '<div class="issue-card-top">' +
-                '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
-                '<div>' + formatIssueDate(issue.created_at) + '</div>' +
-              '</div>' +
-              '<div class="issue-detail-title-row">' +
-                '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
-                issueAuthorHtml +
-              '</div>' +
-              '<div class="issue-detail-body">' + (issue.body ? escapeHtml(issue.body).replace(/\n/g, '<br>') : '-') + '</div>' +
-              '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
-              '<div class="issue-comments-list">' + commentsHtml + '</div>' +
-              '<div class="issue-comment-compose">' +
-                '<div class="issue-comment-compose-title">댓글 작성</div>' +
-                commentAuthorFieldHtml +
-                '<textarea id="issueDetailCommentBody" placeholder="댓글을 입력해 주세요."></textarea>' +
-                '<div class="issue-comment-compose-actions">' +
-                  '<button type="button" class="issue-form-btn primary" id="issueDetailCommentSubmit">댓글 등록</button>' +
-                '</div>' +
-              '</div>';
+            issueDetailContent.innerHTML = buildIssueDetailHtml(
+              issue,
+              comments,
+              commentAuthorFieldHtml,
+              'issueDetailCommentBody',
+              'issueDetailCommentSubmit',
+              'issueDetailCommentNickname'
+            );
+            bindIssueLikeButtons(issueDetailContent, setIssueFeedback);
 
             var detailCommentBody = document.getElementById('issueDetailCommentBody');
             var detailCommentNickname = document.getElementById('issueDetailCommentNickname');
@@ -8481,21 +9763,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                   requestPayload.meta = { nickname: fixedCommentNickname };
                 } else if (detailCommentNickname) {
                   var optionalNickname = String(detailCommentNickname.value || '').trim();
-                  if (optionalNickname) {
-                    requestPayload.meta = { nickname: optionalNickname };
-                  }
+                  if (optionalNickname) requestPayload.meta = { nickname: optionalNickname };
                 }
 
-                fetch(API_BASE + '/api/issues/' + issue.number + '/comments', {
+                fetchJson(API_BASE + '/api/issues/' + issue.number + '/comments', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(requestPayload)
                 })
-                  .then(function(r) {
-                    return r.json().catch(function() { return {}; }).then(function(data) {
-                      return { ok: r.ok, data: data };
-                    });
-                  })
                   .then(function(postResult) {
                     if (!postResult.ok) {
                       throw new Error(postResult.data.error || '댓글 등록에 실패했습니다.');
@@ -8507,15 +9782,96 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                     setIssueFeedback('error', postErr.message || '댓글 등록에 실패했습니다.');
                   })
                   .finally(function() {
-                    if (detailCommentSubmit && detailCommentSubmit.isConnected) {
-                      detailCommentSubmit.disabled = false;
-                    }
+                    if (detailCommentSubmit && detailCommentSubmit.isConnected) detailCommentSubmit.disabled = false;
                   });
               });
             }
           })
           .catch(function(err) {
             issueDetailContent.innerHTML = '<div class="issue-empty">' + escapeHtml(err.message || '상세 조회에 실패했습니다.') + '</div>';
+          });
+      }
+
+      function openNoticeDetail(issueNumber) {
+        if (!noticeDetailContent || !issueNumber) return;
+        setNoticeView('detail');
+        noticeDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
+
+        fetchJson(API_BASE + '/api/issues/' + issueNumber)
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '공지 상세 조회에 실패했습니다.');
+            }
+            var payload = result.data || {};
+            var issue = payload.issue || {};
+            var comments = Array.isArray(payload.comments) ? payload.comments : [];
+            var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
+            var fixedCommentNickname = isLoggedInCommentWriter
+              ? String(authState.user.nickname || '').trim()
+              : '';
+            var commentAuthorFieldHtml = isLoggedInCommentWriter
+              ? ('<div class="issue-comment-author-fixed">작성자: <strong>' + escapeHtml(fixedCommentNickname || '알 수 없음') + '</strong></div>')
+              : (
+                  '<div class="issue-comment-nickname-row">' +
+                    '<label for="noticeDetailCommentNickname">닉네임 (선택)</label>' +
+                    '<input type="text" id="noticeDetailCommentNickname" maxlength="40" placeholder="예: 셔틀러버" />' +
+                  '</div>'
+                );
+            noticeDetailContent.innerHTML = buildIssueDetailHtml(
+              issue,
+              comments,
+              commentAuthorFieldHtml,
+              'noticeDetailCommentBody',
+              'noticeDetailCommentSubmit',
+              'noticeDetailCommentNickname'
+            );
+            bindIssueLikeButtons(noticeDetailContent, setNoticeFeedback);
+
+            var detailCommentBody = document.getElementById('noticeDetailCommentBody');
+            var detailCommentNickname = document.getElementById('noticeDetailCommentNickname');
+            var detailCommentSubmit = document.getElementById('noticeDetailCommentSubmit');
+            if (detailCommentBody && detailCommentSubmit) {
+              detailCommentSubmit.addEventListener('click', function() {
+                var bodyText = detailCommentBody.value.trim();
+                if (!bodyText) {
+                  setNoticeFeedback('error', '댓글 내용을 입력해 주세요.');
+                  detailCommentBody.focus();
+                  return;
+                }
+
+                detailCommentSubmit.disabled = true;
+                setNoticeFeedback('info', '댓글을 등록하는 중입니다...');
+                var requestPayload = { body: bodyText };
+                if (isLoggedInCommentWriter && fixedCommentNickname) {
+                  requestPayload.meta = { nickname: fixedCommentNickname };
+                } else if (detailCommentNickname) {
+                  var optionalNickname = String(detailCommentNickname.value || '').trim();
+                  if (optionalNickname) requestPayload.meta = { nickname: optionalNickname };
+                }
+
+                fetchJson(API_BASE + '/api/issues/' + issue.number + '/comments', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(requestPayload)
+                })
+                  .then(function(postResult) {
+                    if (!postResult.ok) {
+                      throw new Error(postResult.data.error || '댓글 등록에 실패했습니다.');
+                    }
+                    setNoticeFeedback('success', '댓글이 등록되었습니다.');
+                    openNoticeDetail(issue.number);
+                  })
+                  .catch(function(postErr) {
+                    setNoticeFeedback('error', postErr.message || '댓글 등록에 실패했습니다.');
+                  })
+                  .finally(function() {
+                    if (detailCommentSubmit && detailCommentSubmit.isConnected) detailCommentSubmit.disabled = false;
+                  });
+              });
+            }
+          })
+          .catch(function(err) {
+            noticeDetailContent.innerHTML = '<div class="issue-empty">' + escapeHtml(err.message || '상세 조회에 실패했습니다.') + '</div>';
           });
       }
 
@@ -8530,8 +9886,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setIssueFeedback('', '');
       }
 
+      function backToNoticeList() {
+        setNoticeView('list');
+        setNoticeFeedback('', '');
+      }
+
       function openIssueModal() {
         if (!issueModalBackdrop || !issueModal) return;
+        closeNoticeModal();
         issueCurrentPage = 1;
         issueCurrentState = issueStateFilter ? issueStateFilter.value : 'all';
         setIssueView('list');
@@ -8544,6 +9906,239 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (issueModalBackdrop) issueModalBackdrop.classList.remove('show');
         if (issueModal) issueModal.classList.remove('show');
         setIssueFeedback('', '');
+      }
+
+      function openNoticeModal() {
+        if (!noticeModalBackdrop || !noticeModal) return;
+        if (noticeSpotlightState.visible) {
+          dismissNoticeSpotlight({ ack: true });
+        }
+        closeIssueModal();
+        noticeCurrentPage = 1;
+        setNoticeView('list');
+        noticeModalBackdrop.classList.add('show');
+        noticeModal.classList.add('show');
+        loadNotices(1, false);
+      }
+
+      function closeNoticeModal() {
+        if (noticeModalBackdrop) noticeModalBackdrop.classList.remove('show');
+        if (noticeModal) noticeModal.classList.remove('show');
+        setNoticeFeedback('', '');
+      }
+
+      function clampNoticeSpotlight(value, minValue, maxValue) {
+        if (!isFinite(value)) return minValue;
+        return Math.min(maxValue, Math.max(minValue, value));
+      }
+
+      function isVisibleNoticeButton(btn) {
+        if (!btn || !btn.getClientRects || btn.getClientRects().length === 0) return false;
+        var styles = window.getComputedStyle(btn);
+        if (!styles) return false;
+        return styles.display !== 'none' && styles.visibility !== 'hidden' && Number(styles.opacity || '1') > 0;
+      }
+
+      function getActiveNoticeSpotlightButton() {
+        if (isVisibleNoticeButton(mobileNoticeOpenBtn)) return mobileNoticeOpenBtn;
+        if (isVisibleNoticeButton(noticeOpenBtn)) return noticeOpenBtn;
+        return null;
+      }
+
+      function clearNoticeSpotlightTarget() {
+        [noticeOpenBtn, mobileNoticeOpenBtn].forEach(function(btn) {
+          if (!btn) return;
+          btn.classList.remove('notice-spotlight-target');
+        });
+        noticeSpotlightState.targetBtn = null;
+      }
+
+      function setNoticeSpotlightMessage(unseenCount) {
+        var count = Math.max(0, Number(unseenCount || 0));
+        if (noticeSpotlightTitle) {
+          noticeSpotlightTitle.textContent = count > 1
+            ? ('새 공지가 ' + String(count) + '개 있어요')
+            : '새 공지가 올라왔어요';
+        }
+        if (noticeSpotlightBody) {
+          noticeSpotlightBody.textContent = count > 1
+            ? '공지 버튼에서 한 번에 확인해 주세요. 지금 닫으면 현재 공지는 다시 보이지 않아요.'
+            : '공지 버튼에서 확인해 주세요. 지금 닫으면 현재 공지는 다시 보이지 않아요.';
+        }
+      }
+
+      function hideNoticeSpotlight() {
+        if (noticeSpotlightRoot) {
+          noticeSpotlightRoot.classList.remove('show');
+          noticeSpotlightRoot.setAttribute('aria-hidden', 'true');
+        }
+        noticeSpotlightState.visible = false;
+        clearNoticeSpotlightTarget();
+      }
+
+      function positionNoticeSpotlightBubble() {
+        if (!noticeSpotlightState.visible || !noticeSpotlightBubble) return;
+        var targetBtn = noticeSpotlightState.targetBtn;
+        if (!isVisibleNoticeButton(targetBtn)) {
+          targetBtn = getActiveNoticeSpotlightButton();
+          if (!targetBtn) {
+            hideNoticeSpotlight();
+            return;
+          }
+          clearNoticeSpotlightTarget();
+          targetBtn.classList.add('notice-spotlight-target');
+          noticeSpotlightState.targetBtn = targetBtn;
+        }
+
+        var rect = targetBtn.getBoundingClientRect();
+        var viewportWidth = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 0);
+        var viewportHeight = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 0);
+        var margin = 12;
+        var bubbleRect = noticeSpotlightBubble.getBoundingClientRect();
+        var bubbleWidth = Math.max(180, bubbleRect.width || 0);
+        var bubbleHeight = Math.max(80, bubbleRect.height || 0);
+        var left = 0;
+        var top = 0;
+        var placement = 'right';
+        var arrowOffset = 24;
+
+        if (viewportWidth <= 768) {
+          placement = 'bottom';
+          left = clampNoticeSpotlight(
+            rect.right - bubbleWidth,
+            margin,
+            viewportWidth - bubbleWidth - margin
+          );
+          top = rect.bottom + 10;
+          if ((top + bubbleHeight + margin) > viewportHeight) {
+            placement = 'top';
+            top = rect.top - bubbleHeight - 10;
+          }
+          top = clampNoticeSpotlight(top, margin, viewportHeight - bubbleHeight - margin);
+          arrowOffset = clampNoticeSpotlight(
+            (rect.left + rect.width / 2) - left - 7,
+            16,
+            bubbleWidth - 24
+          );
+        } else {
+          placement = 'right';
+          left = rect.right + 14;
+          top = rect.top + ((rect.height - bubbleHeight) / 2);
+          if ((left + bubbleWidth + margin) > viewportWidth) {
+            placement = 'left';
+            left = rect.left - bubbleWidth - 14;
+          }
+          if (left < margin) {
+            placement = 'bottom';
+            left = clampNoticeSpotlight(
+              rect.left + rect.width - bubbleWidth,
+              margin,
+              viewportWidth - bubbleWidth - margin
+            );
+            top = rect.bottom + 10;
+            if ((top + bubbleHeight + margin) > viewportHeight) {
+              placement = 'top';
+              top = rect.top - bubbleHeight - 10;
+            }
+            arrowOffset = clampNoticeSpotlight(
+              (rect.left + rect.width / 2) - left - 7,
+              16,
+              bubbleWidth - 24
+            );
+          } else {
+            top = clampNoticeSpotlight(top, margin, viewportHeight - bubbleHeight - margin);
+            arrowOffset = clampNoticeSpotlight(
+              (rect.top + rect.height / 2) - top - 7,
+              16,
+              bubbleHeight - 24
+            );
+          }
+        }
+
+        noticeSpotlightBubble.classList.remove('placement-right', 'placement-left', 'placement-top', 'placement-bottom');
+        noticeSpotlightBubble.classList.add('placement-' + placement);
+        noticeSpotlightBubble.style.left = Math.round(left) + 'px';
+        noticeSpotlightBubble.style.top = Math.round(top) + 'px';
+        noticeSpotlightBubble.style.setProperty('--spotlight-arrow-offset', Math.round(arrowOffset) + 'px');
+      }
+
+      function showNoticeSpotlight(unseenCount, latestNoticeNumber, latestNoticeTitle, lastAckNoticeNumber) {
+        if (!noticeSpotlightRoot || !noticeSpotlightBubble) return;
+        if ((noticeModal && noticeModal.classList.contains('show')) || (issueModal && issueModal.classList.contains('show'))) {
+          return;
+        }
+        var targetBtn = getActiveNoticeSpotlightButton();
+        if (!targetBtn) return;
+
+        noticeSpotlightState.unseenCount = Math.max(0, Number(unseenCount || 0));
+        noticeSpotlightState.latestNoticeNumber = Math.max(0, Number(latestNoticeNumber || 0));
+        noticeSpotlightState.latestNoticeTitle = String(latestNoticeTitle || '').trim();
+        noticeSpotlightState.lastAckNoticeNumber = Math.max(0, Number(lastAckNoticeNumber || 0));
+        setNoticeSpotlightMessage(noticeSpotlightState.unseenCount);
+        clearNoticeSpotlightTarget();
+        targetBtn.classList.add('notice-spotlight-target');
+        noticeSpotlightState.targetBtn = targetBtn;
+        noticeSpotlightRoot.classList.add('show');
+        noticeSpotlightRoot.setAttribute('aria-hidden', 'false');
+        noticeSpotlightState.visible = true;
+        positionNoticeSpotlightBubble();
+        requestAnimationFrame(positionNoticeSpotlightBubble);
+      }
+
+      function dismissNoticeSpotlight(opts) {
+        opts = opts || {};
+        var shouldAck = opts.ack !== false;
+        var ackNoticeNumber = Math.max(0, Number(noticeSpotlightState.latestNoticeNumber || 0));
+        hideNoticeSpotlight();
+        if (!shouldAck || ackNoticeNumber <= 0 || noticeSpotlightState.ackPending) return;
+        noticeSpotlightState.ackPending = true;
+        fetchJson(API_BASE + '/api/notices/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notice_number: ackNoticeNumber })
+        })
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error((result.data && result.data.error) || '공지 확인 상태 저장에 실패했습니다.');
+            }
+            noticeSpotlightState.lastAckNoticeNumber = Math.max(
+              noticeSpotlightState.lastAckNoticeNumber || 0,
+              Number(result.data && result.data.ack_notice_number || ackNoticeNumber || 0)
+            );
+            noticeSpotlightState.unseenCount = 0;
+          })
+          .catch(function() {})
+          .finally(function() {
+            noticeSpotlightState.ackPending = false;
+          });
+      }
+
+      function refreshNoticeSpotlightHint() {
+        if (noticeSpotlightState.hintLoading) return;
+        if (!noticeSpotlightRoot || !noticeSpotlightBubble) return;
+        noticeSpotlightState.hintLoading = true;
+        fetchJson(API_BASE + '/api/notices/hint')
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error((result.data && result.data.error) || '공지 힌트 조회에 실패했습니다.');
+            }
+            var data = result.data || {};
+            var unseenCount = Math.max(0, Number(data.unseen_count || 0));
+            var latestNoticeNumber = Math.max(0, Number(data.latest_notice_number || 0));
+            var lastAckNoticeNumber = Math.max(0, Number(data.last_ack_notice_number || 0));
+            var latestNoticeTitle = String(data.latest_notice_title || '').trim();
+            if (unseenCount > 0 && latestNoticeNumber > lastAckNoticeNumber) {
+              showNoticeSpotlight(unseenCount, latestNoticeNumber, latestNoticeTitle, lastAckNoticeNumber);
+              return;
+            }
+            hideNoticeSpotlight();
+          })
+          .catch(function() {
+            hideNoticeSpotlight();
+          })
+          .finally(function() {
+            noticeSpotlightState.hintLoading = false;
+          });
       }
 
       function submitIssueForm(e) {
@@ -8565,24 +10160,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (issueFormSubmitBtn) issueFormSubmitBtn.disabled = true;
         setIssueFeedback('info', '건의를 등록하는 중입니다...');
 
-        var payload = {
-          title: title,
-          body: body
-        };
-        if (!isLoggedIn && nickname) {
-          payload.meta = { nickname: nickname };
-        }
+        var payload = { title: title, body: body };
+        if (!isLoggedIn && nickname) payload.meta = { nickname: nickname };
 
-        fetch(API_BASE + '/api/issues', {
+        fetchJson(API_BASE + '/api/issues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         })
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data.error || '건의 등록에 실패했습니다.');
@@ -8967,6 +10552,45 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           toggleAccountMenu(routeProfileMenuTrigger);
         });
       }
+      if (noticeOpenBtn) {
+        noticeOpenBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          openNoticeModal();
+        });
+      }
+      if (mobileNoticeOpenBtn) {
+        mobileNoticeOpenBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          openNoticeModal();
+        });
+      }
+      if (noticeSpotlightCloseBtn) {
+        noticeSpotlightCloseBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          dismissNoticeSpotlight({ ack: true });
+        });
+      }
+      if (noticeSpotlightDismissBtn) {
+        noticeSpotlightDismissBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          dismissNoticeSpotlight({ ack: true });
+        });
+      }
+      if (noticeSpotlightOpenBtn) {
+        noticeSpotlightOpenBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          openNoticeModal();
+        });
+      }
+      if (noticeSpotlightDim) {
+        noticeSpotlightDim.addEventListener('click', function(e) {
+          e.preventDefault();
+          dismissNoticeSpotlight({ ack: true });
+        });
+      }
+      if (noticeSpotlightBubble) {
+        noticeSpotlightBubble.addEventListener('click', function(e) { e.stopPropagation(); });
+      }
       if (accountMenuBackdrop) accountMenuBackdrop.addEventListener('click', closeAccountMenu);
       if (accountMenu) {
         accountMenu.addEventListener('click', function(e) { e.stopPropagation(); });
@@ -9059,9 +10683,30 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           loadIssues(issueCurrentPage + 1, false);
         });
       }
+      if (noticeModalCloseBtn) noticeModalCloseBtn.addEventListener('click', closeNoticeModal);
+      if (noticeModalBackdrop) noticeModalBackdrop.addEventListener('click', closeNoticeModal);
+      if (noticeModal) noticeModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      if (noticeDetailBackBtn) noticeDetailBackBtn.addEventListener('click', backToNoticeList);
+      if (noticePrevPageBtn) {
+        noticePrevPageBtn.addEventListener('click', function() {
+          if (noticeCurrentPage <= 1) return;
+          loadNotices(noticeCurrentPage - 1, false);
+        });
+      }
+      if (noticeNextPageBtn) {
+        noticeNextPageBtn.addEventListener('click', function() {
+          if (!noticeHasNextPage) return;
+          loadNotices(noticeCurrentPage + 1, false);
+        });
+      }
       document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
+        if (noticeSpotlightState.visible) {
+          dismissNoticeSpotlight({ ack: true });
+          return;
+        }
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
+        if (noticeModal && noticeModal.classList.contains('show')) closeNoticeModal();
         if (profileModal && profileModal.classList.contains('show')) closeProfileModal();
         if (policyModal && policyModal.classList.contains('show')) closePolicyModal();
         closeAccountMenu();
@@ -11593,7 +13238,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function normalizeRouteSearchMode(value) {
         var mode = String(value || '').trim().toLowerCase();
-        return (mode === 'time') ? 'time' : 'distance';
+        return (mode === 'distance') ? 'distance' : 'time';
       }
 
       function normalizeRouteMaxDistanceKm(value) {
@@ -11636,7 +13281,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function applyRouteSearchPreferences(preferences) {
         var prefs = preferences || {};
-        var nextMode = normalizeRouteSearchMode(prefs.route_search_mode || 'distance');
+        var nextMode = normalizeRouteSearchMode(prefs.route_search_mode || 'time');
         var nextDefaultMaxDistance = normalizeRouteMaxDistanceKm(
           prefs.route_max_distance_km != null ? prefs.route_max_distance_km : 3
         );
@@ -12231,6 +13876,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         );
       }
       function moveToCurrentLocation() {
+        if (isDevHost()) {
+          reopenDevDebugPanel();
+        }
         var devPosition = getPreferredDebugPosition();
         if (devPosition && isFinite(Number(devPosition.lat)) && isFinite(Number(devPosition.lng))) {
           clearCurrentLocationOverlay();
@@ -12600,6 +14248,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function isAnyReportModalOpen() {
         return !!(
           (arrivalReportModal && arrivalReportModal.classList.contains('show')) ||
+          (arrivalReportScheduleModal && arrivalReportScheduleModal.classList.contains('show')) ||
           (arrivalReportConfirmModal && arrivalReportConfirmModal.classList.contains('show')) ||
           (reportDataModal && reportDataModal.classList.contains('show'))
         );
@@ -12636,6 +14285,42 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return (hour * 60) + minute;
       }
 
+      function addClockMinutes(baseTime, deltaMinutes) {
+        var baseMinutes = parseTimeToMinutes(baseTime);
+        if (baseMinutes < 0) return '';
+        var total = (baseMinutes + Number(deltaMinutes || 0)) % 1440;
+        if (total < 0) total += 1440;
+        var hh = Math.floor(total / 60);
+        var mm = total % 60;
+        return pad2(hh) + ':' + pad2(mm);
+      }
+
+      function buildArrivalReportRouteEmptyMessage() {
+        var totalRouteCount = Number(arrivalReportState.totalRouteCount || 0);
+        var nearbyStopCount = Math.max(0, Number(arrivalReportState.stopCount || 0));
+        var selectedStop = arrivalReportState.selectedStop || {};
+        var selectedStopName = String(selectedStop.stop_name || '-');
+        if (arrivalReportState.timeFilterApplied && totalRouteCount > 0) {
+          var nowTime = String(arrivalReportState.routeRequestTime || getEffectiveCurrentTimeStr() || '');
+          var pastMinutes = Math.max(0, Number(arrivalReportState.timeWindowPastMinutes || 0));
+          var futureMinutes = Math.max(0, Number(arrivalReportState.timeWindowFutureMinutes || 0));
+          var startTime = addClockMinutes(nowTime, -pastMinutes) || '-';
+          var endTime = addClockMinutes(nowTime, futureMinutes) || '-';
+          return (
+            '현재 시각 ' + escapeHtml(nowTime || '-') + ' 기준, 인근 정류장 ' + escapeHtml(String(nearbyStopCount)) + '곳 중 ' +
+            escapeHtml(selectedStopName) + '을(를) 지나는 노선에서 ' +
+            escapeHtml(startTime + ' ~ ' + endTime) + ' 사이에 출발하는 노선이 없습니다.'
+          );
+        }
+        if (nearbyStopCount > 0) {
+          return (
+            '인근 정류장 ' + escapeHtml(String(nearbyStopCount)) + '곳 중 ' +
+            escapeHtml(selectedStopName) + '을(를) 지나는 제보 가능한 노선을 찾지 못했습니다.'
+          );
+        }
+        return '제보 가능한 노선을 찾지 못했습니다.';
+      }
+
       function getNearestTimeValue(times, currentTime) {
         var targetMinutes = parseTimeToMinutes(currentTime);
         if (!Array.isArray(times) || times.length === 0) return '';
@@ -12658,8 +14343,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function closeArrivalReportModal() {
         resetArrivalReportState();
         arrivalReportModalHiddenForConfirm = false;
+        arrivalReportModalHiddenForSchedule = false;
+        arrivalReportScheduleModalHiddenForConfirm = false;
         if (arrivalReportBackdrop) arrivalReportBackdrop.classList.remove('show');
         if (arrivalReportModal) arrivalReportModal.classList.remove('show');
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.remove('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.remove('show');
         syncReportOverscrollLock();
       }
 
@@ -12788,6 +14477,42 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportModalHiddenForConfirm = false;
       }
 
+      function hideArrivalReportModalForSchedule() {
+        if (!arrivalReportModal || !arrivalReportBackdrop) return;
+        if (!arrivalReportModal.classList.contains('show')) {
+          arrivalReportModalHiddenForSchedule = false;
+          return;
+        }
+        arrivalReportBackdrop.classList.remove('show');
+        arrivalReportModal.classList.remove('show');
+        arrivalReportModalHiddenForSchedule = true;
+      }
+
+      function restoreArrivalReportModalAfterSchedule() {
+        if (!arrivalReportModalHiddenForSchedule) return;
+        if (arrivalReportBackdrop) arrivalReportBackdrop.classList.add('show');
+        if (arrivalReportModal) arrivalReportModal.classList.add('show');
+        arrivalReportModalHiddenForSchedule = false;
+      }
+
+      function hideArrivalReportScheduleModalForConfirm() {
+        if (!arrivalReportScheduleModal || !arrivalReportScheduleBackdrop) return;
+        if (!arrivalReportScheduleModal.classList.contains('show')) {
+          arrivalReportScheduleModalHiddenForConfirm = false;
+          return;
+        }
+        arrivalReportScheduleBackdrop.classList.remove('show');
+        arrivalReportScheduleModal.classList.remove('show');
+        arrivalReportScheduleModalHiddenForConfirm = true;
+      }
+
+      function restoreArrivalReportScheduleModalAfterConfirm() {
+        if (!arrivalReportScheduleModalHiddenForConfirm) return;
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.add('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.add('show');
+        arrivalReportScheduleModalHiddenForConfirm = false;
+      }
+
       function closeArrivalReportConfirmModal(options) {
         options = options || {};
         var preserveFlowState = !!options.preserveFlowState;
@@ -12796,9 +14521,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (arrivalReportConfirmBackdrop) arrivalReportConfirmBackdrop.classList.remove('show');
         if (arrivalReportConfirmModal) arrivalReportConfirmModal.classList.remove('show');
         if (preserveFlowState) {
-          restoreArrivalReportModalAfterConfirm();
+          if (arrivalReportScheduleModalHiddenForConfirm) {
+            restoreArrivalReportScheduleModalAfterConfirm();
+          } else {
+            restoreArrivalReportModalAfterConfirm();
+          }
         } else {
           arrivalReportModalHiddenForConfirm = false;
+          arrivalReportScheduleModalHiddenForConfirm = false;
         }
         if (!preserveFlowState) {
           arrivalReportPendingTarget = null;
@@ -13053,16 +14783,55 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function scrollArrivalReportStopCardIntoView(index, smooth) {
         if (!arrivalReportCandidateList) return;
         var card = arrivalReportCandidateList.querySelector('.report-stop-card[data-index="' + String(index) + '"]');
-        if (!card || typeof arrivalReportCandidateList.scrollTo !== 'function') return;
-        var targetTop = Math.max(0, Number(card.offsetTop || 0) - 2);
-        if (index === 0) targetTop = 0;
+        if (!card) return;
+        var listRect = arrivalReportCandidateList.getBoundingClientRect();
+        var cardRect = card.getBoundingClientRect();
+        var listHeight = Math.max(0, Number(arrivalReportCandidateList.clientHeight || 0));
+        var currentScrollTop = Math.max(0, Number(arrivalReportCandidateList.scrollTop || 0));
+        var cardTop = currentScrollTop + (Number(cardRect.top || 0) - Number(listRect.top || 0));
+        var cardHeight = Math.max(0, Number(cardRect.height || card.offsetHeight || 0));
+        var maxScrollTop = Math.max(0, Number(arrivalReportCandidateList.scrollHeight || 0) - listHeight);
+        var centeredTop = cardTop - Math.max(0, (listHeight - cardHeight) / 2);
+        var targetTop = Math.max(0, Math.min(maxScrollTop, centeredTop));
+
+        var ensureVisible = function() {
+          if (!arrivalReportCandidateList || !card) return;
+          var latestListRect = arrivalReportCandidateList.getBoundingClientRect();
+          var latestCardRect = card.getBoundingClientRect();
+          var visibleTop = Number(latestListRect.top || 0);
+          var visibleBottom = Number(latestListRect.bottom || 0);
+          var safePadding = 8;
+          var adjustedTop = Math.max(0, Number(arrivalReportCandidateList.scrollTop || 0));
+          if (Number(latestCardRect.top || 0) < (visibleTop + safePadding)) {
+            adjustedTop += Number(latestCardRect.top || 0) - (visibleTop + safePadding);
+          } else if (Number(latestCardRect.bottom || 0) > (visibleBottom - safePadding)) {
+            adjustedTop += Number(latestCardRect.bottom || 0) - (visibleBottom - safePadding);
+          }
+          var latestMaxScrollTop = Math.max(
+            0,
+            Number(arrivalReportCandidateList.scrollHeight || 0) - Math.max(0, Number(arrivalReportCandidateList.clientHeight || 0))
+          );
+          adjustedTop = Math.max(0, Math.min(latestMaxScrollTop, adjustedTop));
+          if (Math.abs(adjustedTop - Number(arrivalReportCandidateList.scrollTop || 0)) > 0.5) {
+            arrivalReportCandidateList.scrollTop = adjustedTop;
+          }
+        };
+
         if (smooth) {
-          arrivalReportCandidateList.scrollTo({
-            top: targetTop,
-            behavior: 'smooth'
+          if (typeof arrivalReportCandidateList.scrollTo === 'function') {
+            arrivalReportCandidateList.scrollTo({
+              top: targetTop,
+              behavior: 'smooth'
+            });
+          } else {
+            arrivalReportCandidateList.scrollTop = targetTop;
+          }
+          requestAnimationFrame(function() {
+            setTimeout(ensureVisible, 240);
           });
         } else {
           arrivalReportCandidateList.scrollTop = targetTop;
+          requestAnimationFrame(ensureVisible);
         }
       }
 
@@ -13214,7 +14983,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           showArrivalReportStopMap(false);
           clearArrivalReportStopMapCurrentOverlay();
           resetArrivalReportStopStepSizing();
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">현재 위치 근처에서 제보 가능한 정류장을 찾지 못했습니다.</div>';
+          var radiusText = String(Math.max(0, Number(arrivalReportState.radiusM || 0)) || 150);
+          arrivalReportCandidateList.innerHTML =
+            '<div class="report-empty-state">현재 위치 기준 반경 ' + escapeHtml(radiusText) +
+            'm 내에 제보 가능한 정류장이 없습니다.</div>';
           return;
         }
         if (arrivalReportState.selectedStopIndex < 0 ||
@@ -13268,7 +15040,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportCandidateList.classList.remove('stop-mode');
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('routes');
         setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel(arrivalReportState.stopCount >= 2 ? '이전' : '닫기');
+        setArrivalReportSecondaryButtonLabel('이전');
         showArrivalReportStopMap(false);
         clearArrivalReportStopMapOverlays();
         clearArrivalReportStopMapCurrentOverlay();
@@ -13305,9 +15077,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setArrivalReportPrimaryButtonVisible(arrivalReportState.candidates.length > 0);
         arrivalReportCandidateList.innerHTML = '';
         if (!arrivalReportState.candidates.length) {
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">' +
-            (query ? '검색 결과가 없습니다.' : '선택한 정류장에서 제보 가능한 노선을 찾지 못했습니다.') +
-            '</div>';
+          var emptyMessage = query ? '검색 결과가 없습니다.' : buildArrivalReportRouteEmptyMessage();
+          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">' + emptyMessage + '</div>';
           renderArrivalReportSelectionHint(null);
           return;
         }
@@ -13337,21 +15108,35 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
           var detailRow = document.createElement('div');
           detailRow.className = 'report-candidate-detail-row';
-
-          var contextWrap = document.createElement('div');
-          contextWrap.className = 'report-stop-context';
-          function renderContextByIndex(nextIndex) {
-            var context = departureContexts[nextIndex] || {};
-            contextWrap.innerHTML =
+          if (departureContexts.length) {
+            var contextWrap = document.createElement('div');
+            contextWrap.className = 'report-stop-context';
+            function renderContextByIndex(nextIndex) {
+              var context = departureContexts[nextIndex] || {};
+              contextWrap.innerHTML =
+                '<div class="report-candidate-info-label">정류장 정보</div>' +
+                (context.has_before ? '<div class="report-stop-context-line ellipsis">...</div>' : '') +
+                buildReportContextLineHtml(context.prev, false) +
+                buildReportContextLineHtml(context.current, true) +
+                buildReportContextLineHtml(context.next, false) +
+                (context.has_after ? '<div class="report-stop-context-line ellipsis">...</div>' : '');
+            }
+            renderContextByIndex(selectedTimeIndex);
+            detailRow.appendChild(contextWrap);
+          } else {
+            var fallbackContextWrap = document.createElement('div');
+            fallbackContextWrap.className = 'report-stop-context';
+            var fallbackCurrentStop = {
+              sequence: Number(candidate.stop_sequence) || 0,
+              stop_name: String(candidate.stop_name || '-')
+            };
+            fallbackContextWrap.innerHTML =
               '<div class="report-candidate-info-label">정류장 정보</div>' +
-              (context.has_before ? '<div class="report-stop-context-line ellipsis">...</div>' : '') +
-              buildReportContextLineHtml(context.prev, false) +
-              buildReportContextLineHtml(context.current, true) +
-              buildReportContextLineHtml(context.next, false) +
-              (context.has_after ? '<div class="report-stop-context-line ellipsis">...</div>' : '');
+              buildReportContextLineHtml(null, false) +
+              buildReportContextLineHtml(fallbackCurrentStop, true) +
+              buildReportContextLineHtml(null, false);
+            detailRow.appendChild(fallbackContextWrap);
           }
-          renderContextByIndex(selectedTimeIndex);
-          detailRow.appendChild(contextWrap);
           card.appendChild(detailRow);
 
           card.addEventListener('click', function(evt) {
@@ -13369,30 +15154,140 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         });
       }
 
-      function renderArrivalReportTimeSelection() {
-        if (!arrivalReportCandidateList) return;
-        arrivalReportState.step = 'times';
-        if (arrivalReportModal) {
-          arrivalReportModal.classList.remove('stop-step');
-          arrivalReportModal.classList.remove('route-step');
+      function getArrivalReportSelectedStopIds() {
+        var stopIds = [];
+        if (arrivalReportState.selectedStop && Array.isArray(arrivalReportState.selectedStop.stop_ids)) {
+          arrivalReportState.selectedStop.stop_ids.forEach(function(value) {
+            var stopValue = Number(value);
+            if (isFinite(stopValue) && stopIds.indexOf(stopValue) < 0) {
+              stopIds.push(stopValue);
+            }
+          });
         }
-        resetArrivalReportStopStepSizing();
-        setArrivalReportSearchVisible(false);
-        arrivalReportCandidateList.classList.remove('stop-mode');
-        if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('times');
-        setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel('이전');
-        var candidate = getSelectedArrivalReportCandidate();
-        if (!candidate) {
-          setArrivalReportPrimaryButtonVisible(false);
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">제보할 노선을 먼저 선택해 주세요.</div>';
-          renderArrivalReportSelectionHint(null);
+        if (
+          !stopIds.length &&
+          arrivalReportState.selectedStop &&
+          isFinite(Number(arrivalReportState.selectedStop.stop_id))
+        ) {
+          stopIds.push(Number(arrivalReportState.selectedStop.stop_id));
+        }
+        return stopIds;
+      }
+
+      function renderArrivalReportScheduleDayTypeStep() {
+        if (!arrivalReportScheduleBody || !arrivalReportScheduleTitle || !arrivalReportSchedulePrimaryBtn || !arrivalReportScheduleCancelBtn) {
           return;
         }
-        setArrivalReportPrimaryButtonVisible(true);
-        renderArrivalReportSelectionHint(candidate);
-        arrivalReportCandidateList.innerHTML = '';
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) {
+          arrivalReportScheduleBody.innerHTML = '<div class="report-empty-state">선택된 노선이 없습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          arrivalReportScheduleCancelBtn.textContent = '이전';
+          return;
+        }
+        var dayTypeOptions = getCandidateDayTypeOptions(candidate);
+        if (!dayTypeOptions.length) {
+          arrivalReportScheduleBody.innerHTML = '<div class="report-empty-state">선택 가능한 요일이 없습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          arrivalReportScheduleCancelBtn.textContent = '이전';
+          return;
+        }
+        if (!arrivalReportScheduleState.selectedDayType || dayTypeOptions.indexOf(arrivalReportScheduleState.selectedDayType) < 0) {
+          arrivalReportScheduleState.selectedDayType = String(dayTypeOptions[0] || '');
+        }
+        arrivalReportScheduleTitle.textContent = '어느 요일의 노선인가요?';
+        arrivalReportScheduleCancelBtn.textContent = '이전';
+        arrivalReportSchedulePrimaryBtn.textContent = '다음';
+        arrivalReportSchedulePrimaryBtn.disabled = !!arrivalReportScheduleState.loading;
 
+        var summaryHtml =
+          '<div class="report-schedule-summary">' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 노선</span>' +
+              '<span class="report-schedule-summary-value">' +
+                buildDirectionBadgeHtml(candidate.direction) +
+                '<span class="report-candidate-route">' + escapeHtml(candidate.route_name || '-') + '</span>' +
+              '</span>' +
+            '</div>' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 정류장</span>' +
+              '<span class="report-schedule-summary-value">' + buildInlineStopPillHtml(candidate.stop_name || '-') + '</span>' +
+            '</div>' +
+          '</div>';
+
+        var optionsHtml = dayTypeOptions.map(function(value) {
+          var isActive = value === arrivalReportScheduleState.selectedDayType;
+          var label = String(DAY_TYPE_LABEL_MAP[value] || value || '-');
+          return '<button type="button" class="report-daytype-option' + (isActive ? ' active' : '') + '" data-day-type="' + escapeAttr(value) + '">' +
+            escapeHtml(label) + '</button>';
+        }).join('');
+
+        arrivalReportScheduleBody.innerHTML =
+          summaryHtml +
+          '<div class="report-candidate-inline-label">요일</div>' +
+          '<div class="report-daytype-options">' + optionsHtml + '</div>' +
+          (arrivalReportScheduleState.loading ? '<div class="report-schedule-loading">해당 요일의 출발시각을 불러오는 중...</div>' : '');
+
+        arrivalReportScheduleBody.querySelectorAll('[data-day-type]').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            if (arrivalReportScheduleState.loading) return;
+            var value = String(btn.getAttribute('data-day-type') || '').trim();
+            if (!value) return;
+            arrivalReportScheduleState.selectedDayType = value;
+            renderArrivalReportScheduleDayTypeStep();
+          });
+        });
+      }
+
+      function renderArrivalReportScheduleTimeStep() {
+        if (!arrivalReportScheduleBody || !arrivalReportScheduleTitle || !arrivalReportSchedulePrimaryBtn || !arrivalReportScheduleCancelBtn) {
+          return;
+        }
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) {
+          arrivalReportScheduleBody.innerHTML = '<div class="report-empty-state">선택된 노선이 없습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          return;
+        }
+        var selectedDayType = String(candidate.day_type || arrivalReportScheduleState.selectedDayType || '').trim();
+        var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[selectedDayType] || selectedDayType || '-');
+        arrivalReportScheduleTitle.textContent = '언제 출발한 노선인가요?';
+        arrivalReportScheduleCancelBtn.textContent = '이전';
+        arrivalReportSchedulePrimaryBtn.textContent = '다음';
+        arrivalReportSchedulePrimaryBtn.disabled = false;
+
+        var summaryHtml =
+          '<div class="report-schedule-summary">' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 노선</span>' +
+              '<span class="report-schedule-summary-value">' +
+                buildDirectionBadgeHtml(candidate.direction) +
+                '<span class="report-candidate-route">' + escapeHtml(candidate.route_name || '-') + '</span>' +
+              '</span>' +
+            '</div>' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 정류장</span>' +
+              '<span class="report-schedule-summary-value">' + buildInlineStopPillHtml(candidate.stop_name || '-') + '</span>' +
+            '</div>' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 요일</span>' +
+              '<span class="report-schedule-summary-value">' + escapeHtml(selectedDayLabel) + '</span>' +
+            '</div>' +
+          '</div>';
+
+        var departureTimes = Array.isArray(candidate.departure_times) ? candidate.departure_times.slice() : [];
+        if (!departureTimes.length) {
+          arrivalReportScheduleBody.innerHTML = summaryHtml + '<div class="report-empty-state">선택한 요일의 출발시각을 찾지 못했습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          return;
+        }
+        var selectedTime = String(candidate.selected_departure_time || departureTimes[0] || '');
+        if (departureTimes.indexOf(selectedTime) < 0) {
+          selectedTime = String(departureTimes[0] || '');
+          candidate.selected_departure_time = selectedTime;
+        }
+
+        arrivalReportScheduleBody.innerHTML = summaryHtml;
         var card = document.createElement('div');
         card.className = 'report-time-select-card';
         var timeSide = document.createElement('div');
@@ -13401,35 +15296,208 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         timeLabel.className = 'report-candidate-inline-label';
         timeLabel.textContent = '출발 시각';
         timeSide.appendChild(timeLabel);
-
         var timeRow = document.createElement('div');
         timeRow.className = 'report-time-row';
-        var selectedTime = String(candidate.selected_departure_time || '');
-        var wheel = createWheelColumn(candidate.departure_times || [], selectedTime, function(value) {
+        var wheel = createWheelColumn(departureTimes, selectedTime, function(value) {
           candidate.selected_departure_time = value;
         });
         wheel.element.classList.add('candidate-wheel');
         timeRow.appendChild(wheel.element);
         timeSide.appendChild(timeRow);
         card.appendChild(timeSide);
-        arrivalReportCandidateList.appendChild(card);
+        arrivalReportScheduleBody.appendChild(card);
       }
 
-      function openArrivalReportTimeStepOrConfirm() {
-        var candidate = getSelectedArrivalReportCandidate();
-        if (!candidate) {
-          setArrivalReportHintText('제보할 노선을 선택해 주세요.');
+      function fetchArrivalReportCandidateByRouteAndDay(candidate, dayType) {
+        var stopIds = getArrivalReportSelectedStopIds();
+        if (!stopIds.length) {
+          return Promise.reject(new Error('정류장 정보를 찾지 못했습니다.'));
+        }
+        var cacheKey = String(dayType || '').trim();
+        if (!cacheKey) {
+          return Promise.reject(new Error('요일 정보를 찾지 못했습니다.'));
+        }
+        if (arrivalReportScheduleState.routeDayCache[cacheKey]) {
+          return Promise.resolve(arrivalReportScheduleState.routeDayCache[cacheKey]);
+        }
+        return fetchJson(
+          API_BASE + '/api/reports/candidate-routes' +
+          '?site_id=' + encodeURIComponent(selectedSiteId) +
+          '&day_type=' + encodeURIComponent(cacheKey) +
+          '&stop_ids=' + encodeURIComponent(stopIds.join(',')) +
+          '&now_time=' + encodeURIComponent(getEffectiveCurrentTimeStr())
+        )
+          .then(function(result) {
+            if (!result.ok) throw new Error(result.data.error || '요일별 노선 정보를 불러오지 못했습니다.');
+            var items = Array.isArray(result.data.candidates) ? result.data.candidates : [];
+            var routeId = Number(candidate.route_id);
+            var routeUuid = String(candidate.route_uuid || '').trim();
+            var matched = null;
+            for (var idx = 0; idx < items.length; idx++) {
+              var item = items[idx] || {};
+              if (routeUuid && String(item.route_uuid || '').trim() === routeUuid) {
+                matched = item;
+                break;
+              }
+              if (!routeUuid && Number(item.route_id) === routeId) {
+                matched = item;
+                break;
+              }
+            }
+            if (!matched) {
+              throw new Error('선택한 노선의 요일별 출발시각을 찾지 못했습니다.');
+            }
+            matched.day_type = cacheKey;
+            matched.selected_day_type = cacheKey;
+            arrivalReportScheduleState.routeDayCache[cacheKey] = matched;
+            return matched;
+          });
+      }
+
+      function applyArrivalReportRouteDayDetail(candidate, detail, preferredDepartureTime) {
+        if (!candidate || !detail) return;
+        candidate.day_type = String(detail.day_type || '').trim();
+        candidate.selected_day_type = candidate.day_type;
+        candidate.day_type_options = getCandidateDayTypeOptions(candidate);
+        candidate.departure_times = Array.isArray(detail.departure_times) ? detail.departure_times.slice() : [];
+        candidate.departure_sequences = Array.isArray(detail.departure_sequences) ? detail.departure_sequences.slice() : [];
+        candidate.departure_contexts = Array.isArray(detail.departure_contexts) ? detail.departure_contexts.slice() : [];
+        candidate.selected_departure_time = String(detail.selected_departure_time || '').trim();
+        var preferred = String(preferredDepartureTime || '').trim();
+        if (preferred && Array.isArray(candidate.departure_times) && candidate.departure_times.indexOf(preferred) >= 0) {
+          candidate.selected_departure_time = preferred;
           return;
         }
-        var departureTimes = Array.isArray(candidate.departure_times) ? candidate.departure_times.filter(function(value) {
-          return String(value || '').trim() !== '';
-        }) : [];
-        if (departureTimes.length === 1) {
+        if (!candidate.selected_departure_time && candidate.departure_times.length) {
+          candidate.selected_departure_time = String(
+            getNearestTimeValue(candidate.departure_times, getEffectiveCurrentTimeStr()) || candidate.departure_times[0] || ''
+          );
+        }
+      }
+
+      function proceedArrivalReportScheduleToTimeStep(opts) {
+        opts = opts || {};
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) return Promise.resolve(false);
+        var selectedDayType = String(arrivalReportScheduleState.selectedDayType || '').trim();
+        if (!selectedDayType) {
+          renderArrivalReportScheduleDayTypeStep();
+          return Promise.resolve(false);
+        }
+        arrivalReportScheduleState.loading = true;
+        renderArrivalReportScheduleDayTypeStep();
+        return fetchArrivalReportCandidateByRouteAndDay(candidate, selectedDayType)
+          .then(function(detail) {
+            var preferredDepartureTime = String(
+              opts.preferredDepartureTime || arrivalReportScheduleState.preferredDepartureTime || ''
+            ).trim();
+            applyArrivalReportRouteDayDetail(candidate, detail, preferredDepartureTime);
+            arrivalReportScheduleState.step = 'times';
+            arrivalReportScheduleState.loading = false;
+            // auto-confirm 경로에서도 뒤로가기 복귀 시 타임 스텝이 정상 복원되도록
+            // 스케줄 모달 DOM을 먼저 타임 스텝으로 렌더링해 둔다.
+            renderArrivalReportScheduleTimeStep();
+            if (
+              opts.autoConfirm &&
+              preferredDepartureTime &&
+              String(candidate.selected_departure_time || '').trim() === preferredDepartureTime
+            ) {
+              openArrivalReportConfirmModal(candidate);
+              return true;
+            }
+            return true;
+          })
+          .catch(function(err) {
+            arrivalReportScheduleState.loading = false;
+            renderArrivalReportScheduleDayTypeStep();
+            alert(String((err && err.message) || '요일별 출발시각을 불러오지 못했습니다.'));
+            return false;
+          });
+      }
+
+      function openArrivalReportScheduleModal(candidate, opts) {
+        opts = opts || {};
+        if (!candidate || !arrivalReportScheduleModal || !arrivalReportScheduleBackdrop) return;
+        var dayTypeOptions = getCandidateDayTypeOptions(candidate);
+        if (!dayTypeOptions.length) {
+          setArrivalReportHintText('선택한 노선의 요일 정보를 찾지 못했습니다.');
+          return;
+        }
+        arrivalReportScheduleState.candidate = candidate;
+        arrivalReportScheduleState.step = 'day-types';
+        arrivalReportScheduleState.loading = false;
+        arrivalReportScheduleState.preferredDepartureTime = String(opts.preferredDepartureTime || '').trim();
+        arrivalReportScheduleState.routeDayCache = {};
+        arrivalReportScheduleState.recentPreferenceApplied = false;
+        var preferredDayType = String(opts.preferredDayType || candidate.selected_day_type || '').trim();
+        if (dayTypeOptions.indexOf(preferredDayType) < 0) preferredDayType = '';
+        if (!preferredDayType && dayTypeOptions.length === 1) {
+          preferredDayType = dayTypeOptions[0];
+        }
+        arrivalReportScheduleState.selectedDayType = preferredDayType || String(dayTypeOptions[0] || '');
+
+        hideArrivalReportModalForSchedule();
+        arrivalReportScheduleBackdrop.classList.add('show');
+        arrivalReportScheduleModal.classList.add('show');
+        setReportOverscrollLock(true);
+        renderArrivalReportScheduleDayTypeStep();
+
+        var shouldAutoAdvance = !!(opts.autoAdvance && arrivalReportScheduleState.selectedDayType);
+        if (!shouldAutoAdvance && dayTypeOptions.length === 1 && arrivalReportScheduleState.selectedDayType) {
+          shouldAutoAdvance = true;
+        }
+        if (shouldAutoAdvance) {
+          proceedArrivalReportScheduleToTimeStep({
+            preferredDepartureTime: String(opts.preferredDepartureTime || '').trim(),
+            autoConfirm: !!opts.autoConfirm
+          });
+        }
+      }
+
+      function closeArrivalReportScheduleModal(options) {
+        options = options || {};
+        var preserveFlowState = !!options.preserveFlowState;
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.remove('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.remove('show');
+        if (preserveFlowState) {
+          restoreArrivalReportModalAfterSchedule();
+        } else {
+          arrivalReportModalHiddenForSchedule = false;
+        }
+        arrivalReportScheduleState.step = 'day-types';
+        arrivalReportScheduleState.loading = false;
+        arrivalReportScheduleState.candidate = null;
+        arrivalReportScheduleState.selectedDayType = '';
+        arrivalReportScheduleState.preferredDepartureTime = '';
+        arrivalReportScheduleState.routeDayCache = {};
+        arrivalReportScheduleState.recentPreferenceApplied = false;
+        syncReportOverscrollLock();
+      }
+
+      function handleArrivalReportSchedulePrimaryAction() {
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) return;
+        if (arrivalReportScheduleState.step === 'day-types') {
+          proceedArrivalReportScheduleToTimeStep();
+          return;
+        }
+        if (arrivalReportScheduleState.step !== 'times') return;
+        var departureTimes = Array.isArray(candidate.departure_times) ? candidate.departure_times : [];
+        if (!departureTimes.length) return;
+        if (!candidate.selected_departure_time) {
           candidate.selected_departure_time = String(departureTimes[0] || '');
-          openArrivalReportConfirmModal(candidate);
+        }
+        openArrivalReportConfirmModal(candidate);
+      }
+
+      function handleArrivalReportScheduleCancelAction() {
+        if (arrivalReportScheduleState.loading) return;
+        if (arrivalReportScheduleState.step === 'times') {
+          arrivalReportScheduleState.step = 'day-types';
+          renderArrivalReportScheduleDayTypeStep();
           return;
         }
-        renderArrivalReportTimeSelection();
+        closeArrivalReportScheduleModal({ preserveFlowState: true });
       }
 
       function openArrivalReportRoutesForSelectedStop() {
@@ -13448,9 +15516,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportState.timeWindowPastMinutes = 180;
         arrivalReportState.timeWindowFutureMinutes = 5;
         arrivalReportState.timeWindowRelaxed = false;
+        arrivalReportState.totalRouteCount = 0;
+        arrivalReportState.routeRequestTime = '';
+        arrivalReportScheduleState.candidate = null;
+        arrivalReportScheduleState.selectedDayType = '';
+        arrivalReportScheduleState.preferredDepartureTime = '';
+        arrivalReportScheduleState.routeDayCache = {};
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('routes');
         setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel(arrivalReportState.stopCount >= 2 ? '이전' : '닫기');
+        setArrivalReportSecondaryButtonLabel('이전');
         setArrivalReportPrimaryButtonVisible(false);
         setArrivalReportSearchVisible(false);
         showArrivalReportStopMap(false);
@@ -13470,13 +15544,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!stopIds.length && isFinite(Number(arrivalReportState.selectedStop.stop_id))) {
           stopIds.push(Number(arrivalReportState.selectedStop.stop_id));
         }
+        var routeRequestTime = getEffectiveCurrentTimeStr();
+        arrivalReportState.routeRequestTime = routeRequestTime;
         var stopQuery = 'stop_ids=' + encodeURIComponent(stopIds.join(','));
         return fetchJson(
           API_BASE + '/api/reports/candidate-routes' +
           '?site_id=' + encodeURIComponent(selectedSiteId) +
-          '&day_type=' + encodeURIComponent(selectedDayType) +
           '&' + stopQuery +
-          '&now_time=' + encodeURIComponent(getEffectiveCurrentTimeStr())
+          '&now_time=' + encodeURIComponent(routeRequestTime)
         )
           .then(function(result) {
             arrivalReportState.loading = false;
@@ -13484,8 +15559,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             var items = Array.isArray(result.data.candidates) ? result.data.candidates : [];
             var recentPreference = setArrivalReportRecentPreference(result.data.recent_preference || arrivalReportState.recentPreference);
             items.forEach(function(item) {
-              if (!item.selected_departure_time) {
-                item.selected_departure_time = getNearestTimeValue(item.departure_times || [], getEffectiveCurrentTimeStr());
+              item.day_type_options = getCandidateDayTypeOptions(item);
+              if (!item.selected_day_type && item.day_type_options.length === 1) {
+                item.selected_day_type = String(item.day_type_options[0] || '');
               }
             });
             arrivalReportState.allCandidates = items.slice();
@@ -13495,30 +15571,33 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             arrivalReportState.timeWindowPastMinutes = Number(result.data.window_past_minutes || 180);
             arrivalReportState.timeWindowFutureMinutes = Number(result.data.window_future_minutes || 5);
             arrivalReportState.timeWindowRelaxed = !!result.data.window_relaxed;
+            arrivalReportState.totalRouteCount = Math.max(0, Number(result.data.total_route_count || 0));
             var recentSelection = applyArrivalReportRecentPreferenceToCandidates(items, recentPreference);
             arrivalReportState.selectedIndex = recentSelection ? recentSelection.index : (items.length > 0 ? 0 : -1);
             renderArrivalReportSelectionHint(null);
             renderArrivalReportCandidates();
-            if (recentSelection && arrivalReportState.selectedIndex >= 0) {
+            if (recentSelection && arrivalReportState.selectedIndex >= 0 && arrivalReportState.allowRecentFastForward) {
               requestAnimationFrame(function() {
                 var currentCandidate = getSelectedArrivalReportCandidate();
                 if (!currentCandidate) return;
-                if (recentSelection.timeMatched) {
-                  var departureTimes = Array.isArray(currentCandidate.departure_times) ? currentCandidate.departure_times : [];
-                  if (departureTimes.length > 1) {
-                    renderArrivalReportTimeSelection();
-                  }
-                  openArrivalReportConfirmModal(currentCandidate);
-                  return;
-                }
-                openArrivalReportTimeStepOrConfirm();
+                var hasPreferredDayType = !!String(recentSelection.preferred_day_type || '').trim();
+                var hasPreferredDepartureTime = !!String(recentSelection.preferred_departure_time || '').trim();
+                arrivalReportState.allowRecentFastForward = false;
+                openArrivalReportScheduleModal(currentCandidate, {
+                  autoAdvance: hasPreferredDayType,
+                  autoConfirm: hasPreferredDayType && hasPreferredDepartureTime,
+                  preferredDayType: recentSelection.preferred_day_type || '',
+                  preferredDepartureTime: recentSelection.preferred_departure_time || ''
+                });
               });
               return;
             }
             if (items.length === 1) {
               requestAnimationFrame(function() {
                 if (arrivalReportState.step === 'routes' && arrivalReportState.candidates.length === 1) {
-                  openArrivalReportTimeStepOrConfirm();
+                  var selected = getSelectedArrivalReportCandidate();
+                  if (!selected) return;
+                  openArrivalReportScheduleModal(selected, { autoAdvance: false });
                 }
               });
             }
@@ -13537,6 +15616,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!isReportCapableClient()) return;
         resetArrivalReportState();
         arrivalReportModalHiddenForConfirm = false;
+        arrivalReportModalHiddenForSchedule = false;
+        arrivalReportScheduleModalHiddenForConfirm = false;
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('stops');
         setArrivalReportPrimaryButtonLabel('다음');
         setArrivalReportSecondaryButtonLabel('닫기');
@@ -13544,7 +15625,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setArrivalReportHintText('');
         arrivalReportState.loading = true;
         if (arrivalReportCandidateList) {
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">가까운 정류장을 찾는 중...</div>';
+          arrivalReportCandidateList.innerHTML =
+            '<div class="report-empty-state">현재 위치를 가져오는 중입니다.<br>약 10초 정도 걸릴 수 있습니다.</div>';
         }
         arrivalReportBackdrop.classList.add('show');
         arrivalReportModal.classList.add('show');
@@ -13553,10 +15635,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           .then(function(pos) {
             arrivalReportState.clientLat = Number(pos.lat);
             arrivalReportState.clientLng = Number(pos.lng);
+            if (arrivalReportCandidateList) {
+              arrivalReportCandidateList.innerHTML =
+                '<div class="report-empty-state">가까운 정류장을 찾는 중...</div>';
+            }
             return fetchJson(
               API_BASE + '/api/reports/nearby-stops' +
               '?site_id=' + encodeURIComponent(selectedSiteId) +
-              '&day_type=' + encodeURIComponent(selectedDayType) +
               '&lat=' + encodeURIComponent(String(pos.lat)) +
               '&lng=' + encodeURIComponent(String(pos.lng))
             );
@@ -13757,7 +15842,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
         var departureLine = document.createElement('div');
         departureLine.className = 'report-confirm-line';
-        var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[selectedDayType] || selectedDayType || '-');
+        var reportDayType = String(
+          arrivalReportPendingTarget.day_type ||
+          arrivalReportPendingTarget.selected_day_type ||
+          ''
+        ).trim();
+        var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[reportDayType] || reportDayType || '-');
         departureLine.innerHTML = '<div class="report-confirm-label">요일 및<br>출발시각</div><div class="report-confirm-value navy">' +
           escapeHtml(selectedDayLabel + ' ' + String(arrivalReportPendingTarget.selected_departure_time || '-')) + '분</div>';
         summary.appendChild(departureLine);
@@ -13800,7 +15890,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           applyArrivalReportConfirmFreshnessCycles(true);
         }
         renderArrivalReportConfirmContent();
-        hideArrivalReportModalForConfirm();
+        if (arrivalReportScheduleModal && arrivalReportScheduleModal.classList.contains('show')) {
+          hideArrivalReportScheduleModalForConfirm();
+        } else {
+          hideArrivalReportModalForConfirm();
+        }
         arrivalReportConfirmBackdrop.classList.add('show');
         arrivalReportConfirmModal.classList.add('show');
         setReportOverscrollLock(true);
@@ -13838,22 +15932,37 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         }
         var target = arrivalReportState.candidates[arrivalReportState.selectedIndex];
         if (arrivalReportState.step === 'routes') {
-          openArrivalReportTimeStepOrConfirm();
+          if (!target) {
+            setArrivalReportHintText('제보할 노선을 선택해 주세요.');
+            return;
+          }
+          var preferredDayType = String(target.selected_day_type || '').trim();
+          var preferredDepartureTime = '';
+          if (
+            arrivalReportState.recentPreference &&
+            Number(arrivalReportState.recentPreference.route_id) === Number(target.route_id)
+          ) {
+            preferredDayType = String(
+              preferredDayType ||
+              arrivalReportState.recentPreference.day_type ||
+              ''
+            ).trim();
+            preferredDepartureTime = String(arrivalReportState.recentPreference.departure_time || '').trim();
+          }
+          arrivalReportState.allowRecentFastForward = false;
+          openArrivalReportScheduleModal(target, {
+            autoAdvance: false,
+            autoConfirm: false,
+            preferredDayType: preferredDayType,
+            preferredDepartureTime: preferredDepartureTime
+          });
           return;
         }
-        if (!target || !target.selected_departure_time) {
-          setArrivalReportHintText('출발 시각을 선택해 주세요.');
-          return;
-        }
-        openArrivalReportConfirmModal(target);
+        closeArrivalReportModal();
       }
 
       function handleArrivalReportCancelAction() {
-        if (arrivalReportState.step === 'times') {
-          renderArrivalReportCandidates();
-          return;
-        }
-        if (arrivalReportState.step === 'routes' && arrivalReportState.stopCount >= 2) {
+        if (arrivalReportState.step === 'routes') {
           arrivalReportState.step = 'stops';
           arrivalReportState.selectedIndex = -1;
           renderArrivalReportStops();
@@ -13878,13 +15987,22 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           startArrivalReportConfirmFreshnessTimer();
           return;
         }
+        var reportDayType = String(
+          arrivalReportPendingTarget.day_type ||
+          arrivalReportPendingTarget.selected_day_type ||
+          ''
+        ).trim();
+        if (!reportDayType) {
+          alert('요일 정보를 찾지 못했습니다. 다시 선택해 주세요.');
+          return;
+        }
         arrivalReportConfirmPrimaryBtn.disabled = true;
         fetchJson(API_BASE + '/api/reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             site_id: selectedSiteId,
-            day_type: selectedDayType,
+            day_type: reportDayType,
             route_id: arrivalReportPendingTarget.route_id,
             stop_id: arrivalReportPendingTarget.stop_id,
             departure_time: arrivalReportPendingTarget.selected_departure_time,
@@ -13936,9 +16054,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (disabled && item && item.report_state === 'previous') {
           disabledTitle = ' title="현재 ETA에 반영되지 않는 이전 제보입니다."';
         }
-        var iconSvg = liked
-          ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>'
-          : '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>';
+        var heartSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
         return '<span class="report-like-wrap"><button type="button" class="report-like-btn' +
           (liked ? ' is-liked' : '') +
           (disabled ? ' disabled' : '') +
@@ -13947,7 +16063,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           '" data-like-count="' + escapeAttr(String(likeCount)) +
           '" aria-pressed="' + (liked ? 'true' : 'false') +
           '"' + disabledTitle + (disabled ? ' disabled' : '') + '>' +
-          '<span class="report-like-icon">' + iconSvg + '</span>' +
+          '<span class="report-like-icon">' + heartSvg + '</span>' +
           '<span class="report-like-count">' + escapeHtml(String(likeCount)) + '</span>' +
           '</button></span>';
       }
@@ -13960,12 +16076,6 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         btn.setAttribute('data-liked', normalizedLiked ? '1' : '0');
         btn.setAttribute('data-like-count', String(normalizedCount));
         btn.setAttribute('aria-pressed', normalizedLiked ? 'true' : 'false');
-        var iconEl = btn.querySelector('.report-like-icon');
-        if (iconEl) {
-          iconEl.innerHTML = normalizedLiked
-            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>'
-            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 21h8.2c1.1 0 2-.72 2.33-1.76l2.45-7.85A2.5 2.5 0 0 0 19.59 8H14V5.5C14 3.57 12.43 2 10.5 2c-.28 0-.5.22-.5.5V8L6.59 11.41A2 2 0 0 0 6 12.83V19a2 2 0 0 0 2 2Zm-5 0h2V10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>';
-        }
         var countEl = btn.querySelector('.report-like-count');
         if (countEl) countEl.textContent = String(normalizedCount);
       }
@@ -14184,6 +16294,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function buildMyReportRawItemHtml(item) {
         var noteHtml = buildReportNoteHtml(item);
         var creditHtml = item.credit_awarded ? '<span class="report-badge credit">' + escapeHtml(formatCreditValue(item.credit_value || 0)) + '</span>' : '-';
+        var historyLikeCount = Math.max(0, Number(item.like_count || 0) || 0);
+        var historyLikeIcon = '<span class="report-like-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></span>';
         return '<div class="report-history-item' + (item.report_state === 'previous' ? ' is-previous' : '') + '" data-report-id="' + escapeAttr(item.id) + '">' +
           '<div class="report-history-item-main">' +
             '<div class="report-history-item-topline">' +
@@ -14192,7 +16304,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             '</div>' +
             '<div class="report-history-item-meta">' +
               '<span>' + creditHtml + '</span>' +
-              '<span class="report-history-item-like">좋아요 ' + escapeHtml(String(Math.max(0, Number(item.like_count || 0) || 0))) + '</span>' +
+              '<span class="report-history-item-like">' + historyLikeIcon + escapeHtml(String(historyLikeCount)) + '</span>' +
             '</div>' +
             noteHtml +
           '</div>' +
@@ -14333,7 +16445,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           html += '<div class="report-history-group' + (isExpanded ? ' expanded' : '') + '" data-group-key="' + escapeAttr(group.key) + '">' +
             '<button type="button" class="report-history-group-head" data-group-key="' + escapeAttr(group.key) + '">' +
               '<div class="report-history-group-main">' +
-                '<div class="report-history-group-route">' + buildHighlightedRouteNameHtml(group.route_name || '-', group.__routeMatch) + '</div>' +
+                '<div class="report-history-group-route">' + buildReportHistoryRouteTitleHtml(group.route_name || '-', group.__routeMatch, group.direction, group.route_type) + '</div>' +
                 '<div class="report-history-group-meta">' +
                   escapeHtml(String(DAY_TYPE_LABEL_MAP[group.day_type] || group.day_type || '-')) + ' ' +
                   escapeHtml(String(group.departure_time || '-')) + '분 · ' +
@@ -14549,7 +16661,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           html += '<div class="report-history-group' + (isExpanded ? ' expanded' : '') + '" data-route-key="' + escapeAttr(routeGroup.key) + '">' +
             '<button type="button" class="report-history-group-head" data-route-key="' + escapeAttr(routeGroup.key) + '">' +
               '<div class="report-history-group-main">' +
-                '<div class="report-history-group-route">' + buildHighlightedRouteNameHtml(routeGroup.route_name || '-', routeGroup.__routeMatch) + '</div>' +
+                '<div class="report-history-group-route">' + buildReportHistoryRouteTitleHtml(routeGroup.route_name || '-', routeGroup.__routeMatch, routeGroup.direction, routeGroup.route_type) + '</div>' +
                 '<div class="report-history-group-meta">정류장 ' + escapeHtml(String(routeGroup.stop_count || 0)) + '곳 · 제보 ' + escapeHtml(String(routeGroup.item_count || 0)) + '건</div>' +
               '</div>' +
               '<div class="report-history-group-side">' +
@@ -15216,6 +17328,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       if (arrivalReportCancelBtn) arrivalReportCancelBtn.addEventListener('click', handleArrivalReportCancelAction);
       if (arrivalReportBackdrop) arrivalReportBackdrop.addEventListener('click', closeArrivalReportModal);
       if (arrivalReportSubmitBtn) arrivalReportSubmitBtn.addEventListener('click', handleArrivalReportSubmitClick);
+      if (arrivalReportScheduleCloseBtn) arrivalReportScheduleCloseBtn.addEventListener('click', closeArrivalReportModal);
+      if (arrivalReportScheduleCancelBtn) arrivalReportScheduleCancelBtn.addEventListener('click', handleArrivalReportScheduleCancelAction);
+      if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.addEventListener('click', closeArrivalReportModal);
+      if (arrivalReportSchedulePrimaryBtn) arrivalReportSchedulePrimaryBtn.addEventListener('click', handleArrivalReportSchedulePrimaryAction);
       if (arrivalReportSearchInput) {
         arrivalReportSearchInput.addEventListener('input', function() {
           arrivalReportState.routeSearchQuery = String(arrivalReportSearchInput.value || '');
@@ -15309,21 +17425,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         settingsMaxDistanceSlider.addEventListener('input', handleSettingsMaxDistanceInput);
         settingsMaxDistanceSlider.addEventListener('change', handleSettingsMaxDistanceInput);
       }
-      if (devDebugApplyBtn) {
-        devDebugApplyBtn.addEventListener('click', function() {
-          var timeText = String(devTimeInput && devTimeInput.value || '').trim();
-          var match = timeText.match(/^(\d{1,2}):(\d{2})$/);
-          var hour = match ? parseInt(match[1], 10) : NaN;
-          var minute = match ? parseInt(match[2], 10) : NaN;
-          var pendingPosition = getDevDebugInputPosition();
-          if (pendingPosition) {
-            devOverrides.lat = Number(pendingPosition.lat);
-            devOverrides.lng = Number(pendingPosition.lng);
-          }
-          devOverrides.hour = isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
-          devOverrides.minute = isFinite(minute) && minute >= 0 && minute <= 59 ? minute : null;
-          syncDevDebugInputs();
-        });
+      if (devTimeInput) {
+        devTimeInput.addEventListener('input', applyDevDebugTimeInput);
+        devTimeInput.addEventListener('change', applyDevDebugTimeInput);
+      }
+      if (devDebugCloseBtn) {
+        devDebugCloseBtn.addEventListener('click', closeDevDebugPanel);
       }
       if (devDebugCenterBtn) {
         devDebugCenterBtn.addEventListener('click', function() {
@@ -15334,6 +17441,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           var lng = Number(center.getLng());
           devPendingPosition.lat = Number(lat.toFixed(6));
           devPendingPosition.lng = Number(lng.toFixed(6));
+          devOverrides.lat = Number(devPendingPosition.lat);
+          devOverrides.lng = Number(devPendingPosition.lng);
           showCurrentLocationOverlay(lat, lng, true);
         });
       }
@@ -15359,6 +17468,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         updateArrivalReportButtonVisibility();
         updateDevDebugUi();
         positionHistoryPopover();
+        positionNoticeSpotlightBubble();
         if (arrivalReportModal && arrivalReportModal.classList.contains('show') && arrivalReportState.step === 'stops') {
           requestAnimationFrame(updateArrivalReportStopStepSizing);
         }
@@ -15371,6 +17481,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           scheduleRouteDirectionArrowsRefresh(ROUTE_ARROW_REFRESH_DEBOUNCE_MS);
         }
       });
+      window.addEventListener('scroll', function() {
+        positionNoticeSpotlightBubble();
+      }, { passive: true });
     };
   </script>
 </body>
