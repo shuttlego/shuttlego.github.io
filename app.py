@@ -16,7 +16,7 @@ import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 from flask import Flask, jsonify, make_response, request, Response
@@ -179,6 +179,8 @@ _github_token_cache = {"token": "", "expires_at": 0.0}
 _github_token_lock = threading.Lock()
 _issue_cache: dict[str, tuple[float, dict]] = {}
 _issue_cache_lock = threading.Lock()
+_issue_cache_version_local = 0
+_issue_cache_version_lock = threading.Lock()
 _issue_submit_tracker_lock = threading.Lock()
 _issue_submit_recent_by_client: dict[str, float] = {}
 _issue_submit_recent_hash: dict[str, float] = {}
@@ -1018,6 +1020,38 @@ def _extract_github_error_message(resp: requests.Response) -> str:
     return message or "GitHub API 요청에 실패했습니다."
 
 
+def _is_allowed_github_image_host(hostname: str) -> bool:
+    host = str(hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return False
+    if host in {
+        "github.com",
+        "raw.githubusercontent.com",
+        "user-images.githubusercontent.com",
+        "private-user-images.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "camo.githubusercontent.com",
+        "media.githubusercontent.com",
+    }:
+        return True
+    return host.endswith(".githubusercontent.com")
+
+
+def _normalize_github_image_url(raw_url: str) -> str:
+    parsed = urlparse(str(raw_url or "").strip())
+    host = str(parsed.hostname or "").strip().lower().rstrip(".")
+    if host != "github.com":
+        return parsed.geturl()
+    path = str(parsed.path or "")
+    if not path.startswith("/user-attachments/assets/"):
+        return parsed.geturl()
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    has_raw = any(str(k).strip().lower() == "raw" for k, _ in query_items)
+    if not has_raw:
+        query_items.append(("raw", "1"))
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
 def _github_headers(access_token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {access_token}",
@@ -1286,9 +1320,40 @@ def _issue_cache_set(cache_key: str, payload: dict, ttl_sec: int | None = None) 
         _issue_cache[cache_key] = (_time.time() + ttl, payload)
 
 
-def _invalidate_issue_cache() -> None:
+def _clear_issue_cache_local() -> None:
     with _issue_cache_lock:
         _issue_cache.clear()
+
+
+def _set_local_issue_cache_version(version: int) -> bool:
+    global _issue_cache_version_local
+    next_version = max(0, int(version or 0))
+    with _issue_cache_version_lock:
+        changed = next_version != _issue_cache_version_local
+        _issue_cache_version_local = next_version
+        return changed
+
+
+def _sync_issue_cache_version() -> None:
+    try:
+        shared_version = int(user_store.get_issue_cache_version() or 0)
+    except Exception:
+        app.logger.exception("Failed to fetch issue cache version")
+        return
+    if _set_local_issue_cache_version(shared_version):
+        _clear_issue_cache_local()
+
+
+def _invalidate_issue_cache(distributed: bool = True) -> None:
+    _clear_issue_cache_local()
+    if not distributed:
+        return
+    try:
+        shared_version = int(user_store.bump_issue_cache_version() or 0)
+    except Exception:
+        app.logger.exception("Failed to bump issue cache version")
+        return
+    _set_local_issue_cache_version(shared_version)
 
 
 def _compact_meta_label_part(raw: object) -> str:
@@ -3478,6 +3543,8 @@ def api_issues():
     except GitHubConfigError as exc:
         return jsonify({"error": str(exc)}), 503
 
+    _sync_issue_cache_version()
+
     state = request.args.get("state", default="all", type=str).strip().lower()
     if state not in {"open", "closed", "all"}:
         return jsonify({"error": "state는 open|closed|all만 허용됩니다."}), 400
@@ -3612,6 +3679,8 @@ def api_issue_detail(issue_number: int):
         _ensure_github_issue_config()
     except GitHubConfigError as exc:
         return jsonify({"error": str(exc)}), 503
+
+    _sync_issue_cache_version()
 
     cache_key = f"issues:detail:{issue_number}"
     cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
@@ -3761,6 +3830,129 @@ def api_issue_like_toggle(issue_number: int):
     )
     if auth_user is None:
         return _attach_history_visitor_cookie_if_needed(response)
+    return response
+
+
+@app.route("/api/github/image-proxy")
+def api_github_image_proxy():
+    raw_url = str(request.args.get("url", "") or "").strip()
+    if not raw_url:
+        return jsonify({"error": "url 쿼리 파라미터가 필요합니다."}), 400
+    if len(raw_url) > 2048:
+        return jsonify({"error": "url 길이가 너무 깁니다."}), 400
+
+    parsed = urlparse(raw_url)
+    scheme = str(parsed.scheme or "").lower()
+    hostname = str(parsed.hostname or "").strip().lower().rstrip(".")
+    if scheme not in {"http", "https"}:
+        return jsonify({"error": "http/https URL만 허용됩니다."}), 400
+    if not _is_allowed_github_image_host(hostname):
+        return jsonify({"error": "허용되지 않은 이미지 호스트입니다."}), 403
+
+    target_url = _normalize_github_image_url(raw_url)
+    max_image_bytes = 20 * 1024 * 1024
+    timeout_sec = 20
+    method_error = "GitHub 이미지 요청에 실패했습니다."
+
+    forward_headers: dict[str, str] = {
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "User-Agent": "shuttle-go-image-proxy/1.0",
+    }
+    if_none_match = str(request.headers.get("If-None-Match", "") or "").strip()
+    if if_none_match:
+        forward_headers["If-None-Match"] = if_none_match
+    if_modified_since = str(request.headers.get("If-Modified-Since", "") or "").strip()
+    if if_modified_since:
+        forward_headers["If-Modified-Since"] = if_modified_since
+
+    should_try_auth = bool(
+        GITHUB_APP_ID and GITHUB_INSTALLATION_ID and GITHUB_REPO_OWNER and GITHUB_REPO_NAME and jwt is not None
+    )
+
+    def _fetch_image(force_refresh: bool = False) -> requests.Response:
+        req_headers = dict(forward_headers)
+        if should_try_auth:
+            try:
+                token = _get_github_installation_token(force_refresh=force_refresh)
+            except (GitHubAPIError, GitHubConfigError):
+                token = ""
+            if token:
+                req_headers["Authorization"] = f"Bearer {token}"
+        return requests.get(
+            target_url,
+            headers=req_headers,
+            timeout=timeout_sec,
+            stream=True,
+            allow_redirects=True,
+        )
+
+    try:
+        resp = _fetch_image(force_refresh=False)
+    except requests.RequestException as exc:
+        return jsonify({"error": f"{method_error}: {exc}"}), 502
+
+    if resp.status_code == 401 and should_try_auth:
+        resp.close()
+        try:
+            resp = _fetch_image(force_refresh=True)
+        except requests.RequestException as exc:
+            return jsonify({"error": f"{method_error}: {exc}"}), 502
+
+    if resp.status_code == 304:
+        proxy_resp = make_response("", 304)
+        for header_name in ("Cache-Control", "ETag", "Last-Modified", "Expires"):
+            header_value = str(resp.headers.get(header_name, "") or "").strip()
+            if header_value:
+                proxy_resp.headers[header_name] = header_value
+        resp.close()
+        return proxy_resp
+
+    if resp.status_code >= 400:
+        status_code = int(resp.status_code)
+        resp.close()
+        return jsonify({"error": f"GitHub 이미지 응답 실패({status_code})"}), status_code
+
+    final_url = str(resp.url or "").strip()
+    final_host = str(urlparse(final_url).hostname or "").strip().lower().rstrip(".")
+    if not _is_allowed_github_image_host(final_host):
+        resp.close()
+        return jsonify({"error": "GitHub 이미지 리다이렉트 대상이 허용되지 않았습니다."}), 502
+
+    content_type = str(resp.headers.get("Content-Type", "") or "").strip()
+    lowered_type = content_type.lower()
+    if not lowered_type.startswith("image/"):
+        resp.close()
+        return jsonify({"error": "이미지 콘텐츠 타입이 아닙니다."}), 502
+
+    content_length_raw = str(resp.headers.get("Content-Length", "") or "").strip()
+    if content_length_raw.isdigit() and int(content_length_raw) > max_image_bytes:
+        resp.close()
+        return jsonify({"error": "이미지 파일이 너무 큽니다."}), 413
+
+    data_chunks: list[bytes] = []
+    total_size = 0
+    try:
+        for chunk in resp.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total_size += len(chunk)
+            if total_size > max_image_bytes:
+                resp.close()
+                return jsonify({"error": "이미지 파일이 너무 큽니다."}), 413
+            data_chunks.append(chunk)
+    except requests.RequestException as exc:
+        resp.close()
+        return jsonify({"error": f"이미지 다운로드 중 오류가 발생했습니다: {exc}"}), 502
+    finally:
+        resp.close()
+
+    response = Response(b"".join(data_chunks), content_type=content_type or "application/octet-stream")
+    response.headers["Cache-Control"] = str(resp.headers.get("Cache-Control", "public, max-age=3600"))
+    for header_name in ("ETag", "Last-Modified", "Expires"):
+        header_value = str(resp.headers.get(header_name, "") or "").strip()
+        if header_value:
+            response.headers[header_name] = header_value
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
