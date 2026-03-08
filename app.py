@@ -2906,11 +2906,11 @@ def api_report_nearby_stops():
     if report_guard is not None:
         return report_guard
     site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
-    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    day_type = request.args.get("day_type", default="", type=str).strip() or None
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
     if lat is None or lng is None:
-        return jsonify({"error": "site_id, day_type, lat, lng는 필수입니다."}), 400
+        return jsonify({"error": "site_id, lat, lng는 필수입니다."}), 400
     if not (math.isfinite(lat) and math.isfinite(lng)):
         return jsonify({"error": "lat, lng는 유효한 숫자여야 합니다."}), 400
     auth_user, _ = _get_current_user(with_touch=False)
@@ -2936,9 +2936,13 @@ def api_report_nearby_stops():
         within_hours=4,
     )
     data["recent_preference"] = preference
+    data["requested_day_type"] = str(day_type or "")
+    preferred_day_type = ""
+    if preference:
+        preferred_day_type = str(preference.get("day_type") or "").strip()
     preferred_stop_index = find_recent_report_stop_index_by_route(
         site_id,
-        day_type,
+        preferred_day_type or day_type,
         data.get("stops") or [],
         preference.get("route_id") if preference else None,
         preference.get("route_uuid") if preference else None,
@@ -2955,7 +2959,7 @@ def api_report_candidate_routes():
     if report_guard is not None:
         return report_guard
     site_id = request.args.get("site_id", default=_DEFAULT_SITE_ID).strip() or _DEFAULT_SITE_ID
-    day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
+    day_type = request.args.get("day_type", default="", type=str).strip() or None
     now_time = request.args.get("now_time", default="", type=str).strip()
     stop_ids_param = request.args.get("stop_ids", default="", type=str).strip()
     stop_ids: list[int] = []
@@ -2975,7 +2979,7 @@ def api_report_candidate_routes():
         if stop_id is not None:
             stop_ids.append(int(stop_id))
     if not stop_ids or not now_time:
-        return jsonify({"error": "site_id, day_type, stop_id(or stop_ids), now_time은 필수입니다."}), 400
+        return jsonify({"error": "site_id, stop_id(or stop_ids), now_time은 필수입니다."}), 400
 
     auth_user, _ = _get_current_user(with_touch=False)
     if auth_user is not None:
@@ -3023,6 +3027,7 @@ def api_report_candidate_routes():
         preferred_route_id = int(preference["route_id"])
         preferred_route_uuid = str(preference.get("route_uuid") or "").strip()
         preferred_time = str(preference.get("departure_time") or "").strip()
+        preferred_day_type = str(preference.get("day_type") or "").strip()
         prioritized: list[dict] = []
         remainder: list[dict] = []
         for item in candidates:
@@ -3037,8 +3042,16 @@ def api_report_candidate_routes():
             elif route_id > 0:
                 route_matched = route_id == preferred_route_id
             if route_matched:
-                if preferred_time and preferred_time in (item.get("departure_times") or []):
+                if (
+                    day_type
+                    and preferred_time
+                    and preferred_time in (item.get("departure_times") or [])
+                ):
                     item["selected_departure_time"] = preferred_time
+                elif (not day_type) and preferred_day_type:
+                    option_values = [str(value or "").strip() for value in list(item.get("day_type_options") or [])]
+                    if preferred_day_type in option_values:
+                        item["selected_day_type"] = preferred_day_type
                 item["preferred_from_history"] = True
                 prioritized.append(item)
                 history_applied = True
@@ -3049,6 +3062,7 @@ def api_report_candidate_routes():
 
     data["history_applied"] = history_applied
     data["recent_preference"] = preference
+    data["requested_day_type"] = str(day_type or "")
     data["candidates"] = candidates
     resp = make_response(jsonify(data))
     return _attach_history_visitor_cookie_if_needed(resp)

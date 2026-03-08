@@ -4020,6 +4020,80 @@
       color: #071f4e;
       transform: scale(1.02);
     }
+    .report-schedule-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .report-schedule-summary-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .report-schedule-summary-label {
+      flex: 0 0 82px;
+      font-size: 12px;
+      line-height: 1.3;
+      font-weight: 700;
+      color: #c62828;
+    }
+    .report-schedule-summary-value {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .report-daytype-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+    .report-schedule-keyword {
+      color: #c62828;
+      font-weight: 700;
+    }
+    .report-daytype-option {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .report-daytype-option.active {
+      border-color: #bfdbfe;
+      background: #e8f0ff;
+      color: #1d4ed8;
+    }
+    .report-daytype-option:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+    .report-schedule-loading {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #64748b;
+      font-weight: 700;
+      padding: 6px 0;
+    }
     .report-confirm-body {
       padding: 18px 22px;
       overflow-y: auto;
@@ -4815,7 +4889,7 @@
       bottom: calc(env(safe-area-inset-bottom) + 104px);
       z-index: 25;
       display: none;
-      width: min(64px, calc(100% - 24px));
+      width: min(84px, calc(100% - 24px));
       padding: 8px;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.96);
@@ -4826,11 +4900,33 @@
     .dev-debug-panel.show {
       display: block;
     }
+    .dev-debug-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
     .dev-debug-title {
       font-size: 10px;
       font-weight: 800;
       color: #071f4e;
-      margin-bottom: 5px;
+      margin-bottom: 0;
+    }
+    .dev-debug-close-btn {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      border: 1px solid #d8e0ec;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
     .dev-debug-grid {
       display: flex;
@@ -4848,6 +4944,10 @@
       text-align: center;
       appearance: none;
       -webkit-appearance: none;
+    }
+    .dev-debug-grid input[type="time"]::-webkit-calendar-picker-indicator {
+      opacity: 0.8;
+      cursor: pointer;
     }
     .dev-debug-actions {
       display: flex;
@@ -4996,7 +5096,7 @@
         padding-right: 12px;
       }
       .dev-debug-panel {
-        width: min(92px, calc(100% - 24px));
+        width: min(90px, calc(100% - 24px));
       }
     }
   </style>
@@ -5295,6 +5395,19 @@
     </div>
   </div>
 
+  <div class="report-confirm-backdrop" id="arrivalReportScheduleBackdrop" aria-hidden="true"></div>
+  <div class="report-confirm-modal" id="arrivalReportScheduleModal" role="dialog" aria-label="제보 요일 및 출발시각 선택">
+    <div class="report-modal-header">
+      <div class="report-modal-title" id="arrivalReportScheduleTitle">어느 요일의 노선인가요?</div>
+      <button type="button" class="report-modal-close-btn" id="arrivalReportScheduleCloseBtn" aria-label="닫기">×</button>
+    </div>
+    <div class="report-confirm-body" id="arrivalReportScheduleBody"></div>
+    <div class="report-modal-actions">
+      <button type="button" class="report-modal-btn" id="arrivalReportScheduleCancelBtn">이전</button>
+      <button type="button" class="report-modal-btn primary" id="arrivalReportSchedulePrimaryBtn">다음</button>
+    </div>
+  </div>
+
   <div class="report-confirm-backdrop" id="arrivalReportConfirmBackdrop" aria-hidden="true"></div>
   <div class="report-confirm-modal" id="arrivalReportConfirmModal" role="dialog" aria-label="제보 확인">
     <div class="report-modal-header">
@@ -5379,13 +5492,15 @@
         </div>
       </div>
       <div class="dev-debug-panel" id="devDebugPanel" aria-label="DEV Debug">
-        <div class="dev-debug-title">DEV Debug</div>
+        <div class="dev-debug-head">
+          <div class="dev-debug-title">DEV Debug</div>
+          <button type="button" class="dev-debug-close-btn" id="devDebugCloseBtn" aria-label="DEV Debug 닫기">×</button>
+        </div>
         <div class="dev-debug-grid">
-          <input type="text" inputmode="numeric" maxlength="5" id="devTimeInput" aria-label="DEV 시간 설정" placeholder="09:49" />
+          <input type="time" step="60" id="devTimeInput" aria-label="DEV 시간 설정" />
         </div>
         <div class="dev-debug-actions">
           <button type="button" id="devDebugCenterBtn">지도 중심</button>
-          <button type="button" id="devDebugApplyBtn">적용</button>
         </div>
       </div>
     </div>
@@ -5569,6 +5684,13 @@
       var arrivalReportCloseBtn = document.getElementById('arrivalReportCloseBtn');
       var arrivalReportCancelBtn = document.getElementById('arrivalReportCancelBtn');
       var arrivalReportSubmitBtn = document.getElementById('arrivalReportSubmitBtn');
+      var arrivalReportScheduleBackdrop = document.getElementById('arrivalReportScheduleBackdrop');
+      var arrivalReportScheduleModal = document.getElementById('arrivalReportScheduleModal');
+      var arrivalReportScheduleTitle = document.getElementById('arrivalReportScheduleTitle');
+      var arrivalReportScheduleBody = document.getElementById('arrivalReportScheduleBody');
+      var arrivalReportScheduleCloseBtn = document.getElementById('arrivalReportScheduleCloseBtn');
+      var arrivalReportScheduleCancelBtn = document.getElementById('arrivalReportScheduleCancelBtn');
+      var arrivalReportSchedulePrimaryBtn = document.getElementById('arrivalReportSchedulePrimaryBtn');
       var arrivalReportConfirmBackdrop = document.getElementById('arrivalReportConfirmBackdrop');
       var arrivalReportConfirmModal = document.getElementById('arrivalReportConfirmModal');
       var arrivalReportConfirmTitle = document.getElementById('arrivalReportConfirmTitle');
@@ -5585,7 +5707,7 @@
       var devDebugPanel = document.getElementById('devDebugPanel');
       var devTimeInput = document.getElementById('devTimeInput');
       var devDebugCenterBtn = document.getElementById('devDebugCenterBtn');
-      var devDebugApplyBtn = document.getElementById('devDebugApplyBtn');
+      var devDebugCloseBtn = document.getElementById('devDebugCloseBtn');
       var placeHistoryPopover = document.getElementById('placeHistoryPopover');
 
       var map = null;
@@ -5702,6 +5824,7 @@
         lat: null,
         lng: null
       };
+      var devDebugDismissed = false;
       var arrivalReportState = {
         loading: false,
         step: 'stops',
@@ -5716,13 +5839,25 @@
         clientLat: null,
         clientLng: null,
         recentPreference: null,
+        allowRecentFastForward: true,
         historyApplied: false,
         usedFallbackRadius: false,
         radiusM: 150,
         timeFilterApplied: false,
         timeWindowPastMinutes: 180,
         timeWindowFutureMinutes: 5,
-        timeWindowRelaxed: false
+        timeWindowRelaxed: false,
+        totalRouteCount: 0,
+        routeRequestTime: ''
+      };
+      var arrivalReportScheduleState = {
+        step: 'day-types',
+        loading: false,
+        candidate: null,
+        selectedDayType: '',
+        preferredDepartureTime: '',
+        routeDayCache: {},
+        recentPreferenceApplied: false
       };
       var arrivalReportConfirmMode = 'confirm';
       var arrivalReportPendingTarget = null;
@@ -5740,6 +5875,8 @@
       var arrivalReportConfirmReconfirmRequired = false;
       var arrivalReportConfirmRefreshNote = '';
       var arrivalReportModalHiddenForConfirm = false;
+      var arrivalReportModalHiddenForSchedule = false;
+      var arrivalReportScheduleModalHiddenForConfirm = false;
       var reportDataState = {
         mode: '',
         leaderboardWindow: 'all',
@@ -6180,6 +6317,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportState.clientLat = null;
         arrivalReportState.clientLng = null;
         arrivalReportState.recentPreference = null;
+        arrivalReportState.allowRecentFastForward = true;
         arrivalReportState.historyApplied = false;
         arrivalReportState.usedFallbackRadius = false;
         arrivalReportState.radiusM = 150;
@@ -6187,6 +6325,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportState.timeWindowPastMinutes = 180;
         arrivalReportState.timeWindowFutureMinutes = 5;
         arrivalReportState.timeWindowRelaxed = false;
+        arrivalReportState.totalRouteCount = 0;
+        arrivalReportState.routeRequestTime = '';
+        arrivalReportScheduleState.step = 'day-types';
+        arrivalReportScheduleState.loading = false;
+        arrivalReportScheduleState.candidate = null;
+        arrivalReportScheduleState.selectedDayType = '';
+        arrivalReportScheduleState.preferredDepartureTime = '';
+        arrivalReportScheduleState.routeDayCache = {};
+        arrivalReportScheduleState.recentPreferenceApplied = false;
         arrivalReportPendingTarget = null;
         arrivalReportPendingDate = null;
         arrivalReportConfirmMode = 'confirm';
@@ -6196,6 +6343,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportConfirmReconfirmRequired = false;
         arrivalReportConfirmRefreshNote = '';
         arrivalReportModalHiddenForConfirm = false;
+        arrivalReportModalHiddenForSchedule = false;
+        arrivalReportScheduleModalHiddenForConfirm = false;
         clearArrivalReportConfirmCountdown();
         clearArrivalReportConfirmFreshnessTimer();
         if (arrivalReportModal) {
@@ -6207,6 +6356,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setArrivalReportSearchVisible(false);
         if (arrivalReportSearchInput) arrivalReportSearchInput.value = '';
         if (arrivalReportCandidateList) arrivalReportCandidateList.classList.remove('stop-mode');
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.remove('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.remove('show');
         showArrivalReportStopMap(false);
         clearArrivalReportStopMapOverlays();
         clearArrivalReportStopMapCurrentOverlay();
@@ -6250,8 +6401,6 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (preference) {
           if (preference.site_id && preference.site_id !== selectedSiteId) {
             preference = null;
-          } else if (preference.day_type && preference.day_type !== selectedDayType) {
-            preference = null;
           }
         }
         arrivalReportState.recentPreference = preference;
@@ -6283,22 +6432,73 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           return null;
         }
         var preferredRouteId = Number(preference.route_id);
+        var preferredDayType = String(preference.day_type || '').trim();
         var preferredTime = String(preference.departure_time || '').trim();
         for (var idx = 0; idx < candidates.length; idx++) {
           var candidate = candidates[idx] || {};
           if (Number(candidate.route_id) !== preferredRouteId) continue;
+          var selectedCandidateDayType = '';
+          if (preferredDayType && Array.isArray(candidate.day_type_options) && candidate.day_type_options.indexOf(preferredDayType) >= 0) {
+            selectedCandidateDayType = preferredDayType;
+          } else if (preferredDayType && String(candidate.day_type || '').trim() === preferredDayType) {
+            selectedCandidateDayType = preferredDayType;
+          } else if (Array.isArray(candidate.day_type_options) && candidate.day_type_options.length === 1) {
+            selectedCandidateDayType = String(candidate.day_type_options[0] || '').trim();
+          } else if (candidate.day_type) {
+            selectedCandidateDayType = String(candidate.day_type || '').trim();
+          }
+          if (selectedCandidateDayType) {
+            candidate.selected_day_type = selectedCandidateDayType;
+          }
           var timeMatched = false;
-          if (preferredTime && Array.isArray(candidate.departure_times) && candidate.departure_times.indexOf(preferredTime) >= 0) {
+          if (
+            preferredTime &&
+            selectedCandidateDayType &&
+            Array.isArray(candidate.departure_times) &&
+            candidate.departure_times.indexOf(preferredTime) >= 0
+          ) {
             candidate.selected_departure_time = preferredTime;
             timeMatched = true;
           }
           return {
             index: idx,
             candidate: candidate,
+            preferred_day_type: selectedCandidateDayType,
+            preferred_departure_time: preferredTime,
             timeMatched: timeMatched
           };
         }
         return null;
+      }
+
+      function getReportDayTypeSortKey(value) {
+        var clean = String(value || '').trim();
+        if (clean === 'weekday') return '01';
+        if (clean === 'monday') return '02';
+        if (clean === 'saturday') return '03';
+        if (clean === 'holiday') return '04';
+        if (clean === 'familyday') return '05';
+        return '99-' + clean;
+      }
+
+      function getCandidateDayTypeOptions(candidate) {
+        candidate = candidate || {};
+        var options = [];
+        if (Array.isArray(candidate.day_type_options)) {
+          candidate.day_type_options.forEach(function(raw) {
+            var value = String(raw || '').trim();
+            if (!value || options.indexOf(value) >= 0) return;
+            options.push(value);
+          });
+        }
+        var dayTypeValue = String(candidate.day_type || '').trim();
+        if (dayTypeValue && options.indexOf(dayTypeValue) < 0) {
+          options.push(dayTypeValue);
+        }
+        options.sort(function(a, b) {
+          return getReportDayTypeSortKey(a).localeCompare(getReportDayTypeSortKey(b));
+        });
+        return options;
       }
 
       function normalizeRouteSearchQuery(value) {
@@ -6512,12 +6712,40 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var now = new Date();
         var hour = devOverrides.hour != null ? pad2(Number(devOverrides.hour) || 0) : pad2(now.getHours());
         var minute = devOverrides.minute != null ? pad2(Number(devOverrides.minute) || 0) : pad2(now.getMinutes());
-        devTimeInput.value = String(devTimeInput.value || (hour + ':' + minute));
+        var nextValue = hour + ':' + minute;
+        if (devOverrides.hour != null && devOverrides.minute != null) {
+          devTimeInput.value = nextValue;
+          return;
+        }
+        if (!String(devTimeInput.value || '').trim()) {
+          devTimeInput.value = nextValue;
+        }
+      }
+
+      function applyDevDebugTimeInput() {
+        var timeText = String(devTimeInput && devTimeInput.value || '').trim();
+        var match = timeText.match(/^(\d{1,2}):(\d{2})$/);
+        var hour = match ? parseInt(match[1], 10) : NaN;
+        var minute = match ? parseInt(match[2], 10) : NaN;
+        devOverrides.hour = isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
+        devOverrides.minute = isFinite(minute) && minute >= 0 && minute <= 59 ? minute : null;
+        syncDevDebugInputs();
+      }
+
+      function closeDevDebugPanel() {
+        devDebugDismissed = true;
+        updateDevDebugUi();
+      }
+
+      function reopenDevDebugPanel() {
+        devDebugDismissed = false;
+        updateDevDebugUi();
       }
 
       function updateDevDebugUi() {
         if (!devDebugPanel) return;
-        devDebugPanel.classList.toggle('show', isDevHost());
+        var shouldShow = isDevHost() && !devDebugDismissed;
+        devDebugPanel.classList.toggle('show', shouldShow);
         syncDevDebugInputs();
       }
 
@@ -12231,6 +12459,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         );
       }
       function moveToCurrentLocation() {
+        if (isDevHost()) {
+          reopenDevDebugPanel();
+        }
         var devPosition = getPreferredDebugPosition();
         if (devPosition && isFinite(Number(devPosition.lat)) && isFinite(Number(devPosition.lng))) {
           clearCurrentLocationOverlay();
@@ -12600,6 +12831,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function isAnyReportModalOpen() {
         return !!(
           (arrivalReportModal && arrivalReportModal.classList.contains('show')) ||
+          (arrivalReportScheduleModal && arrivalReportScheduleModal.classList.contains('show')) ||
           (arrivalReportConfirmModal && arrivalReportConfirmModal.classList.contains('show')) ||
           (reportDataModal && reportDataModal.classList.contains('show'))
         );
@@ -12636,6 +12868,42 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return (hour * 60) + minute;
       }
 
+      function addClockMinutes(baseTime, deltaMinutes) {
+        var baseMinutes = parseTimeToMinutes(baseTime);
+        if (baseMinutes < 0) return '';
+        var total = (baseMinutes + Number(deltaMinutes || 0)) % 1440;
+        if (total < 0) total += 1440;
+        var hh = Math.floor(total / 60);
+        var mm = total % 60;
+        return pad2(hh) + ':' + pad2(mm);
+      }
+
+      function buildArrivalReportRouteEmptyMessage() {
+        var totalRouteCount = Number(arrivalReportState.totalRouteCount || 0);
+        var nearbyStopCount = Math.max(0, Number(arrivalReportState.stopCount || 0));
+        var selectedStop = arrivalReportState.selectedStop || {};
+        var selectedStopName = String(selectedStop.stop_name || '-');
+        if (arrivalReportState.timeFilterApplied && totalRouteCount > 0) {
+          var nowTime = String(arrivalReportState.routeRequestTime || getEffectiveCurrentTimeStr() || '');
+          var pastMinutes = Math.max(0, Number(arrivalReportState.timeWindowPastMinutes || 0));
+          var futureMinutes = Math.max(0, Number(arrivalReportState.timeWindowFutureMinutes || 0));
+          var startTime = addClockMinutes(nowTime, -pastMinutes) || '-';
+          var endTime = addClockMinutes(nowTime, futureMinutes) || '-';
+          return (
+            '현재 시각 ' + escapeHtml(nowTime || '-') + ' 기준, 인근 정류장 ' + escapeHtml(String(nearbyStopCount)) + '곳 중 ' +
+            escapeHtml(selectedStopName) + '을(를) 지나는 노선에서 ' +
+            escapeHtml(startTime + ' ~ ' + endTime) + ' 사이에 출발하는 노선이 없습니다.'
+          );
+        }
+        if (nearbyStopCount > 0) {
+          return (
+            '인근 정류장 ' + escapeHtml(String(nearbyStopCount)) + '곳 중 ' +
+            escapeHtml(selectedStopName) + '을(를) 지나는 제보 가능한 노선을 찾지 못했습니다.'
+          );
+        }
+        return '제보 가능한 노선을 찾지 못했습니다.';
+      }
+
       function getNearestTimeValue(times, currentTime) {
         var targetMinutes = parseTimeToMinutes(currentTime);
         if (!Array.isArray(times) || times.length === 0) return '';
@@ -12658,8 +12926,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function closeArrivalReportModal() {
         resetArrivalReportState();
         arrivalReportModalHiddenForConfirm = false;
+        arrivalReportModalHiddenForSchedule = false;
+        arrivalReportScheduleModalHiddenForConfirm = false;
         if (arrivalReportBackdrop) arrivalReportBackdrop.classList.remove('show');
         if (arrivalReportModal) arrivalReportModal.classList.remove('show');
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.remove('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.remove('show');
         syncReportOverscrollLock();
       }
 
@@ -12788,6 +13060,42 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportModalHiddenForConfirm = false;
       }
 
+      function hideArrivalReportModalForSchedule() {
+        if (!arrivalReportModal || !arrivalReportBackdrop) return;
+        if (!arrivalReportModal.classList.contains('show')) {
+          arrivalReportModalHiddenForSchedule = false;
+          return;
+        }
+        arrivalReportBackdrop.classList.remove('show');
+        arrivalReportModal.classList.remove('show');
+        arrivalReportModalHiddenForSchedule = true;
+      }
+
+      function restoreArrivalReportModalAfterSchedule() {
+        if (!arrivalReportModalHiddenForSchedule) return;
+        if (arrivalReportBackdrop) arrivalReportBackdrop.classList.add('show');
+        if (arrivalReportModal) arrivalReportModal.classList.add('show');
+        arrivalReportModalHiddenForSchedule = false;
+      }
+
+      function hideArrivalReportScheduleModalForConfirm() {
+        if (!arrivalReportScheduleModal || !arrivalReportScheduleBackdrop) return;
+        if (!arrivalReportScheduleModal.classList.contains('show')) {
+          arrivalReportScheduleModalHiddenForConfirm = false;
+          return;
+        }
+        arrivalReportScheduleBackdrop.classList.remove('show');
+        arrivalReportScheduleModal.classList.remove('show');
+        arrivalReportScheduleModalHiddenForConfirm = true;
+      }
+
+      function restoreArrivalReportScheduleModalAfterConfirm() {
+        if (!arrivalReportScheduleModalHiddenForConfirm) return;
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.add('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.add('show');
+        arrivalReportScheduleModalHiddenForConfirm = false;
+      }
+
       function closeArrivalReportConfirmModal(options) {
         options = options || {};
         var preserveFlowState = !!options.preserveFlowState;
@@ -12796,9 +13104,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (arrivalReportConfirmBackdrop) arrivalReportConfirmBackdrop.classList.remove('show');
         if (arrivalReportConfirmModal) arrivalReportConfirmModal.classList.remove('show');
         if (preserveFlowState) {
-          restoreArrivalReportModalAfterConfirm();
+          if (arrivalReportScheduleModalHiddenForConfirm) {
+            restoreArrivalReportScheduleModalAfterConfirm();
+          } else {
+            restoreArrivalReportModalAfterConfirm();
+          }
         } else {
           arrivalReportModalHiddenForConfirm = false;
+          arrivalReportScheduleModalHiddenForConfirm = false;
         }
         if (!preserveFlowState) {
           arrivalReportPendingTarget = null;
@@ -13214,7 +13527,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           showArrivalReportStopMap(false);
           clearArrivalReportStopMapCurrentOverlay();
           resetArrivalReportStopStepSizing();
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">현재 위치 근처에서 제보 가능한 정류장을 찾지 못했습니다.</div>';
+          var radiusText = String(Math.max(0, Number(arrivalReportState.radiusM || 0)) || 150);
+          arrivalReportCandidateList.innerHTML =
+            '<div class="report-empty-state">현재 위치 기준 반경 ' + escapeHtml(radiusText) +
+            'm 내에 제보 가능한 정류장이 없습니다.</div>';
           return;
         }
         if (arrivalReportState.selectedStopIndex < 0 ||
@@ -13268,7 +13584,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportCandidateList.classList.remove('stop-mode');
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('routes');
         setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel(arrivalReportState.stopCount >= 2 ? '이전' : '닫기');
+        setArrivalReportSecondaryButtonLabel('이전');
         showArrivalReportStopMap(false);
         clearArrivalReportStopMapOverlays();
         clearArrivalReportStopMapCurrentOverlay();
@@ -13305,9 +13621,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setArrivalReportPrimaryButtonVisible(arrivalReportState.candidates.length > 0);
         arrivalReportCandidateList.innerHTML = '';
         if (!arrivalReportState.candidates.length) {
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">' +
-            (query ? '검색 결과가 없습니다.' : '선택한 정류장에서 제보 가능한 노선을 찾지 못했습니다.') +
-            '</div>';
+          var emptyMessage = query ? '검색 결과가 없습니다.' : buildArrivalReportRouteEmptyMessage();
+          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">' + emptyMessage + '</div>';
           renderArrivalReportSelectionHint(null);
           return;
         }
@@ -13337,21 +13652,35 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
           var detailRow = document.createElement('div');
           detailRow.className = 'report-candidate-detail-row';
-
-          var contextWrap = document.createElement('div');
-          contextWrap.className = 'report-stop-context';
-          function renderContextByIndex(nextIndex) {
-            var context = departureContexts[nextIndex] || {};
-            contextWrap.innerHTML =
+          if (departureContexts.length) {
+            var contextWrap = document.createElement('div');
+            contextWrap.className = 'report-stop-context';
+            function renderContextByIndex(nextIndex) {
+              var context = departureContexts[nextIndex] || {};
+              contextWrap.innerHTML =
+                '<div class="report-candidate-info-label">정류장 정보</div>' +
+                (context.has_before ? '<div class="report-stop-context-line ellipsis">...</div>' : '') +
+                buildReportContextLineHtml(context.prev, false) +
+                buildReportContextLineHtml(context.current, true) +
+                buildReportContextLineHtml(context.next, false) +
+                (context.has_after ? '<div class="report-stop-context-line ellipsis">...</div>' : '');
+            }
+            renderContextByIndex(selectedTimeIndex);
+            detailRow.appendChild(contextWrap);
+          } else {
+            var fallbackContextWrap = document.createElement('div');
+            fallbackContextWrap.className = 'report-stop-context';
+            var fallbackCurrentStop = {
+              sequence: Number(candidate.stop_sequence) || 0,
+              stop_name: String(candidate.stop_name || '-')
+            };
+            fallbackContextWrap.innerHTML =
               '<div class="report-candidate-info-label">정류장 정보</div>' +
-              (context.has_before ? '<div class="report-stop-context-line ellipsis">...</div>' : '') +
-              buildReportContextLineHtml(context.prev, false) +
-              buildReportContextLineHtml(context.current, true) +
-              buildReportContextLineHtml(context.next, false) +
-              (context.has_after ? '<div class="report-stop-context-line ellipsis">...</div>' : '');
+              buildReportContextLineHtml(null, false) +
+              buildReportContextLineHtml(fallbackCurrentStop, true) +
+              buildReportContextLineHtml(null, false);
+            detailRow.appendChild(fallbackContextWrap);
           }
-          renderContextByIndex(selectedTimeIndex);
-          detailRow.appendChild(contextWrap);
           card.appendChild(detailRow);
 
           card.addEventListener('click', function(evt) {
@@ -13369,30 +13698,140 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         });
       }
 
-      function renderArrivalReportTimeSelection() {
-        if (!arrivalReportCandidateList) return;
-        arrivalReportState.step = 'times';
-        if (arrivalReportModal) {
-          arrivalReportModal.classList.remove('stop-step');
-          arrivalReportModal.classList.remove('route-step');
+      function getArrivalReportSelectedStopIds() {
+        var stopIds = [];
+        if (arrivalReportState.selectedStop && Array.isArray(arrivalReportState.selectedStop.stop_ids)) {
+          arrivalReportState.selectedStop.stop_ids.forEach(function(value) {
+            var stopValue = Number(value);
+            if (isFinite(stopValue) && stopIds.indexOf(stopValue) < 0) {
+              stopIds.push(stopValue);
+            }
+          });
         }
-        resetArrivalReportStopStepSizing();
-        setArrivalReportSearchVisible(false);
-        arrivalReportCandidateList.classList.remove('stop-mode');
-        if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('times');
-        setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel('이전');
-        var candidate = getSelectedArrivalReportCandidate();
-        if (!candidate) {
-          setArrivalReportPrimaryButtonVisible(false);
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">제보할 노선을 먼저 선택해 주세요.</div>';
-          renderArrivalReportSelectionHint(null);
+        if (
+          !stopIds.length &&
+          arrivalReportState.selectedStop &&
+          isFinite(Number(arrivalReportState.selectedStop.stop_id))
+        ) {
+          stopIds.push(Number(arrivalReportState.selectedStop.stop_id));
+        }
+        return stopIds;
+      }
+
+      function renderArrivalReportScheduleDayTypeStep() {
+        if (!arrivalReportScheduleBody || !arrivalReportScheduleTitle || !arrivalReportSchedulePrimaryBtn || !arrivalReportScheduleCancelBtn) {
           return;
         }
-        setArrivalReportPrimaryButtonVisible(true);
-        renderArrivalReportSelectionHint(candidate);
-        arrivalReportCandidateList.innerHTML = '';
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) {
+          arrivalReportScheduleBody.innerHTML = '<div class="report-empty-state">선택된 노선이 없습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          arrivalReportScheduleCancelBtn.textContent = '이전';
+          return;
+        }
+        var dayTypeOptions = getCandidateDayTypeOptions(candidate);
+        if (!dayTypeOptions.length) {
+          arrivalReportScheduleBody.innerHTML = '<div class="report-empty-state">선택 가능한 요일이 없습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          arrivalReportScheduleCancelBtn.textContent = '이전';
+          return;
+        }
+        if (!arrivalReportScheduleState.selectedDayType || dayTypeOptions.indexOf(arrivalReportScheduleState.selectedDayType) < 0) {
+          arrivalReportScheduleState.selectedDayType = String(dayTypeOptions[0] || '');
+        }
+        arrivalReportScheduleTitle.textContent = '어느 요일의 노선인가요?';
+        arrivalReportScheduleCancelBtn.textContent = '이전';
+        arrivalReportSchedulePrimaryBtn.textContent = '다음';
+        arrivalReportSchedulePrimaryBtn.disabled = !!arrivalReportScheduleState.loading;
 
+        var summaryHtml =
+          '<div class="report-schedule-summary">' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 노선</span>' +
+              '<span class="report-schedule-summary-value">' +
+                buildDirectionBadgeHtml(candidate.direction) +
+                '<span class="report-candidate-route">' + escapeHtml(candidate.route_name || '-') + '</span>' +
+              '</span>' +
+            '</div>' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 정류장</span>' +
+              '<span class="report-schedule-summary-value">' + buildInlineStopPillHtml(candidate.stop_name || '-') + '</span>' +
+            '</div>' +
+          '</div>';
+
+        var optionsHtml = dayTypeOptions.map(function(value) {
+          var isActive = value === arrivalReportScheduleState.selectedDayType;
+          var label = String(DAY_TYPE_LABEL_MAP[value] || value || '-');
+          return '<button type="button" class="report-daytype-option' + (isActive ? ' active' : '') + '" data-day-type="' + escapeAttr(value) + '">' +
+            escapeHtml(label) + '</button>';
+        }).join('');
+
+        arrivalReportScheduleBody.innerHTML =
+          summaryHtml +
+          '<div class="report-candidate-inline-label">요일</div>' +
+          '<div class="report-daytype-options">' + optionsHtml + '</div>' +
+          (arrivalReportScheduleState.loading ? '<div class="report-schedule-loading">해당 요일의 출발시각을 불러오는 중...</div>' : '');
+
+        arrivalReportScheduleBody.querySelectorAll('[data-day-type]').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            if (arrivalReportScheduleState.loading) return;
+            var value = String(btn.getAttribute('data-day-type') || '').trim();
+            if (!value) return;
+            arrivalReportScheduleState.selectedDayType = value;
+            renderArrivalReportScheduleDayTypeStep();
+          });
+        });
+      }
+
+      function renderArrivalReportScheduleTimeStep() {
+        if (!arrivalReportScheduleBody || !arrivalReportScheduleTitle || !arrivalReportSchedulePrimaryBtn || !arrivalReportScheduleCancelBtn) {
+          return;
+        }
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) {
+          arrivalReportScheduleBody.innerHTML = '<div class="report-empty-state">선택된 노선이 없습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          return;
+        }
+        var selectedDayType = String(candidate.day_type || arrivalReportScheduleState.selectedDayType || '').trim();
+        var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[selectedDayType] || selectedDayType || '-');
+        arrivalReportScheduleTitle.textContent = '언제 출발한 노선인가요?';
+        arrivalReportScheduleCancelBtn.textContent = '이전';
+        arrivalReportSchedulePrimaryBtn.textContent = '다음';
+        arrivalReportSchedulePrimaryBtn.disabled = false;
+
+        var summaryHtml =
+          '<div class="report-schedule-summary">' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 노선</span>' +
+              '<span class="report-schedule-summary-value">' +
+                buildDirectionBadgeHtml(candidate.direction) +
+                '<span class="report-candidate-route">' + escapeHtml(candidate.route_name || '-') + '</span>' +
+              '</span>' +
+            '</div>' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 정류장</span>' +
+              '<span class="report-schedule-summary-value">' + buildInlineStopPillHtml(candidate.stop_name || '-') + '</span>' +
+            '</div>' +
+            '<div class="report-schedule-summary-line">' +
+              '<span class="report-schedule-summary-label">선택된 요일</span>' +
+              '<span class="report-schedule-summary-value">' + escapeHtml(selectedDayLabel) + '</span>' +
+            '</div>' +
+          '</div>';
+
+        var departureTimes = Array.isArray(candidate.departure_times) ? candidate.departure_times.slice() : [];
+        if (!departureTimes.length) {
+          arrivalReportScheduleBody.innerHTML = summaryHtml + '<div class="report-empty-state">선택한 요일의 출발시각을 찾지 못했습니다.</div>';
+          arrivalReportSchedulePrimaryBtn.disabled = true;
+          return;
+        }
+        var selectedTime = String(candidate.selected_departure_time || departureTimes[0] || '');
+        if (departureTimes.indexOf(selectedTime) < 0) {
+          selectedTime = String(departureTimes[0] || '');
+          candidate.selected_departure_time = selectedTime;
+        }
+
+        arrivalReportScheduleBody.innerHTML = summaryHtml;
         var card = document.createElement('div');
         card.className = 'report-time-select-card';
         var timeSide = document.createElement('div');
@@ -13401,35 +13840,208 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         timeLabel.className = 'report-candidate-inline-label';
         timeLabel.textContent = '출발 시각';
         timeSide.appendChild(timeLabel);
-
         var timeRow = document.createElement('div');
         timeRow.className = 'report-time-row';
-        var selectedTime = String(candidate.selected_departure_time || '');
-        var wheel = createWheelColumn(candidate.departure_times || [], selectedTime, function(value) {
+        var wheel = createWheelColumn(departureTimes, selectedTime, function(value) {
           candidate.selected_departure_time = value;
         });
         wheel.element.classList.add('candidate-wheel');
         timeRow.appendChild(wheel.element);
         timeSide.appendChild(timeRow);
         card.appendChild(timeSide);
-        arrivalReportCandidateList.appendChild(card);
+        arrivalReportScheduleBody.appendChild(card);
       }
 
-      function openArrivalReportTimeStepOrConfirm() {
-        var candidate = getSelectedArrivalReportCandidate();
-        if (!candidate) {
-          setArrivalReportHintText('제보할 노선을 선택해 주세요.');
+      function fetchArrivalReportCandidateByRouteAndDay(candidate, dayType) {
+        var stopIds = getArrivalReportSelectedStopIds();
+        if (!stopIds.length) {
+          return Promise.reject(new Error('정류장 정보를 찾지 못했습니다.'));
+        }
+        var cacheKey = String(dayType || '').trim();
+        if (!cacheKey) {
+          return Promise.reject(new Error('요일 정보를 찾지 못했습니다.'));
+        }
+        if (arrivalReportScheduleState.routeDayCache[cacheKey]) {
+          return Promise.resolve(arrivalReportScheduleState.routeDayCache[cacheKey]);
+        }
+        return fetchJson(
+          API_BASE + '/api/reports/candidate-routes' +
+          '?site_id=' + encodeURIComponent(selectedSiteId) +
+          '&day_type=' + encodeURIComponent(cacheKey) +
+          '&stop_ids=' + encodeURIComponent(stopIds.join(',')) +
+          '&now_time=' + encodeURIComponent(getEffectiveCurrentTimeStr())
+        )
+          .then(function(result) {
+            if (!result.ok) throw new Error(result.data.error || '요일별 노선 정보를 불러오지 못했습니다.');
+            var items = Array.isArray(result.data.candidates) ? result.data.candidates : [];
+            var routeId = Number(candidate.route_id);
+            var routeUuid = String(candidate.route_uuid || '').trim();
+            var matched = null;
+            for (var idx = 0; idx < items.length; idx++) {
+              var item = items[idx] || {};
+              if (routeUuid && String(item.route_uuid || '').trim() === routeUuid) {
+                matched = item;
+                break;
+              }
+              if (!routeUuid && Number(item.route_id) === routeId) {
+                matched = item;
+                break;
+              }
+            }
+            if (!matched) {
+              throw new Error('선택한 노선의 요일별 출발시각을 찾지 못했습니다.');
+            }
+            matched.day_type = cacheKey;
+            matched.selected_day_type = cacheKey;
+            arrivalReportScheduleState.routeDayCache[cacheKey] = matched;
+            return matched;
+          });
+      }
+
+      function applyArrivalReportRouteDayDetail(candidate, detail, preferredDepartureTime) {
+        if (!candidate || !detail) return;
+        candidate.day_type = String(detail.day_type || '').trim();
+        candidate.selected_day_type = candidate.day_type;
+        candidate.day_type_options = getCandidateDayTypeOptions(candidate);
+        candidate.departure_times = Array.isArray(detail.departure_times) ? detail.departure_times.slice() : [];
+        candidate.departure_sequences = Array.isArray(detail.departure_sequences) ? detail.departure_sequences.slice() : [];
+        candidate.departure_contexts = Array.isArray(detail.departure_contexts) ? detail.departure_contexts.slice() : [];
+        candidate.selected_departure_time = String(detail.selected_departure_time || '').trim();
+        var preferred = String(preferredDepartureTime || '').trim();
+        if (preferred && Array.isArray(candidate.departure_times) && candidate.departure_times.indexOf(preferred) >= 0) {
+          candidate.selected_departure_time = preferred;
           return;
         }
-        var departureTimes = Array.isArray(candidate.departure_times) ? candidate.departure_times.filter(function(value) {
-          return String(value || '').trim() !== '';
-        }) : [];
-        if (departureTimes.length === 1) {
+        if (!candidate.selected_departure_time && candidate.departure_times.length) {
+          candidate.selected_departure_time = String(
+            getNearestTimeValue(candidate.departure_times, getEffectiveCurrentTimeStr()) || candidate.departure_times[0] || ''
+          );
+        }
+      }
+
+      function proceedArrivalReportScheduleToTimeStep(opts) {
+        opts = opts || {};
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) return Promise.resolve(false);
+        var selectedDayType = String(arrivalReportScheduleState.selectedDayType || '').trim();
+        if (!selectedDayType) {
+          renderArrivalReportScheduleDayTypeStep();
+          return Promise.resolve(false);
+        }
+        arrivalReportScheduleState.loading = true;
+        renderArrivalReportScheduleDayTypeStep();
+        return fetchArrivalReportCandidateByRouteAndDay(candidate, selectedDayType)
+          .then(function(detail) {
+            var preferredDepartureTime = String(
+              opts.preferredDepartureTime || arrivalReportScheduleState.preferredDepartureTime || ''
+            ).trim();
+            applyArrivalReportRouteDayDetail(candidate, detail, preferredDepartureTime);
+            arrivalReportScheduleState.step = 'times';
+            arrivalReportScheduleState.loading = false;
+            // auto-confirm 경로에서도 뒤로가기 복귀 시 타임 스텝이 정상 복원되도록
+            // 스케줄 모달 DOM을 먼저 타임 스텝으로 렌더링해 둔다.
+            renderArrivalReportScheduleTimeStep();
+            if (
+              opts.autoConfirm &&
+              preferredDepartureTime &&
+              String(candidate.selected_departure_time || '').trim() === preferredDepartureTime
+            ) {
+              openArrivalReportConfirmModal(candidate);
+              return true;
+            }
+            return true;
+          })
+          .catch(function(err) {
+            arrivalReportScheduleState.loading = false;
+            renderArrivalReportScheduleDayTypeStep();
+            alert(String((err && err.message) || '요일별 출발시각을 불러오지 못했습니다.'));
+            return false;
+          });
+      }
+
+      function openArrivalReportScheduleModal(candidate, opts) {
+        opts = opts || {};
+        if (!candidate || !arrivalReportScheduleModal || !arrivalReportScheduleBackdrop) return;
+        var dayTypeOptions = getCandidateDayTypeOptions(candidate);
+        if (!dayTypeOptions.length) {
+          setArrivalReportHintText('선택한 노선의 요일 정보를 찾지 못했습니다.');
+          return;
+        }
+        arrivalReportScheduleState.candidate = candidate;
+        arrivalReportScheduleState.step = 'day-types';
+        arrivalReportScheduleState.loading = false;
+        arrivalReportScheduleState.preferredDepartureTime = String(opts.preferredDepartureTime || '').trim();
+        arrivalReportScheduleState.routeDayCache = {};
+        arrivalReportScheduleState.recentPreferenceApplied = false;
+        var preferredDayType = String(opts.preferredDayType || candidate.selected_day_type || '').trim();
+        if (dayTypeOptions.indexOf(preferredDayType) < 0) preferredDayType = '';
+        if (!preferredDayType && dayTypeOptions.length === 1) {
+          preferredDayType = dayTypeOptions[0];
+        }
+        arrivalReportScheduleState.selectedDayType = preferredDayType || String(dayTypeOptions[0] || '');
+
+        hideArrivalReportModalForSchedule();
+        arrivalReportScheduleBackdrop.classList.add('show');
+        arrivalReportScheduleModal.classList.add('show');
+        setReportOverscrollLock(true);
+        renderArrivalReportScheduleDayTypeStep();
+
+        var shouldAutoAdvance = !!(opts.autoAdvance && arrivalReportScheduleState.selectedDayType);
+        if (!shouldAutoAdvance && dayTypeOptions.length === 1 && arrivalReportScheduleState.selectedDayType) {
+          shouldAutoAdvance = true;
+        }
+        if (shouldAutoAdvance) {
+          proceedArrivalReportScheduleToTimeStep({
+            preferredDepartureTime: String(opts.preferredDepartureTime || '').trim(),
+            autoConfirm: !!opts.autoConfirm
+          });
+        }
+      }
+
+      function closeArrivalReportScheduleModal(options) {
+        options = options || {};
+        var preserveFlowState = !!options.preserveFlowState;
+        if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.classList.remove('show');
+        if (arrivalReportScheduleModal) arrivalReportScheduleModal.classList.remove('show');
+        if (preserveFlowState) {
+          restoreArrivalReportModalAfterSchedule();
+        } else {
+          arrivalReportModalHiddenForSchedule = false;
+        }
+        arrivalReportScheduleState.step = 'day-types';
+        arrivalReportScheduleState.loading = false;
+        arrivalReportScheduleState.candidate = null;
+        arrivalReportScheduleState.selectedDayType = '';
+        arrivalReportScheduleState.preferredDepartureTime = '';
+        arrivalReportScheduleState.routeDayCache = {};
+        arrivalReportScheduleState.recentPreferenceApplied = false;
+        syncReportOverscrollLock();
+      }
+
+      function handleArrivalReportSchedulePrimaryAction() {
+        var candidate = arrivalReportScheduleState.candidate;
+        if (!candidate) return;
+        if (arrivalReportScheduleState.step === 'day-types') {
+          proceedArrivalReportScheduleToTimeStep();
+          return;
+        }
+        if (arrivalReportScheduleState.step !== 'times') return;
+        var departureTimes = Array.isArray(candidate.departure_times) ? candidate.departure_times : [];
+        if (!departureTimes.length) return;
+        if (!candidate.selected_departure_time) {
           candidate.selected_departure_time = String(departureTimes[0] || '');
-          openArrivalReportConfirmModal(candidate);
+        }
+        openArrivalReportConfirmModal(candidate);
+      }
+
+      function handleArrivalReportScheduleCancelAction() {
+        if (arrivalReportScheduleState.loading) return;
+        if (arrivalReportScheduleState.step === 'times') {
+          arrivalReportScheduleState.step = 'day-types';
+          renderArrivalReportScheduleDayTypeStep();
           return;
         }
-        renderArrivalReportTimeSelection();
+        closeArrivalReportScheduleModal({ preserveFlowState: true });
       }
 
       function openArrivalReportRoutesForSelectedStop() {
@@ -13448,9 +14060,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         arrivalReportState.timeWindowPastMinutes = 180;
         arrivalReportState.timeWindowFutureMinutes = 5;
         arrivalReportState.timeWindowRelaxed = false;
+        arrivalReportState.totalRouteCount = 0;
+        arrivalReportState.routeRequestTime = '';
+        arrivalReportScheduleState.candidate = null;
+        arrivalReportScheduleState.selectedDayType = '';
+        arrivalReportScheduleState.preferredDepartureTime = '';
+        arrivalReportScheduleState.routeDayCache = {};
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('routes');
         setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel(arrivalReportState.stopCount >= 2 ? '이전' : '닫기');
+        setArrivalReportSecondaryButtonLabel('이전');
         setArrivalReportPrimaryButtonVisible(false);
         setArrivalReportSearchVisible(false);
         showArrivalReportStopMap(false);
@@ -13470,13 +14088,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!stopIds.length && isFinite(Number(arrivalReportState.selectedStop.stop_id))) {
           stopIds.push(Number(arrivalReportState.selectedStop.stop_id));
         }
+        var routeRequestTime = getEffectiveCurrentTimeStr();
+        arrivalReportState.routeRequestTime = routeRequestTime;
         var stopQuery = 'stop_ids=' + encodeURIComponent(stopIds.join(','));
         return fetchJson(
           API_BASE + '/api/reports/candidate-routes' +
           '?site_id=' + encodeURIComponent(selectedSiteId) +
-          '&day_type=' + encodeURIComponent(selectedDayType) +
           '&' + stopQuery +
-          '&now_time=' + encodeURIComponent(getEffectiveCurrentTimeStr())
+          '&now_time=' + encodeURIComponent(routeRequestTime)
         )
           .then(function(result) {
             arrivalReportState.loading = false;
@@ -13484,8 +14103,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             var items = Array.isArray(result.data.candidates) ? result.data.candidates : [];
             var recentPreference = setArrivalReportRecentPreference(result.data.recent_preference || arrivalReportState.recentPreference);
             items.forEach(function(item) {
-              if (!item.selected_departure_time) {
-                item.selected_departure_time = getNearestTimeValue(item.departure_times || [], getEffectiveCurrentTimeStr());
+              item.day_type_options = getCandidateDayTypeOptions(item);
+              if (!item.selected_day_type && item.day_type_options.length === 1) {
+                item.selected_day_type = String(item.day_type_options[0] || '');
               }
             });
             arrivalReportState.allCandidates = items.slice();
@@ -13495,30 +14115,33 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             arrivalReportState.timeWindowPastMinutes = Number(result.data.window_past_minutes || 180);
             arrivalReportState.timeWindowFutureMinutes = Number(result.data.window_future_minutes || 5);
             arrivalReportState.timeWindowRelaxed = !!result.data.window_relaxed;
+            arrivalReportState.totalRouteCount = Math.max(0, Number(result.data.total_route_count || 0));
             var recentSelection = applyArrivalReportRecentPreferenceToCandidates(items, recentPreference);
             arrivalReportState.selectedIndex = recentSelection ? recentSelection.index : (items.length > 0 ? 0 : -1);
             renderArrivalReportSelectionHint(null);
             renderArrivalReportCandidates();
-            if (recentSelection && arrivalReportState.selectedIndex >= 0) {
+            if (recentSelection && arrivalReportState.selectedIndex >= 0 && arrivalReportState.allowRecentFastForward) {
               requestAnimationFrame(function() {
                 var currentCandidate = getSelectedArrivalReportCandidate();
                 if (!currentCandidate) return;
-                if (recentSelection.timeMatched) {
-                  var departureTimes = Array.isArray(currentCandidate.departure_times) ? currentCandidate.departure_times : [];
-                  if (departureTimes.length > 1) {
-                    renderArrivalReportTimeSelection();
-                  }
-                  openArrivalReportConfirmModal(currentCandidate);
-                  return;
-                }
-                openArrivalReportTimeStepOrConfirm();
+                var hasPreferredDayType = !!String(recentSelection.preferred_day_type || '').trim();
+                var hasPreferredDepartureTime = !!String(recentSelection.preferred_departure_time || '').trim();
+                arrivalReportState.allowRecentFastForward = false;
+                openArrivalReportScheduleModal(currentCandidate, {
+                  autoAdvance: hasPreferredDayType,
+                  autoConfirm: hasPreferredDayType && hasPreferredDepartureTime,
+                  preferredDayType: recentSelection.preferred_day_type || '',
+                  preferredDepartureTime: recentSelection.preferred_departure_time || ''
+                });
               });
               return;
             }
             if (items.length === 1) {
               requestAnimationFrame(function() {
                 if (arrivalReportState.step === 'routes' && arrivalReportState.candidates.length === 1) {
-                  openArrivalReportTimeStepOrConfirm();
+                  var selected = getSelectedArrivalReportCandidate();
+                  if (!selected) return;
+                  openArrivalReportScheduleModal(selected, { autoAdvance: false });
                 }
               });
             }
@@ -13537,6 +14160,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!isReportCapableClient()) return;
         resetArrivalReportState();
         arrivalReportModalHiddenForConfirm = false;
+        arrivalReportModalHiddenForSchedule = false;
+        arrivalReportScheduleModalHiddenForConfirm = false;
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('stops');
         setArrivalReportPrimaryButtonLabel('다음');
         setArrivalReportSecondaryButtonLabel('닫기');
@@ -13544,7 +14169,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setArrivalReportHintText('');
         arrivalReportState.loading = true;
         if (arrivalReportCandidateList) {
-          arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">가까운 정류장을 찾는 중...</div>';
+          arrivalReportCandidateList.innerHTML =
+            '<div class="report-empty-state">현재 위치를 가져오는 중입니다.<br>약 10초 정도 걸릴 수 있습니다.</div>';
         }
         arrivalReportBackdrop.classList.add('show');
         arrivalReportModal.classList.add('show');
@@ -13553,10 +14179,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           .then(function(pos) {
             arrivalReportState.clientLat = Number(pos.lat);
             arrivalReportState.clientLng = Number(pos.lng);
+            if (arrivalReportCandidateList) {
+              arrivalReportCandidateList.innerHTML =
+                '<div class="report-empty-state">가까운 정류장을 찾는 중...</div>';
+            }
             return fetchJson(
               API_BASE + '/api/reports/nearby-stops' +
               '?site_id=' + encodeURIComponent(selectedSiteId) +
-              '&day_type=' + encodeURIComponent(selectedDayType) +
               '&lat=' + encodeURIComponent(String(pos.lat)) +
               '&lng=' + encodeURIComponent(String(pos.lng))
             );
@@ -13757,7 +14386,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
         var departureLine = document.createElement('div');
         departureLine.className = 'report-confirm-line';
-        var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[selectedDayType] || selectedDayType || '-');
+        var reportDayType = String(
+          arrivalReportPendingTarget.day_type ||
+          arrivalReportPendingTarget.selected_day_type ||
+          ''
+        ).trim();
+        var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[reportDayType] || reportDayType || '-');
         departureLine.innerHTML = '<div class="report-confirm-label">요일 및<br>출발시각</div><div class="report-confirm-value navy">' +
           escapeHtml(selectedDayLabel + ' ' + String(arrivalReportPendingTarget.selected_departure_time || '-')) + '분</div>';
         summary.appendChild(departureLine);
@@ -13800,7 +14434,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           applyArrivalReportConfirmFreshnessCycles(true);
         }
         renderArrivalReportConfirmContent();
-        hideArrivalReportModalForConfirm();
+        if (arrivalReportScheduleModal && arrivalReportScheduleModal.classList.contains('show')) {
+          hideArrivalReportScheduleModalForConfirm();
+        } else {
+          hideArrivalReportModalForConfirm();
+        }
         arrivalReportConfirmBackdrop.classList.add('show');
         arrivalReportConfirmModal.classList.add('show');
         setReportOverscrollLock(true);
@@ -13838,22 +14476,37 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         }
         var target = arrivalReportState.candidates[arrivalReportState.selectedIndex];
         if (arrivalReportState.step === 'routes') {
-          openArrivalReportTimeStepOrConfirm();
+          if (!target) {
+            setArrivalReportHintText('제보할 노선을 선택해 주세요.');
+            return;
+          }
+          var preferredDayType = String(target.selected_day_type || '').trim();
+          var preferredDepartureTime = '';
+          if (
+            arrivalReportState.recentPreference &&
+            Number(arrivalReportState.recentPreference.route_id) === Number(target.route_id)
+          ) {
+            preferredDayType = String(
+              preferredDayType ||
+              arrivalReportState.recentPreference.day_type ||
+              ''
+            ).trim();
+            preferredDepartureTime = String(arrivalReportState.recentPreference.departure_time || '').trim();
+          }
+          arrivalReportState.allowRecentFastForward = false;
+          openArrivalReportScheduleModal(target, {
+            autoAdvance: false,
+            autoConfirm: false,
+            preferredDayType: preferredDayType,
+            preferredDepartureTime: preferredDepartureTime
+          });
           return;
         }
-        if (!target || !target.selected_departure_time) {
-          setArrivalReportHintText('출발 시각을 선택해 주세요.');
-          return;
-        }
-        openArrivalReportConfirmModal(target);
+        closeArrivalReportModal();
       }
 
       function handleArrivalReportCancelAction() {
-        if (arrivalReportState.step === 'times') {
-          renderArrivalReportCandidates();
-          return;
-        }
-        if (arrivalReportState.step === 'routes' && arrivalReportState.stopCount >= 2) {
+        if (arrivalReportState.step === 'routes') {
           arrivalReportState.step = 'stops';
           arrivalReportState.selectedIndex = -1;
           renderArrivalReportStops();
@@ -13878,13 +14531,22 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           startArrivalReportConfirmFreshnessTimer();
           return;
         }
+        var reportDayType = String(
+          arrivalReportPendingTarget.day_type ||
+          arrivalReportPendingTarget.selected_day_type ||
+          ''
+        ).trim();
+        if (!reportDayType) {
+          alert('요일 정보를 찾지 못했습니다. 다시 선택해 주세요.');
+          return;
+        }
         arrivalReportConfirmPrimaryBtn.disabled = true;
         fetchJson(API_BASE + '/api/reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             site_id: selectedSiteId,
-            day_type: selectedDayType,
+            day_type: reportDayType,
             route_id: arrivalReportPendingTarget.route_id,
             stop_id: arrivalReportPendingTarget.stop_id,
             departure_time: arrivalReportPendingTarget.selected_departure_time,
@@ -15216,6 +15878,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       if (arrivalReportCancelBtn) arrivalReportCancelBtn.addEventListener('click', handleArrivalReportCancelAction);
       if (arrivalReportBackdrop) arrivalReportBackdrop.addEventListener('click', closeArrivalReportModal);
       if (arrivalReportSubmitBtn) arrivalReportSubmitBtn.addEventListener('click', handleArrivalReportSubmitClick);
+      if (arrivalReportScheduleCloseBtn) arrivalReportScheduleCloseBtn.addEventListener('click', closeArrivalReportModal);
+      if (arrivalReportScheduleCancelBtn) arrivalReportScheduleCancelBtn.addEventListener('click', handleArrivalReportScheduleCancelAction);
+      if (arrivalReportScheduleBackdrop) arrivalReportScheduleBackdrop.addEventListener('click', closeArrivalReportModal);
+      if (arrivalReportSchedulePrimaryBtn) arrivalReportSchedulePrimaryBtn.addEventListener('click', handleArrivalReportSchedulePrimaryAction);
       if (arrivalReportSearchInput) {
         arrivalReportSearchInput.addEventListener('input', function() {
           arrivalReportState.routeSearchQuery = String(arrivalReportSearchInput.value || '');
@@ -15309,21 +15975,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         settingsMaxDistanceSlider.addEventListener('input', handleSettingsMaxDistanceInput);
         settingsMaxDistanceSlider.addEventListener('change', handleSettingsMaxDistanceInput);
       }
-      if (devDebugApplyBtn) {
-        devDebugApplyBtn.addEventListener('click', function() {
-          var timeText = String(devTimeInput && devTimeInput.value || '').trim();
-          var match = timeText.match(/^(\d{1,2}):(\d{2})$/);
-          var hour = match ? parseInt(match[1], 10) : NaN;
-          var minute = match ? parseInt(match[2], 10) : NaN;
-          var pendingPosition = getDevDebugInputPosition();
-          if (pendingPosition) {
-            devOverrides.lat = Number(pendingPosition.lat);
-            devOverrides.lng = Number(pendingPosition.lng);
-          }
-          devOverrides.hour = isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
-          devOverrides.minute = isFinite(minute) && minute >= 0 && minute <= 59 ? minute : null;
-          syncDevDebugInputs();
-        });
+      if (devTimeInput) {
+        devTimeInput.addEventListener('input', applyDevDebugTimeInput);
+        devTimeInput.addEventListener('change', applyDevDebugTimeInput);
+      }
+      if (devDebugCloseBtn) {
+        devDebugCloseBtn.addEventListener('click', closeDevDebugPanel);
       }
       if (devDebugCenterBtn) {
         devDebugCenterBtn.addEventListener('click', function() {
@@ -15334,6 +15991,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           var lng = Number(center.getLng());
           devPendingPosition.lat = Number(lat.toFixed(6));
           devPendingPosition.lng = Number(lng.toFixed(6));
+          devOverrides.lat = Number(devPendingPosition.lat);
+          devOverrides.lng = Number(devPendingPosition.lng);
           showCurrentLocationOverlay(lat, lng, true);
         });
       }
