@@ -35,10 +35,33 @@ backend:
     USER_STORE_POSTGRES_PORT: "5432"
     USER_STORE_POSTGRES_DB: shuttlego
     USER_STORE_POSTGRES_USER: shuttlego
+    SESSION_TOUCH_MIN_INTERVAL_SEC: "0"
     CORS_ORIGINS: ""
   warmEndpointCacheOnStartup: true
   enableBackgroundWorkers: false
   refreshAuthMetricsOnStartup: false
+  historyWrite:
+    enabled: true
+    mode: async
+    sampleRates:
+      placeUser: 1.0
+      placeAnon: 1.0
+      routeUser: 1.0
+      routeAnon: 1.0
+    sampling:
+      algorithm: deterministic_hash
+      bucketSeconds: 300
+      salt: history-v1
+    queue:
+      maxItems: 10000
+      fullStrategy: drop
+    batch:
+      maxItems: 200
+      flushIntervalMs: 250
+      maxRetry: 2
+      retryBackoffMs: 100
+    shutdown:
+      drainTimeoutMs: 2000
 
 ingress:
   host: api.example.com

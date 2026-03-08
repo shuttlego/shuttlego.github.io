@@ -63,6 +63,7 @@ services:
       - USER_STORE_POSTGRES_DB=${USER_STORE_POSTGRES_DB:-shuttlego}
       - USER_STORE_POSTGRES_USER=${USER_STORE_POSTGRES_USER:-shuttlego}
       - USER_STORE_POSTGRES_PASSWORD=${USER_STORE_POSTGRES_PASSWORD:-shuttlego}
+      - SESSION_TOUCH_MIN_INTERVAL_SEC=${SESSION_TOUCH_MIN_INTERVAL_SEC:-0}
     volumes:
       - ./data:/app/data:ro
       - ./user-data:/app/user-data
@@ -98,6 +99,7 @@ services:
       - USER_STORE_POSTGRES_DB=${USER_STORE_POSTGRES_DB:-shuttlego}
       - USER_STORE_POSTGRES_USER=${USER_STORE_POSTGRES_USER:-shuttlego}
       - USER_STORE_POSTGRES_PASSWORD=${USER_STORE_POSTGRES_PASSWORD:-shuttlego}
+      - SESSION_TOUCH_MIN_INTERVAL_SEC=${SESSION_TOUCH_MIN_INTERVAL_SEC:-0}
     volumes:
       - ./data:/app/data:ro
       - ./user-data:/app/user-data

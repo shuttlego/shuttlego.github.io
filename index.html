@@ -6287,6 +6287,8 @@
       var endpointSearchKeyword = '';
       var endpointSearchTimer = null;
       var endpointSelectionByContext = {};
+      var endpointOptionsPayloadBySiteDay = {};
+      var endpointOptionsPayloadPendingBySiteDay = {};
       var endpointContextKey = '';
       var routeRequestSerial = 0;
       var dayTypeRequestSerial = 0;
@@ -8259,12 +8261,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           .catch(function() { return null; });
       }
 
-      function persistCurrentEndpointSelection() {
+      function persistCurrentEndpointSelection(opts) {
+        opts = opts || {};
         if (!endpointContextKey) return;
         endpointSelectionByContext[endpointContextKey] = {
           selected: cloneStringSet(selectedEndpoints)
         };
-        saveEndpointSelectionPreference();
+        if (opts.saveRemote === true) {
+          saveEndpointSelectionPreference();
+        }
       }
 
       function applyEndpointPickerSelection() {
@@ -8272,7 +8277,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var changed = !areStringSetsEqual(selectedEndpoints, endpointDraftEndpoints);
         if (changed) {
           selectedEndpoints = cloneStringSet(endpointDraftEndpoints);
-          persistCurrentEndpointSelection();
+          persistCurrentEndpointSelection({ saveRemote: true });
           updateEndpointTriggerText();
         }
         endpointDraftEndpoints = null;
@@ -8485,19 +8490,24 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         updateRouteSwapButtonState();
       }
 
-      function loadEndpointOptions(direction) {
-        var contextKey = getEndpointContextKey(direction);
-        endpointContextKey = contextKey;
-        var kindLabel = getEndpointKindLabel(direction);
-        if (routeTopEndpointTriggerText) routeTopEndpointTriggerText.textContent = kindLabel + ' 불러오는 중...';
-        if (routeBottomEndpointTriggerText) routeBottomEndpointTriggerText.textContent = kindLabel + ' 불러오는 중...';
-        setEndpointTriggerEnabled(false);
+      function getEndpointSiteDayKey(siteId, dayType) {
+        return String(siteId || '').trim() + '|' + String(dayType || '').trim();
+      }
+
+      function getEndpointOptionsPayload(siteId, dayType) {
+        var cacheKey = getEndpointSiteDayKey(siteId, dayType);
+        if (endpointOptionsPayloadBySiteDay[cacheKey]) {
+          return Promise.resolve(endpointOptionsPayloadBySiteDay[cacheKey]);
+        }
+        if (endpointOptionsPayloadPendingBySiteDay[cacheKey]) {
+          return endpointOptionsPayloadPendingBySiteDay[cacheKey];
+        }
 
         var url = API_BASE + '/api/shuttle/endpoint-options' +
-          '?site_id=' + encodeURIComponent(selectedSiteId) +
-          '&day_type=' + encodeURIComponent(selectedDayType);
+          '?site_id=' + encodeURIComponent(siteId) +
+          '&day_type=' + encodeURIComponent(dayType);
 
-        return fetch(url)
+        var pending = fetch(url)
           .then(function(r) {
             return r.json().catch(function() { return {}; }).then(function(data) {
               return { ok: r.ok, data: data };
@@ -8505,10 +8515,49 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           })
           .then(function(result) {
             if (!result.ok) {
-              throw new Error(result.data.error || (kindLabel + ' 옵션을 불러오지 못했습니다.'));
+              throw new Error(result.data.error || 'endpoint 옵션을 불러오지 못했습니다.');
             }
-
             var payload = result.data || {};
+            endpointOptionsPayloadBySiteDay[cacheKey] = payload;
+            return payload;
+          })
+          .finally(function() {
+            delete endpointOptionsPayloadPendingBySiteDay[cacheKey];
+          });
+
+        endpointOptionsPayloadPendingBySiteDay[cacheKey] = pending;
+        return pending;
+      }
+
+      function loadEndpointOptions(direction) {
+        var contextKey = getEndpointContextKey(direction);
+        endpointContextKey = contextKey;
+        var siteId = selectedSiteId;
+        var dayType = selectedDayType;
+        var kindLabel = getEndpointKindLabel(direction);
+        if (routeTopEndpointTriggerText) routeTopEndpointTriggerText.textContent = kindLabel + ' 불러오는 중...';
+        if (routeBottomEndpointTriggerText) routeBottomEndpointTriggerText.textContent = kindLabel + ' 불러오는 중...';
+        setEndpointTriggerEnabled(false);
+
+        var prevState = endpointSelectionByContext[contextKey];
+        var localNames = null;
+        if (prevState && prevState.selected && typeof prevState.selected.forEach === 'function') {
+          localNames = [];
+          prevState.selected.forEach(function(name) { localNames.push(name); });
+        }
+
+        var preferencePromise = localNames
+          ? Promise.resolve(localNames)
+          : loadSavedEndpointPreference(siteId, dayType, direction);
+
+        return Promise.all([
+          getEndpointOptionsPayload(siteId, dayType),
+          preferencePromise
+        ])
+          .then(function(values) {
+            if (endpointContextKey !== contextKey) return endpointOptions;
+            var payload = values[0] || {};
+            var selectedNames = values[1];
             var rawOptions = direction === 'depart'
               ? (payload.depart_terminus_options || [])
               : (payload.arrive_start_options || []);
@@ -8519,41 +8568,35 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               .sort(function(a, b) { return a.endpoint_name.localeCompare(b.endpoint_name, 'ko'); });
             resetEndpointSearch();
 
-            var prevState = endpointSelectionByContext[contextKey];
             var available = new Set(endpointOptionsAll.map(function(item) { return item.endpoint_name; }));
-            function applySelection(names) {
-              var nextSelected = new Set();
-              if (Array.isArray(names) && names.length > 0) {
-                names.forEach(function(name) {
-                  var value = String(name || '').trim();
-                  if (value && available.has(value)) nextSelected.add(value);
-                });
-              }
-              if (nextSelected.size === 0) {
-                endpointOptionsAll.forEach(function(item) { nextSelected.add(item.endpoint_name); });
-              }
-              selectedEndpoints = nextSelected;
-              endpointDraftEndpoints = null;
-              persistCurrentEndpointSelection();
-              updateEndpointTriggerText();
-              updateRouteModeHeader();
-              return endpointOptions;
-            }
-
-            if (prevState && prevState.selected && typeof prevState.selected.forEach === 'function') {
-              var localNames = [];
-              prevState.selected.forEach(function(name) { localNames.push(name); });
-              return applySelection(localNames);
-            }
-
-            return loadSavedEndpointPreference(selectedSiteId, selectedDayType, direction)
-              .then(function(savedNames) {
-                return applySelection(savedNames);
+            var nextSelected = new Set();
+            if (Array.isArray(selectedNames) && selectedNames.length > 0) {
+              selectedNames.forEach(function(name) {
+                var value = String(name || '').trim();
+                if (value && available.has(value)) nextSelected.add(value);
               });
+            }
+            if (nextSelected.size === 0) {
+              endpointOptionsAll.forEach(function(item) { nextSelected.add(item.endpoint_name); });
+            }
+            selectedEndpoints = nextSelected;
+            endpointDraftEndpoints = null;
+            persistCurrentEndpointSelection({ saveRemote: false });
+            updateEndpointTriggerText();
+            updateRouteModeHeader();
+            return endpointOptions;
           })
           .finally(function() {
             setEndpointTriggerEnabled(true);
           });
+      }
+
+      function ensureEndpointOptionsLoaded(direction) {
+        var contextKey = getEndpointContextKey(direction);
+        if (endpointContextKey === contextKey && endpointOptionsAll.length > 0) {
+          return Promise.resolve(endpointOptions);
+        }
+        return loadEndpointOptions(direction);
       }
 
       function pad2(n) { return (n < 10 ? '0' : '') + n; }
@@ -13718,7 +13761,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setRouteMode(true, direction, name);
         var requestId = ++routeRequestSerial;
 
-        loadEndpointOptions(direction)
+        ensureEndpointOptionsLoaded(direction)
           .then(function() {
             if (requestId !== routeRequestSerial) return null;
             if (selectedEndpoints.size === 0) {
@@ -17172,6 +17215,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             if (!timeText) return;
             node.setAttribute('data-time', timeText);
             node.classList.toggle('origin', timeText === String(option.__originBoardTime || option.board_time || getDepartureTimeStr()));
+            if (node.getAttribute('data-variant-detail-bound') === '1') return;
+            node.setAttribute('data-variant-detail-bound', '1');
             node.addEventListener('click', function(evt) {
               evt.preventDefault();
               evt.stopPropagation();

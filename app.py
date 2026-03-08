@@ -9,10 +9,13 @@ import hmac
 import json
 import math
 import os
+import queue
+import random
 import secrets
 import threading
 import time as _time
 import uuid
+import atexit
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -98,6 +101,14 @@ def _env_bool(name: str, default: bool) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_rate(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return min(1.0, max(0.0, value))
+
+
 GITHUB_API_BASE = os.environ.get("GITHUB_API_BASE", "https://api.github.com").rstrip("/")
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "").strip()
 GITHUB_INSTALLATION_ID = os.environ.get("GITHUB_INSTALLATION_ID", "").strip()
@@ -105,12 +116,14 @@ GITHUB_REPO_OWNER = os.environ.get("GITHUB_REPO_OWNER", "").strip()
 GITHUB_REPO_NAME = os.environ.get("GITHUB_REPO_NAME", "").strip()
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 300)
+NOTICE_HEAD_CACHE_TTL_SEC = max(60, _env_int("NOTICE_HEAD_CACHE_TTL_SEC", 900))
 ISSUE_SUBMIT_RATE_LIMIT_SEC = _env_int("ISSUE_SUBMIT_RATE_LIMIT_SEC", 10)
 ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
 
 AUTH_SESSION_COOKIE_NAME = os.environ.get("AUTH_SESSION_COOKIE_NAME", "sg_session").strip() or "sg_session"
 AUTH_SESSION_TTL_DAYS = max(1, _env_int("SESSION_TTL_DAYS", 90))
 AUTH_SESSION_SLIDING = _env_bool("SESSION_SLIDING", True)
+AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC = max(0, _env_int("SESSION_TOUCH_MIN_INTERVAL_SEC", 0))
 AUTH_COOKIE_DOMAIN = os.environ.get("SESSION_COOKIE_DOMAIN", "").strip() or None
 HISTORY_VISITOR_COOKIE_NAME = (
     os.environ.get("HISTORY_VISITOR_COOKIE_NAME", "sg_history_visitor").strip() or "sg_history_visitor"
@@ -130,6 +143,34 @@ AUTH_METRICS_REFRESH_SEC = max(30, _env_int("AUTH_METRICS_REFRESH_SEC", 300))
 APP_REFRESH_AUTH_METRICS_ON_STARTUP = _env_bool("APP_REFRESH_AUTH_METRICS_ON_STARTUP", True)
 APP_WARM_ENDPOINT_CACHE_ON_STARTUP = _env_bool("APP_WARM_ENDPOINT_CACHE_ON_STARTUP", True)
 APP_ENABLE_BACKGROUND_WORKERS = _env_bool("APP_ENABLE_BACKGROUND_WORKERS", True)
+HISTORY_WRITE_MODE = str(os.environ.get("HISTORY_WRITE_MODE", "sync") or "sync").strip().lower()
+if HISTORY_WRITE_MODE not in {"off", "sync", "async"}:
+    HISTORY_WRITE_MODE = "sync"
+HISTORY_WRITE_SAMPLE_RATE_PLACE_USER = _env_rate("HISTORY_WRITE_SAMPLE_RATE_PLACE_USER", 1.0)
+HISTORY_WRITE_SAMPLE_RATE_PLACE_ANON = _env_rate("HISTORY_WRITE_SAMPLE_RATE_PLACE_ANON", 1.0)
+HISTORY_WRITE_SAMPLE_RATE_ROUTE_USER = _env_rate("HISTORY_WRITE_SAMPLE_RATE_ROUTE_USER", 1.0)
+HISTORY_WRITE_SAMPLE_RATE_ROUTE_ANON = _env_rate("HISTORY_WRITE_SAMPLE_RATE_ROUTE_ANON", 1.0)
+HISTORY_WRITE_SAMPLING_ALGORITHM = str(
+    os.environ.get("HISTORY_WRITE_SAMPLING_ALGORITHM", "deterministic_hash") or "deterministic_hash"
+).strip().lower()
+if HISTORY_WRITE_SAMPLING_ALGORITHM not in {"deterministic_hash", "random"}:
+    HISTORY_WRITE_SAMPLING_ALGORITHM = "deterministic_hash"
+HISTORY_WRITE_SAMPLING_BUCKET_SECONDS = max(1, _env_int("HISTORY_WRITE_SAMPLING_BUCKET_SECONDS", 300))
+HISTORY_WRITE_SAMPLING_SALT = str(os.environ.get("HISTORY_WRITE_SAMPLING_SALT", "history-v1") or "history-v1")
+HISTORY_WRITE_QUEUE_MAX_ITEMS = max(100, _env_int("HISTORY_WRITE_QUEUE_MAX_ITEMS", 10000))
+HISTORY_WRITE_QUEUE_FULL_STRATEGY = str(
+    os.environ.get("HISTORY_WRITE_QUEUE_FULL_STRATEGY", "drop") or "drop"
+).strip().lower()
+if HISTORY_WRITE_QUEUE_FULL_STRATEGY not in {"drop", "sync_fallback"}:
+    HISTORY_WRITE_QUEUE_FULL_STRATEGY = "drop"
+HISTORY_WRITE_BATCH_MAX_ITEMS = max(1, _env_int("HISTORY_WRITE_BATCH_MAX_ITEMS", 200))
+HISTORY_WRITE_BATCH_FLUSH_INTERVAL_MS = max(10, _env_int("HISTORY_WRITE_BATCH_FLUSH_INTERVAL_MS", 250))
+HISTORY_WRITE_BATCH_FLUSH_INTERVAL_SEC = HISTORY_WRITE_BATCH_FLUSH_INTERVAL_MS / 1000.0
+HISTORY_WRITE_BATCH_MAX_RETRY = max(0, _env_int("HISTORY_WRITE_BATCH_MAX_RETRY", 2))
+HISTORY_WRITE_BATCH_RETRY_BACKOFF_MS = max(10, _env_int("HISTORY_WRITE_BATCH_RETRY_BACKOFF_MS", 100))
+HISTORY_WRITE_BATCH_RETRY_BACKOFF_SEC = HISTORY_WRITE_BATCH_RETRY_BACKOFF_MS / 1000.0
+HISTORY_WRITE_SHUTDOWN_DRAIN_TIMEOUT_MS = max(100, _env_int("HISTORY_WRITE_SHUTDOWN_DRAIN_TIMEOUT_MS", 2000))
+HISTORY_WRITE_SHUTDOWN_DRAIN_TIMEOUT_SEC = HISTORY_WRITE_SHUTDOWN_DRAIN_TIMEOUT_MS / 1000.0
 AUTH_FRONTEND_CALLBACK_URL = os.environ.get(
     "AUTH_FRONTEND_CALLBACK_URL", "https://shuttle-go.com/auth-callback.html"
 ).strip()
@@ -181,11 +222,19 @@ _issue_cache: dict[str, tuple[float, dict]] = {}
 _issue_cache_lock = threading.Lock()
 _issue_cache_version_local = 0
 _issue_cache_version_lock = threading.Lock()
+_notice_head_revalidate_inflight: set[str] = set()
+_notice_head_revalidate_lock = threading.Lock()
 _issue_submit_tracker_lock = threading.Lock()
 _issue_submit_recent_by_client: dict[str, float] = {}
 _issue_submit_recent_hash: dict[str, float] = {}
 _auth_background_started = False
 _auth_background_lock = threading.Lock()
+_history_write_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=HISTORY_WRITE_QUEUE_MAX_ITEMS)
+_history_writer_started = False
+_history_writer_thread: threading.Thread | None = None
+_history_writer_lock = threading.Lock()
+_history_writer_stop_event = threading.Event()
+_history_writer_shutdown_registered = False
 
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
@@ -218,6 +267,16 @@ _SITE_ID_DEFAULT_ENDPOINTS = {
 _SITE_ID_METRIC_EXTRA_ENDPOINTS = {"/api/me/preferences/endpoint"}
 _ROUTE_SEARCH_SOURCE_VALUES = {"search", "map", "unknown"}
 _PROMETHEUS_MULTIPROC_DIR_ENV = "PROMETHEUS_MULTIPROC_DIR"
+_HISTORY_EVENT_PLACE_USER = "place_user"
+_HISTORY_EVENT_PLACE_ANON = "place_anon"
+_HISTORY_EVENT_ROUTE_USER = "route_user"
+_HISTORY_EVENT_ROUTE_ANON = "route_anon"
+_HISTORY_EVENT_TYPES = {
+    _HISTORY_EVENT_PLACE_USER,
+    _HISTORY_EVENT_PLACE_ANON,
+    _HISTORY_EVENT_ROUTE_USER,
+    _HISTORY_EVENT_ROUTE_ANON,
+}
 
 OTP_BASE_URL = os.environ.get("OTP_BASE_URL", "http://otp:8082").rstrip("/")
 OTP_PLAN_PATH = os.environ.get("OTP_PLAN_PATH", "/otp/gtfs/v1").strip() or "/otp/gtfs/v1"
@@ -341,6 +400,42 @@ ROUTE_SEARCH_SOURCE_COUNT = Counter(
     ["direction", "source"],
 )
 
+HISTORY_WRITE_ENQUEUE_TOTAL = Counter(
+    "shuttle_history_write_enqueue_total",
+    "History write enqueue attempts grouped by result",
+    ["event_type", "result"],
+)
+
+HISTORY_WRITE_DROPPED_TOTAL = Counter(
+    "shuttle_history_write_dropped_total",
+    "History write events dropped before commit",
+    ["event_type", "reason"],
+)
+
+HISTORY_WRITE_FLUSH_TOTAL = Counter(
+    "shuttle_history_write_flush_total",
+    "History write flush attempts grouped by result",
+    ["result"],
+)
+
+HISTORY_WRITE_FLUSH_BATCH_SIZE = Histogram(
+    "shuttle_history_write_flush_batch_size",
+    "History write flush batch size",
+    buckets=[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
+)
+
+HISTORY_WRITE_FLUSH_DURATION = Histogram(
+    "shuttle_history_write_flush_duration_seconds",
+    "History write flush duration in seconds",
+    buckets=[0.001, 0.003, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+)
+
+HISTORY_WRITE_QUEUE_SIZE = Gauge(
+    "shuttle_history_write_queue_size",
+    "Current queued history write events",
+    multiprocess_mode="livesum",
+)
+
 
 # ── 요청 전/후 훅 (메트릭 수집) ──────────────────────────────
 @app.before_request
@@ -456,6 +551,372 @@ def _record_route_search_source_metric(direction: str) -> None:
     if source not in _ROUTE_SEARCH_SOURCE_VALUES:
         source = "unknown"
     ROUTE_SEARCH_SOURCE_COUNT.labels(direction=safe_direction, source=source).inc()
+
+
+def _history_sample_rate(event_type: str) -> float:
+    if event_type == _HISTORY_EVENT_PLACE_USER:
+        return HISTORY_WRITE_SAMPLE_RATE_PLACE_USER
+    if event_type == _HISTORY_EVENT_PLACE_ANON:
+        return HISTORY_WRITE_SAMPLE_RATE_PLACE_ANON
+    if event_type == _HISTORY_EVENT_ROUTE_USER:
+        return HISTORY_WRITE_SAMPLE_RATE_ROUTE_USER
+    if event_type == _HISTORY_EVENT_ROUTE_ANON:
+        return HISTORY_WRITE_SAMPLE_RATE_ROUTE_ANON
+    return 1.0
+
+
+def _history_mark_dropped(event_type: str, reason: str) -> None:
+    safe_event_type = event_type if event_type in _HISTORY_EVENT_TYPES else "unknown"
+    HISTORY_WRITE_DROPPED_TOTAL.labels(event_type=safe_event_type, reason=str(reason or "unknown")).inc()
+
+
+def _history_should_sample(event_type: str, sample_key: str) -> bool:
+    rate = _history_sample_rate(event_type)
+    if rate <= 0.0:
+        return False
+    if rate >= 1.0:
+        return True
+    if HISTORY_WRITE_SAMPLING_ALGORITHM == "random":
+        return random.random() < rate
+    bucket = int(_time.time() // HISTORY_WRITE_SAMPLING_BUCKET_SECONDS)
+    basis = f"{HISTORY_WRITE_SAMPLING_SALT}|{event_type}|{bucket}|{sample_key}"
+    digest = hashlib.sha256(basis.encode("utf-8")).digest()
+    value = int.from_bytes(digest[:8], byteorder="big", signed=False)
+    threshold = int(rate * ((1 << 64) - 1))
+    return value <= threshold
+
+
+def _normalize_selected_endpoints_for_history(selected_endpoints: list[str] | None) -> list[str]:
+    clean: list[str] = []
+    if isinstance(selected_endpoints, list):
+        for item in selected_endpoints:
+            value = str(item or "").strip()
+            if value and value not in clean:
+                clean.append(value)
+    return clean
+
+
+def _persist_history_events(events: list[dict[str, Any]]) -> int:
+    if not events:
+        return 0
+    place_user_rows: list[tuple[int, str, str | None]] = []
+    place_anon_rows: list[tuple[str, str, str | None]] = []
+    route_user_rows: list[tuple[int, str, str, str, float, float, list[str] | None, str | None, str | None]] = []
+    route_anon_rows: list[tuple[str, str, str, str, float, float, list[str] | None, str | None, str | None]] = []
+    for event in events:
+        event_type = str(event.get("event_type") or "").strip().lower()
+        searched_at = str(event.get("searched_at") or "").strip() or user_store.utc_iso()
+        try:
+            if event_type == _HISTORY_EVENT_PLACE_USER:
+                place_user_rows.append(
+                    (
+                        int(event.get("user_id")),
+                        str(event.get("keyword") or ""),
+                        searched_at,
+                    )
+                )
+            elif event_type == _HISTORY_EVENT_PLACE_ANON:
+                place_anon_rows.append(
+                    (
+                        str(event.get("visitor_id") or ""),
+                        str(event.get("keyword") or ""),
+                        searched_at,
+                    )
+                )
+            elif event_type == _HISTORY_EVENT_ROUTE_USER:
+                route_user_rows.append(
+                    (
+                        int(event.get("user_id")),
+                        str(event.get("site_id") or ""),
+                        str(event.get("day_type") or ""),
+                        str(event.get("direction") or ""),
+                        float(event.get("lat")),
+                        float(event.get("lng")),
+                        _normalize_selected_endpoints_for_history(event.get("selected_endpoints")),
+                        (str(event.get("place_name")).strip()[:120] if event.get("place_name") else None),
+                        searched_at,
+                    )
+                )
+            elif event_type == _HISTORY_EVENT_ROUTE_ANON:
+                route_anon_rows.append(
+                    (
+                        str(event.get("visitor_id") or ""),
+                        str(event.get("site_id") or ""),
+                        str(event.get("day_type") or ""),
+                        str(event.get("direction") or ""),
+                        float(event.get("lat")),
+                        float(event.get("lng")),
+                        _normalize_selected_endpoints_for_history(event.get("selected_endpoints")),
+                        (str(event.get("place_name")).strip()[:120] if event.get("place_name") else None),
+                        searched_at,
+                    )
+                )
+        except (TypeError, ValueError):
+            _history_mark_dropped(event_type, "invalid_event")
+    persisted = 0
+    if place_user_rows:
+        persisted += user_store.bulk_add_place_history(place_user_rows)
+    if place_anon_rows:
+        persisted += user_store.bulk_add_anonymous_place_history(place_anon_rows)
+    if route_user_rows:
+        persisted += user_store.bulk_add_route_history(route_user_rows)
+    if route_anon_rows:
+        persisted += user_store.bulk_add_anonymous_route_history(route_anon_rows)
+    return persisted
+
+
+def _flush_history_events(events: list[dict[str, Any]], *, source: str) -> bool:
+    if not events:
+        return True
+    start = _time.perf_counter()
+    HISTORY_WRITE_FLUSH_BATCH_SIZE.observe(float(len(events)))
+    try:
+        for attempt in range(HISTORY_WRITE_BATCH_MAX_RETRY + 1):
+            try:
+                _persist_history_events(events)
+                HISTORY_WRITE_FLUSH_TOTAL.labels(result="success").inc()
+                return True
+            except Exception:
+                if attempt >= HISTORY_WRITE_BATCH_MAX_RETRY:
+                    HISTORY_WRITE_FLUSH_TOTAL.labels(result="error").inc()
+                    app.logger.exception(
+                        "History write flush failed source=%s attempts=%s size=%s",
+                        source,
+                        attempt + 1,
+                        len(events),
+                    )
+                    for event in events:
+                        _history_mark_dropped(str(event.get("event_type") or ""), "flush_error")
+                    return False
+                _time.sleep(HISTORY_WRITE_BATCH_RETRY_BACKOFF_SEC * (attempt + 1))
+        return False
+    finally:
+        HISTORY_WRITE_FLUSH_DURATION.observe(max(0.0, _time.perf_counter() - start))
+
+
+def _history_writer_loop() -> None:
+    pending: list[dict[str, Any]] = []
+    while True:
+        if _history_writer_stop_event.is_set() and not pending and _history_write_queue.empty():
+            break
+        timeout = HISTORY_WRITE_BATCH_FLUSH_INTERVAL_SEC
+        if _history_writer_stop_event.is_set():
+            timeout = min(0.05, HISTORY_WRITE_BATCH_FLUSH_INTERVAL_SEC)
+        try:
+            item = _history_write_queue.get(timeout=timeout)
+            HISTORY_WRITE_QUEUE_SIZE.dec()
+            pending.append(item)
+            if len(pending) >= HISTORY_WRITE_BATCH_MAX_ITEMS:
+                _flush_history_events(pending, source="async")
+                pending = []
+        except queue.Empty:
+            if pending:
+                _flush_history_events(pending, source="async")
+                pending = []
+        except Exception:
+            app.logger.exception("History write loop crashed")
+            _time.sleep(0.05)
+
+
+def _shutdown_history_writer() -> None:
+    global _history_writer_started, _history_writer_thread
+    if HISTORY_WRITE_MODE != "async":
+        return
+    with _history_writer_lock:
+        thread = _history_writer_thread
+        if thread is None or not _history_writer_started:
+            return
+        _history_writer_stop_event.set()
+    thread_alive = thread.is_alive()
+    if thread_alive:
+        thread.join(timeout=HISTORY_WRITE_SHUTDOWN_DRAIN_TIMEOUT_SEC)
+    thread_alive = thread.is_alive()
+    if thread_alive:
+        app.logger.warning(
+            "History writer shutdown timeout queue_size=%s",
+            _history_write_queue.qsize(),
+        )
+    with _history_writer_lock:
+        if thread_alive:
+            _history_writer_started = True
+            _history_writer_thread = thread
+        else:
+            _history_writer_started = False
+            _history_writer_thread = None
+            _history_writer_stop_event.clear()
+
+
+def _start_history_writer() -> None:
+    global _history_writer_started, _history_writer_thread, _history_writer_shutdown_registered
+    if HISTORY_WRITE_MODE != "async":
+        return
+    with _history_writer_lock:
+        if _history_writer_started:
+            return
+        _history_writer_stop_event.clear()
+        worker = threading.Thread(
+            target=_history_writer_loop,
+            daemon=True,
+            name="history-write-loop",
+        )
+        try:
+            worker.start()
+        except Exception:
+            app.logger.exception("Failed to start history writer thread")
+            return
+        _history_writer_thread = worker
+        _history_writer_started = True
+        if not _history_writer_shutdown_registered:
+            atexit.register(_shutdown_history_writer)
+            _history_writer_shutdown_registered = True
+
+
+def _enqueue_history_event(event_type: str, event: dict[str, Any]) -> None:
+    safe_event_type = event_type if event_type in _HISTORY_EVENT_TYPES else "unknown"
+    if HISTORY_WRITE_MODE == "off":
+        HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=safe_event_type, result="disabled").inc()
+        _history_mark_dropped(safe_event_type, "disabled")
+        return
+    if HISTORY_WRITE_MODE == "sync":
+        HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=safe_event_type, result="sync").inc()
+        _flush_history_events([event], source="sync")
+        return
+    _start_history_writer()
+    try:
+        _history_write_queue.put_nowait(event)
+        HISTORY_WRITE_QUEUE_SIZE.inc()
+        HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=safe_event_type, result="queued").inc()
+        return
+    except queue.Full:
+        if HISTORY_WRITE_QUEUE_FULL_STRATEGY != "sync_fallback":
+            HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=safe_event_type, result="queue_full").inc()
+            _history_mark_dropped(safe_event_type, "queue_full")
+            return
+    HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=safe_event_type, result="sync_fallback").inc()
+    _flush_history_events([event], source="sync_fallback")
+
+
+def _record_place_search_history(keyword: str, user: dict | None) -> None:
+    clean_keyword = str(keyword or "").strip()
+    if not clean_keyword:
+        return
+    try:
+        searched_at = user_store.utc_iso()
+        if user is not None:
+            user_id = int(user["id"])
+            event_type = _HISTORY_EVENT_PLACE_USER
+            sample_key = f"user:{user_id}|{clean_keyword.casefold()[:120]}"
+            if not _history_should_sample(event_type, sample_key):
+                HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=event_type, result="sampled_out").inc()
+                _history_mark_dropped(event_type, "sampled_out")
+                return
+            _enqueue_history_event(
+                event_type,
+                {
+                    "event_type": event_type,
+                    "user_id": user_id,
+                    "keyword": clean_keyword,
+                    "searched_at": searched_at,
+                },
+            )
+            return
+        visitor_id = _ensure_history_visitor_id()
+        event_type = _HISTORY_EVENT_PLACE_ANON
+        sample_key = f"visitor:{visitor_id}|{clean_keyword.casefold()[:120]}"
+        if not _history_should_sample(event_type, sample_key):
+            HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=event_type, result="sampled_out").inc()
+            _history_mark_dropped(event_type, "sampled_out")
+            return
+        _enqueue_history_event(
+            event_type,
+            {
+                "event_type": event_type,
+                "visitor_id": visitor_id,
+                "keyword": clean_keyword,
+                "searched_at": searched_at,
+            },
+        )
+    except Exception:
+        app.logger.exception("Failed to save place search history")
+
+
+def _record_route_search_history(
+    *,
+    auth_user: dict | None,
+    site_id: str,
+    day_type: str,
+    direction: str,
+    lat: float,
+    lng: float,
+    selected_endpoints: list[str] | None,
+    place_name: str | None,
+) -> None:
+    safe_direction = str(direction or "").strip().lower()
+    if safe_direction not in {"depart", "arrive"}:
+        return
+    try:
+        clean_site_id = str(site_id or "").strip()
+        clean_day_type = str(day_type or "").strip()
+        clean_place_name = str(place_name or "").strip()[:120] or None
+        clean_selected_endpoints = _normalize_selected_endpoints_for_history(selected_endpoints)
+        searched_at = user_store.utc_iso()
+        lat_value = float(lat)
+        lng_value = float(lng)
+        selected_key = ",".join(clean_selected_endpoints)
+        if auth_user is not None:
+            user_id = int(auth_user["id"])
+            event_type = _HISTORY_EVENT_ROUTE_USER
+            sample_key = (
+                f"user:{user_id}|{clean_site_id}|{clean_day_type}|{safe_direction}|"
+                f"{lat_value:.5f}|{lng_value:.5f}|{selected_key}|{clean_place_name or ''}"
+            )
+            if not _history_should_sample(event_type, sample_key):
+                HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=event_type, result="sampled_out").inc()
+                _history_mark_dropped(event_type, "sampled_out")
+                return
+            _enqueue_history_event(
+                event_type,
+                {
+                    "event_type": event_type,
+                    "user_id": user_id,
+                    "site_id": clean_site_id,
+                    "day_type": clean_day_type,
+                    "direction": safe_direction,
+                    "lat": lat_value,
+                    "lng": lng_value,
+                    "selected_endpoints": clean_selected_endpoints,
+                    "place_name": clean_place_name,
+                    "searched_at": searched_at,
+                },
+            )
+            return
+        visitor_id = _ensure_history_visitor_id()
+        event_type = _HISTORY_EVENT_ROUTE_ANON
+        sample_key = (
+            f"visitor:{visitor_id}|{clean_site_id}|{clean_day_type}|{safe_direction}|"
+            f"{lat_value:.5f}|{lng_value:.5f}|{selected_key}|{clean_place_name or ''}"
+        )
+        if not _history_should_sample(event_type, sample_key):
+            HISTORY_WRITE_ENQUEUE_TOTAL.labels(event_type=event_type, result="sampled_out").inc()
+            _history_mark_dropped(event_type, "sampled_out")
+            return
+        _enqueue_history_event(
+            event_type,
+            {
+                "event_type": event_type,
+                "visitor_id": visitor_id,
+                "site_id": clean_site_id,
+                "day_type": clean_day_type,
+                "direction": safe_direction,
+                "lat": lat_value,
+                "lng": lng_value,
+                "selected_endpoints": clean_selected_endpoints,
+                "place_name": clean_place_name,
+                "searched_at": searched_at,
+            },
+        )
+    except Exception:
+        app.logger.exception("Failed to save %s route history", safe_direction)
 
 
 def _metrics_registry():
@@ -1320,6 +1781,99 @@ def _issue_cache_set(cache_key: str, payload: dict, ttl_sec: int | None = None) 
         _issue_cache[cache_key] = (_time.time() + ttl, payload)
 
 
+def _notice_head_cache_key(per_page: int) -> tuple[str, int]:
+    capped_per_page = max(1, min(int(per_page or 100), 100))
+    return f"issues:v6:notice-head:{capped_per_page}", capped_per_page
+
+
+def _extract_notice_rows(cached: dict | None) -> list[dict]:
+    return list((cached or {}).get("notices") or [])
+
+
+def _fetch_notice_head_rows(*, per_page: int) -> list[dict]:
+    owner = (GITHUB_REPO_OWNER or "").strip()
+    if not owner:
+        return []
+
+    notice_rows: list[dict] = []
+    max_pages = 5
+    for page in range(1, max_pages + 1):
+        raw_items = _github_api_request(
+            "GET",
+            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+            params={
+                "state": "all",
+                "page": page,
+                "per_page": per_page,
+                "sort": "created",
+                "direction": "desc",
+                "creator": owner,
+            },
+        )
+        if not isinstance(raw_items, list):
+            raw_items = []
+        for item in raw_items:
+            if item.get("pull_request"):
+                continue
+            normalized = _normalize_issue(item)
+            if not normalized.get("is_notice"):
+                continue
+            try:
+                issue_number = int(normalized.get("number") or 0)
+            except (TypeError, ValueError):
+                issue_number = 0
+            if issue_number <= 0:
+                continue
+            notice_rows.append(
+                {
+                    "number": issue_number,
+                    "title": str(normalized.get("title") or "").strip(),
+                    "created_at": normalized.get("created_at"),
+                }
+            )
+        if len(raw_items) < per_page:
+            break
+    notice_rows.sort(key=lambda row: int(row.get("number") or 0), reverse=True)
+    return notice_rows
+
+
+def _refresh_notice_head_cache(cache_key: str, *, per_page: int) -> list[dict]:
+    notice_rows = _fetch_notice_head_rows(per_page=per_page)
+    _issue_cache_set(cache_key, {"notices": notice_rows}, ttl_sec=NOTICE_HEAD_CACHE_TTL_SEC)
+    return notice_rows
+
+
+def _run_notice_head_revalidate(cache_key: str, *, per_page: int) -> None:
+    try:
+        _refresh_notice_head_cache(cache_key, per_page=per_page)
+    except GitHubAPIError as exc:
+        app.logger.warning("Notice head cache revalidate failed for %s: %s", cache_key, exc)
+    except Exception:
+        app.logger.exception("Notice head cache revalidate crashed for %s", cache_key)
+    finally:
+        with _notice_head_revalidate_lock:
+            _notice_head_revalidate_inflight.discard(cache_key)
+
+
+def _trigger_notice_head_revalidate(cache_key: str, *, per_page: int) -> None:
+    with _notice_head_revalidate_lock:
+        if cache_key in _notice_head_revalidate_inflight:
+            return
+        _notice_head_revalidate_inflight.add(cache_key)
+    worker = threading.Thread(
+        target=_run_notice_head_revalidate,
+        kwargs={"cache_key": cache_key, "per_page": per_page},
+        daemon=True,
+        name=f"notice-head-revalidate-{per_page}",
+    )
+    try:
+        worker.start()
+    except Exception:
+        with _notice_head_revalidate_lock:
+            _notice_head_revalidate_inflight.discard(cache_key)
+        app.logger.exception("Failed to start notice head cache revalidate thread for %s", cache_key)
+
+
 def _clear_issue_cache_local() -> None:
     with _issue_cache_lock:
         _issue_cache.clear()
@@ -1356,65 +1910,27 @@ def _invalidate_issue_cache(distributed: bool = True) -> None:
     _set_local_issue_cache_version(shared_version)
 
 
-def _load_notice_head_cache(*, per_page: int = 100) -> list[dict]:
+def _load_notice_head_cache(*, per_page: int = 100, stale_while_revalidate: bool = False) -> list[dict]:
     _sync_issue_cache_version()
-    capped_per_page = max(1, min(int(per_page or 100), 100))
-    cache_key = f"issues:v6:notice-head:{capped_per_page}"
+    cache_key, capped_per_page = _notice_head_cache_key(per_page)
     cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+
+    if stale_while_revalidate and cached is not None:
+        if not is_fresh_cache:
+            _trigger_notice_head_revalidate(cache_key, per_page=capped_per_page)
+        return _extract_notice_rows(cached)
+
     if not is_fresh_cache:
-        owner = (GITHUB_REPO_OWNER or "").strip()
         try:
-            if not owner:
-                notice_rows: list[dict] = []
-            else:
-                notice_rows = []
-                max_pages = 5
-                for page in range(1, max_pages + 1):
-                    raw_items = _github_api_request(
-                        "GET",
-                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                        params={
-                            "state": "all",
-                            "page": page,
-                            "per_page": capped_per_page,
-                            "sort": "created",
-                            "direction": "desc",
-                            "creator": owner,
-                        },
-                    )
-                    if not isinstance(raw_items, list):
-                        raw_items = []
-                    for item in raw_items:
-                        if item.get("pull_request"):
-                            continue
-                        normalized = _normalize_issue(item)
-                        if not normalized.get("is_notice"):
-                            continue
-                        try:
-                            issue_number = int(normalized.get("number") or 0)
-                        except (TypeError, ValueError):
-                            issue_number = 0
-                        if issue_number <= 0:
-                            continue
-                        notice_rows.append(
-                            {
-                                "number": issue_number,
-                                "title": str(normalized.get("title") or "").strip(),
-                                "created_at": normalized.get("created_at"),
-                            }
-                        )
-                    if len(raw_items) < capped_per_page:
-                        break
-                notice_rows.sort(key=lambda row: int(row.get("number") or 0), reverse=True)
+            notice_rows = _refresh_notice_head_cache(cache_key, per_page=capped_per_page)
         except GitHubAPIError as exc:
             if cached is None:
                 raise
             app.logger.warning("Falling back to stale notice head cache for %s due to GitHub error: %s", cache_key, exc)
         else:
             cached = {"notices": notice_rows}
-            _issue_cache_set(cache_key, cached)
 
-    return list((cached or {}).get("notices") or [])
+    return _extract_notice_rows(cached)
 
 
 def _resolve_notice_actor() -> tuple[dict | None, int | None, str | None]:
@@ -1723,9 +2239,14 @@ def _get_current_user(with_touch: bool = False) -> tuple[dict | None, str | None
             user_store.touch_session(
                 token_hash,
                 expires_at=_utc_now() + timedelta(days=AUTH_SESSION_TTL_DAYS),
+                min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
             )
         else:
-            user_store.touch_session(token_hash, expires_at=None)
+            user_store.touch_session(
+                token_hash,
+                expires_at=None,
+                min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
+            )
         request._auth_user_cache_touched = True
     return user, token_hash
 
@@ -2165,6 +2686,7 @@ def _start_auth_background_workers() -> None:
 def _run_startup_hooks() -> None:
     init_db()
     user_store.init_db()
+    _start_history_writer()
     if APP_REFRESH_AUTH_METRICS_ON_STARTUP:
         try:
             _refresh_auth_business_metrics()
@@ -2895,13 +3417,7 @@ def api_search():
         return jsonify({"documents": []})
     documents = search_places(q)
     user, _ = _get_current_user(with_touch=False)
-    try:
-        if user is not None:
-            user_store.add_place_history(int(user["id"]), q)
-        else:
-            user_store.add_anonymous_place_history(_ensure_history_visitor_id(), q)
-    except Exception:
-        app.logger.exception("Failed to save place search history")
+    _record_place_search_history(q, user)
     return jsonify({"documents": documents})
 
 
@@ -3822,7 +4338,7 @@ def api_notice_hint():
         return jsonify({"error": str(exc)}), 503
 
     try:
-        notices = _load_notice_head_cache(per_page=100)
+        notices = _load_notice_head_cache(per_page=100, stale_while_revalidate=True)
     except GitHubAPIError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
@@ -4192,31 +4708,16 @@ def api_shuttle_depart_options():
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     def _record_route_search() -> None:
-        try:
-            if auth_user is not None:
-                user_store.add_route_history(
-                    user_id=int(auth_user["id"]),
-                    site_id=site_id,
-                    day_type=day_type,
-                    direction="depart",
-                    lat=float(lat),
-                    lng=float(lng),
-                    selected_endpoints=selected_endpoints,
-                    place_name=place_name,
-                )
-            else:
-                user_store.add_anonymous_route_history(
-                    visitor_id=_ensure_history_visitor_id(),
-                    site_id=site_id,
-                    day_type=day_type,
-                    direction="depart",
-                    lat=float(lat),
-                    lng=float(lng),
-                    selected_endpoints=selected_endpoints,
-                    place_name=place_name,
-                )
-        except Exception:
-            app.logger.exception("Failed to save depart route history")
+        _record_route_search_history(
+            auth_user=auth_user,
+            site_id=site_id,
+            day_type=day_type,
+            direction="depart",
+            lat=float(lat),
+            lng=float(lng),
+            selected_endpoints=selected_endpoints,
+            place_name=place_name,
+        )
 
     include_route_ids: set[int] | None = None
     selected_endpoint_components: set[str] | None = None
@@ -4534,31 +5035,16 @@ def api_shuttle_arrive_options():
         exclude_ids = [int(x) for x in exclude_raw.split(",") if x.strip().isdigit()]
 
     def _record_route_search() -> None:
-        try:
-            if auth_user is not None:
-                user_store.add_route_history(
-                    user_id=int(auth_user["id"]),
-                    site_id=site_id,
-                    day_type=day_type,
-                    direction="arrive",
-                    lat=float(lat),
-                    lng=float(lng),
-                    selected_endpoints=selected_endpoints,
-                    place_name=place_name,
-                )
-            else:
-                user_store.add_anonymous_route_history(
-                    visitor_id=_ensure_history_visitor_id(),
-                    site_id=site_id,
-                    day_type=day_type,
-                    direction="arrive",
-                    lat=float(lat),
-                    lng=float(lng),
-                    selected_endpoints=selected_endpoints,
-                    place_name=place_name,
-                )
-        except Exception:
-            app.logger.exception("Failed to save arrive route history")
+        _record_route_search_history(
+            auth_user=auth_user,
+            site_id=site_id,
+            day_type=day_type,
+            direction="arrive",
+            lat=float(lat),
+            lng=float(lng),
+            selected_endpoints=selected_endpoints,
+            place_name=place_name,
+        )
 
     include_route_ids: set[int] | None = None
     selected_endpoint_components: set[str] | None = None
