@@ -1640,37 +1640,76 @@ def set_endpoint_preference(
 
 
 def add_place_history(user_id: int, keyword: str) -> None:
-    if should_skip_noncritical_writes():
-        return
-    clean = str(keyword or "").strip()
-    if not clean:
-        return
-    now = utc_iso()
+    bulk_add_place_history([(int(user_id), str(keyword or ""), utc_iso())])
+
+
+def bulk_add_place_history(rows: list[tuple[int, str, str | None]]) -> int:
+    if should_skip_noncritical_writes() or not rows:
+        return 0
+    prepared: list[tuple[int, str, str]] = []
+    for row in rows:
+        try:
+            raw_user_id, raw_keyword, raw_searched_at = row
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        keyword = str(raw_keyword or "").strip()
+        if not keyword:
+            continue
+        searched_at = str(raw_searched_at or "").strip() or utc_iso()
+        prepared.append((user_id, keyword[:120], searched_at))
+    if not prepared:
+        return 0
     with _conn_ctx() as conn:
-        conn.execute(
+        conn.executemany(
             "INSERT INTO place_search_history(user_id, keyword, searched_at) VALUES(?, ?, ?)",
-            (int(user_id), clean[:120], now),
+            prepared,
         )
         conn.commit()
+    return len(prepared)
 
 
 def add_anonymous_place_history(visitor_id: str, keyword: str) -> None:
-    if should_skip_noncritical_writes():
-        return
-    clean_visitor_id = str(visitor_id or "").strip()[:64]
-    clean_keyword = str(keyword or "").strip()
-    if not clean_visitor_id or not clean_keyword:
-        return
-    now = utc_iso()
+    bulk_add_anonymous_place_history([(str(visitor_id or ""), str(keyword or ""), utc_iso())])
+
+
+def bulk_add_anonymous_place_history(rows: list[tuple[str, str, str | None]]) -> int:
+    if should_skip_noncritical_writes() or not rows:
+        return 0
+    prepared: list[tuple[str, str, str]] = []
+    for row in rows:
+        try:
+            raw_visitor_id, raw_keyword, raw_searched_at = row
+        except (TypeError, ValueError):
+            continue
+        visitor_id = str(raw_visitor_id or "").strip()[:64]
+        keyword = str(raw_keyword or "").strip()
+        if not visitor_id or not keyword:
+            continue
+        searched_at = str(raw_searched_at or "").strip() or utc_iso()
+        prepared.append((visitor_id, keyword[:120], searched_at))
+    if not prepared:
+        return 0
     with _conn_ctx() as conn:
-        conn.execute(
+        conn.executemany(
             """
             INSERT INTO anonymous_place_search_history(visitor_id, keyword, searched_at)
             VALUES(?, ?, ?)
             """,
-            (clean_visitor_id, clean_keyword[:120], now),
+            prepared,
         )
         conn.commit()
+    return len(prepared)
+
+
+def _normalize_selected_endpoints(selected_endpoints: list[str] | None) -> list[str]:
+    selected: list[str] = []
+    if isinstance(selected_endpoints, list):
+        for item in selected_endpoints:
+            value = str(item or "").strip()
+            if value and value not in selected:
+                selected.append(value)
+    return selected
 
 
 def list_place_history(user_id: int, cursor: int | None, limit: int = 20) -> dict:
@@ -1738,19 +1777,67 @@ def add_route_history(
     selected_endpoints: list[str] | None,
     place_name: str | None,
 ) -> None:
-    if should_skip_noncritical_writes():
-        return
-    if direction not in {"depart", "arrive"}:
-        return
-    selected = []
-    if isinstance(selected_endpoints, list):
-        for item in selected_endpoints:
-            value = str(item or "").strip()
-            if value and value not in selected:
-                selected.append(value)
-    payload = json.dumps(selected, ensure_ascii=False)
+    bulk_add_route_history(
+        [(
+            int(user_id),
+            str(site_id),
+            str(day_type),
+            str(direction),
+            float(lat),
+            float(lng),
+            selected_endpoints,
+            place_name,
+            utc_iso(),
+        )]
+    )
+
+
+def bulk_add_route_history(
+    rows: list[tuple[int, str, str, str, float, float, list[str] | None, str | None, str | None]]
+) -> int:
+    if should_skip_noncritical_writes() or not rows:
+        return 0
+    prepared: list[tuple[int, str, str, str, float, float, str, str | None, str]] = []
+    for row in rows:
+        try:
+            (
+                raw_user_id,
+                raw_site_id,
+                raw_day_type,
+                raw_direction,
+                raw_lat,
+                raw_lng,
+                raw_selected_endpoints,
+                raw_place_name,
+                raw_searched_at,
+            ) = row
+            user_id = int(raw_user_id)
+            lat = float(raw_lat)
+            lng = float(raw_lng)
+        except (TypeError, ValueError):
+            continue
+        direction = str(raw_direction or "").strip()
+        if direction not in {"depart", "arrive"}:
+            continue
+        payload = json.dumps(_normalize_selected_endpoints(raw_selected_endpoints), ensure_ascii=False)
+        searched_at = str(raw_searched_at or "").strip() or utc_iso()
+        prepared.append(
+            (
+                user_id,
+                str(raw_site_id),
+                str(raw_day_type),
+                direction,
+                lat,
+                lng,
+                payload,
+                (str(raw_place_name).strip()[:120] if raw_place_name else None),
+                searched_at,
+            )
+        )
+    if not prepared:
+        return 0
     with _conn_ctx() as conn:
-        conn.execute(
+        conn.executemany(
             """
             INSERT INTO route_search_history(
               user_id, site_id, day_type, direction, lat, lng,
@@ -1758,19 +1845,10 @@ def add_route_history(
             )
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                int(user_id),
-                str(site_id),
-                str(day_type),
-                str(direction),
-                float(lat),
-                float(lng),
-                payload,
-                (str(place_name).strip()[:120] if place_name else None),
-                utc_iso(),
-            ),
+            prepared,
         )
         conn.commit()
+    return len(prepared)
 
 
 def add_anonymous_route_history(
@@ -1783,22 +1861,67 @@ def add_anonymous_route_history(
     selected_endpoints: list[str] | None,
     place_name: str | None,
 ) -> None:
-    if should_skip_noncritical_writes():
-        return
-    clean_visitor_id = str(visitor_id or "").strip()[:64]
-    if not clean_visitor_id:
-        return
-    if direction not in {"depart", "arrive"}:
-        return
-    selected = []
-    if isinstance(selected_endpoints, list):
-        for item in selected_endpoints:
-            value = str(item or "").strip()
-            if value and value not in selected:
-                selected.append(value)
-    payload = json.dumps(selected, ensure_ascii=False)
+    bulk_add_anonymous_route_history(
+        [(
+            str(visitor_id or ""),
+            str(site_id),
+            str(day_type),
+            str(direction),
+            float(lat),
+            float(lng),
+            selected_endpoints,
+            place_name,
+            utc_iso(),
+        )]
+    )
+
+
+def bulk_add_anonymous_route_history(
+    rows: list[tuple[str, str, str, str, float, float, list[str] | None, str | None, str | None]]
+) -> int:
+    if should_skip_noncritical_writes() or not rows:
+        return 0
+    prepared: list[tuple[str, str, str, str, float, float, str, str | None, str]] = []
+    for row in rows:
+        try:
+            (
+                raw_visitor_id,
+                raw_site_id,
+                raw_day_type,
+                raw_direction,
+                raw_lat,
+                raw_lng,
+                raw_selected_endpoints,
+                raw_place_name,
+                raw_searched_at,
+            ) = row
+            lat = float(raw_lat)
+            lng = float(raw_lng)
+        except (TypeError, ValueError):
+            continue
+        visitor_id = str(raw_visitor_id or "").strip()[:64]
+        direction = str(raw_direction or "").strip()
+        if not visitor_id or direction not in {"depart", "arrive"}:
+            continue
+        payload = json.dumps(_normalize_selected_endpoints(raw_selected_endpoints), ensure_ascii=False)
+        searched_at = str(raw_searched_at or "").strip() or utc_iso()
+        prepared.append(
+            (
+                visitor_id,
+                str(raw_site_id),
+                str(raw_day_type),
+                direction,
+                lat,
+                lng,
+                payload,
+                (str(raw_place_name).strip()[:120] if raw_place_name else None),
+                searched_at,
+            )
+        )
+    if not prepared:
+        return 0
     with _conn_ctx() as conn:
-        conn.execute(
+        conn.executemany(
             """
             INSERT INTO anonymous_route_search_history(
               visitor_id, site_id, day_type, direction, lat, lng,
@@ -1806,19 +1929,10 @@ def add_anonymous_route_history(
             )
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                clean_visitor_id,
-                str(site_id),
-                str(day_type),
-                str(direction),
-                float(lat),
-                float(lng),
-                payload,
-                (str(place_name).strip()[:120] if place_name else None),
-                utc_iso(),
-            ),
+            prepared,
         )
         conn.commit()
+    return len(prepared)
 
 
 def list_route_history(user_id: int, cursor: int | None, limit: int = 20) -> dict:

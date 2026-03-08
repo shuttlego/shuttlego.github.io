@@ -8,6 +8,17 @@
 {{- $slotAppVersion := ternary (get $appVersionBySlot "blue") (get $appVersionBySlot "green") (eq $slot "blue") }}
 {{- $globalAppVersion := default "" $.Values.backend.env.APP_VERSION }}
 {{- $effectiveAppVersion := default (default $effectiveTag $globalAppVersion) $slotAppVersion }}
+{{- $historyWrite := default (dict) $.Values.backend.historyWrite }}
+{{- $historyWriteEnabled := true }}
+{{- if hasKey $historyWrite "enabled" }}
+{{- $historyWriteEnabled = $historyWrite.enabled }}
+{{- end }}
+{{- $historyWriteMode := default "async" $historyWrite.mode }}
+{{- $historySampleRates := default (dict) $historyWrite.sampleRates }}
+{{- $historySampling := default (dict) $historyWrite.sampling }}
+{{- $historyQueue := default (dict) $historyWrite.queue }}
+{{- $historyBatch := default (dict) $historyWrite.batch }}
+{{- $historyShutdown := default (dict) $historyWrite.shutdown }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -82,6 +93,36 @@ spec:
               value: {{ ternary "1" "0" $.Values.backend.refreshAuthMetricsOnStartup | quote }}
             - name: APP_WARM_ENDPOINT_CACHE_ON_STARTUP
               value: {{ ternary "1" "0" $.Values.backend.warmEndpointCacheOnStartup | quote }}
+            - name: HISTORY_WRITE_MODE
+              value: {{ ternary $historyWriteMode "off" $historyWriteEnabled | quote }}
+            - name: HISTORY_WRITE_SAMPLE_RATE_PLACE_USER
+              value: {{ default 1.0 $historySampleRates.placeUser | quote }}
+            - name: HISTORY_WRITE_SAMPLE_RATE_PLACE_ANON
+              value: {{ default 1.0 $historySampleRates.placeAnon | quote }}
+            - name: HISTORY_WRITE_SAMPLE_RATE_ROUTE_USER
+              value: {{ default 1.0 $historySampleRates.routeUser | quote }}
+            - name: HISTORY_WRITE_SAMPLE_RATE_ROUTE_ANON
+              value: {{ default 1.0 $historySampleRates.routeAnon | quote }}
+            - name: HISTORY_WRITE_SAMPLING_ALGORITHM
+              value: {{ default "deterministic_hash" $historySampling.algorithm | quote }}
+            - name: HISTORY_WRITE_SAMPLING_BUCKET_SECONDS
+              value: {{ default 300 $historySampling.bucketSeconds | quote }}
+            - name: HISTORY_WRITE_SAMPLING_SALT
+              value: {{ default "history-v1" $historySampling.salt | quote }}
+            - name: HISTORY_WRITE_QUEUE_MAX_ITEMS
+              value: {{ default 10000 $historyQueue.maxItems | quote }}
+            - name: HISTORY_WRITE_QUEUE_FULL_STRATEGY
+              value: {{ default "drop" $historyQueue.fullStrategy | quote }}
+            - name: HISTORY_WRITE_BATCH_MAX_ITEMS
+              value: {{ default 200 $historyBatch.maxItems | quote }}
+            - name: HISTORY_WRITE_BATCH_FLUSH_INTERVAL_MS
+              value: {{ default 250 $historyBatch.flushIntervalMs | quote }}
+            - name: HISTORY_WRITE_BATCH_MAX_RETRY
+              value: {{ default 2 $historyBatch.maxRetry | quote }}
+            - name: HISTORY_WRITE_BATCH_RETRY_BACKOFF_MS
+              value: {{ default 100 $historyBatch.retryBackoffMs | quote }}
+            - name: HISTORY_WRITE_SHUTDOWN_DRAIN_TIMEOUT_MS
+              value: {{ default 2000 $historyShutdown.drainTimeoutMs | quote }}
             {{- with $.Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
