@@ -1332,21 +1332,53 @@ def get_user_by_session_hash(session_token_hash: str) -> dict | None:
         return _row_to_user(row)
 
 
-def touch_session(session_token_hash: str, expires_at: datetime | None = None) -> None:
+def touch_session(
+    session_token_hash: str,
+    expires_at: datetime | None = None,
+    min_interval_sec: int = 0,
+) -> None:
     if should_skip_noncritical_writes():
         return
-    now = utc_iso()
+    try:
+        min_interval = max(0, int(min_interval_sec))
+    except (TypeError, ValueError):
+        min_interval = 0
+    now_dt = utc_now()
+    now = utc_iso(now_dt)
+    min_allowed_seen_at = utc_iso(now_dt - timedelta(seconds=min_interval)) if min_interval > 0 else None
     with _conn_ctx() as conn:
         if expires_at is None:
-            conn.execute(
-                "UPDATE user_sessions SET last_seen_at = ? WHERE session_token_hash = ?",
-                (now, str(session_token_hash)),
-            )
+            if min_allowed_seen_at is None:
+                conn.execute(
+                    "UPDATE user_sessions SET last_seen_at = ? WHERE session_token_hash = ?",
+                    (now, str(session_token_hash)),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE user_sessions
+                    SET last_seen_at = ?
+                    WHERE session_token_hash = ?
+                      AND last_seen_at <= ?
+                    """,
+                    (now, str(session_token_hash), min_allowed_seen_at),
+                )
         else:
-            conn.execute(
-                "UPDATE user_sessions SET last_seen_at = ?, expires_at = ? WHERE session_token_hash = ?",
-                (now, utc_iso(expires_at), str(session_token_hash)),
-            )
+            if min_allowed_seen_at is None:
+                conn.execute(
+                    "UPDATE user_sessions SET last_seen_at = ?, expires_at = ? WHERE session_token_hash = ?",
+                    (now, utc_iso(expires_at), str(session_token_hash)),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE user_sessions
+                    SET last_seen_at = ?, expires_at = ?
+                    WHERE session_token_hash = ?
+                      AND last_seen_at <= ?
+                    """,
+                    (now, utc_iso(expires_at), str(session_token_hash), min_allowed_seen_at),
+                )
         conn.commit()
 
 

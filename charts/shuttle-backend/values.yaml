@@ -76,6 +76,7 @@ backend:
     USER_STORE_POSTGRES_PORT: "5432"
     USER_STORE_POSTGRES_DB: shuttlego
     USER_STORE_POSTGRES_USER: shuttlego
+    SESSION_TOUCH_MIN_INTERVAL_SEC: "0"
     CORS_ORIGINS: ""
   extraEnv: []
 

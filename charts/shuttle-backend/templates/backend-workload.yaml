@@ -83,6 +83,8 @@ spec:
               value: {{ $.Values.backend.env.USER_STORE_POSTGRES_DB | quote }}
             - name: USER_STORE_POSTGRES_USER
               value: {{ $.Values.backend.env.USER_STORE_POSTGRES_USER | quote }}
+            - name: SESSION_TOUCH_MIN_INTERVAL_SEC
+              value: {{ default "0" $.Values.backend.env.SESSION_TOUCH_MIN_INTERVAL_SEC | quote }}
             {{- if $.Values.backend.env.CORS_ORIGINS }}
             - name: CORS_ORIGINS
               value: {{ $.Values.backend.env.CORS_ORIGINS | quote }}

@@ -123,6 +123,7 @@ ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
 AUTH_SESSION_COOKIE_NAME = os.environ.get("AUTH_SESSION_COOKIE_NAME", "sg_session").strip() or "sg_session"
 AUTH_SESSION_TTL_DAYS = max(1, _env_int("SESSION_TTL_DAYS", 90))
 AUTH_SESSION_SLIDING = _env_bool("SESSION_SLIDING", True)
+AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC = max(0, _env_int("SESSION_TOUCH_MIN_INTERVAL_SEC", 0))
 AUTH_COOKIE_DOMAIN = os.environ.get("SESSION_COOKIE_DOMAIN", "").strip() or None
 HISTORY_VISITOR_COOKIE_NAME = (
     os.environ.get("HISTORY_VISITOR_COOKIE_NAME", "sg_history_visitor").strip() or "sg_history_visitor"
@@ -2238,9 +2239,14 @@ def _get_current_user(with_touch: bool = False) -> tuple[dict | None, str | None
             user_store.touch_session(
                 token_hash,
                 expires_at=_utc_now() + timedelta(days=AUTH_SESSION_TTL_DAYS),
+                min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
             )
         else:
-            user_store.touch_session(token_hash, expires_at=None)
+            user_store.touch_session(
+                token_hash,
+                expires_at=None,
+                min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
+            )
         request._auth_user_cache_touched = True
     return user, token_hash
 
