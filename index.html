@@ -17215,6 +17215,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             if (!timeText) return;
             node.setAttribute('data-time', timeText);
             node.classList.toggle('origin', timeText === String(option.__originBoardTime || option.board_time || getDepartureTimeStr()));
+            if (node.getAttribute('data-variant-detail-bound') === '1') return;
+            node.setAttribute('data-variant-detail-bound', '1');
             node.addEventListener('click', function(evt) {
               evt.preventDefault();
               evt.stopPropagation();
