@@ -9149,6 +9149,59 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return String(match[1] || match[2] || match[3] || '').trim();
       }
 
+      function sanitizeIssueImageDimension(rawValue) {
+        var value = String(rawValue || '').trim().toLowerCase();
+        if (!value) return '';
+        if (/^\d{1,4}$/.test(value)) {
+          var px = parseInt(value, 10);
+          if (isFinite(px) && px >= 1 && px <= 2400) return String(px);
+          return '';
+        }
+        if (/^\d{1,3}%$/.test(value)) {
+          var percent = parseInt(value.slice(0, -1), 10);
+          if (isFinite(percent) && percent >= 1 && percent <= 100) {
+            return String(percent) + '%';
+          }
+        }
+        return '';
+      }
+
+      function sanitizeIssueImageStyle(rawStyle) {
+        var styleText = String(rawStyle || '').trim();
+        if (!styleText) return '';
+        var allowedProps = {
+          'width': true,
+          'min-width': true,
+          'max-width': true,
+          'height': true,
+          'min-height': true,
+          'max-height': true,
+          'display': true,
+          'margin': true,
+          'margin-top': true,
+          'margin-right': true,
+          'margin-bottom': true,
+          'margin-left': true,
+          'border': true,
+          'border-radius': true,
+          'object-fit': true
+        };
+        var safeRules = [];
+        styleText.split(';').forEach(function(rawRule) {
+          var rule = String(rawRule || '').trim();
+          if (!rule) return;
+          var sep = rule.indexOf(':');
+          if (sep <= 0) return;
+          var prop = String(rule.slice(0, sep) || '').trim().toLowerCase();
+          var value = String(rule.slice(sep + 1) || '').trim();
+          if (!prop || !value || !allowedProps[prop]) return;
+          if (/url\s*\(|expression\s*\(|javascript:|data:/i.test(value)) return;
+          if (!/^[a-z0-9#.,()%\s_\/+\-]+$/i.test(value)) return;
+          safeRules.push(prop + ': ' + value);
+        });
+        return safeRules.join('; ');
+      }
+
       function stripIssueHtmlTags(text) {
         return String(text || '').replace(/<[^>]+>/g, '').trim();
       }
@@ -9190,8 +9243,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           var imageSrc = buildIssueImageSrc(rawUrl);
           if (!imageSrc) return '';
           var alt = extractIssueHtmlAttribute(tag, 'alt');
+          var width = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'width'));
+          var height = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'height'));
+          var style = sanitizeIssueImageStyle(extractIssueHtmlAttribute(tag, 'style'));
+          var extraAttrs = '';
+          if (width) extraAttrs += ' width="' + escapeAttr(width) + '"';
+          if (height) extraAttrs += ' height="' + escapeAttr(height) + '"';
+          if (style) extraAttrs += ' style="' + escapeAttr(style) + '"';
           return issueTokenize(
-            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
+            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy"' + extraAttrs + ' />'
           );
         });
 
@@ -9227,17 +9287,78 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
         var lines = source.split('\n');
         var html = [];
-        var inUl = false;
-        var inOl = false;
+        var listStack = [];
+        function closeListItemAt(depth) {
+          if (depth < 0 || depth >= listStack.length) return;
+          if (!listStack[depth].liOpen) return;
+          html.push('</li>');
+          listStack[depth].liOpen = false;
+        }
         function closeLists() {
-          if (inUl) {
-            html.push('</ul>');
-            inUl = false;
+          while (listStack.length > 0) {
+            var depth = listStack.length - 1;
+            closeListItemAt(depth);
+            html.push('</' + listStack[depth].type + '>');
+            listStack.pop();
           }
-          if (inOl) {
-            html.push('</ol>');
-            inOl = false;
+        }
+        function appendToCurrentListItem(contentHtml, prependBreak) {
+          if (!listStack.length) return false;
+          var depth = listStack.length - 1;
+          if (!listStack[depth].liOpen) {
+            html.push('<li>');
+            listStack[depth].liOpen = true;
           }
+          html.push((prependBreak ? '<br>' : '') + String(contentHtml || ''));
+          return true;
+        }
+        function startListItem(depth, type, contentHtml) {
+          var parsedDepth = Number(depth);
+          if (!isFinite(parsedDepth)) parsedDepth = 0;
+          var targetDepth = Math.max(0, Math.floor(parsedDepth));
+          var listType = (type === 'ol') ? 'ol' : 'ul';
+          if (targetDepth > listStack.length) {
+            targetDepth = listStack.length;
+          }
+
+          while (listStack.length - 1 > targetDepth) {
+            var closeDepth = listStack.length - 1;
+            closeListItemAt(closeDepth);
+            html.push('</' + listStack[closeDepth].type + '>');
+            listStack.pop();
+          }
+
+          if (listStack.length - 1 === targetDepth && listStack.length > 0) {
+            closeListItemAt(targetDepth);
+            if (listStack[targetDepth].type !== listType) {
+              html.push('</' + listStack[targetDepth].type + '>');
+              listStack.pop();
+            }
+          }
+
+          while (listStack.length > 0 && (listStack.length - 1 < targetDepth)) {
+            var parentDepth = listStack.length - 1;
+            if (parentDepth >= 0 && !listStack[parentDepth].liOpen) {
+              html.push('<li>');
+              listStack[parentDepth].liOpen = true;
+            }
+            var nextListType = (listStack.length === targetDepth) ? listType : 'ul';
+            html.push('<' + nextListType + '>');
+            listStack.push({ type: nextListType, liOpen: false });
+          }
+
+          if (!listStack.length || listStack[listStack.length - 1].type !== listType) {
+            html.push('<' + listType + '>');
+            listStack.push({ type: listType, liOpen: false });
+          }
+
+          var depthNow = listStack.length - 1;
+          html.push('<li>' + String(contentHtml || ''));
+          listStack[depthNow].liOpen = true;
+        }
+        function getListDepthFromIndent(rawIndent) {
+          var spaces = String(rawIndent || '').replace(/\t/g, '  ').length;
+          return Math.floor(Math.max(0, spaces) / 2);
         }
 
         lines.forEach(function(line) {
@@ -9245,12 +9366,18 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           var trimmed = rawLine.trim();
           var match = null;
           if (!trimmed) {
-            closeLists();
+            if (listStack.length) {
+              appendToCurrentListItem('', true);
+            } else {
+              closeLists();
+            }
             return;
           }
           if (/^__ISSUE_TOKEN_\d+__$/.test(trimmed)) {
-            closeLists();
-            html.push(trimmed);
+            if (!appendToCurrentListItem(trimmed, true)) {
+              closeLists();
+              html.push(trimmed);
+            }
             return;
           }
           if (/^-{3,}$/.test(trimmed)) {
@@ -9282,24 +9409,17 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             html.push('<blockquote>' + renderIssueInlineMarkdown(match[1]) + '</blockquote>');
             return;
           }
-          match = trimmed.match(/^\d+\.\s+(.+)$/);
+          match = rawLine.match(/^(\s*)\d+\.\s+(.+)$/);
           if (match) {
-            if (!inOl) {
-              closeLists();
-              html.push('<ol>');
-              inOl = true;
-            }
-            html.push('<li>' + renderIssueInlineMarkdown(match[1]) + '</li>');
+            startListItem(getListDepthFromIndent(match[1]), 'ol', renderIssueInlineMarkdown(match[2]));
             return;
           }
-          match = trimmed.match(/^[-*+]\s+(.+)$/);
+          match = rawLine.match(/^(\s*)[-*+]\s+(.+)$/);
           if (match) {
-            if (!inUl) {
-              closeLists();
-              html.push('<ul>');
-              inUl = true;
-            }
-            html.push('<li>' + renderIssueInlineMarkdown(match[1]) + '</li>');
+            startListItem(getListDepthFromIndent(match[1]), 'ul', renderIssueInlineMarkdown(match[2]));
+            return;
+          }
+          if (appendToCurrentListItem(renderIssueInlineMarkdown(trimmed), true)) {
             return;
           }
           closeLists();
