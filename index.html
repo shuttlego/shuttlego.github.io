@@ -13366,16 +13366,55 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function scrollArrivalReportStopCardIntoView(index, smooth) {
         if (!arrivalReportCandidateList) return;
         var card = arrivalReportCandidateList.querySelector('.report-stop-card[data-index="' + String(index) + '"]');
-        if (!card || typeof arrivalReportCandidateList.scrollTo !== 'function') return;
-        var targetTop = Math.max(0, Number(card.offsetTop || 0) - 2);
-        if (index === 0) targetTop = 0;
+        if (!card) return;
+        var listRect = arrivalReportCandidateList.getBoundingClientRect();
+        var cardRect = card.getBoundingClientRect();
+        var listHeight = Math.max(0, Number(arrivalReportCandidateList.clientHeight || 0));
+        var currentScrollTop = Math.max(0, Number(arrivalReportCandidateList.scrollTop || 0));
+        var cardTop = currentScrollTop + (Number(cardRect.top || 0) - Number(listRect.top || 0));
+        var cardHeight = Math.max(0, Number(cardRect.height || card.offsetHeight || 0));
+        var maxScrollTop = Math.max(0, Number(arrivalReportCandidateList.scrollHeight || 0) - listHeight);
+        var centeredTop = cardTop - Math.max(0, (listHeight - cardHeight) / 2);
+        var targetTop = Math.max(0, Math.min(maxScrollTop, centeredTop));
+
+        var ensureVisible = function() {
+          if (!arrivalReportCandidateList || !card) return;
+          var latestListRect = arrivalReportCandidateList.getBoundingClientRect();
+          var latestCardRect = card.getBoundingClientRect();
+          var visibleTop = Number(latestListRect.top || 0);
+          var visibleBottom = Number(latestListRect.bottom || 0);
+          var safePadding = 8;
+          var adjustedTop = Math.max(0, Number(arrivalReportCandidateList.scrollTop || 0));
+          if (Number(latestCardRect.top || 0) < (visibleTop + safePadding)) {
+            adjustedTop += Number(latestCardRect.top || 0) - (visibleTop + safePadding);
+          } else if (Number(latestCardRect.bottom || 0) > (visibleBottom - safePadding)) {
+            adjustedTop += Number(latestCardRect.bottom || 0) - (visibleBottom - safePadding);
+          }
+          var latestMaxScrollTop = Math.max(
+            0,
+            Number(arrivalReportCandidateList.scrollHeight || 0) - Math.max(0, Number(arrivalReportCandidateList.clientHeight || 0))
+          );
+          adjustedTop = Math.max(0, Math.min(latestMaxScrollTop, adjustedTop));
+          if (Math.abs(adjustedTop - Number(arrivalReportCandidateList.scrollTop || 0)) > 0.5) {
+            arrivalReportCandidateList.scrollTop = adjustedTop;
+          }
+        };
+
         if (smooth) {
-          arrivalReportCandidateList.scrollTo({
-            top: targetTop,
-            behavior: 'smooth'
+          if (typeof arrivalReportCandidateList.scrollTo === 'function') {
+            arrivalReportCandidateList.scrollTo({
+              top: targetTop,
+              behavior: 'smooth'
+            });
+          } else {
+            arrivalReportCandidateList.scrollTop = targetTop;
+          }
+          requestAnimationFrame(function() {
+            setTimeout(ensureVisible, 240);
           });
         } else {
           arrivalReportCandidateList.scrollTop = targetTop;
+          requestAnimationFrame(ensureVisible);
         }
       }
 
