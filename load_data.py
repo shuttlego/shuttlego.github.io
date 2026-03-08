@@ -1490,9 +1490,6 @@ def get_report_nearby_stops(
         if stop_id not in stop_map or dist < stop_map[stop_id][3]:
             stop_map[stop_id] = (str(name or "").strip(), float(slat), float(slon), float(dist))
 
-    if not stop_map:
-        return {"radius_m": float(primary_radius_m), "used_fallback_radius": False, "stops": []}
-
     def _group_named_stops(items: list[dict]) -> list[dict]:
         grouped_items: list[dict] = []
         grouped_by_name: dict[str, list[dict]] = {}
@@ -1564,13 +1561,14 @@ def get_report_nearby_stops(
         return _group_named_stops(items)
 
     stops = _stops_within(primary_radius_m)
-    used_fallback = False
+    fallback_attempted = False
     if not stops and fallback_radius_m > primary_radius_m:
+        fallback_attempted = True
         stops = _stops_within(fallback_radius_m)
-        used_fallback = bool(stops)
+    used_fallback = fallback_attempted and bool(stops)
 
     return {
-        "radius_m": float(fallback_radius_m if used_fallback else primary_radius_m),
+        "radius_m": float(fallback_radius_m if fallback_attempted else primary_radius_m),
         "used_fallback_radius": used_fallback,
         "stops": stops,
     }

@@ -5444,8 +5444,8 @@
         <div class="results-placeholder" id="resultsPlaceholder">검색어를 입력한 뒤 검색하면 여기에 표시됩니다.</div>
         <div class="results-list" id="resultsList" style="display: none;"></div>
         <div class="route-sort-bar" id="routeSortBar">
-          <button type="button" class="route-sort-btn active" id="sortByDistance" data-sort="distance">거리순</button>
-          <button type="button" class="route-sort-btn" id="sortByTime" data-sort="time">시간순</button>
+          <button type="button" class="route-sort-btn" id="sortByDistance" data-sort="distance">거리순</button>
+          <button type="button" class="route-sort-btn active" id="sortByTime" data-sort="time">시간순</button>
           <div class="route-sort-spacer"></div>
           <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">최대 반경 3 km 이내</button>
           <div class="route-distance-popover" id="maxDistancePopover" role="dialog" aria-hidden="true">
@@ -5752,11 +5752,11 @@
       var routeOptionsWrap = document.getElementById('routeOptionsWrap');
       var routeSortBar = document.getElementById('routeSortBar');
       var routeSearchModeIndicator = document.getElementById('routeSearchModeIndicator');
-      var currentSortMode = 'distance';
-      var defaultRouteSearchMode = 'distance';
-      var activeRouteSearchMode = 'distance';
-      var currentRouteSearchModeUsed = 'distance';
-      var settingsDraftRouteSearchMode = 'distance';
+      var currentSortMode = 'time';
+      var defaultRouteSearchMode = 'time';
+      var activeRouteSearchMode = 'time';
+      var currentRouteSearchModeUsed = 'time';
+      var settingsDraftRouteSearchMode = 'time';
       var maxDistanceTrigger = document.getElementById('maxDistanceTrigger');
       var maxDistancePopover = document.getElementById('maxDistancePopover');
       var maxDistanceSlider = document.getElementById('maxDistanceSlider');
@@ -11821,7 +11821,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function normalizeRouteSearchMode(value) {
         var mode = String(value || '').trim().toLowerCase();
-        return (mode === 'time') ? 'time' : 'distance';
+        return (mode === 'distance') ? 'distance' : 'time';
       }
 
       function normalizeRouteMaxDistanceKm(value) {
@@ -11864,7 +11864,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function applyRouteSearchPreferences(preferences) {
         var prefs = preferences || {};
-        var nextMode = normalizeRouteSearchMode(prefs.route_search_mode || 'distance');
+        var nextMode = normalizeRouteSearchMode(prefs.route_search_mode || 'time');
         var nextDefaultMaxDistance = normalizeRouteMaxDistanceKm(
           prefs.route_max_distance_km != null ? prefs.route_max_distance_km : 3
         );
