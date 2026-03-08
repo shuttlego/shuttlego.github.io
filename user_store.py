@@ -612,6 +612,18 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS notice_ack_state (
+              actor_key TEXT PRIMARY KEY,
+              user_id INTEGER,
+              visitor_id TEXT,
+              last_ack_notice_number INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS consent_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id INTEGER NOT NULL,
@@ -744,6 +756,12 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_issue_likes_actor_key ON issue_likes(actor_key, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notice_ack_state_user_id ON notice_ack_state(user_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notice_ack_state_visitor_id ON notice_ack_state(visitor_id)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due ON github_cleanup_jobs(status, next_attempt_at, created_at)"
@@ -3367,6 +3385,96 @@ def get_arrival_report_like_state(
         if actor_key and str(row["actor_key"] or "") == actor_key:
             state["liked_by_me"] = True
     return state_map
+
+
+def get_notice_ack_number(
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> int:
+    actor_key, _, _ = _normalize_arrival_like_actor(user_id, visitor_id)
+    if not actor_key:
+        return 0
+
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            """
+            SELECT last_ack_notice_number
+            FROM notice_ack_state
+            WHERE actor_key = ?
+            LIMIT 1
+            """,
+            (actor_key,),
+        ).fetchone()
+
+    if row is None:
+        return 0
+    try:
+        return max(0, int(row["last_ack_notice_number"] or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def ack_notice_number(
+    notice_number: int,
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> int:
+    _ensure_writes_allowed()
+    normalized_notice_number = max(0, int(notice_number))
+    actor_key, normalized_user_id, normalized_visitor_id = _normalize_arrival_like_actor(user_id, visitor_id)
+    if not actor_key:
+        raise ValueError("ack_actor_required")
+
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        existing = conn.execute(
+            """
+            SELECT last_ack_notice_number
+            FROM notice_ack_state
+            WHERE actor_key = ?
+            LIMIT 1
+            """,
+            (actor_key,),
+        ).fetchone()
+        current_ack = 0
+        if existing is not None:
+            try:
+                current_ack = max(0, int(existing["last_ack_notice_number"] or 0))
+            except (TypeError, ValueError):
+                current_ack = 0
+        next_ack = max(current_ack, normalized_notice_number)
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO notice_ack_state(actor_key, user_id, visitor_id, last_ack_notice_number, updated_at)
+                VALUES(?, ?, ?, ?, ?)
+                """,
+                (
+                    actor_key,
+                    normalized_user_id,
+                    normalized_visitor_id,
+                    int(next_ack),
+                    now,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE notice_ack_state
+                SET last_ack_notice_number = ?, updated_at = ?
+                WHERE actor_key = ?
+                """,
+                (
+                    int(next_ack),
+                    now,
+                    actor_key,
+                ),
+            )
+        conn.commit()
+
+    return int(next_ack)
 
 
 def get_issue_like_state(

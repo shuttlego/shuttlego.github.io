@@ -1356,6 +1356,74 @@ def _invalidate_issue_cache(distributed: bool = True) -> None:
     _set_local_issue_cache_version(shared_version)
 
 
+def _load_notice_head_cache(*, per_page: int = 100) -> list[dict]:
+    _sync_issue_cache_version()
+    capped_per_page = max(1, min(int(per_page or 100), 100))
+    cache_key = f"issues:v6:notice-head:{capped_per_page}"
+    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+    if not is_fresh_cache:
+        owner = (GITHUB_REPO_OWNER or "").strip()
+        try:
+            if not owner:
+                notice_rows: list[dict] = []
+            else:
+                notice_rows = []
+                max_pages = 5
+                for page in range(1, max_pages + 1):
+                    raw_items = _github_api_request(
+                        "GET",
+                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                        params={
+                            "state": "all",
+                            "page": page,
+                            "per_page": capped_per_page,
+                            "sort": "created",
+                            "direction": "desc",
+                            "creator": owner,
+                        },
+                    )
+                    if not isinstance(raw_items, list):
+                        raw_items = []
+                    for item in raw_items:
+                        if item.get("pull_request"):
+                            continue
+                        normalized = _normalize_issue(item)
+                        if not normalized.get("is_notice"):
+                            continue
+                        try:
+                            issue_number = int(normalized.get("number") or 0)
+                        except (TypeError, ValueError):
+                            issue_number = 0
+                        if issue_number <= 0:
+                            continue
+                        notice_rows.append(
+                            {
+                                "number": issue_number,
+                                "title": str(normalized.get("title") or "").strip(),
+                                "created_at": normalized.get("created_at"),
+                            }
+                        )
+                    if len(raw_items) < capped_per_page:
+                        break
+                notice_rows.sort(key=lambda row: int(row.get("number") or 0), reverse=True)
+        except GitHubAPIError as exc:
+            if cached is None:
+                raise
+            app.logger.warning("Falling back to stale notice head cache for %s due to GitHub error: %s", cache_key, exc)
+        else:
+            cached = {"notices": notice_rows}
+            _issue_cache_set(cache_key, cached)
+
+    return list((cached or {}).get("notices") or [])
+
+
+def _resolve_notice_actor() -> tuple[dict | None, int | None, str | None]:
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        return auth_user, int(auth_user["id"]), None
+    return None, None, _ensure_history_visitor_id()
+
+
 def _compact_meta_label_part(raw: object) -> str:
     text = str(raw or "").strip().lower().replace(" ", "-")
     safe = "".join(ch for ch in text if ch.isalnum() or ch in "-_:")
@@ -3741,6 +3809,119 @@ def api_issue_detail(issue_number: int):
         "comments": list(cached.get("comments") or []),
     }
     response = make_response(jsonify(response_payload))
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
+
+
+@app.route("/api/notices/hint")
+def api_notice_hint():
+    try:
+        _ensure_github_issue_config()
+    except GitHubConfigError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    try:
+        notices = _load_notice_head_cache(per_page=100)
+    except GitHubAPIError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+    auth_user, user_id, visitor_id = _resolve_notice_actor()
+    try:
+        last_ack_notice_number = int(
+            user_store.get_notice_ack_number(user_id=user_id, visitor_id=visitor_id) or 0
+        )
+    except Exception:
+        app.logger.exception("Failed to read notice ack state")
+        last_ack_notice_number = 0
+
+    latest_notice_number = 0
+    latest_notice_title = ""
+    unseen_count = 0
+    latest_unseen_notice_number = 0
+    latest_unseen_notice_title = ""
+    for notice in notices:
+        try:
+            notice_number = int(notice.get("number") or 0)
+        except (TypeError, ValueError):
+            continue
+        if notice_number <= 0:
+            continue
+        if latest_notice_number <= 0:
+            latest_notice_number = notice_number
+            latest_notice_title = str(notice.get("title") or "").strip()
+        if notice_number > last_ack_notice_number:
+            unseen_count += 1
+            if latest_unseen_notice_number <= 0:
+                latest_unseen_notice_number = notice_number
+                latest_unseen_notice_title = str(notice.get("title") or "").strip()
+
+    response = make_response(
+        jsonify(
+            {
+                "unseen_count": int(unseen_count),
+                "latest_notice_number": int(latest_notice_number),
+                "latest_notice_title": latest_notice_title,
+                "latest_unseen_notice_number": int(latest_unseen_notice_number),
+                "latest_unseen_notice_title": latest_unseen_notice_title,
+                "last_ack_notice_number": int(max(0, last_ack_notice_number)),
+            }
+        )
+    )
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
+
+
+@app.route("/api/notices/ack", methods=["POST"])
+def api_notice_ack():
+    auth_user, user_id, visitor_id = _resolve_notice_actor()
+    payload = request.get_json(silent=True) or {}
+    raw_notice_number = payload.get("notice_number")
+    ack_notice_number = None
+    if raw_notice_number is not None and raw_notice_number != "":
+        try:
+            ack_notice_number = max(0, int(raw_notice_number))
+        except (TypeError, ValueError):
+            return jsonify({"error": "notice_number는 0 이상의 정수여야 합니다."}), 400
+
+    if ack_notice_number is None:
+        try:
+            _ensure_github_issue_config()
+            notices = _load_notice_head_cache(per_page=100)
+        except GitHubConfigError:
+            notices = []
+        except GitHubAPIError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+        if notices:
+            try:
+                ack_notice_number = max(0, int(notices[0].get("number") or 0))
+            except (TypeError, ValueError):
+                ack_notice_number = 0
+        else:
+            ack_notice_number = 0
+
+    try:
+        saved_ack_number = int(
+            user_store.ack_notice_number(
+                int(ack_notice_number),
+                user_id=user_id,
+                visitor_id=visitor_id,
+            )
+        )
+    except ValueError as exc:
+        if str(exc) == "ack_actor_required":
+            return jsonify({"error": "공지 확인 사용자 식별에 실패했습니다."}), 400
+        return jsonify({"error": "공지 확인 상태 저장에 실패했습니다."}), 400
+
+    response = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "ack_notice_number": int(saved_ack_number),
+            }
+        )
+    )
     if auth_user is None:
         return _attach_history_visitor_cookie_if_needed(response)
     return response

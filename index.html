@@ -367,6 +367,124 @@
       background: #f1f5f9;
       border-color: #cbd5e1;
     }
+    .notice-open-btn.notice-spotlight-target {
+      position: relative;
+      z-index: 115;
+      background: #fff;
+      border-color: #fff;
+      color: #0b1220;
+      box-shadow:
+        0 0 0 2px rgba(255, 255, 255, 0.96),
+        0 10px 22px rgba(9, 13, 30, 0.4);
+    }
+    .notice-spotlight-root {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 109;
+      pointer-events: none;
+    }
+    .notice-spotlight-root.show {
+      display: block;
+      pointer-events: auto;
+    }
+    .notice-spotlight-dim {
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 12, 25, 0.64);
+    }
+    .notice-spotlight-bubble {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      width: min(clamp(238px, 34vw, 336px), calc(100vw - 24px));
+      padding: clamp(14px, 1.35vw, 18px);
+      border-radius: 14px;
+      background: #0a2b63;
+      color: #f8fbff;
+      box-shadow: 0 18px 34px rgba(7, 13, 29, 0.45);
+      pointer-events: auto;
+      word-break: keep-all;
+    }
+    .notice-spotlight-bubble::after {
+      content: "";
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: #0a2b63;
+      transform: rotate(45deg);
+    }
+    .notice-spotlight-bubble.placement-right::after {
+      left: -7px;
+      top: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-bubble.placement-left::after {
+      right: -7px;
+      top: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-bubble.placement-bottom::after {
+      top: -7px;
+      left: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-bubble.placement-top::after {
+      bottom: -7px;
+      left: var(--spotlight-arrow-offset, 24px);
+    }
+    .notice-spotlight-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.16);
+      color: #eff6ff;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .notice-spotlight-close:hover {
+      background: rgba(255, 255, 255, 0.24);
+    }
+    .notice-spotlight-title {
+      margin: 0 32px 8px 0;
+      font-size: clamp(15px, 0.86rem + 0.38vw, 17px);
+      line-height: 1.35;
+      font-weight: 800;
+      letter-spacing: -0.015em;
+    }
+    .notice-spotlight-body {
+      margin: 0;
+      font-size: clamp(14px, 0.82rem + 0.28vw, 15px);
+      line-height: 1.45;
+      color: #dbeafe;
+    }
+    .notice-spotlight-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .notice-spotlight-action-btn {
+      border: none;
+      border-radius: 9px;
+      padding: 10px 12px;
+      font-size: clamp(13px, 0.78rem + 0.22vw, 14px);
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      min-height: 40px;
+      white-space: nowrap;
+    }
+    .notice-spotlight-action-btn.ghost {
+      background: rgba(255, 255, 255, 0.15);
+      color: #eff6ff;
+    }
+    .notice-spotlight-action-btn.primary {
+      background: #fff;
+      color: #0b1f46;
+    }
     .notice-open-btn-mobile {
       display: none;
     }
@@ -3475,6 +3593,30 @@
         width: 21px;
         height: 21px;
       }
+      .search-bar .notice-open-btn-mobile.notice-spotlight-target {
+        background: #fff;
+        border-color: #fff;
+        color: #0b1220;
+        box-shadow:
+          0 0 0 2px rgba(255, 255, 255, 0.96),
+          0 10px 22px rgba(9, 13, 30, 0.4);
+      }
+      .notice-spotlight-bubble {
+        width: min(clamp(224px, 88vw, 360px), calc(100vw - 24px));
+        padding: clamp(14px, 4vw, 18px);
+      }
+      .notice-spotlight-title {
+        font-size: clamp(15px, 4vw, 16px);
+      }
+      .notice-spotlight-body {
+        font-size: clamp(14px, 3.8vw, 15px);
+      }
+      .notice-spotlight-actions {
+        justify-content: stretch;
+      }
+      .notice-spotlight-action-btn {
+        flex: 1;
+      }
       .site-profile-wrap .notice-open-btn-desktop {
         display: none;
       }
@@ -5439,6 +5581,19 @@
     </div>
   </header>
 
+  <div class="notice-spotlight-root" id="noticeSpotlightRoot" aria-hidden="true">
+    <div class="notice-spotlight-dim" id="noticeSpotlightDim"></div>
+    <section class="notice-spotlight-bubble placement-right" id="noticeSpotlightBubble" role="dialog" aria-label="새 공지 안내">
+      <button type="button" class="notice-spotlight-close" id="noticeSpotlightCloseBtn" aria-label="공지 안내 닫기">×</button>
+      <h2 class="notice-spotlight-title" id="noticeSpotlightTitle">새 공지가 올라왔어요</h2>
+      <p class="notice-spotlight-body" id="noticeSpotlightBody">공지 버튼에서 내용을 확인해 주세요.</p>
+      <div class="notice-spotlight-actions">
+        <button type="button" class="notice-spotlight-action-btn ghost" id="noticeSpotlightDismissBtn">닫기</button>
+        <button type="button" class="notice-spotlight-action-btn primary" id="noticeSpotlightOpenBtn">공지 보기</button>
+      </div>
+    </section>
+  </div>
+
   <div class="time-picker-backdrop" id="timePickerBackdrop" aria-hidden="true"></div>
   <div class="time-picker-modal" id="timePickerModal" role="dialog" aria-label="요일/출발 시간 선택" style="top: 56px;">
     <div class="time-picker-header">
@@ -5944,6 +6099,14 @@
       var noticePageInfo = document.getElementById('noticePageInfo');
       var noticeDetailBackBtn = document.getElementById('noticeDetailBackBtn');
       var noticeDetailContent = document.getElementById('noticeDetailContent');
+      var noticeSpotlightRoot = document.getElementById('noticeSpotlightRoot');
+      var noticeSpotlightDim = document.getElementById('noticeSpotlightDim');
+      var noticeSpotlightBubble = document.getElementById('noticeSpotlightBubble');
+      var noticeSpotlightTitle = document.getElementById('noticeSpotlightTitle');
+      var noticeSpotlightBody = document.getElementById('noticeSpotlightBody');
+      var noticeSpotlightCloseBtn = document.getElementById('noticeSpotlightCloseBtn');
+      var noticeSpotlightDismissBtn = document.getElementById('noticeSpotlightDismissBtn');
+      var noticeSpotlightOpenBtn = document.getElementById('noticeSpotlightOpenBtn');
       var mapControls = document.querySelector('.map-controls');
       var routeModeHeader = document.getElementById('routeModeHeader');
       var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
@@ -6104,6 +6267,16 @@
       var noticeCurrentPage = 1;
       var noticeHasNextPage = false;
       var noticeCurrentView = 'list';
+      var noticeSpotlightState = {
+        visible: false,
+        unseenCount: 0,
+        latestNoticeNumber: 0,
+        latestNoticeTitle: '',
+        lastAckNoticeNumber: 0,
+        ackPending: false,
+        hintLoading: false,
+        targetBtn: null
+      };
       var routeModeDirection = null;
       var routeModePlaceName = '';
       var routePlaceInputSubmitting = false;
@@ -7282,6 +7455,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             if (!authState.logged_in) resetPlaceHistoryState();
             updateAccountMenuUi();
             refreshAccountMenuRankBadge();
+            refreshNoticeSpotlightHint();
             return authState;
           })
           .catch(function() {
@@ -7290,6 +7464,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             resetPlaceHistoryState();
             updateAccountMenuUi();
             refreshAccountMenuRankBadge();
+            refreshNoticeSpotlightHint();
             return authState;
           });
       }
@@ -9615,6 +9790,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function openNoticeModal() {
         if (!noticeModalBackdrop || !noticeModal) return;
+        if (noticeSpotlightState.visible) {
+          dismissNoticeSpotlight({ ack: true });
+        }
         closeIssueModal();
         noticeCurrentPage = 1;
         setNoticeView('list');
@@ -9627,6 +9805,220 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (noticeModalBackdrop) noticeModalBackdrop.classList.remove('show');
         if (noticeModal) noticeModal.classList.remove('show');
         setNoticeFeedback('', '');
+      }
+
+      function clampNoticeSpotlight(value, minValue, maxValue) {
+        if (!isFinite(value)) return minValue;
+        return Math.min(maxValue, Math.max(minValue, value));
+      }
+
+      function isVisibleNoticeButton(btn) {
+        if (!btn || !btn.getClientRects || btn.getClientRects().length === 0) return false;
+        var styles = window.getComputedStyle(btn);
+        if (!styles) return false;
+        return styles.display !== 'none' && styles.visibility !== 'hidden' && Number(styles.opacity || '1') > 0;
+      }
+
+      function getActiveNoticeSpotlightButton() {
+        if (isVisibleNoticeButton(mobileNoticeOpenBtn)) return mobileNoticeOpenBtn;
+        if (isVisibleNoticeButton(noticeOpenBtn)) return noticeOpenBtn;
+        return null;
+      }
+
+      function clearNoticeSpotlightTarget() {
+        [noticeOpenBtn, mobileNoticeOpenBtn].forEach(function(btn) {
+          if (!btn) return;
+          btn.classList.remove('notice-spotlight-target');
+        });
+        noticeSpotlightState.targetBtn = null;
+      }
+
+      function setNoticeSpotlightMessage(unseenCount) {
+        var count = Math.max(0, Number(unseenCount || 0));
+        if (noticeSpotlightTitle) {
+          noticeSpotlightTitle.textContent = count > 1
+            ? ('새 공지가 ' + String(count) + '개 있어요')
+            : '새 공지가 올라왔어요';
+        }
+        if (noticeSpotlightBody) {
+          noticeSpotlightBody.textContent = count > 1
+            ? '공지 버튼에서 한 번에 확인해 주세요. 지금 닫으면 현재 공지는 다시 보이지 않아요.'
+            : '공지 버튼에서 확인해 주세요. 지금 닫으면 현재 공지는 다시 보이지 않아요.';
+        }
+      }
+
+      function hideNoticeSpotlight() {
+        if (noticeSpotlightRoot) {
+          noticeSpotlightRoot.classList.remove('show');
+          noticeSpotlightRoot.setAttribute('aria-hidden', 'true');
+        }
+        noticeSpotlightState.visible = false;
+        clearNoticeSpotlightTarget();
+      }
+
+      function positionNoticeSpotlightBubble() {
+        if (!noticeSpotlightState.visible || !noticeSpotlightBubble) return;
+        var targetBtn = noticeSpotlightState.targetBtn;
+        if (!isVisibleNoticeButton(targetBtn)) {
+          targetBtn = getActiveNoticeSpotlightButton();
+          if (!targetBtn) {
+            hideNoticeSpotlight();
+            return;
+          }
+          clearNoticeSpotlightTarget();
+          targetBtn.classList.add('notice-spotlight-target');
+          noticeSpotlightState.targetBtn = targetBtn;
+        }
+
+        var rect = targetBtn.getBoundingClientRect();
+        var viewportWidth = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 0);
+        var viewportHeight = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 0);
+        var margin = 12;
+        var bubbleRect = noticeSpotlightBubble.getBoundingClientRect();
+        var bubbleWidth = Math.max(180, bubbleRect.width || 0);
+        var bubbleHeight = Math.max(80, bubbleRect.height || 0);
+        var left = 0;
+        var top = 0;
+        var placement = 'right';
+        var arrowOffset = 24;
+
+        if (viewportWidth <= 768) {
+          placement = 'bottom';
+          left = clampNoticeSpotlight(
+            rect.right - bubbleWidth,
+            margin,
+            viewportWidth - bubbleWidth - margin
+          );
+          top = rect.bottom + 10;
+          if ((top + bubbleHeight + margin) > viewportHeight) {
+            placement = 'top';
+            top = rect.top - bubbleHeight - 10;
+          }
+          top = clampNoticeSpotlight(top, margin, viewportHeight - bubbleHeight - margin);
+          arrowOffset = clampNoticeSpotlight(
+            (rect.left + rect.width / 2) - left - 7,
+            16,
+            bubbleWidth - 24
+          );
+        } else {
+          placement = 'right';
+          left = rect.right + 14;
+          top = rect.top + ((rect.height - bubbleHeight) / 2);
+          if ((left + bubbleWidth + margin) > viewportWidth) {
+            placement = 'left';
+            left = rect.left - bubbleWidth - 14;
+          }
+          if (left < margin) {
+            placement = 'bottom';
+            left = clampNoticeSpotlight(
+              rect.left + rect.width - bubbleWidth,
+              margin,
+              viewportWidth - bubbleWidth - margin
+            );
+            top = rect.bottom + 10;
+            if ((top + bubbleHeight + margin) > viewportHeight) {
+              placement = 'top';
+              top = rect.top - bubbleHeight - 10;
+            }
+            arrowOffset = clampNoticeSpotlight(
+              (rect.left + rect.width / 2) - left - 7,
+              16,
+              bubbleWidth - 24
+            );
+          } else {
+            top = clampNoticeSpotlight(top, margin, viewportHeight - bubbleHeight - margin);
+            arrowOffset = clampNoticeSpotlight(
+              (rect.top + rect.height / 2) - top - 7,
+              16,
+              bubbleHeight - 24
+            );
+          }
+        }
+
+        noticeSpotlightBubble.classList.remove('placement-right', 'placement-left', 'placement-top', 'placement-bottom');
+        noticeSpotlightBubble.classList.add('placement-' + placement);
+        noticeSpotlightBubble.style.left = Math.round(left) + 'px';
+        noticeSpotlightBubble.style.top = Math.round(top) + 'px';
+        noticeSpotlightBubble.style.setProperty('--spotlight-arrow-offset', Math.round(arrowOffset) + 'px');
+      }
+
+      function showNoticeSpotlight(unseenCount, latestNoticeNumber, latestNoticeTitle, lastAckNoticeNumber) {
+        if (!noticeSpotlightRoot || !noticeSpotlightBubble) return;
+        if ((noticeModal && noticeModal.classList.contains('show')) || (issueModal && issueModal.classList.contains('show'))) {
+          return;
+        }
+        var targetBtn = getActiveNoticeSpotlightButton();
+        if (!targetBtn) return;
+
+        noticeSpotlightState.unseenCount = Math.max(0, Number(unseenCount || 0));
+        noticeSpotlightState.latestNoticeNumber = Math.max(0, Number(latestNoticeNumber || 0));
+        noticeSpotlightState.latestNoticeTitle = String(latestNoticeTitle || '').trim();
+        noticeSpotlightState.lastAckNoticeNumber = Math.max(0, Number(lastAckNoticeNumber || 0));
+        setNoticeSpotlightMessage(noticeSpotlightState.unseenCount);
+        clearNoticeSpotlightTarget();
+        targetBtn.classList.add('notice-spotlight-target');
+        noticeSpotlightState.targetBtn = targetBtn;
+        noticeSpotlightRoot.classList.add('show');
+        noticeSpotlightRoot.setAttribute('aria-hidden', 'false');
+        noticeSpotlightState.visible = true;
+        positionNoticeSpotlightBubble();
+        requestAnimationFrame(positionNoticeSpotlightBubble);
+      }
+
+      function dismissNoticeSpotlight(opts) {
+        opts = opts || {};
+        var shouldAck = opts.ack !== false;
+        var ackNoticeNumber = Math.max(0, Number(noticeSpotlightState.latestNoticeNumber || 0));
+        hideNoticeSpotlight();
+        if (!shouldAck || ackNoticeNumber <= 0 || noticeSpotlightState.ackPending) return;
+        noticeSpotlightState.ackPending = true;
+        fetchJson(API_BASE + '/api/notices/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notice_number: ackNoticeNumber })
+        })
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error((result.data && result.data.error) || '공지 확인 상태 저장에 실패했습니다.');
+            }
+            noticeSpotlightState.lastAckNoticeNumber = Math.max(
+              noticeSpotlightState.lastAckNoticeNumber || 0,
+              Number(result.data && result.data.ack_notice_number || ackNoticeNumber || 0)
+            );
+            noticeSpotlightState.unseenCount = 0;
+          })
+          .catch(function() {})
+          .finally(function() {
+            noticeSpotlightState.ackPending = false;
+          });
+      }
+
+      function refreshNoticeSpotlightHint() {
+        if (noticeSpotlightState.hintLoading) return;
+        if (!noticeSpotlightRoot || !noticeSpotlightBubble) return;
+        noticeSpotlightState.hintLoading = true;
+        fetchJson(API_BASE + '/api/notices/hint')
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error((result.data && result.data.error) || '공지 힌트 조회에 실패했습니다.');
+            }
+            var data = result.data || {};
+            var unseenCount = Math.max(0, Number(data.unseen_count || 0));
+            var latestNoticeNumber = Math.max(0, Number(data.latest_notice_number || 0));
+            var lastAckNoticeNumber = Math.max(0, Number(data.last_ack_notice_number || 0));
+            var latestNoticeTitle = String(data.latest_notice_title || '').trim();
+            if (unseenCount > 0 && latestNoticeNumber > lastAckNoticeNumber) {
+              showNoticeSpotlight(unseenCount, latestNoticeNumber, latestNoticeTitle, lastAckNoticeNumber);
+              return;
+            }
+            hideNoticeSpotlight();
+          })
+          .catch(function() {
+            hideNoticeSpotlight();
+          })
+          .finally(function() {
+            noticeSpotlightState.hintLoading = false;
+          });
       }
 
       function submitIssueForm(e) {
@@ -10052,6 +10444,33 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           openNoticeModal();
         });
       }
+      if (noticeSpotlightCloseBtn) {
+        noticeSpotlightCloseBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          dismissNoticeSpotlight({ ack: true });
+        });
+      }
+      if (noticeSpotlightDismissBtn) {
+        noticeSpotlightDismissBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          dismissNoticeSpotlight({ ack: true });
+        });
+      }
+      if (noticeSpotlightOpenBtn) {
+        noticeSpotlightOpenBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          openNoticeModal();
+        });
+      }
+      if (noticeSpotlightDim) {
+        noticeSpotlightDim.addEventListener('click', function(e) {
+          e.preventDefault();
+          dismissNoticeSpotlight({ ack: true });
+        });
+      }
+      if (noticeSpotlightBubble) {
+        noticeSpotlightBubble.addEventListener('click', function(e) { e.stopPropagation(); });
+      }
       if (accountMenuBackdrop) accountMenuBackdrop.addEventListener('click', closeAccountMenu);
       if (accountMenu) {
         accountMenu.addEventListener('click', function(e) { e.stopPropagation(); });
@@ -10162,6 +10581,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
       document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
+        if (noticeSpotlightState.visible) {
+          dismissNoticeSpotlight({ ack: true });
+          return;
+        }
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
         if (noticeModal && noticeModal.classList.contains('show')) closeNoticeModal();
         if (profileModal && profileModal.classList.contains('show')) closeProfileModal();
@@ -16925,6 +17348,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         updateArrivalReportButtonVisibility();
         updateDevDebugUi();
         positionHistoryPopover();
+        positionNoticeSpotlightBubble();
         if (arrivalReportModal && arrivalReportModal.classList.contains('show') && arrivalReportState.step === 'stops') {
           requestAnimationFrame(updateArrivalReportStopStepSizing);
         }
@@ -16937,6 +17361,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           scheduleRouteDirectionArrowsRefresh(ROUTE_ARROW_REFRESH_DEBOUNCE_MS);
         }
       });
+      window.addEventListener('scroll', function() {
+        positionNoticeSpotlightBubble();
+      }, { passive: true });
     };
   </script>
 </body>
