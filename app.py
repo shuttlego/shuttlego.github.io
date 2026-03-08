@@ -105,6 +105,7 @@ GITHUB_REPO_OWNER = os.environ.get("GITHUB_REPO_OWNER", "").strip()
 GITHUB_REPO_NAME = os.environ.get("GITHUB_REPO_NAME", "").strip()
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 300)
+NOTICE_HEAD_CACHE_TTL_SEC = max(60, _env_int("NOTICE_HEAD_CACHE_TTL_SEC", 900))
 ISSUE_SUBMIT_RATE_LIMIT_SEC = _env_int("ISSUE_SUBMIT_RATE_LIMIT_SEC", 10)
 ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
 
@@ -181,6 +182,8 @@ _issue_cache: dict[str, tuple[float, dict]] = {}
 _issue_cache_lock = threading.Lock()
 _issue_cache_version_local = 0
 _issue_cache_version_lock = threading.Lock()
+_notice_head_revalidate_inflight: set[str] = set()
+_notice_head_revalidate_lock = threading.Lock()
 _issue_submit_tracker_lock = threading.Lock()
 _issue_submit_recent_by_client: dict[str, float] = {}
 _issue_submit_recent_hash: dict[str, float] = {}
@@ -1320,6 +1323,99 @@ def _issue_cache_set(cache_key: str, payload: dict, ttl_sec: int | None = None) 
         _issue_cache[cache_key] = (_time.time() + ttl, payload)
 
 
+def _notice_head_cache_key(per_page: int) -> tuple[str, int]:
+    capped_per_page = max(1, min(int(per_page or 100), 100))
+    return f"issues:v6:notice-head:{capped_per_page}", capped_per_page
+
+
+def _extract_notice_rows(cached: dict | None) -> list[dict]:
+    return list((cached or {}).get("notices") or [])
+
+
+def _fetch_notice_head_rows(*, per_page: int) -> list[dict]:
+    owner = (GITHUB_REPO_OWNER or "").strip()
+    if not owner:
+        return []
+
+    notice_rows: list[dict] = []
+    max_pages = 5
+    for page in range(1, max_pages + 1):
+        raw_items = _github_api_request(
+            "GET",
+            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+            params={
+                "state": "all",
+                "page": page,
+                "per_page": per_page,
+                "sort": "created",
+                "direction": "desc",
+                "creator": owner,
+            },
+        )
+        if not isinstance(raw_items, list):
+            raw_items = []
+        for item in raw_items:
+            if item.get("pull_request"):
+                continue
+            normalized = _normalize_issue(item)
+            if not normalized.get("is_notice"):
+                continue
+            try:
+                issue_number = int(normalized.get("number") or 0)
+            except (TypeError, ValueError):
+                issue_number = 0
+            if issue_number <= 0:
+                continue
+            notice_rows.append(
+                {
+                    "number": issue_number,
+                    "title": str(normalized.get("title") or "").strip(),
+                    "created_at": normalized.get("created_at"),
+                }
+            )
+        if len(raw_items) < per_page:
+            break
+    notice_rows.sort(key=lambda row: int(row.get("number") or 0), reverse=True)
+    return notice_rows
+
+
+def _refresh_notice_head_cache(cache_key: str, *, per_page: int) -> list[dict]:
+    notice_rows = _fetch_notice_head_rows(per_page=per_page)
+    _issue_cache_set(cache_key, {"notices": notice_rows}, ttl_sec=NOTICE_HEAD_CACHE_TTL_SEC)
+    return notice_rows
+
+
+def _run_notice_head_revalidate(cache_key: str, *, per_page: int) -> None:
+    try:
+        _refresh_notice_head_cache(cache_key, per_page=per_page)
+    except GitHubAPIError as exc:
+        app.logger.warning("Notice head cache revalidate failed for %s: %s", cache_key, exc)
+    except Exception:
+        app.logger.exception("Notice head cache revalidate crashed for %s", cache_key)
+    finally:
+        with _notice_head_revalidate_lock:
+            _notice_head_revalidate_inflight.discard(cache_key)
+
+
+def _trigger_notice_head_revalidate(cache_key: str, *, per_page: int) -> None:
+    with _notice_head_revalidate_lock:
+        if cache_key in _notice_head_revalidate_inflight:
+            return
+        _notice_head_revalidate_inflight.add(cache_key)
+    worker = threading.Thread(
+        target=_run_notice_head_revalidate,
+        kwargs={"cache_key": cache_key, "per_page": per_page},
+        daemon=True,
+        name=f"notice-head-revalidate-{per_page}",
+    )
+    try:
+        worker.start()
+    except Exception:
+        with _notice_head_revalidate_lock:
+            _notice_head_revalidate_inflight.discard(cache_key)
+        app.logger.exception("Failed to start notice head cache revalidate thread for %s", cache_key)
+
+
 def _clear_issue_cache_local() -> None:
     with _issue_cache_lock:
         _issue_cache.clear()
@@ -1356,65 +1452,27 @@ def _invalidate_issue_cache(distributed: bool = True) -> None:
     _set_local_issue_cache_version(shared_version)
 
 
-def _load_notice_head_cache(*, per_page: int = 100) -> list[dict]:
+def _load_notice_head_cache(*, per_page: int = 100, stale_while_revalidate: bool = False) -> list[dict]:
     _sync_issue_cache_version()
-    capped_per_page = max(1, min(int(per_page or 100), 100))
-    cache_key = f"issues:v6:notice-head:{capped_per_page}"
+    cache_key, capped_per_page = _notice_head_cache_key(per_page)
     cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+
+    if stale_while_revalidate and cached is not None:
+        if not is_fresh_cache:
+            _trigger_notice_head_revalidate(cache_key, per_page=capped_per_page)
+        return _extract_notice_rows(cached)
+
     if not is_fresh_cache:
-        owner = (GITHUB_REPO_OWNER or "").strip()
         try:
-            if not owner:
-                notice_rows: list[dict] = []
-            else:
-                notice_rows = []
-                max_pages = 5
-                for page in range(1, max_pages + 1):
-                    raw_items = _github_api_request(
-                        "GET",
-                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                        params={
-                            "state": "all",
-                            "page": page,
-                            "per_page": capped_per_page,
-                            "sort": "created",
-                            "direction": "desc",
-                            "creator": owner,
-                        },
-                    )
-                    if not isinstance(raw_items, list):
-                        raw_items = []
-                    for item in raw_items:
-                        if item.get("pull_request"):
-                            continue
-                        normalized = _normalize_issue(item)
-                        if not normalized.get("is_notice"):
-                            continue
-                        try:
-                            issue_number = int(normalized.get("number") or 0)
-                        except (TypeError, ValueError):
-                            issue_number = 0
-                        if issue_number <= 0:
-                            continue
-                        notice_rows.append(
-                            {
-                                "number": issue_number,
-                                "title": str(normalized.get("title") or "").strip(),
-                                "created_at": normalized.get("created_at"),
-                            }
-                        )
-                    if len(raw_items) < capped_per_page:
-                        break
-                notice_rows.sort(key=lambda row: int(row.get("number") or 0), reverse=True)
+            notice_rows = _refresh_notice_head_cache(cache_key, per_page=capped_per_page)
         except GitHubAPIError as exc:
             if cached is None:
                 raise
             app.logger.warning("Falling back to stale notice head cache for %s due to GitHub error: %s", cache_key, exc)
         else:
             cached = {"notices": notice_rows}
-            _issue_cache_set(cache_key, cached)
 
-    return list((cached or {}).get("notices") or [])
+    return _extract_notice_rows(cached)
 
 
 def _resolve_notice_actor() -> tuple[dict | None, int | None, str | None]:
@@ -3822,7 +3880,7 @@ def api_notice_hint():
         return jsonify({"error": str(exc)}), 503
 
     try:
-        notices = _load_notice_head_cache(per_page=100)
+        notices = _load_notice_head_cache(per_page=100, stale_while_revalidate=True)
     except GitHubAPIError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
 
