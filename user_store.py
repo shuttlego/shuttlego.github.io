@@ -58,6 +58,7 @@ _IDENTITY_TABLES = {
     "anonymous_route_search_history",
     "arrival_reports",
     "arrival_report_likes",
+    "issue_likes",
     "consent_events",
     "github_cleanup_jobs",
 }
@@ -597,6 +598,20 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS issue_likes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              issue_number INTEGER NOT NULL,
+              actor_key TEXT NOT NULL,
+              user_id INTEGER,
+              visitor_id TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(issue_number, actor_key),
+              FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS consent_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id INTEGER NOT NULL,
@@ -714,6 +729,12 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_arrival_report_likes_actor_key ON arrival_report_likes(actor_key, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_likes_issue_number ON issue_likes(issue_number, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_likes_actor_key ON issue_likes(actor_key, id DESC)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due ON github_cleanup_jobs(status, next_attempt_at, created_at)"
@@ -3282,6 +3303,111 @@ def get_arrival_report_like_state(
         if actor_key and str(row["actor_key"] or "") == actor_key:
             state["liked_by_me"] = True
     return state_map
+
+
+def get_issue_like_state(
+    issue_numbers: list[int] | tuple[int, ...] | None,
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> dict[int, dict]:
+    normalized_issue_numbers: list[int] = []
+    seen: set[int] = set()
+    for raw in issue_numbers or []:
+        try:
+            issue_number = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if issue_number <= 0 or issue_number in seen:
+            continue
+        seen.add(issue_number)
+        normalized_issue_numbers.append(issue_number)
+    if not normalized_issue_numbers:
+        return {}
+
+    actor_key, _, _ = _normalize_arrival_like_actor(user_id, visitor_id)
+    placeholders = ",".join("?" for _ in normalized_issue_numbers)
+    with _conn_ctx() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT issue_number, actor_key
+            FROM issue_likes
+            WHERE issue_number IN ({placeholders})
+            """,
+            tuple(normalized_issue_numbers),
+        ).fetchall()
+
+    state_map: dict[int, dict] = {
+        int(issue_number): {"like_count": 0, "liked_by_me": False}
+        for issue_number in normalized_issue_numbers
+    }
+    for row in rows:
+        issue_number = int(row["issue_number"])
+        state = state_map.setdefault(issue_number, {"like_count": 0, "liked_by_me": False})
+        state["like_count"] = int(state["like_count"]) + 1
+        if actor_key and str(row["actor_key"] or "") == actor_key:
+            state["liked_by_me"] = True
+    return state_map
+
+
+def toggle_issue_like(
+    issue_number: int,
+    *,
+    user_id: int | None = None,
+    visitor_id: str | None = None,
+) -> dict:
+    _ensure_writes_allowed()
+    normalized_issue_number = int(issue_number)
+    if normalized_issue_number <= 0:
+        raise ValueError("invalid_issue_number")
+
+    actor_key, normalized_user_id, normalized_visitor_id = _normalize_arrival_like_actor(user_id, visitor_id)
+    if not actor_key:
+        raise ValueError("like_actor_required")
+
+    with _conn_ctx() as conn:
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM issue_likes
+            WHERE issue_number = ? AND actor_key = ?
+            LIMIT 1
+            """,
+            (normalized_issue_number, actor_key),
+        ).fetchone()
+        liked = False
+        if existing is not None:
+            conn.execute(
+                "DELETE FROM issue_likes WHERE id = ?",
+                (int(existing["id"]),),
+            )
+            liked = False
+        else:
+            conn.execute(
+                """
+                INSERT INTO issue_likes(issue_number, actor_key, user_id, visitor_id, created_at)
+                VALUES(?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_issue_number,
+                    actor_key,
+                    normalized_user_id,
+                    normalized_visitor_id,
+                    utc_iso(),
+                ),
+            )
+            liked = True
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS like_count FROM issue_likes WHERE issue_number = ?",
+            (normalized_issue_number,),
+        ).fetchone()
+        conn.commit()
+
+    return {
+        "issue_number": normalized_issue_number,
+        "liked": bool(liked),
+        "like_count": int(count_row["like_count"] if count_row is not None else 0),
+    }
 
 
 def toggle_arrival_report_like(

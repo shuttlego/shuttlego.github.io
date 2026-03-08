@@ -337,6 +337,42 @@
       font-weight: 700;
       line-height: 1;
     }
+    .notice-open-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      min-width: 44px;
+      height: 42px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #374151;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: inherit;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    .notice-open-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .notice-open-btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    .notice-open-btn-mobile {
+      display: none;
+    }
+    .notice-open-btn-desktop {
+      display: inline-flex;
+    }
     .search-bar .mobile-menu-btn:hover {
       background: #e2e8f0;
       border-color: #c5ceda;
@@ -379,8 +415,11 @@
       display: block;
       margin-left: 0;
     }
-    .header.route-mode .profile-menu-trigger {
+    .header.route-mode .notice-open-btn-desktop {
       order: 2;
+    }
+    .header.route-mode .profile-menu-trigger {
+      order: 3;
     }
     .route-mode-topline {
       display: contents;
@@ -1895,6 +1934,37 @@
       border-radius: 10px;
       padding: 12px;
       background: #fff;
+      transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+    }
+    .issue-card.issue-card-clickable {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .issue-card.issue-card-clickable:focus-visible {
+      outline: none;
+      border-color: #cbd5e1;
+      box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.28);
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .issue-card.issue-card-clickable:hover {
+        border-color: #cfd8e3;
+        background: #f8fafc;
+        box-shadow: 0 3px 12px rgba(15, 23, 42, 0.06);
+      }
+    }
+    @media (hover: none) and (pointer: coarse) {
+      .issue-card.issue-card-clickable:focus-visible {
+        border-color: #ebebeb;
+        box-shadow: none;
+      }
+    }
+    .issue-card.notice-list-card {
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+    .issue-card.notice-list-card .issue-card-title-row {
+      margin-bottom: 2px;
     }
     .issue-card-top {
       display: flex;
@@ -1980,9 +2050,80 @@
       margin-top: 10px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       gap: 10px;
       font-size: 12px;
+    }
+    .issue-card-footer.notice-list-footer {
+      margin-top: 6px;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .issue-card-time {
+      color: #777;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .issue-card-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: #555;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .issue-like-btn {
+      border: none;
+      background: transparent;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 2px 0;
+      font-size: 13px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: inherit;
+      transition: color .15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .issue-like-btn:hover {
+      color: #111827;
+      text-decoration: none;
+    }
+    .issue-like-btn:focus-visible {
+      outline: none;
+      border-radius: 999px;
+      box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.28);
+    }
+    .issue-like-icon {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+      transition: stroke .15s ease, fill .15s ease;
+    }
+    .issue-like-count {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .issue-like-btn.is-liked {
+      color: #e11d48;
+    }
+    .issue-like-btn.is-liked .issue-like-icon {
+      fill: currentColor;
+    }
+    .issue-like-btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      text-decoration: none;
     }
     .issue-detail-btn,
     .issue-external-link {
@@ -2085,6 +2226,21 @@
       color: #444;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+    .issue-body-image {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #eee;
+      background: #fff;
+    }
+    .issue-like-summary {
+      margin-top: -2px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: #666;
     }
     .issue-comments-title {
       margin: 14px 0 8px;
@@ -3239,6 +3395,29 @@
         padding: 0;
         font-size: 18px;
       }
+      .search-bar .notice-open-btn-mobile {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+        border: 1px solid #d1d5db;
+        border-color: #d1d5db;
+        background: #eceff3;
+        color: #374151;
+      }
+      .search-bar .notice-open-btn-mobile:hover {
+        background: #e2e8f0;
+        border-color: #c5ceda;
+      }
+      .search-bar .notice-open-btn-mobile svg {
+        width: 21px;
+        height: 21px;
+      }
+      .site-profile-wrap .notice-open-btn-desktop {
+        display: none;
+      }
       .site-profile-wrap {
         order: 3;
         flex: 1 1 0;
@@ -3265,6 +3444,10 @@
       }
       .header.route-mode .profile-menu-trigger {
         order: 3;
+      }
+      .header.route-mode .notice-open-btn-mobile,
+      .header.route-mode .notice-open-btn-desktop {
+        display: none !important;
       }
       .site-selector-wrap select { min-width: 0; width: 100%; }
       .site-selector-trigger {
@@ -5112,6 +5295,12 @@
       <div class="header-center">
         <div class="search-bar">
           <input type="text" id="searchInput" placeholder="장소 검색 (예: 강남역 맛집)" autocomplete="off" enterkeyhint="done" />
+          <button type="button" class="notice-open-btn notice-open-btn-mobile" id="mobileNoticeOpenBtn" title="공지" aria-label="공지">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
+              <path d="M20 9a4 4 0 0 1 0 6"></path>
+            </svg>
+          </button>
           <button type="button" class="mobile-menu-btn" id="mobileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
         </div>
       </div>
@@ -5125,6 +5314,12 @@
           <span class="site-trigger-arrow"></span>
         </button>
       </div>
+      <button type="button" class="notice-open-btn notice-open-btn-desktop" id="noticeOpenBtn" title="공지" aria-label="공지">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
+          <path d="M20 9a4 4 0 0 1 0 6"></path>
+        </svg>
+      </button>
       <button type="button" class="profile-menu-trigger" id="profileMenuTrigger" title="메뉴" aria-label="메뉴">☰</button>
     </div>
     <div class="route-mode-header" id="routeModeHeader" aria-hidden="true">
@@ -5360,6 +5555,33 @@
     </div>
   </div>
 
+  <div class="issue-modal-backdrop" id="noticeModalBackdrop" aria-hidden="true"></div>
+  <div class="issue-modal" id="noticeModal" role="dialog" aria-label="공지">
+    <div class="issue-modal-header">
+      <h2 class="issue-modal-title" id="noticeModalTitle">공지</h2>
+      <div class="issue-modal-header-actions">
+        <button type="button" class="issue-close-btn" id="noticeModalCloseBtn" aria-label="닫기">×</button>
+      </div>
+    </div>
+    <div class="issue-modal-body">
+      <div class="issue-feedback" id="noticeFeedback"></div>
+
+      <section class="issue-view show" id="noticeListView" aria-label="공지 목록">
+        <div class="issue-list" id="noticeList"></div>
+        <div class="issue-pagination" id="noticePagination">
+          <button type="button" class="issue-page-btn" id="noticePrevPageBtn">이전</button>
+          <span class="issue-page-info" id="noticePageInfo">1페이지</span>
+          <button type="button" class="issue-page-btn" id="noticeNextPageBtn">다음</button>
+        </div>
+      </section>
+
+      <section class="issue-view" id="noticeDetailView" aria-label="공지 상세">
+        <button type="button" class="issue-back-btn" id="noticeDetailBackBtn">← 목록으로</button>
+        <div id="noticeDetailContent"></div>
+      </section>
+    </div>
+  </div>
+
   <div class="report-modal-backdrop" id="arrivalReportBackdrop" aria-hidden="true"></div>
   <div class="report-modal" id="arrivalReportModal" role="dialog" aria-label="도착 시간 제보">
     <div class="report-modal-header">
@@ -5590,6 +5812,8 @@
       var departureTriggerText = document.getElementById('departureTriggerText');
       var dayTypeList = document.getElementById('dayTypeList');
       var shuttleMessage = document.getElementById('shuttleMessage');
+      var noticeOpenBtn = document.getElementById('noticeOpenBtn');
+      var mobileNoticeOpenBtn = document.getElementById('mobileNoticeOpenBtn');
       var mobileMenuTrigger = document.getElementById('mobileMenuTrigger');
       var profileMenuTrigger = document.getElementById('profileMenuTrigger');
       var routeProfileMenuTrigger = document.getElementById('routeProfileMenuTrigger');
@@ -5617,6 +5841,18 @@
       var issueNicknameInputGroup = document.getElementById('issueNicknameInputGroup');
       var issueNicknameFixedGroup = document.getElementById('issueNicknameFixedGroup');
       var issueNicknameFixedText = document.getElementById('issueNicknameFixedText');
+      var noticeModalBackdrop = document.getElementById('noticeModalBackdrop');
+      var noticeModal = document.getElementById('noticeModal');
+      var noticeModalCloseBtn = document.getElementById('noticeModalCloseBtn');
+      var noticeFeedback = document.getElementById('noticeFeedback');
+      var noticeListView = document.getElementById('noticeListView');
+      var noticeDetailView = document.getElementById('noticeDetailView');
+      var noticeListEl = document.getElementById('noticeList');
+      var noticePrevPageBtn = document.getElementById('noticePrevPageBtn');
+      var noticeNextPageBtn = document.getElementById('noticeNextPageBtn');
+      var noticePageInfo = document.getElementById('noticePageInfo');
+      var noticeDetailBackBtn = document.getElementById('noticeDetailBackBtn');
+      var noticeDetailContent = document.getElementById('noticeDetailContent');
       var mapControls = document.querySelector('.map-controls');
       var routeModeHeader = document.getElementById('routeModeHeader');
       var routeTopPlaceLabel = document.getElementById('routeTopPlaceLabel');
@@ -5774,6 +6010,9 @@
       var issueHasNextPage = false;
       var issueCurrentState = 'all';
       var issueCurrentView = 'list';
+      var noticeCurrentPage = 1;
+      var noticeHasNextPage = false;
+      var noticeCurrentView = 'list';
       var routeModeDirection = null;
       var routeModePlaceName = '';
       var routePlaceInputSubmitting = false;
@@ -8463,11 +8702,161 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         issueFeedback.textContent = message;
       }
 
+      function setNoticeFeedback(type, message) {
+        if (!noticeFeedback) return;
+        if (!message) {
+          noticeFeedback.className = 'issue-feedback';
+          noticeFeedback.textContent = '';
+          return;
+        }
+        noticeFeedback.className = 'issue-feedback show ' + (type || 'info');
+        noticeFeedback.textContent = message;
+      }
+
       function formatIssueDate(iso) {
         if (!iso) return '-';
         var d = new Date(iso);
         if (isNaN(d.getTime())) return '-';
         return d.getFullYear() + '.' + pad2(d.getMonth() + 1) + '.' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+
+      function normalizeIssueLikeCount(raw) {
+        var value = Number(raw || 0);
+        if (!isFinite(value)) return 0;
+        return Math.max(0, Math.floor(value));
+      }
+
+      function buildIssueLikeButtonHtml(issueNumber, liked, likeCount) {
+        var normalizedLiked = !!liked;
+        var normalizedCount = normalizeIssueLikeCount(likeCount);
+        return '<button type="button" class="issue-like-btn' +
+          (normalizedLiked ? ' is-liked' : '') +
+          '" data-number="' + escapeAttr(String(issueNumber || '')) +
+          '" data-liked="' + (normalizedLiked ? '1' : '0') +
+          '" data-like-count="' + escapeAttr(String(normalizedCount)) +
+          '" aria-pressed="' + (normalizedLiked ? 'true' : 'false') +
+          '">' +
+            '<svg class="issue-like-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+              '<path d="m20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>' +
+            '</svg>' +
+            '<span class="issue-like-count">' + escapeHtml(String(normalizedCount)) + '</span>' +
+          '</button>';
+      }
+
+      function setIssueLikeButtonState(btn, liked, likeCount) {
+        if (!btn) return;
+        var normalizedLiked = !!liked;
+        var normalizedCount = normalizeIssueLikeCount(likeCount);
+        btn.classList.toggle('is-liked', normalizedLiked);
+        btn.setAttribute('data-liked', normalizedLiked ? '1' : '0');
+        btn.setAttribute('data-like-count', String(normalizedCount));
+        btn.setAttribute('aria-pressed', normalizedLiked ? 'true' : 'false');
+        var countEl = btn.querySelector('.issue-like-count');
+        if (countEl) countEl.textContent = String(normalizedCount);
+      }
+
+      function bindIssueLikeButtons(rootEl, feedbackFn, onAfterLike) {
+        if (!rootEl) return;
+        rootEl.querySelectorAll('.issue-like-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var issueNumber = parseInt(String(btn.getAttribute('data-number') || '0'), 10);
+            if (!issueNumber || btn.classList.contains('pending')) return;
+            btn.classList.add('pending');
+            btn.disabled = true;
+            fetchJson(API_BASE + '/api/issues/' + encodeURIComponent(issueNumber) + '/like', {
+              method: 'POST'
+            })
+              .then(function(result) {
+                if (!result.ok) {
+                  throw new Error(result.data.error || '좋아요 처리에 실패했습니다.');
+                }
+                setIssueLikeButtonState(btn, !!result.data.liked, Number(result.data.like_count || 0));
+                if (typeof onAfterLike === 'function') onAfterLike(issueNumber, result.data || {});
+              })
+              .catch(function(err) {
+                if (typeof feedbackFn === 'function') feedbackFn('error', err.message || '좋아요 처리에 실패했습니다.');
+              })
+              .finally(function() {
+                btn.disabled = false;
+                btn.classList.remove('pending');
+              });
+          });
+        });
+      }
+
+      function bindIssueCardOpen(rootEl, openDetailFn) {
+        if (!rootEl || typeof openDetailFn !== 'function') return;
+        rootEl.querySelectorAll('.issue-card-clickable[data-number]').forEach(function(card) {
+          if (card.getAttribute('data-card-open-bound') === '1') return;
+          card.setAttribute('data-card-open-bound', '1');
+
+          var triggerOpen = function() {
+            var no = parseInt(String(card.getAttribute('data-number') || '0'), 10);
+            if (!no) return;
+            openDetailFn(no);
+          };
+
+          card.addEventListener('click', function(e) {
+            if (e.defaultPrevented) return;
+            var target = e.target;
+            if (target && typeof target.closest === 'function' &&
+              target.closest('.issue-like-btn, a, button, input, textarea, select, label')) {
+              return;
+            }
+            triggerOpen();
+          });
+
+          card.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            if (e.defaultPrevented) return;
+            if (e.target && e.target !== card) return;
+            e.preventDefault();
+            triggerOpen();
+          });
+        });
+      }
+
+      function sanitizeIssueExternalUrl(rawUrl) {
+        var value = String(rawUrl || '').trim();
+        if (!value) return '';
+        try {
+          var url = new URL(value, window.location.origin);
+          if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+          return url.href;
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function renderIssueBodyHtml(text) {
+        var source = String(text || '').replace(/\r\n?/g, '\n');
+        if (!source.trim()) return '-';
+        var tokenItems = [];
+        source = source.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/gi, function(match, alt, rawUrl) {
+          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+          if (!safeUrl) return match;
+          var token = '__ISSUE_TOKEN_' + tokenItems.length + '__';
+          tokenItems.push({
+            token: token,
+            html: '<img class="issue-body-image" src="' + escapeAttr(safeUrl) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
+          });
+          return token;
+        });
+        source = source.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, function(match, label, rawUrl) {
+          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
+          if (!safeUrl) return match;
+          var token = '__ISSUE_TOKEN_' + tokenItems.length + '__';
+          tokenItems.push({
+            token: token,
+            html: '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(String(label || safeUrl)) + '</a>'
+          });
+          return token;
+        });
+        var html = escapeHtml(source).replace(/\n/g, '<br>');
+        tokenItems.forEach(function(item) {
+          html = html.split(item.token).join(item.html);
+        });
+        return html;
       }
 
       function setIssueView(view) {
@@ -8476,6 +8865,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (issueDetailView) issueDetailView.classList.toggle('show', view === 'detail');
         if (issueFormView) issueFormView.classList.toggle('show', view === 'form');
         if (issueComposeBtn) issueComposeBtn.style.display = (view === 'list') ? '' : 'none';
+      }
+
+      function setNoticeView(view) {
+        noticeCurrentView = view;
+        if (noticeListView) noticeListView.classList.toggle('show', view === 'list');
+        if (noticeDetailView) noticeDetailView.classList.toggle('show', view === 'detail');
       }
 
       function renderIssuePagination(pagination) {
@@ -8493,6 +8888,25 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             issuePageInfo.textContent = page + ' / ' + totalPages + '페이지';
           } else {
             issuePageInfo.textContent = page + '페이지';
+          }
+        }
+      }
+
+      function renderNoticePagination(pagination) {
+        var page = pagination && pagination.page ? pagination.page : 1;
+        var hasPrev = !!(pagination && pagination.has_prev);
+        var hasNext = !!(pagination && pagination.has_next);
+        var totalCount = pagination ? pagination.total_count : null;
+        noticeCurrentPage = page;
+        noticeHasNextPage = hasNext;
+        if (noticePrevPageBtn) noticePrevPageBtn.disabled = !hasPrev;
+        if (noticeNextPageBtn) noticeNextPageBtn.disabled = !hasNext;
+        if (noticePageInfo) {
+          if (typeof totalCount === 'number' && totalCount >= 0) {
+            var totalPages = Math.max(1, Math.ceil(totalCount / ISSUE_PAGE_SIZE));
+            noticePageInfo.textContent = page + ' / ' + totalPages + '페이지';
+          } else {
+            noticePageInfo.textContent = page + '페이지';
           }
         }
       }
@@ -8518,8 +8932,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             : '';
           var bodyPreview = (issue.body || '').trim();
           if (bodyPreview.length > 180) bodyPreview = bodyPreview.slice(0, 180) + '...';
+          var likeHtml = buildIssueLikeButtonHtml(issue.number, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
           var card = document.createElement('article');
-          card.className = 'issue-card';
+          card.className = 'issue-card issue-card-clickable';
+          card.setAttribute('data-number', String(issue.number || ''));
+          card.setAttribute('role', 'button');
+          card.setAttribute('tabindex', '0');
+          card.setAttribute('aria-label', '이슈 상세 보기');
           card.innerHTML =
             '<div class="issue-card-top">' +
               '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
@@ -8532,19 +8951,50 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             '</div>' +
             '<div class="issue-card-body">' + (bodyPreview ? escapeHtml(bodyPreview).replace(/\n/g, '<br>') : '-') + '</div>' +
             '<div class="issue-card-footer">' +
-              '<button type="button" class="issue-detail-btn" data-number="' + issue.number + '">내용/댓글 보기</button>' +
-              '<div>댓글 ' + (issue.comments || 0) + '개</div>' +
+              '<div class="issue-card-meta">' +
+                likeHtml +
+                '<span>댓글 ' + normalizeIssueLikeCount(issue.comments || 0) + '개</span>' +
+              '</div>' +
             '</div>';
           issueListEl.appendChild(card);
         });
 
-        issueListEl.querySelectorAll('.issue-detail-btn').forEach(function(btn) {
-          btn.addEventListener('click', function() {
-            var no = this.getAttribute('data-number');
-            if (!no) return;
-            openIssueDetail(parseInt(no, 10));
-          });
+        bindIssueCardOpen(issueListEl, openIssueDetail);
+        bindIssueLikeButtons(issueListEl, setIssueFeedback);
+      }
+
+      function renderNoticeList(issues) {
+        if (!noticeListEl) return;
+        noticeListEl.innerHTML = '';
+        if (!issues || issues.length === 0) {
+          noticeListEl.innerHTML = '<div class="issue-empty">등록된 공지가 없습니다.</div>';
+          return;
+        }
+
+        issues.forEach(function(issue) {
+          var likeHtml = buildIssueLikeButtonHtml(issue.number, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
+          var card = document.createElement('article');
+          card.className = 'issue-card issue-card-clickable notice-list-card';
+          card.setAttribute('data-number', String(issue.number || ''));
+          card.setAttribute('role', 'button');
+          card.setAttribute('tabindex', '0');
+          card.setAttribute('aria-label', '공지 상세 보기');
+          card.innerHTML =
+            '<div class="issue-card-title-row">' +
+              '<h3 class="issue-card-title">' + escapeHtml(issue.title || '') + '</h3>' +
+            '</div>' +
+            '<div class="issue-card-footer notice-list-footer">' +
+              '<span class="issue-card-time">' + formatIssueDate(issue.created_at) + '</span>' +
+              '<div class="issue-card-meta">' +
+                likeHtml +
+                '<span>댓글 ' + normalizeIssueLikeCount(issue.comments || 0) + '개</span>' +
+              '</div>' +
+            '</div>';
+          noticeListEl.appendChild(card);
         });
+
+        bindIssueCardOpen(noticeListEl, openNoticeDetail);
+        bindIssueLikeButtons(noticeListEl, setNoticeFeedback);
       }
 
       function loadIssues(page, preserveFeedback) {
@@ -8553,16 +9003,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!preserveFeedback) setIssueFeedback('info', '이슈 목록을 불러오는 중입니다...');
         issueListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
 
-        var url = API_BASE + '/api/issues?state=' + encodeURIComponent(issueCurrentState) +
+        var url = API_BASE + '/api/issues?kind=issue&state=' + encodeURIComponent(issueCurrentState) +
           '&page=' + targetPage +
           '&per_page=' + ISSUE_PAGE_SIZE;
 
-        fetch(url)
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
+        fetchJson(url)
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data.error || '이슈 목록 조회에 실패했습니다.');
@@ -8581,34 +9026,128 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           });
       }
 
+      function loadNotices(page, preserveFeedback) {
+        if (!noticeListEl) return;
+        var targetPage = page || 1;
+        if (!preserveFeedback) setNoticeFeedback('info', '공지 목록을 불러오는 중입니다...');
+        noticeListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
+
+        var url = API_BASE + '/api/issues?kind=notice&state=all' +
+          '&page=' + targetPage +
+          '&per_page=' + ISSUE_PAGE_SIZE;
+
+        fetchJson(url)
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '공지 목록 조회에 실패했습니다.');
+            }
+            var data = result.data || {};
+            var issues = Array.isArray(data.issues) ? data.issues : [];
+            var pagination = data.pagination || {};
+            renderNoticeList(issues);
+            renderNoticePagination(pagination);
+            if (!preserveFeedback) setNoticeFeedback('', '');
+          })
+          .catch(function(err) {
+            noticeListEl.innerHTML = '<div class="issue-empty">목록을 불러오지 못했습니다.</div>';
+            renderNoticePagination({ page: targetPage, has_prev: targetPage > 1, has_next: false });
+            setNoticeFeedback('error', err.message || '공지 목록 조회에 실패했습니다.');
+          });
+      }
+
+      function buildIssueDetailHtml(issue, comments, commentAuthorFieldHtml, commentBodyId, commentSubmitId, commentNicknameId) {
+        var isNotice = !!issue.is_notice;
+        var status = (issue.state || 'open').toLowerCase();
+        var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
+        var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
+        var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
+        var issueDisplayName = String(issue.display_name || '').trim();
+        var issueAuthorClass = 'issue-detail-author' + ((issue.is_repo_owner || isNotice) ? ' owner' : '');
+        var issueAuthorHtml = issueDisplayName
+          ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
+          : '';
+        var commentsHtml = '';
+        if (!comments.length) {
+          commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
+        } else {
+          var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
+          var currentPublicUserId = isLoggedInCommentWriter
+            ? String((authState.user && authState.user.id) || '').trim()
+            : '';
+          commentsHtml = comments.map(function(comment) {
+            var rawUser = String(comment.user || 'unknown');
+            var isBotAuthor = !!comment.is_bot;
+            var displayUser = String(comment.display_name || '');
+            if (!displayUser.trim() && !isBotAuthor) {
+              displayUser = rawUser || 'unknown';
+            }
+            var commentUserId = String(comment.user_id || '').trim();
+            var isRepoOwner = !!comment.is_repo_owner;
+            var isSelfAuthor = !!(currentPublicUserId && commentUserId && commentUserId === currentPublicUserId);
+            if (!isSelfAuthor && isLoggedInCommentWriter && !commentUserId) {
+              var currentNickname = String((authState.user && authState.user.nickname) || '').trim();
+              if (currentNickname && displayUser.trim() === currentNickname) isSelfAuthor = true;
+            }
+            var currentNicknameForRender = isLoggedInCommentWriter
+              ? String((authState.user && authState.user.nickname) || '').trim()
+              : '';
+            if (isSelfAuthor && currentNicknameForRender) {
+              displayUser = currentNicknameForRender;
+            }
+            var safeDisplayUser = displayUser.trim();
+            var authorClass = isRepoOwner ? 'issue-owner-name' : 'issue-comment-author';
+            var metaParts = [];
+            if (isSelfAuthor) metaParts.push('<span class="issue-self-mark">*</span>');
+            if (safeDisplayUser) {
+              metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
+              metaParts.push('<span class="issue-comment-separator">·</span>');
+            }
+            metaParts.push('<span>' + formatIssueDate(comment.created_at) + '</span>');
+            return (
+              '<div class="issue-comment-item">' +
+                '<div class="issue-comment-meta">' + metaParts.join('') + '</div>' +
+                '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
+              '</div>'
+            );
+          }).join('');
+        }
+        var likeHtml = buildIssueLikeButtonHtml(issue.number, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
+        return '' +
+          '<div class="issue-card-top">' +
+            '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
+            '<div>' + formatIssueDate(issue.created_at) + '</div>' +
+          '</div>' +
+          '<div class="issue-detail-title-row">' +
+            '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
+            issueAuthorHtml +
+          '</div>' +
+          '<div class="issue-like-summary"><span class="issue-card-meta">' + likeHtml + '<span>댓글 ' + normalizeIssueLikeCount(comments.length) + '개</span></span></div>' +
+          '<div class="issue-detail-body">' + renderIssueBodyHtml(issue.body || '') + '</div>' +
+          '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
+          '<div class="issue-comments-list">' + commentsHtml + '</div>' +
+          '<div class="issue-comment-compose">' +
+            '<div class="issue-comment-compose-title">댓글 작성</div>' +
+            commentAuthorFieldHtml +
+            '<textarea id="' + commentBodyId + '" placeholder="댓글을 입력해 주세요."></textarea>' +
+            '<div class="issue-comment-compose-actions">' +
+              '<button type="button" class="issue-form-btn primary" id="' + commentSubmitId + '">댓글 등록</button>' +
+            '</div>' +
+          '</div>';
+      }
+
       function openIssueDetail(issueNumber) {
         if (!issueDetailContent || !issueNumber) return;
         setIssueView('detail');
         issueDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
 
-        fetch(API_BASE + '/api/issues/' + issueNumber)
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
+        fetchJson(API_BASE + '/api/issues/' + issueNumber)
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data.error || '이슈 상세 조회에 실패했습니다.');
             }
             var payload = result.data || {};
             var issue = payload.issue || {};
-            var comments = payload.comments || [];
-            var isNotice = !!issue.is_notice;
-            var status = (issue.state || 'open').toLowerCase();
-            var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
-            var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
-            var issueNumberHtml = isNotice ? '' : ('<span class="issue-card-number">#' + issue.number + '</span>');
-            var issueDisplayName = String(issue.display_name || '').trim();
-            var issueAuthorClass = 'issue-detail-author' + ((issue.is_repo_owner || isNotice) ? ' owner' : '');
-            var issueAuthorHtml = issueDisplayName
-              ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
-              : '';
+            var comments = Array.isArray(payload.comments) ? payload.comments : [];
             var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
             var fixedCommentNickname = isLoggedInCommentWriter
               ? String(authState.user.nickname || '').trim()
@@ -8621,74 +9160,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                     '<input type="text" id="issueDetailCommentNickname" maxlength="40" placeholder="예: 셔틀러버" />' +
                   '</div>'
                 );
-            var commentsHtml = '';
-            if (!comments.length) {
-              commentsHtml = '<div class="issue-empty">아직 댓글이 없습니다.</div>';
-            } else {
-              var currentPublicUserId = isLoggedInCommentWriter
-                ? String((authState.user && authState.user.id) || '').trim()
-                : '';
-              commentsHtml = comments.map(function(comment) {
-                var rawUser = String(comment.user || 'unknown');
-                var isBotAuthor = !!comment.is_bot;
-                var displayUser = String(comment.display_name || '');
-                if (!displayUser.trim() && !isBotAuthor) {
-                  displayUser = rawUser || 'unknown';
-                }
-                var commentUserId = String(comment.user_id || '').trim();
-                var isRepoOwner = !!comment.is_repo_owner;
-                var isSelfAuthor = !!(currentPublicUserId && commentUserId && commentUserId === currentPublicUserId);
-                if (!isSelfAuthor && isLoggedInCommentWriter && !commentUserId) {
-                  var currentNickname = String((authState.user && authState.user.nickname) || '').trim();
-                  if (currentNickname && displayUser.trim() === currentNickname) isSelfAuthor = true;
-                }
-                var currentNicknameForRender = isLoggedInCommentWriter
-                  ? String((authState.user && authState.user.nickname) || '').trim()
-                  : '';
-                if (isSelfAuthor && currentNicknameForRender) {
-                  displayUser = currentNicknameForRender;
-                }
-                var safeDisplayUser = displayUser.trim();
-                var authorClass = isRepoOwner ? 'issue-owner-name' : 'issue-comment-author';
-                var metaParts = [];
-                if (isSelfAuthor) metaParts.push('<span class="issue-self-mark">*</span>');
-                if (safeDisplayUser) {
-                  metaParts.push('<span class="' + authorClass + '">' + escapeHtml(safeDisplayUser) + '</span>');
-                  metaParts.push('<span class="issue-comment-separator">·</span>');
-                }
-                metaParts.push('<span>' + formatIssueDate(comment.created_at) + '</span>');
-                var metaText = metaParts.join('');
-                return (
-                  '<div class="issue-comment-item">' +
-                    '<div class="issue-comment-meta">' +
-                      metaText +
-                    '</div>' +
-                    '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
-                  '</div>'
-                );
-              }).join('');
-            }
-
-            issueDetailContent.innerHTML =
-              '<div class="issue-card-top">' +
-                '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
-                '<div>' + formatIssueDate(issue.created_at) + '</div>' +
-              '</div>' +
-              '<div class="issue-detail-title-row">' +
-                '<h3 class="issue-detail-title">' + escapeHtml(issue.title || '') + '</h3>' +
-                issueAuthorHtml +
-              '</div>' +
-              '<div class="issue-detail-body">' + (issue.body ? escapeHtml(issue.body).replace(/\n/g, '<br>') : '-') + '</div>' +
-              '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
-              '<div class="issue-comments-list">' + commentsHtml + '</div>' +
-              '<div class="issue-comment-compose">' +
-                '<div class="issue-comment-compose-title">댓글 작성</div>' +
-                commentAuthorFieldHtml +
-                '<textarea id="issueDetailCommentBody" placeholder="댓글을 입력해 주세요."></textarea>' +
-                '<div class="issue-comment-compose-actions">' +
-                  '<button type="button" class="issue-form-btn primary" id="issueDetailCommentSubmit">댓글 등록</button>' +
-                '</div>' +
-              '</div>';
+            issueDetailContent.innerHTML = buildIssueDetailHtml(
+              issue,
+              comments,
+              commentAuthorFieldHtml,
+              'issueDetailCommentBody',
+              'issueDetailCommentSubmit',
+              'issueDetailCommentNickname'
+            );
+            bindIssueLikeButtons(issueDetailContent, setIssueFeedback);
 
             var detailCommentBody = document.getElementById('issueDetailCommentBody');
             var detailCommentNickname = document.getElementById('issueDetailCommentNickname');
@@ -8709,21 +9189,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                   requestPayload.meta = { nickname: fixedCommentNickname };
                 } else if (detailCommentNickname) {
                   var optionalNickname = String(detailCommentNickname.value || '').trim();
-                  if (optionalNickname) {
-                    requestPayload.meta = { nickname: optionalNickname };
-                  }
+                  if (optionalNickname) requestPayload.meta = { nickname: optionalNickname };
                 }
 
-                fetch(API_BASE + '/api/issues/' + issue.number + '/comments', {
+                fetchJson(API_BASE + '/api/issues/' + issue.number + '/comments', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(requestPayload)
                 })
-                  .then(function(r) {
-                    return r.json().catch(function() { return {}; }).then(function(data) {
-                      return { ok: r.ok, data: data };
-                    });
-                  })
                   .then(function(postResult) {
                     if (!postResult.ok) {
                       throw new Error(postResult.data.error || '댓글 등록에 실패했습니다.');
@@ -8735,15 +9208,96 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                     setIssueFeedback('error', postErr.message || '댓글 등록에 실패했습니다.');
                   })
                   .finally(function() {
-                    if (detailCommentSubmit && detailCommentSubmit.isConnected) {
-                      detailCommentSubmit.disabled = false;
-                    }
+                    if (detailCommentSubmit && detailCommentSubmit.isConnected) detailCommentSubmit.disabled = false;
                   });
               });
             }
           })
           .catch(function(err) {
             issueDetailContent.innerHTML = '<div class="issue-empty">' + escapeHtml(err.message || '상세 조회에 실패했습니다.') + '</div>';
+          });
+      }
+
+      function openNoticeDetail(issueNumber) {
+        if (!noticeDetailContent || !issueNumber) return;
+        setNoticeView('detail');
+        noticeDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
+
+        fetchJson(API_BASE + '/api/issues/' + issueNumber)
+          .then(function(result) {
+            if (!result.ok) {
+              throw new Error(result.data.error || '공지 상세 조회에 실패했습니다.');
+            }
+            var payload = result.data || {};
+            var issue = payload.issue || {};
+            var comments = Array.isArray(payload.comments) ? payload.comments : [];
+            var isLoggedInCommentWriter = !!(authState && authState.logged_in && authState.user);
+            var fixedCommentNickname = isLoggedInCommentWriter
+              ? String(authState.user.nickname || '').trim()
+              : '';
+            var commentAuthorFieldHtml = isLoggedInCommentWriter
+              ? ('<div class="issue-comment-author-fixed">작성자: <strong>' + escapeHtml(fixedCommentNickname || '알 수 없음') + '</strong></div>')
+              : (
+                  '<div class="issue-comment-nickname-row">' +
+                    '<label for="noticeDetailCommentNickname">닉네임 (선택)</label>' +
+                    '<input type="text" id="noticeDetailCommentNickname" maxlength="40" placeholder="예: 셔틀러버" />' +
+                  '</div>'
+                );
+            noticeDetailContent.innerHTML = buildIssueDetailHtml(
+              issue,
+              comments,
+              commentAuthorFieldHtml,
+              'noticeDetailCommentBody',
+              'noticeDetailCommentSubmit',
+              'noticeDetailCommentNickname'
+            );
+            bindIssueLikeButtons(noticeDetailContent, setNoticeFeedback);
+
+            var detailCommentBody = document.getElementById('noticeDetailCommentBody');
+            var detailCommentNickname = document.getElementById('noticeDetailCommentNickname');
+            var detailCommentSubmit = document.getElementById('noticeDetailCommentSubmit');
+            if (detailCommentBody && detailCommentSubmit) {
+              detailCommentSubmit.addEventListener('click', function() {
+                var bodyText = detailCommentBody.value.trim();
+                if (!bodyText) {
+                  setNoticeFeedback('error', '댓글 내용을 입력해 주세요.');
+                  detailCommentBody.focus();
+                  return;
+                }
+
+                detailCommentSubmit.disabled = true;
+                setNoticeFeedback('info', '댓글을 등록하는 중입니다...');
+                var requestPayload = { body: bodyText };
+                if (isLoggedInCommentWriter && fixedCommentNickname) {
+                  requestPayload.meta = { nickname: fixedCommentNickname };
+                } else if (detailCommentNickname) {
+                  var optionalNickname = String(detailCommentNickname.value || '').trim();
+                  if (optionalNickname) requestPayload.meta = { nickname: optionalNickname };
+                }
+
+                fetchJson(API_BASE + '/api/issues/' + issue.number + '/comments', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(requestPayload)
+                })
+                  .then(function(postResult) {
+                    if (!postResult.ok) {
+                      throw new Error(postResult.data.error || '댓글 등록에 실패했습니다.');
+                    }
+                    setNoticeFeedback('success', '댓글이 등록되었습니다.');
+                    openNoticeDetail(issue.number);
+                  })
+                  .catch(function(postErr) {
+                    setNoticeFeedback('error', postErr.message || '댓글 등록에 실패했습니다.');
+                  })
+                  .finally(function() {
+                    if (detailCommentSubmit && detailCommentSubmit.isConnected) detailCommentSubmit.disabled = false;
+                  });
+              });
+            }
+          })
+          .catch(function(err) {
+            noticeDetailContent.innerHTML = '<div class="issue-empty">' + escapeHtml(err.message || '상세 조회에 실패했습니다.') + '</div>';
           });
       }
 
@@ -8758,8 +9312,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         setIssueFeedback('', '');
       }
 
+      function backToNoticeList() {
+        setNoticeView('list');
+        setNoticeFeedback('', '');
+      }
+
       function openIssueModal() {
         if (!issueModalBackdrop || !issueModal) return;
+        closeNoticeModal();
         issueCurrentPage = 1;
         issueCurrentState = issueStateFilter ? issueStateFilter.value : 'all';
         setIssueView('list');
@@ -8772,6 +9332,22 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (issueModalBackdrop) issueModalBackdrop.classList.remove('show');
         if (issueModal) issueModal.classList.remove('show');
         setIssueFeedback('', '');
+      }
+
+      function openNoticeModal() {
+        if (!noticeModalBackdrop || !noticeModal) return;
+        closeIssueModal();
+        noticeCurrentPage = 1;
+        setNoticeView('list');
+        noticeModalBackdrop.classList.add('show');
+        noticeModal.classList.add('show');
+        loadNotices(1, false);
+      }
+
+      function closeNoticeModal() {
+        if (noticeModalBackdrop) noticeModalBackdrop.classList.remove('show');
+        if (noticeModal) noticeModal.classList.remove('show');
+        setNoticeFeedback('', '');
       }
 
       function submitIssueForm(e) {
@@ -8793,24 +9369,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (issueFormSubmitBtn) issueFormSubmitBtn.disabled = true;
         setIssueFeedback('info', '건의를 등록하는 중입니다...');
 
-        var payload = {
-          title: title,
-          body: body
-        };
-        if (!isLoggedIn && nickname) {
-          payload.meta = { nickname: nickname };
-        }
+        var payload = { title: title, body: body };
+        if (!isLoggedIn && nickname) payload.meta = { nickname: nickname };
 
-        fetch(API_BASE + '/api/issues', {
+        fetchJson(API_BASE + '/api/issues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         })
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data.error || '건의 등록에 실패했습니다.');
@@ -9195,6 +9761,18 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           toggleAccountMenu(routeProfileMenuTrigger);
         });
       }
+      if (noticeOpenBtn) {
+        noticeOpenBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          openNoticeModal();
+        });
+      }
+      if (mobileNoticeOpenBtn) {
+        mobileNoticeOpenBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          openNoticeModal();
+        });
+      }
       if (accountMenuBackdrop) accountMenuBackdrop.addEventListener('click', closeAccountMenu);
       if (accountMenu) {
         accountMenu.addEventListener('click', function(e) { e.stopPropagation(); });
@@ -9287,9 +9865,26 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           loadIssues(issueCurrentPage + 1, false);
         });
       }
+      if (noticeModalCloseBtn) noticeModalCloseBtn.addEventListener('click', closeNoticeModal);
+      if (noticeModalBackdrop) noticeModalBackdrop.addEventListener('click', closeNoticeModal);
+      if (noticeModal) noticeModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      if (noticeDetailBackBtn) noticeDetailBackBtn.addEventListener('click', backToNoticeList);
+      if (noticePrevPageBtn) {
+        noticePrevPageBtn.addEventListener('click', function() {
+          if (noticeCurrentPage <= 1) return;
+          loadNotices(noticeCurrentPage - 1, false);
+        });
+      }
+      if (noticeNextPageBtn) {
+        noticeNextPageBtn.addEventListener('click', function() {
+          if (!noticeHasNextPage) return;
+          loadNotices(noticeCurrentPage + 1, false);
+        });
+      }
       document.addEventListener('keydown', function(e) {
         if (e.key !== 'Escape') return;
         if (issueModal && issueModal.classList.contains('show')) closeIssueModal();
+        if (noticeModal && noticeModal.classList.contains('show')) closeNoticeModal();
         if (profileModal && profileModal.classList.contains('show')) closeProfileModal();
         if (policyModal && policyModal.classList.contains('show')) closePolicyModal();
         closeAccountMenu();

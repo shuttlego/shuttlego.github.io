@@ -104,7 +104,7 @@ GITHUB_INSTALLATION_ID = os.environ.get("GITHUB_INSTALLATION_ID", "").strip()
 GITHUB_REPO_OWNER = os.environ.get("GITHUB_REPO_OWNER", "").strip()
 GITHUB_REPO_NAME = os.environ.get("GITHUB_REPO_NAME", "").strip()
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
-GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 60)
+GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 300)
 ISSUE_SUBMIT_RATE_LIMIT_SEC = _env_int("ISSUE_SUBMIT_RATE_LIMIT_SEC", 10)
 ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
 
@@ -1205,6 +1205,22 @@ def _normalize_issue(issue: dict, nickname_by_public_user_id: dict[str, str] | N
     }
 
 
+def _with_issue_like_state(issues: list[dict], like_state_map: dict[int, dict] | None = None) -> list[dict]:
+    like_state_map = like_state_map or {}
+    enriched: list[dict] = []
+    for issue in issues or []:
+        item = dict(issue or {})
+        try:
+            issue_number = int(item.get("number") or 0)
+        except (TypeError, ValueError):
+            issue_number = 0
+        like_state = like_state_map.get(issue_number) or {}
+        item["like_count"] = int(like_state.get("like_count") or 0)
+        item["liked_by_me"] = bool(like_state.get("liked_by_me"))
+        enriched.append(item)
+    return enriched
+
+
 def _normalize_comment(comment: dict) -> dict:
     user = comment.get("user") or {}
     login = str(user.get("login") or "")
@@ -1253,6 +1269,15 @@ def _issue_cache_get(cache_key: str) -> dict | None:
             _issue_cache.pop(cache_key, None)
             return None
         return payload
+
+
+def _issue_cache_get_allow_stale(cache_key: str) -> tuple[dict | None, bool]:
+    with _issue_cache_lock:
+        cached = _issue_cache.get(cache_key)
+        if not cached:
+            return None, False
+        expires_at, payload = cached
+        return payload, expires_at > _time.time()
 
 
 def _issue_cache_set(cache_key: str, payload: dict, ttl_sec: int | None = None) -> None:
@@ -3432,6 +3457,8 @@ def api_issues():
 
         _invalidate_issue_cache()
         normalized = _normalize_issue(created)
+        normalized["like_count"] = 0
+        normalized["liked_by_me"] = False
         response = make_response(
             jsonify(
                 {
@@ -3455,134 +3482,128 @@ def api_issues():
     if state not in {"open", "closed", "all"}:
         return jsonify({"error": "state는 open|closed|all만 허용됩니다."}), 400
 
+    kind = request.args.get("kind", default="all", type=str).strip().lower()
+    if kind not in {"all", "issue", "notice"}:
+        return jsonify({"error": "kind는 all|issue|notice만 허용됩니다."}), 400
+
     labels_raw = request.args.get("labels", default="", type=str)
     labels = [s.strip() for s in labels_raw.split(",") if s.strip()]
     q = request.args.get("q", default="", type=str).strip()
     page = max(1, request.args.get("page", default=1, type=int) or 1)
     per_page = request.args.get("per_page", default=10, type=int) or 10
-    per_page = max(1, min(per_page, 50))
+    per_page = max(1, min(per_page, 100))
 
-    cache_key = f"issues:v4:list:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
-    cached = _issue_cache_get(cache_key)
-    if cached is not None:
-        return jsonify(cached)
-
-    base_cache_key = f"issues:v4:base:{state}:{','.join(labels)}:{q}"
-    base_cached = _issue_cache_get(base_cache_key)
-    if base_cached is None:
+    cache_key = f"issues:v6:list:{kind}:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
+    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+    if not is_fresh_cache:
+        owner = (GITHUB_REPO_OWNER or "").strip()
+        q_lower = q.casefold()
+        list_page_size = min(100, max(1, per_page + 1))
         try:
-            raw_items: list[dict] = []
-            fetch_per_page = 100
-            if q:
-                query_parts = [f"repo:{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}", "is:issue"]
-                if state in {"open", "closed"}:
-                    query_parts.append(f"is:{state}")
-                for label in labels:
-                    query_parts.append(f'label:"{label}"')
-                query_parts.append(q)
-
-                fetch_page = 1
-                fetch_limit = 1000  # GitHub Search API cap
-                while True:
-                    search_payload = _github_api_request(
-                        "GET",
-                        "/search/issues",
-                        params={
-                            "q": " ".join(query_parts),
-                            "sort": "created",
-                            "order": "desc",
-                            "page": fetch_page,
-                            "per_page": fetch_per_page,
-                        },
-                    )
-                    page_items = search_payload.get("items") or []
-                    if not isinstance(page_items, list):
-                        page_items = []
-                    raw_items.extend(page_items)
-
-                    total_hits = int(search_payload.get("total_count", 0) or 0)
-                    fetch_limit = min(fetch_limit, max(0, total_hits))
-                    if len(raw_items) >= fetch_limit or len(page_items) < fetch_per_page:
-                        break
-                    fetch_page += 1
+            if kind == "notice" and not owner:
+                raw_items: list[dict] = []
+                has_next = False
             else:
-                fetch_page = 1
-                while True:
-                    list_params = {
-                        "state": state,
-                        "page": fetch_page,
-                        "per_page": fetch_per_page,
-                        "sort": "created",
-                        "direction": "desc",
-                    }
-                    if labels:
-                        list_params["labels"] = ",".join(labels)
-                    page_items = _github_api_request(
-                        "GET",
-                        f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                        params=list_params,
-                    )
-                    if not isinstance(page_items, list):
-                        page_items = []
-                    raw_items.extend(page_items)
-                    if len(page_items) < fetch_per_page:
-                        break
-                    fetch_page += 1
-        except GitHubAPIError as exc:
-            return jsonify({"error": str(exc)}), exc.status_code
-
-        nickname_by_public_user_id: dict[str, str] = {}
-        try:
-            author_user_ids = _collect_issue_author_user_ids(raw_items)
-            if author_user_ids:
-                nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
-        except Exception:
-            app.logger.exception("Failed to resolve issue author nicknames")
-
-        normalized_issues: list[dict] = []
-        for item in raw_items:
-            if item.get("pull_request"):
-                continue
-            normalized = _normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id)
-            if state in {"open", "closed"} and normalized.get("is_notice"):
-                continue
-            normalized_issues.append(normalized)
-
-        if state == "all":
-            normalized_issues.sort(
-                key=lambda issue: (
-                    0 if issue.get("is_notice") else 1,
-                    -int(issue.get("number") or 0),
+                list_params: dict[str, object] = {
+                    "state": state,
+                    "page": page,
+                    "per_page": list_page_size,
+                    "sort": "created",
+                    "direction": "desc",
+                }
+                if labels:
+                    list_params["labels"] = ",".join(labels)
+                if kind == "notice" and owner:
+                    list_params["creator"] = owner
+                raw_items = _github_api_request(
+                    "GET",
+                    f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                    params=list_params,
                 )
-            )
+                if not isinstance(raw_items, list):
+                    raw_items = []
+                has_next = len(raw_items) > per_page
+                if has_next:
+                    raw_items = raw_items[:per_page]
+        except GitHubAPIError as exc:
+            if cached is None:
+                return jsonify({"error": str(exc)}), exc.status_code
+            app.logger.warning("Falling back to stale issue cache for %s due to GitHub error: %s", cache_key, exc)
         else:
-            normalized_issues.sort(key=lambda issue: -int(issue.get("number") or 0))
+            nickname_by_public_user_id: dict[str, str] = {}
+            try:
+                author_user_ids = _collect_issue_author_user_ids(raw_items)
+                if author_user_ids:
+                    nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
+            except Exception:
+                app.logger.exception("Failed to resolve issue author nicknames")
 
-        base_cached = {
-            "issues": normalized_issues,
-            "total_count": len(normalized_issues),
-        }
-        _issue_cache_set(base_cache_key, base_cached)
+            normalized_issues: list[dict] = []
+            for item in raw_items:
+                if item.get("pull_request"):
+                    continue
+                normalized = _normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id)
+                if kind == "issue" and normalized.get("is_notice"):
+                    continue
+                if kind == "notice" and not normalized.get("is_notice"):
+                    continue
+                if kind == "all" and state in {"open", "closed"} and normalized.get("is_notice"):
+                    # Backward compatibility: 기존 open/closed 조회에서는 공지를 제외했다.
+                    continue
+                if q_lower:
+                    haystack = (
+                        f"{normalized.get('title') or ''}\n"
+                        f"{normalized.get('body') or ''}\n"
+                        f"{normalized.get('display_name') or ''}\n"
+                        f"{normalized.get('user') or ''}"
+                    ).casefold()
+                    if q_lower not in haystack:
+                        continue
+                normalized_issues.append(normalized)
 
-    normalized_issues = list(base_cached.get("issues") or [])
-    total_count = int(base_cached.get("total_count") or len(normalized_issues))
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    issues = normalized_issues[start_idx:end_idx]
-    has_next = end_idx < total_count
+            cached = {
+                "issues": normalized_issues,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "has_prev": page > 1,
+                    "has_next": bool(has_next),
+                    "total_count": None,
+                },
+            }
+            _issue_cache_set(cache_key, cached)
+
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        viewer_user_id = int(auth_user["id"])
+        viewer_visitor_id = None
+    else:
+        viewer_user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+
+    cached_issues = list(cached.get("issues") or [])
+    issue_numbers: list[int] = []
+    for issue in cached_issues:
+        try:
+            issue_number = int((issue or {}).get("number") or 0)
+        except (TypeError, ValueError):
+            issue_number = 0
+        if issue_number > 0:
+            issue_numbers.append(issue_number)
+    like_state_map = user_store.get_issue_like_state(
+        issue_numbers,
+        user_id=viewer_user_id,
+        visitor_id=viewer_visitor_id,
+    )
 
     response_payload = {
-        "issues": issues,
-        "pagination": {
-            "page": page,
-            "per_page": per_page,
-            "has_prev": page > 1,
-            "has_next": has_next,
-            "total_count": total_count,
-        },
+        "issues": _with_issue_like_state(cached_issues, like_state_map=like_state_map),
+        "pagination": dict(cached.get("pagination") or {}),
     }
-    _issue_cache_set(cache_key, response_payload)
-    return jsonify(response_payload)
+    response = make_response(jsonify(response_payload))
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
 
 
 @app.route("/api/issues/<int:issue_number>")
@@ -3593,40 +3614,67 @@ def api_issue_detail(issue_number: int):
         return jsonify({"error": str(exc)}), 503
 
     cache_key = f"issues:detail:{issue_number}"
-    cached = _issue_cache_get(cache_key)
-    if cached is not None:
-        return jsonify(cached)
+    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
+    if not is_fresh_cache:
+        try:
+            issue = _github_api_request(
+                "GET",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}",
+            )
+            comments = _github_api_request(
+                "GET",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
+                params={"page": 1, "per_page": 100, "sort": "created", "direction": "asc"},
+            )
+        except GitHubAPIError as exc:
+            if cached is None:
+                return jsonify({"error": str(exc)}), exc.status_code
+            app.logger.warning("Falling back to stale issue detail cache for %s due to GitHub error: %s", cache_key, exc)
+        else:
+            if not isinstance(comments, list):
+                comments = []
 
+            issue_nickname_map: dict[str, str] = {}
+            try:
+                issue_author_user_ids = _collect_issue_author_user_ids([issue])
+                if issue_author_user_ids:
+                    issue_nickname_map = user_store.get_active_nickname_map_by_public_user_ids(issue_author_user_ids)
+            except Exception:
+                app.logger.exception("Failed to resolve issue author nickname in detail")
+
+            cached = {
+                "issue": _normalize_issue(issue, nickname_by_public_user_id=issue_nickname_map),
+                "comments": [_normalize_comment(c) for c in comments],
+            }
+            _issue_cache_set(cache_key, cached)
+
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        viewer_user_id = int(auth_user["id"])
+        viewer_visitor_id = None
+    else:
+        viewer_user_id = None
+        viewer_visitor_id = _ensure_history_visitor_id()
+
+    cached_issue = dict(cached.get("issue") or {})
     try:
-        issue = _github_api_request(
-            "GET",
-            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}",
-        )
-        comments = _github_api_request(
-            "GET",
-            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
-            params={"page": 1, "per_page": 100, "sort": "created", "direction": "asc"},
-        )
-    except GitHubAPIError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
-
-    if not isinstance(comments, list):
-        comments = []
-
-    issue_nickname_map: dict[str, str] = {}
-    try:
-        issue_author_user_ids = _collect_issue_author_user_ids([issue])
-        if issue_author_user_ids:
-            issue_nickname_map = user_store.get_active_nickname_map_by_public_user_ids(issue_author_user_ids)
-    except Exception:
-        app.logger.exception("Failed to resolve issue author nickname in detail")
-
+        normalized_issue_number = int(cached_issue.get("number") or issue_number)
+    except (TypeError, ValueError):
+        normalized_issue_number = int(issue_number)
+    like_state_map = user_store.get_issue_like_state(
+        [normalized_issue_number],
+        user_id=viewer_user_id,
+        visitor_id=viewer_visitor_id,
+    )
+    issue_with_like = _with_issue_like_state([cached_issue], like_state_map=like_state_map)
     response_payload = {
-        "issue": _normalize_issue(issue, nickname_by_public_user_id=issue_nickname_map),
-        "comments": [_normalize_comment(c) for c in comments],
+        "issue": issue_with_like[0] if issue_with_like else cached_issue,
+        "comments": list(cached.get("comments") or []),
     }
-    _issue_cache_set(cache_key, response_payload)
-    return jsonify(response_payload)
+    response = make_response(jsonify(response_payload))
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
 
 
 @app.route("/api/issues/<int:issue_number>/comments", methods=["POST"])
@@ -3675,6 +3723,45 @@ def api_issue_comment_create(issue_number: int):
 
     _invalidate_issue_cache()
     return jsonify({"comment": _normalize_comment(comment)}), 201
+
+
+@app.route("/api/issues/<int:issue_number>/like", methods=["POST"])
+def api_issue_like_toggle(issue_number: int):
+    auth_user, _ = _get_current_user(with_touch=False)
+    if auth_user is not None:
+        user_id = int(auth_user["id"])
+        visitor_id = None
+    else:
+        user_id = None
+        visitor_id = _ensure_history_visitor_id()
+
+    try:
+        result = user_store.toggle_issue_like(
+            int(issue_number),
+            user_id=user_id,
+            visitor_id=visitor_id,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "invalid_issue_number":
+            return jsonify({"error": "유효하지 않은 이슈 번호입니다."}), 400
+        if code == "like_actor_required":
+            return jsonify({"error": "좋아요 사용자 식별에 실패했습니다."}), 400
+        return jsonify({"error": "좋아요를 처리하지 못했습니다."}), 400
+
+    response = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "issue_number": int(result["issue_number"]),
+                "liked": bool(result["liked"]),
+                "like_count": int(result["like_count"]),
+            }
+        )
+    )
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(response)
+    return response
 
 
 @app.route("/api/github/webhook", methods=["POST"])
