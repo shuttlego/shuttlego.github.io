@@ -1,0 +1,120 @@
+{{- if .Values.tmapCollector.enabled }}
+{{- $dbSync := default (dict) .Values.backend.dbSync }}
+{{- $dbSyncS3 := default (dict) $dbSync.s3 }}
+{{- $imageTags := default (dict) .Values.image.tags }}
+{{- $slotTag := get $imageTags "blue" }}
+{{- $defaultTag := default .Chart.AppVersion .Values.image.tag }}
+{{- $effectiveTag := default $defaultTag $slotTag }}
+{{- $awsModels := default (dict) .Values.awsModels }}
+{{- $awsModelsSecretName := default "" $awsModels.secretName }}
+{{- $awsModelsKey := default "endpoints.json" $awsModels.key }}
+{{- $awsModelsMountPath := default "/root/.aws/models/endpoints.json" $awsModels.mountPath }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shuttle-backend.fullname" . }}-tmap-collector
+  labels:
+    {{- include "shuttle-backend.labels" . | nindent 4 }}
+    shuttle-go/component: tmap-collector
+spec:
+  replicas: {{ default 1 .Values.tmapCollector.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "shuttle-backend.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      shuttle-go/component: tmap-collector
+  template:
+    metadata:
+      labels:
+        {{- include "shuttle-backend.labels" . | nindent 8 }}
+        shuttle-go/component: tmap-collector
+    spec:
+      serviceAccountName: {{ include "shuttle-backend.serviceAccountName" . }}
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tmap-collector
+          image: "{{ .Values.image.repository }}:{{ $effectiveTag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - python
+            - /app/run_tmap_collector.py
+          envFrom:
+            - secretRef:
+                name: {{ .Values.backend.existingSecret }}
+          env:
+            - name: COLLECTOR_DB_PATH
+              value: {{ default "/app/data/data.db" .Values.tmapCollector.localDbPath | quote }}
+            - name: TMAP_HTTP_TIMEOUT_SEC
+              value: {{ default 20 .Values.tmapCollector.requestTimeoutSec | quote }}
+            - name: TMAP_DAILY_QUOTA_LIMIT
+              value: {{ default 1000 .Values.tmapCollector.dailyQuotaLimit | quote }}
+            - name: TMAP_QUOTA_COOLDOWN_SEC
+              value: {{ default 3600 .Values.tmapCollector.quotaCooldownSec | quote }}
+            - name: TMAP_PUBLISH_EVERY_CALLS
+              value: {{ default 50 .Values.tmapCollector.publishEveryCalls | quote }}
+            - name: TMAP_KEEP_RUNS_PER_TARGET
+              value: {{ default 30 .Values.tmapCollector.keepRunsPerTarget | quote }}
+            - name: DB_S3_BUCKET
+              value: {{ default "" $dbSyncS3.bucket | quote }}
+            - name: DB_S3_PREFIX
+              value: {{ default "db/dev" $dbSyncS3.prefix | quote }}
+            - name: DB_S3_MANIFEST_KEY
+              value: {{ default "" $dbSyncS3.manifestKey | quote }}
+            - name: AWS_REGION
+              value: {{ default "ap-northeast-2" $dbSyncS3.region | quote }}
+            - name: AWS_REQUEST_CHECKSUM_CALCULATION
+              value: when_required
+            - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+              value: when_required
+            - name: K8S_LEASE_ENABLED
+              value: {{ ternary "1" "0" .Values.lease.enabled | quote }}
+            - name: K8S_LEASE_NAME
+              value: {{ default "db-publish-lease" .Values.lease.name | quote }}
+            - name: K8S_LEASE_DURATION_SEC
+              value: {{ default 120 .Values.lease.durationSec | quote }}
+            - name: K8S_LEASE_ACQUIRE_TIMEOUT_SEC
+              value: {{ default 60 .Values.lease.acquireTimeoutSec | quote }}
+          {{- if or .Values.backend.mountDataVolume $awsModelsSecretName }}
+          volumeMounts:
+            {{- if .Values.backend.mountDataVolume }}
+            - name: data-db
+              mountPath: {{ .Values.backend.dataMountPath }}
+              readOnly: false
+            {{- end }}
+            {{- if $awsModelsSecretName }}
+            - name: aws-endpoints-model
+              mountPath: {{ $awsModelsMountPath }}
+              subPath: {{ $awsModelsKey }}
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.tmapCollector.resources | nindent 12 }}
+      {{- if or .Values.backend.mountDataVolume $awsModelsSecretName }}
+      volumes:
+        {{- if .Values.backend.mountDataVolume }}
+        - name: data-db
+          persistentVolumeClaim:
+            claimName: {{ .Values.backend.dataClaimName }}
+        {{- end }}
+        {{- if $awsModelsSecretName }}
+        - name: aws-endpoints-model
+          secret:
+            secretName: {{ $awsModelsSecretName }}
+            items:
+              - key: {{ $awsModelsKey }}
+                path: {{ $awsModelsKey }}
+        {{- end }}
+      {{- end }}
+{{- end }}

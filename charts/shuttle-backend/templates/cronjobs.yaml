@@ -1,3 +1,7 @@
+{{- $imageTags := default (dict) .Values.image.tags }}
+{{- $slotTag := get $imageTags "blue" }}
+{{- $defaultTag := default .Chart.AppVersion .Values.image.tag }}
+{{- $effectiveTag := default $defaultTag $slotTag }}
 {{- if .Values.cronJobs.authCleanup.enabled }}
 apiVersion: batch/v1
 kind: CronJob
@@ -18,6 +22,7 @@ spec:
             shuttle-go/component: auth-cleanup
         spec:
           restartPolicy: OnFailure
+          serviceAccountName: {{ include "shuttle-backend.serviceAccountName" . }}
           {{- with .Values.backend.nodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
@@ -32,7 +37,7 @@ spec:
           {{- end }}
           containers:
             - name: auth-cleanup
-              image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+              image: "{{ .Values.image.repository }}:{{ $effectiveTag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               command:
                 - python
@@ -73,6 +78,7 @@ spec:
             shuttle-go/component: github-cleanup
         spec:
           restartPolicy: OnFailure
+          serviceAccountName: {{ include "shuttle-backend.serviceAccountName" . }}
           {{- with .Values.backend.nodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
@@ -87,7 +93,7 @@ spec:
           {{- end }}
           containers:
             - name: github-cleanup
-              image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+              image: "{{ .Values.image.repository }}:{{ $effectiveTag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               command:
                 - python

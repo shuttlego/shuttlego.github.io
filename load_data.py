@@ -21,7 +21,10 @@ DB_PATH = DATA_DIR / "data.db"
 _logger = logging.getLogger(__name__)
 _db_path = str(DB_PATH)
 _db_state_lock = threading.Lock()
+_db_generation_lock = threading.Lock()
 _db_local = threading.local()
+_db_generation = 0
+_db_paths_by_generation: dict[int, str] = {0: _db_path}
 _has_stop_scope: bool | None = None
 _has_stop_segment_polyline: bool | None = None
 _has_variant_stop_estimated_elapsed_min: bool | None = None
@@ -30,11 +33,11 @@ _has_route_source_route_id: bool | None = None
 _has_stop_uuid: bool | None = None
 _has_stop_code: bool | None = None
 _endpoint_cache_lock = threading.Lock()
-_endpoint_cache: dict[tuple[str, str, str], dict] = {}
+_endpoint_cache: dict[tuple[int, str, str, str], dict] = {}
 _route_metadata_cache_lock = threading.Lock()
-_route_metadata_cache: dict[tuple[int, str], dict | None] = {}
+_route_metadata_cache: dict[tuple[int, int, str], dict | None] = {}
 _report_stop_exclusion_lock = threading.Lock()
-_report_stop_exclusion_cache: dict[tuple[str, str], set[int]] = {}
+_report_stop_exclusion_cache: dict[tuple[int, str, str], set[int]] = {}
 _ENDPOINT_GROUP_DISTANCE_M = 100.0
 _ENDPOINT_GRID_CELL_DEG = _ENDPOINT_GROUP_DISTANCE_M / 111000.0
 _REPORT_SAME_NAME_GROUP_DISTANCE_M = 20.0
@@ -51,6 +54,35 @@ def _record_route_option_skip(reason: str) -> None:
     ROUTE_OPTION_SKIPS.labels(reason=safe_reason).inc()
 
 
+def get_db_generation() -> int:
+    with _db_generation_lock:
+        return int(_db_generation)
+
+
+def _current_thread_generation() -> int:
+    pinned_generation = getattr(_db_local, "pinned_generation", None)
+    with _db_generation_lock:
+        active_generation = int(_db_generation)
+        if isinstance(pinned_generation, int) and pinned_generation in _db_paths_by_generation:
+            return int(pinned_generation)
+        return active_generation
+
+
+def pin_current_thread_db_generation(generation: int) -> int:
+    with _db_generation_lock:
+        if int(generation) in _db_paths_by_generation:
+            selected = int(generation)
+        else:
+            selected = int(_db_generation)
+    setattr(_db_local, "pinned_generation", selected)
+    return selected
+
+
+def clear_current_thread_db_generation_pin() -> None:
+    if hasattr(_db_local, "pinned_generation"):
+        delattr(_db_local, "pinned_generation")
+
+
 def _open_connection(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
     conn.row_factory = sqlite3.Row
@@ -58,9 +90,10 @@ def _open_connection(path: str) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: str | None = None) -> None:
+def init_db(db_path: str | None = None) -> int:
     """SQLite DB 연결 설정. 각 스레드는 자체 read-only connection을 사용한다."""
     global _db_path
+    global _db_generation
     global _has_stop_scope
     global _has_stop_segment_polyline
     global _has_variant_stop_estimated_elapsed_min
@@ -76,12 +109,26 @@ def init_db(db_path: str | None = None) -> None:
         except sqlite3.Error:
             pass
     with _db_state_lock:
-        _db_path = path
         conn = _open_connection(path)
+    with _db_generation_lock:
+        _db_path = path
+        _db_generation += 1
+        generation = int(_db_generation)
+        _db_paths_by_generation[generation] = path
+        # keep a bounded generation-path index
+        max_entries = 32
+        if len(_db_paths_by_generation) > max_entries:
+            for old_generation in sorted(_db_paths_by_generation.keys())[:-max_entries]:
+                _db_paths_by_generation.pop(old_generation, None)
+    with _endpoint_cache_lock:
+        _endpoint_cache.clear()
     with _route_metadata_cache_lock:
         _route_metadata_cache.clear()
+    with _report_stop_exclusion_lock:
+        _report_stop_exclusion_cache.clear()
     setattr(_db_local, "conn_path", path)
     setattr(_db_local, "conn", conn)
+    setattr(_db_local, "conn_generation", generation)
     _has_stop_scope = bool(
         conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stop_scope' LIMIT 1"
@@ -109,16 +156,33 @@ def init_db(db_path: str | None = None) -> None:
     _has_route_source_route_id = "source_route_id" in route_columns
     _has_stop_uuid = "stop_uuid" in stop_columns
     _has_stop_code = "stop_code" in stop_columns
+    return generation
 
 
 def _db() -> sqlite3.Connection:
     conn = getattr(_db_local, "conn", None)
     conn_path = getattr(_db_local, "conn_path", None)
-    if conn is None or conn_path != _db_path:
+    conn_generation = getattr(_db_local, "conn_generation", None)
+    desired_generation = _current_thread_generation()
+    with _db_generation_lock:
+        desired_path = _db_paths_by_generation.get(desired_generation, _db_path)
+    if conn is None or conn_path != desired_path or conn_generation != desired_generation:
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
         with _db_state_lock:
-            conn = _open_connection(_db_path)
+            try:
+                conn = _open_connection(desired_path)
+            except sqlite3.Error:
+                with _db_generation_lock:
+                    desired_path = _db_path
+                    desired_generation = int(_db_generation)
+                conn = _open_connection(desired_path)
         setattr(_db_local, "conn", conn)
-        setattr(_db_local, "conn_path", _db_path)
+        setattr(_db_local, "conn_path", desired_path)
+        setattr(_db_local, "conn_generation", desired_generation)
     return conn
 
 
@@ -166,8 +230,8 @@ def _coerce_int(value) -> int | None:
         return None
 
 
-def _route_metadata_cache_key(route_id: int, day_type: str) -> tuple[int, str]:
-    return int(route_id), str(day_type)
+def _route_metadata_cache_key(route_id: int, day_type: str) -> tuple[int, int, str]:
+    return _current_thread_generation(), int(route_id), str(day_type)
 
 
 def _clone_route_metadata(payload: dict) -> dict:
@@ -821,7 +885,7 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
 
 
 def _get_or_build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
-    key = (site_id, day_type, direction)
+    key = (_current_thread_generation(), site_id, day_type, direction)
     with _endpoint_cache_lock:
         cached = _endpoint_cache.get(key)
     if cached is not None:
@@ -1395,7 +1459,7 @@ def _is_departure_in_report_window(
 def _get_report_excluded_stop_ids(site_id: str, day_type: str | None) -> set[int]:
     clean_day_type = str(day_type or "").strip()
     cache_day_key = clean_day_type if clean_day_type else "__all__"
-    key = (str(site_id), cache_day_key)
+    key = (_current_thread_generation(), str(site_id), cache_day_key)
     with _report_stop_exclusion_lock:
         cached = _report_stop_exclusion_cache.get(key)
         if cached is not None:

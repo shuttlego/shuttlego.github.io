@@ -19,6 +19,20 @@
 {{- $historyQueue := default (dict) $historyWrite.queue }}
 {{- $historyBatch := default (dict) $historyWrite.batch }}
 {{- $historyShutdown := default (dict) $historyWrite.shutdown }}
+{{- $dbSync := default (dict) $.Values.backend.dbSync }}
+{{- $dbSyncS3 := default (dict) $dbSync.s3 }}
+{{- $dbSyncIntervalSec := 300 }}
+{{- if hasKey $dbSync "intervalSec" }}
+{{- $dbSyncIntervalSec = $dbSync.intervalSec }}
+{{- end }}
+{{- $dbSyncJitterSec := 30 }}
+{{- if hasKey $dbSync "jitterSec" }}
+{{- $dbSyncJitterSec = $dbSync.jitterSec }}
+{{- end }}
+{{- $awsModels := default (dict) $.Values.awsModels }}
+{{- $awsModelsSecretName := default "" $awsModels.secretName }}
+{{- $awsModelsKey := default "endpoints.json" $awsModels.key }}
+{{- $awsModelsMountPath := default "/root/.aws/models/endpoints.json" $awsModels.mountPath }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -58,6 +72,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "shuttle-backend.serviceAccountName" $ }}
       containers:
         - name: backend
           image: "{{ $.Values.image.repository }}:{{ $effectiveTag }}"
@@ -95,6 +110,36 @@ spec:
               value: {{ ternary "1" "0" $.Values.backend.refreshAuthMetricsOnStartup | quote }}
             - name: APP_WARM_ENDPOINT_CACHE_ON_STARTUP
               value: {{ ternary "1" "0" $.Values.backend.warmEndpointCacheOnStartup | quote }}
+            - name: APP_DB_S3_SYNC_ENABLED
+              value: {{ ternary "1" "0" (default false $dbSync.enabled) | quote }}
+            - name: APP_DB_S3_SYNC_INTERVAL_SEC
+              value: {{ $dbSyncIntervalSec | quote }}
+            - name: APP_DB_S3_SYNC_JITTER_SEC
+              value: {{ $dbSyncJitterSec | quote }}
+            - name: APP_DB_S3_SYNC_WARM_CACHE
+              value: {{ ternary "1" "0" (default false $dbSync.warmCacheOnUpdate) | quote }}
+            - name: APP_DB_S3_DEFAULT_PREFIX
+              value: {{ default "db/dev" $dbSync.defaultPrefix | quote }}
+            {{- if $dbSyncS3.bucket }}
+            - name: DB_S3_BUCKET
+              value: {{ $dbSyncS3.bucket | quote }}
+            {{- end }}
+            {{- if $dbSyncS3.prefix }}
+            - name: DB_S3_PREFIX
+              value: {{ $dbSyncS3.prefix | quote }}
+            {{- end }}
+            {{- if $dbSyncS3.manifestKey }}
+            - name: DB_S3_MANIFEST_KEY
+              value: {{ $dbSyncS3.manifestKey | quote }}
+            {{- end }}
+            {{- if $dbSyncS3.region }}
+            - name: AWS_REGION
+              value: {{ $dbSyncS3.region | quote }}
+            {{- end }}
+            - name: AWS_REQUEST_CHECKSUM_CALCULATION
+              value: when_required
+            - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+              value: when_required
             - name: HISTORY_WRITE_MODE
               value: {{ ternary $historyWriteMode "off" $historyWriteEnabled | quote }}
             - name: HISTORY_WRITE_SAMPLE_RATE_PLACE_USER
@@ -128,11 +173,19 @@ spec:
             {{- with $.Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if $.Values.backend.mountDataVolume }}
+          {{- if or $.Values.backend.mountDataVolume $awsModelsSecretName }}
           volumeMounts:
+            {{- if $.Values.backend.mountDataVolume }}
             - name: data-db
               mountPath: {{ $.Values.backend.dataMountPath }}
+              readOnly: false
+            {{- end }}
+            {{- if $awsModelsSecretName }}
+            - name: aws-endpoints-model
+              mountPath: {{ $awsModelsMountPath }}
+              subPath: {{ $awsModelsKey }}
               readOnly: true
+            {{- end }}
           {{- end }}
           livenessProbe:
             httpGet:
@@ -152,11 +205,21 @@ spec:
             failureThreshold: {{ $.Values.health.failureThreshold }}
           resources:
             {{- toYaml $.Values.backend.resources | nindent 12 }}
-      {{- if $.Values.backend.mountDataVolume }}
+      {{- if or $.Values.backend.mountDataVolume $awsModelsSecretName }}
       volumes:
+        {{- if $.Values.backend.mountDataVolume }}
         - name: data-db
           persistentVolumeClaim:
             claimName: {{ $.Values.backend.dataClaimName }}
+        {{- end }}
+        {{- if $awsModelsSecretName }}
+        - name: aws-endpoints-model
+          secret:
+            secretName: {{ $awsModelsSecretName }}
+            items:
+              - key: {{ $awsModelsKey }}
+                path: {{ $awsModelsKey }}
+        {{- end }}
       {{- end }}
 ---
 apiVersion: v1

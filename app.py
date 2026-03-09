@@ -37,6 +37,7 @@ from prometheus_client import (
 
 import load_data
 import user_store
+from runtime_db_sync import RuntimeDbSyncWorker
 from load_data import (
     find_nearest_route_options,
     get_available_day_types,
@@ -188,6 +189,11 @@ AUTH_CLEANUP_LEASE_SEC = max(90, AUTH_CLEANUP_INTERVAL_SEC + BACKGROUND_TASK_LEA
 BI_SNAPSHOT_LEASE_SEC = max(90, BI_DB_SNAPSHOT_REFRESH_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
 GITHUB_CLEANUP_LEASE_SEC = max(90, AUTH_GITHUB_CLEANUP_INTERVAL_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
 BACKGROUND_WORKER_OWNER_ID = f"{uuid.uuid4().hex}:{os.getpid()}"
+APP_DB_S3_SYNC_ENABLED = _env_bool("APP_DB_S3_SYNC_ENABLED", False)
+APP_DB_S3_SYNC_INTERVAL_SEC = max(30, _env_int("APP_DB_S3_SYNC_INTERVAL_SEC", 300))
+APP_DB_S3_SYNC_JITTER_SEC = max(0, _env_int("APP_DB_S3_SYNC_JITTER_SEC", 30))
+APP_DB_S3_SYNC_WARM_CACHE = _env_bool("APP_DB_S3_SYNC_WARM_CACHE", False)
+APP_DB_S3_DEFAULT_PREFIX = str(os.environ.get("APP_DB_S3_DEFAULT_PREFIX", "db/dev") or "db/dev").strip()
 
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
@@ -235,6 +241,9 @@ _history_writer_thread: threading.Thread | None = None
 _history_writer_lock = threading.Lock()
 _history_writer_stop_event = threading.Event()
 _history_writer_shutdown_registered = False
+_runtime_db_sync_worker: RuntimeDbSyncWorker | None = None
+_runtime_db_sync_lock = threading.Lock()
+_runtime_db_sync_shutdown_registered = False
 
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
@@ -436,12 +445,33 @@ HISTORY_WRITE_QUEUE_SIZE = Gauge(
     multiprocess_mode="livesum",
 )
 
+DB_ACTIVE_GENERATION = Gauge(
+    "shuttle_db_active_generation",
+    "Currently active backend DB generation number",
+    multiprocess_mode="mostrecent",
+)
+
+DB_SYNC_LAST_APPLIED_UNIX = Gauge(
+    "shuttle_db_sync_last_applied_unix_seconds",
+    "Unix timestamp when runtime DB sync was last applied",
+    multiprocess_mode="mostrecent",
+)
+
+DB_SYNC_APPLY_DURATION = Histogram(
+    "shuttle_db_sync_apply_duration_seconds",
+    "Runtime DB sync apply duration in seconds",
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
 
 # ── 요청 전/후 훅 (메트릭 수집) ──────────────────────────────
 @app.before_request
 def _before_request():
     request._prom_start_time = _time.time()
     request._prom_track_in_progress = request.path != "/metrics"
+    pinned_generation = load_data.pin_current_thread_db_generation(load_data.get_db_generation())
+    request._db_generation = pinned_generation
+    DB_ACTIVE_GENERATION.set(float(pinned_generation))
     if request._prom_track_in_progress:
         IN_PROGRESS_REQUESTS.inc()
 
@@ -930,37 +960,45 @@ def _metrics_registry():
 
 @app.after_request
 def _after_request(response):
-    if request.path == "/metrics":
-        return response
-    latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
-    url_rule = getattr(request, "url_rule", None)
-    if url_rule is not None and getattr(url_rule, "rule", None):
-        endpoint = url_rule.rule
-    elif request.path.startswith("/api/"):
-        endpoint = "/api/_unmatched"
-    else:
-        endpoint = request.path
-    method = request.method
-    status = str(response.status_code)
-    request_size = _safe_request_size_bytes()
-    response_size = _safe_response_size_bytes(response)
-    REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
-    REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
-    REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
-    RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
-    # 비즈니스 메트릭은 Flask가 실제로 매칭한 API 라우트만 집계한다.
-    # 이렇게 해야 /api/.env 같은 스캔 요청이 /api/_unmatched로 집계되지 않는다.
-    matched_api_endpoint = url_rule is not None and endpoint.startswith("/api/")
-    if matched_api_endpoint and _is_business_api_endpoint_for_auth_metrics(endpoint):
-        auth_state = _current_auth_state_for_metrics()
-        API_REQUEST_AUTH_STATE_COUNT.labels(auth_state=auth_state).inc()
-    if matched_api_endpoint:
-        site_id = _extract_site_id_for_metrics(endpoint)
-        if site_id:
-            API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
-    if getattr(request, "_prom_track_in_progress", False):
-        IN_PROGRESS_REQUESTS.dec()
-    return _attach_history_visitor_cookie_if_needed(response)
+    try:
+        if request.path == "/metrics":
+            return response
+        latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
+        url_rule = getattr(request, "url_rule", None)
+        if url_rule is not None and getattr(url_rule, "rule", None):
+            endpoint = url_rule.rule
+        elif request.path.startswith("/api/"):
+            endpoint = "/api/_unmatched"
+        else:
+            endpoint = request.path
+        method = request.method
+        status = str(response.status_code)
+        request_size = _safe_request_size_bytes()
+        response_size = _safe_response_size_bytes(response)
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
+        REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
+        REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
+        RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
+        # 비즈니스 메트릭은 Flask가 실제로 매칭한 API 라우트만 집계한다.
+        # 이렇게 해야 /api/.env 같은 스캔 요청이 /api/_unmatched로 집계되지 않는다.
+        matched_api_endpoint = url_rule is not None and endpoint.startswith("/api/")
+        if matched_api_endpoint and _is_business_api_endpoint_for_auth_metrics(endpoint):
+            auth_state = _current_auth_state_for_metrics()
+            API_REQUEST_AUTH_STATE_COUNT.labels(auth_state=auth_state).inc()
+        if matched_api_endpoint:
+            site_id = _extract_site_id_for_metrics(endpoint)
+            if site_id:
+                API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
+        if getattr(request, "_prom_track_in_progress", False):
+            IN_PROGRESS_REQUESTS.dec()
+        return _attach_history_visitor_cookie_if_needed(response)
+    finally:
+        load_data.clear_current_thread_db_generation_pin()
+
+
+@app.teardown_request
+def _teardown_request(_exc):
+    load_data.clear_current_thread_db_generation_pin()
 
 
 # ── Prometheus / Health 엔드포인트 ───────────────────────────
@@ -2683,8 +2721,67 @@ def _start_auth_background_workers() -> None:
         threading.Thread(target=_github_cleanup_loop, daemon=True, name="github-cleanup-loop").start()
 
 
+def _record_db_generation_metrics(generation: int) -> None:
+    DB_ACTIVE_GENERATION.set(float(generation))
+    DB_SYNC_LAST_APPLIED_UNIX.set(float(_time.time()))
+
+
+def _on_runtime_db_synced(db_path, version_key: str, manifest_updated_at_utc: str | None = None) -> None:
+    started_at = _time.time()
+    try:
+        generation = init_db(str(db_path))
+        if APP_DB_S3_SYNC_WARM_CACHE:
+            warm_endpoint_cache()
+        _record_db_generation_metrics(generation)
+        app.logger.info(
+            "Runtime DB sync applied version=%s path=%s generation=%s manifest_updated_at_utc=%s",
+            version_key,
+            db_path,
+            generation,
+            manifest_updated_at_utc,
+        )
+    except Exception:
+        app.logger.exception("Failed to apply runtime DB sync version=%s", version_key)
+    finally:
+        DB_SYNC_APPLY_DURATION.observe(max(0.0, _time.time() - started_at))
+
+
+def _start_runtime_db_sync_worker() -> RuntimeDbSyncWorker | None:
+    global _runtime_db_sync_worker, _runtime_db_sync_shutdown_registered
+    if not APP_DB_S3_SYNC_ENABLED:
+        return None
+    with _runtime_db_sync_lock:
+        if _runtime_db_sync_worker is not None:
+            return _runtime_db_sync_worker
+        worker = RuntimeDbSyncWorker(
+            enabled=True,
+            interval_sec=APP_DB_S3_SYNC_INTERVAL_SEC,
+            jitter_sec=APP_DB_S3_SYNC_JITTER_SEC,
+            local_db_path=load_data.DB_PATH,
+            default_prefix=APP_DB_S3_DEFAULT_PREFIX,
+        )
+        if not worker.enabled:
+            _runtime_db_sync_worker = None
+            return None
+        _runtime_db_sync_worker = worker
+        if not _runtime_db_sync_shutdown_registered:
+            def _shutdown_runtime_sync() -> None:
+                with _runtime_db_sync_lock:
+                    if _runtime_db_sync_worker is not None:
+                        _runtime_db_sync_worker.stop(timeout_sec=2.0)
+            atexit.register(_shutdown_runtime_sync)
+            _runtime_db_sync_shutdown_registered = True
+        return worker
+
+
 def _run_startup_hooks() -> None:
-    init_db()
+    worker = _start_runtime_db_sync_worker()
+    if worker is not None:
+        worker.sync_once(on_updated=None)
+        generation = init_db(str(worker.active_db_path))
+    else:
+        generation = init_db()
+    _record_db_generation_metrics(generation)
     user_store.init_db()
     _start_history_writer()
     if APP_REFRESH_AUTH_METRICS_ON_STARTUP:
@@ -2699,6 +2796,8 @@ def _run_startup_hooks() -> None:
             app.logger.exception("Endpoint cache warm-up failed")
     if APP_ENABLE_BACKGROUND_WORKERS:
         _start_auth_background_workers()
+    if worker is not None:
+        worker.start(on_updated=_on_runtime_db_synced)
 
 
 @app.errorhandler(user_store.ReadOnlyModeError)
