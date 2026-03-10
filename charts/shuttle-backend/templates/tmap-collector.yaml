@@ -1,10 +1,7 @@
 {{- if .Values.tmapCollector.enabled }}
 {{- $dbSync := default (dict) .Values.backend.dbSync }}
 {{- $dbSyncS3 := default (dict) $dbSync.s3 }}
-{{- $imageTags := default (dict) .Values.image.tags }}
-{{- $slotTag := get $imageTags "blue" }}
-{{- $defaultTag := default .Chart.AppVersion .Values.image.tag }}
-{{- $effectiveTag := default $defaultTag $slotTag }}
+{{- $sharedTag := default .Chart.AppVersion .Values.image.tag }}
 {{- $awsModels := default (dict) .Values.awsModels }}
 {{- $awsModelsSecretName := default "" $awsModels.secretName }}
 {{- $awsModelsKey := default "endpoints.json" $awsModels.key }}
@@ -44,7 +41,7 @@ spec:
       {{- end }}
       containers:
         - name: tmap-collector
-          image: "{{ .Values.image.repository }}:{{ $effectiveTag }}"
+          image: "{{ .Values.image.repository }}:{{ $sharedTag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - python

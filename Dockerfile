@@ -10,9 +10,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py load_data.py user_store.py runtime_db_sync.py s3_db_sync.py k8s_lease.py tmap_collection.py build_db.py run_tmap_collector.py migrate_user_store_to_postgres.py run_auth_cleanup.py run_github_cleanup.py gunicorn.conf.py start-backend.sh ./
 RUN chmod +x /app/start-backend.sh
 
-# 정적 노선 DB를 이미지에 포함
+# 데이터 디렉터리(부가 정적 파일) 준비
 RUN mkdir -p /app/data
-COPY data/data.db /app/data/data.db
 COPY data/sites.csv /app/data/sites.csv
 COPY data/identity /app/data/identity
 COPY data/raw /app/data/raw
