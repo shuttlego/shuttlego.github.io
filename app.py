@@ -1436,6 +1436,34 @@ def _outlier_mask(values: list[int]) -> list[bool]:
     return mask
 
 
+def _user_outlier_mask(values: list[int]) -> list[bool]:
+    # user reports are sparse/valuable; keep all unless there are enough samples.
+    if len(values) < 6:
+        return [True] * len(values)
+    return _outlier_mask(values)
+
+
+def _signed_clock_delta_minutes(lhs_minutes: int, rhs_minutes: int) -> float:
+    delta = float(lhs_minutes) - float(rhs_minutes)
+    while delta <= -720.0:
+        delta += 1440.0
+    while delta > 720.0:
+        delta -= 1440.0
+    return float(delta)
+
+
+def _apply_clock_delta_minutes(base_minutes: int, delta_minutes: float) -> int:
+    return int(round((float(base_minutes) + float(delta_minutes)))) % 1440
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    if value < lower:
+        return lower
+    if value > upper:
+        return upper
+    return value
+
+
 def _hours_since_now(raw_dt: datetime | None) -> float:
     if raw_dt is None:
         return 0.0
@@ -1450,57 +1478,193 @@ def _hours_since_now(raw_dt: datetime | None) -> float:
 def _user_observation_weight(obs: dict) -> float:
     server_dt = _parse_iso_datetime_safe(obs.get("server_received_at"))
     age_hours = _hours_since_now(server_dt)
-    # sparse user reports: 90-day half-life
-    freshness = 0.5 ** (age_hours / (24.0 * 90.0))
-    reporter_factor = 1.0 if obs.get("user_id") is not None else 0.85
-    trust = float(freshness * reporter_factor)
-    if trust < 0.35:
-        return 0.0
-    return 1.0 * trust
+    # sparse user reports: long half-life
+    freshness = 0.5 ** (age_hours / (24.0 * 180.0))
+    reporter_factor = 1.1 if obs.get("user_id") is not None else 1.0
+    logged_in_like_count = int(obs.get("logged_in_like_count") or 0)
+    guest_like_count = int(obs.get("guest_like_count") or 0)
+    like_bonus = min(0.5, (logged_in_like_count * 0.1) + (guest_like_count * 0.03))
+    return float(freshness * reporter_factor * (1.0 + like_bonus))
+
+
+def _tmap_distance_reliability_factor(obs: dict) -> float:
+    seg_m = obs.get("segment_distance_m")
+    try:
+        seg_distance_m = float(seg_m)
+    except (TypeError, ValueError):
+        seg_distance_m = -1.0
+    if seg_distance_m <= 0.0:
+        return 1.0
+    distance_km = max(0.0, seg_distance_m / 1000.0)
+    factor = 1.05 - (0.15 * distance_km)
+    return _clamp(float(factor), 0.45, 1.0)
 
 
 def _tmap_observation_weight(obs: dict) -> float:
     called_dt = _parse_iso_datetime_safe(obs.get("called_at_utc"))
     age_hours = _hours_since_now(called_dt)
-    # system observations should decay quickly
-    freshness = 0.5 ** (age_hours / 1.0)
-    trust = float(freshness)
+    # system observations: slower decay to survive sparse collection cycle.
+    freshness = 0.5 ** (age_hours / (24.0 * 21.0))
+    trust = float(freshness * _tmap_distance_reliability_factor(obs))
     if trust <= 0.0:
         return 0.0
-    return 0.6 * trust
+    return 0.45 * trust
 
 
-def _max_user_share_for_count(user_count: int) -> float:
+def _min_user_share_for_count(user_count: int) -> float:
+    if user_count <= 0:
+        return 0.0
     if user_count <= 1:
-        return 0.35
-    if user_count <= 4:
-        return 0.55
-    return 0.75
+        return 0.70
+    if user_count <= 3:
+        return 0.80
+    return 0.90
+
+
+def _weighted_center_minutes(
+    *,
+    observations: list[dict],
+    mask: list[bool],
+    value_key: str,
+    weight_fn: Callable[[dict], float],
+) -> dict | None:
+    weighted_sum = 0.0
+    weight_total = 0.0
+    valid_count = 0
+    for idx, obs in enumerate(observations):
+        if idx >= len(mask) or not mask[idx]:
+            continue
+        weight = weight_fn(obs)
+        if weight <= 0.0:
+            continue
+        minutes = int(obs.get(value_key) or 0) % 1440
+        weighted_sum += float(minutes) * weight
+        weight_total += float(weight)
+        valid_count += 1
+    if weight_total <= 0.0:
+        return None
+    return {
+        "minutes": int(round(weighted_sum / weight_total)) % 1440,
+        "weighted_sum": float(weighted_sum),
+        "weight_total": float(weight_total),
+        "valid_count": int(valid_count),
+    }
+
+
+def _derive_stop_user_tmap_bias(
+    *,
+    user_observations: list[dict],
+    tmap_observations: list[dict],
+) -> dict | None:
+    if not user_observations or not tmap_observations:
+        return None
+    user_values = [int(item.get("reported_clock_minutes") or 0) % 1440 for item in user_observations]
+    tmap_values = [int(item.get("eta_minutes") or 0) % 1440 for item in tmap_observations]
+    user_mask = _user_outlier_mask(user_values)
+    tmap_mask = _outlier_mask(tmap_values)
+    user_center = _weighted_center_minutes(
+        observations=user_observations,
+        mask=user_mask,
+        value_key="reported_clock_minutes",
+        weight_fn=_user_observation_weight,
+    )
+    tmap_center = _weighted_center_minutes(
+        observations=tmap_observations,
+        mask=tmap_mask,
+        value_key="eta_minutes",
+        weight_fn=_tmap_observation_weight,
+    )
+    if user_center is None or tmap_center is None:
+        return None
+    sample_count = min(
+        int(user_center.get("valid_count") or 0),
+        int(tmap_center.get("valid_count") or 0),
+    )
+    if sample_count <= 0:
+        return None
+    return {
+        "bias_minutes": _signed_clock_delta_minutes(
+            int(user_center["minutes"]),
+            int(tmap_center["minutes"]),
+        ),
+        "sample_count": int(sample_count),
+    }
+
+
+def _build_route_tmap_bias_context(
+    *,
+    stop_ids: list[int],
+    user_observations: dict[int, list[dict]],
+    tmap_observations: dict[int, list[dict]],
+) -> dict:
+    stop_bias_by_stop_id: dict[int, dict] = {}
+    expanded_route_bias_samples: list[float] = []
+    route_sample_count = 0
+    for stop_id in stop_ids:
+        stop_bias = _derive_stop_user_tmap_bias(
+            user_observations=list(user_observations.get(int(stop_id)) or []),
+            tmap_observations=list(tmap_observations.get(int(stop_id)) or []),
+        )
+        if stop_bias is None:
+            continue
+        sample_count = int(stop_bias.get("sample_count") or 0)
+        if sample_count <= 0:
+            continue
+        stop_bias_by_stop_id[int(stop_id)] = {
+            "bias_minutes": float(stop_bias["bias_minutes"]),
+            "sample_count": int(sample_count),
+        }
+        route_sample_count += int(sample_count)
+        repeat = min(5, int(sample_count))
+        expanded_route_bias_samples.extend([float(stop_bias["bias_minutes"])] * repeat)
+
+    route_bias_minutes: float | None = None
+    if expanded_route_bias_samples:
+        try:
+            route_bias_minutes = float(statistics.median(expanded_route_bias_samples))
+        except statistics.StatisticsError:
+            route_bias_minutes = None
+    return {
+        "route_bias_minutes": route_bias_minutes,
+        "route_bias_sample_count": int(route_sample_count),
+        "stop_bias_by_stop_id": stop_bias_by_stop_id,
+    }
 
 
 def _build_stop_eta_payload(
     *,
     user_observations: list[dict],
     tmap_observations: list[dict],
+    stop_bias_minutes: float | None = None,
+    stop_bias_sample_count: int = 0,
+    route_bias_minutes: float | None = None,
+    route_bias_sample_count: int = 0,
 ) -> dict:
     user_values = [int(item.get("reported_clock_minutes") or 0) % 1440 for item in user_observations]
     tmap_values = [int(item.get("eta_minutes") or 0) % 1440 for item in tmap_observations]
-    user_mask = _outlier_mask(user_values)
+    user_mask = _user_outlier_mask(user_values)
     tmap_mask = _outlier_mask(tmap_values)
 
-    user_weighted_sum = 0.0
-    user_weight_total = 0.0
-    valid_user_count = 0
-    for idx, obs in enumerate(user_observations):
-        if idx >= len(user_mask) or not user_mask[idx]:
-            continue
-        weight = _user_observation_weight(obs)
-        if weight <= 0:
-            continue
-        minutes = int(obs.get("reported_clock_minutes") or 0) % 1440
-        user_weighted_sum += float(minutes) * weight
-        user_weight_total += weight
-        valid_user_count += 1
+    user_center = _weighted_center_minutes(
+        observations=user_observations,
+        mask=user_mask,
+        value_key="reported_clock_minutes",
+        weight_fn=_user_observation_weight,
+    )
+    user_weighted_sum = float(user_center.get("weighted_sum") or 0.0) if user_center is not None else 0.0
+    user_weight_total = float(user_center.get("weight_total") or 0.0) if user_center is not None else 0.0
+    valid_user_count = int(user_center.get("valid_count") or 0) if user_center is not None else 0
+
+    lambda_stop = 0.0
+    if stop_bias_minutes is not None:
+        lambda_stop = _clamp(float(stop_bias_sample_count) / 5.0, 0.0, 1.0)
+    lambda_route = 0.0
+    if route_bias_minutes is not None:
+        lambda_route = _clamp(float(route_bias_sample_count) / 10.0, 0.0, 1.0)
+    raw_bias_minutes = (lambda_stop * float(stop_bias_minutes or 0.0)) + (
+        (1.0 - lambda_stop) * lambda_route * float(route_bias_minutes or 0.0)
+    )
+    tmap_bias_minutes = _clamp(float(raw_bias_minutes), -8.0, 8.0)
 
     tmap_weighted_sum = 0.0
     tmap_weight_total = 0.0
@@ -1512,7 +1676,8 @@ def _build_stop_eta_payload(
         weight = _tmap_observation_weight(obs)
         if weight <= 0:
             continue
-        minutes = int(obs.get("eta_minutes") or 0) % 1440
+        raw_minutes = int(obs.get("eta_minutes") or 0) % 1440
+        minutes = _apply_clock_delta_minutes(raw_minutes, tmap_bias_minutes)
         tmap_weighted_sum += float(minutes) * weight
         tmap_weight_total += weight
         valid_tmap_count += 1
@@ -1533,10 +1698,10 @@ def _build_stop_eta_payload(
         }
 
     if user_weight_total > 0.0 and tmap_weight_total > 0.0:
-        max_user_share = _max_user_share_for_count(valid_user_count)
-        max_user_weight = (max_user_share / (1.0 - max_user_share)) * tmap_weight_total
-        if user_weight_total > max_user_weight > 0.0:
-            scale = max_user_weight / user_weight_total
+        min_user_share = _min_user_share_for_count(valid_user_count)
+        min_user_weight = (min_user_share / (1.0 - min_user_share)) * tmap_weight_total
+        if user_weight_total < min_user_weight and min_user_weight > 0.0:
+            scale = min_user_weight / user_weight_total
             user_weight_total *= scale
             user_weighted_sum *= scale
 
@@ -1566,6 +1731,7 @@ def _build_stop_eta_payload(
             "called_at_utc": str(latest_tmap.get("called_at_utc") or ""),
             "requested_start_time": str(latest_tmap.get("requested_start_time") or ""),
             "arrive_time": str(latest_tmap.get("arrive_time") or ""),
+            "eta_bias_minutes": int(round(tmap_bias_minutes)),
         }
     return {
         "eta_time": eta_time,
@@ -4539,13 +4705,12 @@ def api_report_eta_detail():
                 departure_time=departure_time,
             )
             if auto_input_item is not None:
+                # First stop is always represented as a single auto-input record.
+                # Drop all first-stop Tmap observations to prevent duplicate "auto input" rows.
                 non_auto_items = [
                     item
                     for item in system_items
-                    if not (
-                        int(item.get("run_id") or 0) == 0
-                        and int(item.get("stop_seq") or 0) == 1
-                    )
+                    if int(item.get("stop_seq") or 0) != 1
                 ]
                 system_items = [auto_input_item] + non_auto_items
     if response_version >= 2:
@@ -6096,14 +6261,35 @@ def api_route_detail(route_id: int):
             stop_uuid_by_id=stop_uuid_by_id,
             limit_runs=30,
         )
+        bias_context = _build_route_tmap_bias_context(
+            stop_ids=stop_ids,
+            user_observations=user_observations,
+            tmap_observations=tmap_observations,
+        )
+        route_bias_minutes = bias_context.get("route_bias_minutes")
+        route_bias_sample_count = int(bias_context.get("route_bias_sample_count") or 0)
+        stop_bias_by_stop_id = dict(bias_context.get("stop_bias_by_stop_id") or {})
         for stop in route_stops:
             try:
                 stop_id = int(stop.get("stop_id"))
             except (TypeError, ValueError):
                 continue
+            stop_bias = dict(stop_bias_by_stop_id.get(stop_id) or {})
             eta_payload = _build_stop_eta_payload(
                 user_observations=list(user_observations.get(stop_id) or []),
                 tmap_observations=list(tmap_observations.get(stop_id) or []),
+                stop_bias_minutes=(
+                    float(stop_bias.get("bias_minutes"))
+                    if stop_bias.get("bias_minutes") is not None
+                    else None
+                ),
+                stop_bias_sample_count=int(stop_bias.get("sample_count") or 0),
+                route_bias_minutes=(
+                    float(route_bias_minutes)
+                    if route_bias_minutes is not None
+                    else None
+                ),
+                route_bias_sample_count=route_bias_sample_count,
             )
             stop.update(eta_payload)
     _apply_first_stop_auto_input_eta(route_stops, selected_departure_time)

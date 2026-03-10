@@ -7958,8 +7958,20 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function renderPolicyInlineMarkdown(text) {
         var escaped = escapePolicyHtml(text);
+        var codeTokens = [];
+        escaped = escaped.replace(/`([^`\n]+)`/g, function(match, codeText) {
+          var token = '@@POLICYCODE' + codeTokens.length + '@@';
+          codeTokens.push({
+            token: token,
+            html: '<code class="issue-inline-code">' + String(codeText || '') + '</code>',
+          });
+          return token;
+        });
         escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         escaped = escaped.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        codeTokens.forEach(function(item) {
+          escaped = escaped.split(item.token).join(item.html);
+        });
         return escaped;
       }
 
@@ -9536,7 +9548,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function renderIssueInlineMarkdown(text) {
         var escaped = escapeHtml(text);
-        escaped = escaped.replace(/`([^`\n]+)`/g, '<code class="issue-inline-code">$1</code>');
+        var codeTokens = [];
+        escaped = escaped.replace(/`([^`\n]+)`/g, function(match, codeText) {
+          var token = '@@ISSUECODE' + codeTokens.length + '@@';
+          codeTokens.push({
+            token: token,
+            html: '<code class="issue-inline-code">' + String(codeText || '') + '</code>',
+          });
+          return token;
+        });
         escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
         escaped = escaped.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
         escaped = escaped.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
@@ -9546,6 +9566,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           var safeUrl = sanitizeIssueExternalUrl(match);
           if (!safeUrl) return match;
           return '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(match) + '</a>';
+        });
+        codeTokens.forEach(function(item) {
+          escaped = escaped.split(item.token).join(item.html);
         });
         return escaped;
       }

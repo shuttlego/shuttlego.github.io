@@ -4029,6 +4029,7 @@ def get_arrival_eta_map(
             if stop_uuid:
                 normalized_stop_uuids.append(stop_uuid)
 
+    eta_like_weight_counts: dict[int, dict[str, int]] = {}
     with _conn_ctx() as conn:
         if clean_route_uuid and normalized_stop_uuids:
             uuid_placeholders = ",".join("?" for _ in normalized_stop_uuids)
@@ -4222,6 +4223,10 @@ def get_arrival_eta_observations(
                 """,
                 tuple([int(route_id), str(day_type), str(departure_time)] + normalized_stop_ids),
             ).fetchall()
+        eta_like_weight_counts = _load_eta_like_weight_counts(
+            conn,
+            [int(row["id"]) for row in rows if row["id"] is not None],
+        )
 
     annotated = _annotate_arrival_reports([
         _row_to_arrival_report(row) or {}
@@ -4246,6 +4251,12 @@ def get_arrival_eta_observations(
                 "client_reported_at": str(item.get("client_reported_at") or "").strip(),
                 "server_received_at": str(item.get("server_received_at") or "").strip(),
                 "time_valid": bool(item.get("time_valid")),
+                "logged_in_like_count": int(
+                    (eta_like_weight_counts.get(int(item.get("id") or 0)) or {}).get("logged_in_like_count") or 0
+                ),
+                "guest_like_count": int(
+                    (eta_like_weight_counts.get(int(item.get("id") or 0)) or {}).get("guest_like_count") or 0
+                ),
             }
         )
     return grouped
