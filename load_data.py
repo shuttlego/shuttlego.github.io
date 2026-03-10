@@ -3106,6 +3106,28 @@ def get_report_tuple_meta_by_uuid(
     }
 
 
+def is_variant_departure_stop(*, variant_id: int, stop_sequence: int) -> bool:
+    """variant 기준 출발 정류장(min seq) 여부를 반환한다."""
+    try:
+        normalized_variant_id = int(variant_id)
+        normalized_stop_sequence = int(stop_sequence)
+    except (TypeError, ValueError):
+        return False
+    if normalized_variant_id <= 0:
+        return False
+    db = _db()
+    row = db.execute(
+        "SELECT MIN(seq) AS min_seq FROM variant_stop WHERE variant_id = ?",
+        (normalized_variant_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    min_seq = _coerce_int(_row_get(row, "min_seq", default=None))
+    if min_seq is None:
+        return False
+    return int(normalized_stop_sequence) == int(min_seq)
+
+
 # ── 시간 관련 유틸 (기존 호환) ──────────────────────────────────
 def _time_to_minutes(t: str) -> int:
     """'HH:MM' → 분 단위 (0~1439)."""

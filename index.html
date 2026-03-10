@@ -17385,6 +17385,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             return {
               id: String(item.id || ''),
               is_system: true,
+              is_auto_input: autoInput,
               reporter_name: autoInput ? '자동입력' : 'Tmap',
               system_tooltip: buildEtaSystemTooltipFromRunMeta(runMeta, autoInput),
               client_reported_at: String(item.reported_at || ''),
@@ -17404,6 +17405,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           return {
             id: Number(item.id || 0),
             is_system: false,
+            is_auto_input: false,
             reporter_name: String(item.nickname || '-'),
             client_reported_at: String(item.reported_at || ''),
             arrive_time: String(item.arrive_time || ''),
@@ -17455,8 +17457,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var rows = items.map(function(item) {
           var noteHtml = buildReportNoteHtml(item);
           var reportTime = formatReportTimeOnly(item.client_reported_at) || String(item.arrive_time || '-');
+          var reportDate = (item && item.is_system && item.is_auto_input)
+            ? '-'
+            : (formatDateOnly(item.client_reported_at) || '-');
           return '<div class="report-table-row eta-detail' + (item.report_state === 'previous' ? ' is-previous' : '') + '">' +
-            '<div class="report-table-cell">' + escapeHtml(formatDateOnly(item.client_reported_at) || '-') + noteHtml + '</div>' +
+            '<div class="report-table-cell">' + escapeHtml(reportDate) + noteHtml + '</div>' +
             '<div class="report-table-cell">' + escapeHtml(reportTime) + '</div>' +
             '<div class="report-table-cell wrap">' + buildEtaReporterHtml(item) + '</div>' +
             '<div class="report-table-cell">' + buildReportLikeButtonHtml(item) + '</div>' +

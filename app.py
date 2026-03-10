@@ -1612,6 +1612,7 @@ def _serialize_system_arrival_item(item: dict, stop_name: str, route_name: str) 
         "day_type": "",
         "direction": "",
         "departure_time": "",
+        "arrive_time": _format_hhmm_from_hhmmss(item.get("arrive_time")),
         "stop_id": int(item.get("stop_id") or 0),
         "stop_uuid": (str(item.get("stop_uuid") or "").strip() or None),
         "stop_name": str(stop_name or ""),
@@ -1657,6 +1658,101 @@ def _format_hhmm_from_hhmmss(raw: object) -> str:
     if parsed is None:
         return ""
     return f"{int(parsed[0]):02d}:{int(parsed[1]):02d}"
+
+
+def _normalize_departure_time_to_hhmmss(raw: object) -> str:
+    token = str(raw or "").strip().replace(":", "")
+    if len(token) == 4 and token.isdigit():
+        return token + "00"
+    if len(token) == 6 and token.isdigit():
+        return token
+    return ""
+
+
+def _get_variant_first_stop_meta(
+    *,
+    route_id: int,
+    day_type: str,
+    departure_time: str,
+) -> dict | None:
+    try:
+        normalized_route_id = int(route_id)
+    except (TypeError, ValueError):
+        return None
+    if normalized_route_id <= 0:
+        return None
+    detail = get_route_detail(normalized_route_id, str(day_type), departure_time=str(departure_time))
+    if not detail:
+        return None
+    route_stops = list(detail.get("route_stops") or [])
+    if not route_stops:
+        return None
+    first_stop = dict(route_stops[0] or {})
+    try:
+        first_stop_id = int(first_stop.get("stop_id") or 0)
+    except (TypeError, ValueError):
+        first_stop_id = 0
+    first_stop_uuid = str(first_stop.get("stop_uuid") or "").strip() or None
+    if first_stop_id <= 0 and not first_stop_uuid:
+        return None
+    return {
+        "stop_id": first_stop_id,
+        "stop_uuid": first_stop_uuid,
+    }
+
+
+def _build_auto_input_system_observation(
+    *,
+    stop_id: int,
+    stop_uuid: str | None,
+    departure_time: str,
+) -> dict | None:
+    arrive_hhmmss = _normalize_departure_time_to_hhmmss(departure_time)
+    if not arrive_hhmmss:
+        return None
+    parsed_arrive_time = _parse_hhmmss_time(arrive_hhmmss)
+    if parsed_arrive_time is None:
+        return None
+    eta_minutes = int(parsed_arrive_time[0]) * 60 + int(parsed_arrive_time[1])
+    return {
+        "source": "tmap",
+        "eta_minutes": eta_minutes,
+        "run_id": 0,
+        "stop_id": int(stop_id),
+        "stop_uuid": (str(stop_uuid or "").strip() or None),
+        "called_at_utc": "",
+        "requested_start_time": "",
+        "arrive_time": arrive_hhmmss,
+        "stop_seq": 1,
+        "segment_distance_m": None,
+        "cumulative_distance_m": 0,
+    }
+
+
+def _apply_first_stop_auto_input_eta(route_stops: list[dict], departure_time: str) -> None:
+    if not route_stops:
+        return
+    first_stop = dict(route_stops[0] or {})
+    eta_hhmm = str(departure_time or "").strip()
+    eta_hhmmss = _normalize_departure_time_to_hhmmss(eta_hhmm)
+    if not eta_hhmm or not eta_hhmmss:
+        return
+    user_count = int(first_stop.get("eta_user_report_count") or 0)
+    system_count = max(1, int(first_stop.get("eta_system_observation_count") or 0))
+    first_stop["eta_time"] = eta_hhmm
+    first_stop["eta_display"] = eta_hhmm
+    first_stop["eta_has_evidence"] = True
+    first_stop["eta_source"] = "user" if user_count > 0 else "system"
+    first_stop["eta_color"] = "navy" if user_count > 0 else "gray"
+    first_stop["eta_user_report_count"] = int(user_count)
+    first_stop["eta_system_observation_count"] = int(system_count)
+    first_stop["eta_report_count"] = int(user_count + system_count)
+    system_meta = dict(first_stop.get("eta_system_meta") or {})
+    system_meta["called_at_utc"] = str(system_meta.get("called_at_utc") or "")
+    system_meta["requested_start_time"] = str(system_meta.get("requested_start_time") or "")
+    system_meta["arrive_time"] = eta_hhmmss
+    first_stop["eta_system_meta"] = system_meta
+    route_stops[0] = first_stop
 
 
 def _compact_eta_user_item(serialized_item: dict) -> dict:
@@ -4291,6 +4387,11 @@ def api_submit_report():
     stop_id = int(tuple_meta["stop_id"])
     route_uuid = str(tuple_meta.get("route_uuid") or "").strip() or None
     stop_uuid = str(tuple_meta.get("stop_uuid") or "").strip() or None
+    if load_data.is_variant_departure_stop(
+        variant_id=int(tuple_meta.get("variant_id") or 0),
+        stop_sequence=int(tuple_meta.get("stop_sequence") or 0),
+    ):
+        return jsonify({"error": "출발 정류장은 자동입력되므로 제보할 수 없습니다."}), 400
 
     auth_user, _ = _get_current_user(with_touch=False)
     if auth_user is not None:
@@ -4417,6 +4518,36 @@ def api_report_eta_detail():
         stop_uuid=stop_uuid,
         limit_runs=30,
     )
+    first_stop_meta = _get_variant_first_stop_meta(
+        route_id=int(route_id or 0),
+        day_type=day_type,
+        departure_time=departure_time,
+    )
+    if first_stop_meta is not None:
+        requested_stop_id = int(stop_id or 0)
+        requested_stop_uuid = str(stop_uuid or "").strip()
+        first_stop_id = int(first_stop_meta.get("stop_id") or 0)
+        first_stop_uuid = str(first_stop_meta.get("stop_uuid") or "").strip()
+        is_first_stop = (
+            (requested_stop_id > 0 and first_stop_id > 0 and requested_stop_id == first_stop_id)
+            or (bool(requested_stop_uuid) and bool(first_stop_uuid) and requested_stop_uuid == first_stop_uuid)
+        )
+        if is_first_stop:
+            auto_input_item = _build_auto_input_system_observation(
+                stop_id=first_stop_id or requested_stop_id,
+                stop_uuid=first_stop_uuid or requested_stop_uuid or None,
+                departure_time=departure_time,
+            )
+            if auto_input_item is not None:
+                non_auto_items = [
+                    item
+                    for item in system_items
+                    if not (
+                        int(item.get("run_id") or 0) == 0
+                        and int(item.get("stop_seq") or 0) == 1
+                    )
+                ]
+                system_items = [auto_input_item] + non_auto_items
     if response_version >= 2:
         compact_user_items: list[dict] = []
         for item in items:
@@ -5975,6 +6106,7 @@ def api_route_detail(route_id: int):
                 tmap_observations=list(tmap_observations.get(stop_id) or []),
             )
             stop.update(eta_payload)
+    _apply_first_stop_auto_input_eta(route_stops, selected_departure_time)
     return jsonify(detail)
 
 
