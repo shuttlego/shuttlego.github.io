@@ -5139,6 +5139,42 @@
       background: #eef2ff;
       color: #475569;
     }
+    .report-badge.system {
+      background: #eef1f5;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+    }
+    .report-badge.tmap {
+      background: #ffffff;
+      color: #334155;
+      gap: 5px;
+      padding-left: 7px;
+      padding-right: 9px;
+    }
+    .report-badge-tmap-logo {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 auto;
+      display: inline-block;
+      object-fit: contain;
+    }
+    .report-badge.eta-system-tooltip-trigger {
+      appearance: none;
+      -webkit-appearance: none;
+      border: 1px solid #cbd5e1;
+      background: #eef1f5;
+      color: #475569;
+      font: inherit;
+      cursor: pointer;
+    }
+    .report-badge.tmap.eta-system-tooltip-trigger {
+      background: #ffffff;
+      color: #334155;
+    }
+    .report-badge.eta-system-tooltip-trigger:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 1px;
+    }
     .report-badge.has-tooltip,
     .report-help-trigger.has-tooltip {
       position: relative;
@@ -5232,6 +5268,71 @@
       color: #475569;
       background: #eef2ff;
     }
+    .eta-floating-tooltip {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: none;
+      --eta-arrow-y: 50%;
+      --eta-arrow-x: 50%;
+      max-width: min(320px, calc(100% - 20px));
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.96);
+      color: #f8fafc;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.45;
+      text-align: left;
+      white-space: pre-wrap;
+      word-break: keep-all;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+      pointer-events: none;
+      z-index: 40;
+    }
+    .eta-floating-tooltip.show {
+      display: block;
+    }
+    .eta-floating-tooltip::after {
+      content: "";
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      border-right: 6px solid rgba(15, 23, 42, 0.96);
+      left: -6px;
+      top: var(--eta-arrow-y);
+      transform: translateY(-50%);
+    }
+    .eta-floating-tooltip[data-side="left"]::after {
+      left: auto;
+      right: -6px;
+      border-right: none;
+      border-left: 6px solid rgba(15, 23, 42, 0.96);
+    }
+    .eta-floating-tooltip[data-side="top"]::after {
+      left: var(--eta-arrow-x);
+      right: auto;
+      top: auto;
+      bottom: -6px;
+      transform: translateX(-50%);
+      border-right: 6px solid transparent;
+      border-left: 6px solid transparent;
+      border-top: 6px solid rgba(15, 23, 42, 0.96);
+      border-bottom: none;
+    }
+    .eta-floating-tooltip[data-side="bottom"]::after {
+      left: var(--eta-arrow-x);
+      right: auto;
+      top: -6px;
+      bottom: auto;
+      transform: translateX(-50%);
+      border-right: 6px solid transparent;
+      border-left: 6px solid transparent;
+      border-bottom: 6px solid rgba(15, 23, 42, 0.96);
+      border-top: none;
+    }
     .route-detail-panel .departure-times .time-item {
       cursor: pointer;
       text-decoration: none;
@@ -5264,12 +5365,25 @@
     }
     .route-stop-eta {
       flex-shrink: 0;
-      color: #071f4e;
+      min-width: 44px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: #64748b;
       font-weight: 800;
+      text-decoration: none;
+      cursor: default;
+      white-space: nowrap;
+    }
+    .route-stop-eta.is-clickable {
       text-decoration: underline;
       text-underline-offset: 3px;
       cursor: pointer;
-      white-space: nowrap;
+    }
+    .route-stop-eta.is-navy {
+      color: #071f4e;
+    }
+    .route-stop-eta.is-gray {
+      color: #64748b;
     }
     .shuttle-message .hl {
       color: #071f4e;
@@ -6407,6 +6521,9 @@
         myReportsRouteSelectedStopId: '',
         myReportsRouteSelectedDepartureKey: ''
       };
+      var etaFloatingTooltipEl = null;
+      var etaFloatingTooltipTrigger = null;
+      var etaFloatingTooltipGlobalBound = false;
       var historyOpenInput = null;
       var historyItems = [];
       var historyNextCursor = null;
@@ -6623,6 +6740,16 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function formatDateOnly(isoString) {
+        var dt = new Date(isoString || '');
+        if (isNaN(dt.getTime())) return '';
+        var m = String(dt.getMonth() + 1);
+        var d = String(dt.getDate()).padStart(2, '0');
+        var weekDays = ['일', '월', '화', '수', '목', '금', '토'];
+        var weekday = weekDays[dt.getDay()] || '';
+        return m + '.' + d + '(' + weekday + ')';
+      }
+
+      function formatCalendarDateOnly(isoString) {
         var dt = new Date(isoString || '');
         if (isNaN(dt.getTime())) return '';
         var y = dt.getFullYear();
@@ -7187,6 +7314,164 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return html;
       }
 
+      function ensureEtaFloatingTooltipElement() {
+        if (etaFloatingTooltipEl && reportDataModal && reportDataModal.contains(etaFloatingTooltipEl)) {
+          return etaFloatingTooltipEl;
+        }
+        if (!reportDataModal) return null;
+        var el = document.createElement('div');
+        el.className = 'eta-floating-tooltip';
+        el.setAttribute('role', 'tooltip');
+        el.setAttribute('aria-hidden', 'true');
+        reportDataModal.appendChild(el);
+        etaFloatingTooltipEl = el;
+        return etaFloatingTooltipEl;
+      }
+
+      function hideEtaFloatingTooltip() {
+        if (etaFloatingTooltipTrigger) {
+          etaFloatingTooltipTrigger.setAttribute('aria-expanded', 'false');
+        }
+        etaFloatingTooltipTrigger = null;
+        if (!etaFloatingTooltipEl) return;
+        etaFloatingTooltipEl.classList.remove('show');
+        etaFloatingTooltipEl.textContent = '';
+        etaFloatingTooltipEl.setAttribute('aria-hidden', 'true');
+      }
+
+      function positionEtaFloatingTooltip(trigger) {
+        var tooltip = ensureEtaFloatingTooltipElement();
+        if (!tooltip || !trigger || !reportDataModal) return;
+        var rect = trigger.getBoundingClientRect();
+        var modalRect = reportDataModal.getBoundingClientRect();
+        var margin = 10;
+        var gap = 10;
+        var containerWidth = Math.max(0, Math.round(modalRect.width));
+        var containerHeight = Math.max(0, Math.round(modalRect.height));
+
+        var maxWidth = Math.max(180, Math.min(320, containerWidth - (margin * 2)));
+        tooltip.style.maxWidth = maxWidth + 'px';
+
+        tooltip.style.left = '-9999px';
+        tooltip.style.top = '-9999px';
+        tooltip.dataset.side = 'right';
+        tooltip.classList.add('show');
+        var tipRect = tooltip.getBoundingClientRect();
+
+        var side = 'right';
+        var left = (rect.right - modalRect.left) + gap;
+        var top = (rect.top - modalRect.top) + ((rect.height - tipRect.height) / 2);
+
+        if (left + tipRect.width + margin > containerWidth) {
+          side = 'left';
+          left = (rect.left - modalRect.left) - gap - tipRect.width;
+        }
+        if (left < margin) {
+          side = 'top';
+          left = (rect.left - modalRect.left) + ((rect.width - tipRect.width) / 2);
+          top = (rect.top - modalRect.top) - gap - tipRect.height;
+        }
+        if (top < margin) {
+          side = 'bottom';
+          top = (rect.bottom - modalRect.top) + gap;
+        }
+        if (top + tipRect.height + margin > containerHeight) {
+          top = Math.max(margin, containerHeight - tipRect.height - margin);
+        }
+        left = Math.max(margin, Math.min(left, containerWidth - tipRect.width - margin));
+        top = Math.max(margin, Math.min(top, containerHeight - tipRect.height - margin));
+
+        var triggerCenterX = (rect.left - modalRect.left) + (rect.width / 2);
+        var triggerCenterY = (rect.top - modalRect.top) + (rect.height / 2);
+        var arrowPadding = 10;
+        if (side === 'left' || side === 'right') {
+          var arrowY = triggerCenterY - top;
+          arrowY = Math.max(arrowPadding, Math.min(arrowY, tipRect.height - arrowPadding));
+          tooltip.style.setProperty('--eta-arrow-y', Math.round(arrowY) + 'px');
+        } else {
+          var arrowX = triggerCenterX - left;
+          arrowX = Math.max(arrowPadding, Math.min(arrowX, tipRect.width - arrowPadding));
+          tooltip.style.setProperty('--eta-arrow-x', Math.round(arrowX) + 'px');
+        }
+
+        tooltip.dataset.side = side;
+        tooltip.style.left = Math.round(left) + 'px';
+        tooltip.style.top = Math.round(top) + 'px';
+      }
+
+      function showEtaFloatingTooltip(trigger, text) {
+        var tooltipText = String(text || '').trim();
+        if (!trigger || !tooltipText) {
+          hideEtaFloatingTooltip();
+          return;
+        }
+        var tooltip = ensureEtaFloatingTooltipElement();
+        if (!tooltip) return;
+        if (etaFloatingTooltipTrigger && etaFloatingTooltipTrigger !== trigger) {
+          etaFloatingTooltipTrigger.setAttribute('aria-expanded', 'false');
+        }
+        etaFloatingTooltipTrigger = trigger;
+        tooltip.textContent = tooltipText;
+        tooltip.setAttribute('aria-hidden', 'false');
+        trigger.setAttribute('aria-expanded', 'true');
+        positionEtaFloatingTooltip(trigger);
+      }
+
+      function ensureEtaFloatingTooltipGlobalHandlers() {
+        if (etaFloatingTooltipGlobalBound) return;
+        etaFloatingTooltipGlobalBound = true;
+        document.addEventListener('click', function(evt) {
+          var trigger = evt.target && evt.target.closest ? evt.target.closest('.eta-system-tooltip-trigger') : null;
+          if (!trigger) {
+            hideEtaFloatingTooltip();
+          }
+        });
+        window.addEventListener('resize', function() {
+          if (!etaFloatingTooltipTrigger) return;
+          positionEtaFloatingTooltip(etaFloatingTooltipTrigger);
+        });
+      }
+
+      function bindEtaDetailTooltipTriggers() {
+        if (!reportDataBody) return;
+        ensureEtaFloatingTooltipGlobalHandlers();
+        reportDataBody.querySelectorAll('.eta-system-tooltip-trigger').forEach(function(node) {
+          if (!node || node.getAttribute('data-tooltip-bound') === '1') return;
+          node.setAttribute('data-tooltip-bound', '1');
+          node.addEventListener('click', function(evt) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            var text = node.getAttribute('data-eta-tooltip') || '';
+            if (isMobile()) {
+              showEtaFloatingTooltip(node, text);
+              return;
+            }
+            var isSame = etaFloatingTooltipTrigger === node && etaFloatingTooltipEl && etaFloatingTooltipEl.classList.contains('show');
+            if (isSame) {
+              hideEtaFloatingTooltip();
+              return;
+            }
+            showEtaFloatingTooltip(node, text);
+          });
+          node.addEventListener('mouseenter', function() {
+            if (isMobile()) return;
+            showEtaFloatingTooltip(node, node.getAttribute('data-eta-tooltip') || '');
+          });
+          node.addEventListener('mouseleave', function() {
+            if (isMobile()) return;
+            hideEtaFloatingTooltip();
+          });
+          node.addEventListener('focus', function() {
+            if (isMobile()) return;
+            showEtaFloatingTooltip(node, node.getAttribute('data-eta-tooltip') || '');
+          });
+          node.addEventListener('blur', function() {
+            if (isMobile()) return;
+            hideEtaFloatingTooltip();
+          });
+        });
+      }
+
       var reportNoteTooltipDelegationBound = false;
       function ensureReportNoteTooltipDelegation() {
         var tooltipRoot = reportDataModal || reportDataBody;
@@ -7556,7 +7841,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           keywordEl.textContent = String(item.keyword || '');
           var dateEl = document.createElement('span');
           dateEl.className = 'place-history-date';
-          dateEl.textContent = formatDateOnly(item.searched_at);
+          dateEl.textContent = formatCalendarDateOnly(item.searched_at);
           var delBtn = document.createElement('button');
           delBtn.type = 'button';
           delBtn.className = 'place-history-delete';
@@ -14592,6 +14877,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function closeReportDataModal() {
+        hideEtaFloatingTooltip();
         if (reportDataBackdrop) reportDataBackdrop.classList.remove('show');
         if (reportDataModal) reportDataModal.classList.remove('show');
         if (reportDataTabs) {
@@ -14604,6 +14890,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function openReportDataModal(title, opts) {
         opts = opts || {};
         if (!reportDataModal || !reportDataBackdrop || !reportDataBody || !reportDataTitle) return;
+        hideEtaFloatingTooltip();
         reportDataBody.innerHTML = '<div class="report-empty-state">불러오는 중...</div>';
         if (opts.htmlTitle) {
           reportDataTitle.innerHTML = String(title || '');
@@ -16087,6 +16374,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function buildReportLikeButtonHtml(item) {
+        if (item && item.is_system) {
+          return '<span class="report-like-wrap">-</span>';
+        }
         var liked = !!(item && item.liked_by_me);
         var disabled = !!(item && item.like_disabled);
         if (item && (item.report_state === 'previous' || item.is_deleted)) {
@@ -17059,22 +17349,121 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           });
       }
 
-      function renderEtaDetailItems(items) {
-        items = Array.isArray(items) ? items : [];
+      function buildEtaDetailEmptyMessageHtml() {
+        return isMobile()
+          ? 'Tmap 실시간 교통정보 기반 도착 시간을 순차적으로 수집하고 있습니다. 조금만 기다려 주세요.<br><br>Tmap은 일반 차량 기준 예측이므로 실제 셔틀버스 운행 시간과 다를 수 있습니다. 더 정확한 안내를 위해 여러분의 제보 하나하나가 큰 도움이 됩니다.'
+          : 'Tmap 실시간 교통정보 기반 도착 시간을 순차적으로 수집하고 있습니다.<br>조금만 기다려 주세요.<br><br>Tmap은 일반 차량 기준 예측이므로 실제 셔틀버스 운행 시간과 다를 수 있습니다.<br>더 정확한 안내를 위해 여러분의 제보 하나하나가 큰 도움이 됩니다.';
+      }
+
+      function buildEtaSystemTooltipFromRunMeta(runMeta, autoInput) {
+        if (autoInput) return '노선의 출발시각';
+        var requested = String(runMeta && runMeta.requested_start_at || '-');
+        var called = String(runMeta && runMeta.called_at || '-');
+        return 'Tmap 실시간 교통정보 기반 (일반 차량 기준)\n  출발시간: ' + requested + '\n  호출시간: ' + called;
+      }
+
+      function normalizeEtaDetailPayload(payload) {
+        if (Array.isArray(payload)) {
+          return { version: 1, items: payload, empty_code: '' };
+        }
+        var data = (payload && typeof payload === 'object') ? payload : {};
+        var version = Number(data.version || 1);
+        if (version !== 2) {
+          return {
+            version: 1,
+            items: Array.isArray(data.items) ? data.items : [],
+            empty_code: String(data.empty_code || '')
+          };
+        }
+        var runs = (data.runs && typeof data.runs === 'object') ? data.runs : {};
+        var compactItems = Array.isArray(data.items) ? data.items : [];
+        var normalizedItems = compactItems.map(function(rawItem) {
+          var item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+          if (String(item.kind || '') === 'system') {
+            var runMeta = runs[String(item.run_id || '')] || {};
+            var autoInput = !!item.auto_input;
+            return {
+              id: String(item.id || ''),
+              is_system: true,
+              reporter_name: autoInput ? '자동입력' : 'Tmap',
+              system_tooltip: buildEtaSystemTooltipFromRunMeta(runMeta, autoInput),
+              client_reported_at: String(item.reported_at || ''),
+              arrive_time: String(item.arrive_time || ''),
+              report_state: 'system',
+              report_state_label: '',
+              report_note: '',
+              is_deleted: false,
+              deleted_reason: '',
+              eta_excluded: false,
+              eta_exclude_reason: '',
+              like_count: 0,
+              liked_by_me: false,
+              like_disabled: true
+            };
+          }
+          return {
+            id: Number(item.id || 0),
+            is_system: false,
+            reporter_name: String(item.nickname || '-'),
+            client_reported_at: String(item.reported_at || ''),
+            arrive_time: String(item.arrive_time || ''),
+            report_state: String(item.report_state || ''),
+            report_state_label: String(item.report_state_label || ''),
+            report_note: String(item.report_note || ''),
+            is_deleted: !!item.is_deleted,
+            deleted_reason: String(item.deleted_reason || ''),
+            eta_excluded: !!item.eta_excluded,
+            eta_exclude_reason: String(item.eta_exclude_reason || ''),
+            like_count: Math.max(0, Number(item.like_count || 0) || 0),
+            liked_by_me: !!item.liked_by_me,
+            like_disabled: !!item.like_disabled
+          };
+        });
+        return {
+          version: 2,
+          items: normalizedItems,
+          empty_code: String(data.empty_code || '')
+        };
+      }
+
+      function renderEtaDetailItems(payload) {
+        var normalized = normalizeEtaDetailPayload(payload);
+        var items = Array.isArray(normalized.items) ? normalized.items : [];
         if (!items.length) {
-          reportDataBody.innerHTML = '<div class="report-empty-state">제보 내역이 없습니다.</div>';
+          reportDataBody.innerHTML = '<div class="report-empty-state">' + buildEtaDetailEmptyMessageHtml() + '</div>';
           return;
+        }
+        function buildEtaReporterHtml(item) {
+          if (!item || !item.is_system) {
+            return escapeHtml(item && item.reporter_name || '-');
+          }
+          var badgeText = String(item.reporter_name || '').trim() || 'Tmap';
+          var isTmapBadge = badgeText === 'Tmap';
+          var tmapLogoSrc = 'https://i.namu.wiki/i/wAQY69bxQDvdruV0Tds4oqP3BJToPjlIC-PW4Gy-kFQrC4qw3yoY2clcDIVcyY0NrX4T39vFiq_5mtyvWTH2Pg.svg';
+          var logoHtml = isTmapBadge
+            ? '<img class="report-badge-tmap-logo" src="' + escapeAttr(tmapLogoSrc) + '" alt="" aria-hidden="true" />'
+            : '';
+          var badgeClass = 'report-badge system' + (isTmapBadge ? ' tmap' : '');
+          var tooltip = String(item.system_tooltip || '').trim();
+          if (!tooltip) {
+            return '<span class="' + badgeClass + '">' + logoHtml + escapeHtml(badgeText) + '</span>';
+          }
+          return '<button type="button" class="' + badgeClass + ' eta-system-tooltip-trigger" data-eta-tooltip="' + escapeAttr(tooltip) + '" aria-expanded="false">' +
+            logoHtml + escapeHtml(badgeText) +
+          '</button>';
         }
         var rows = items.map(function(item) {
           var noteHtml = buildReportNoteHtml(item);
+          var reportTime = formatReportTimeOnly(item.client_reported_at) || String(item.arrive_time || '-');
           return '<div class="report-table-row eta-detail' + (item.report_state === 'previous' ? ' is-previous' : '') + '">' +
             '<div class="report-table-cell">' + escapeHtml(formatDateOnly(item.client_reported_at) || '-') + noteHtml + '</div>' +
-            '<div class="report-table-cell">' + escapeHtml(formatReportTimeOnly(item.client_reported_at) || '-') + '</div>' +
-            '<div class="report-table-cell wrap">' + escapeHtml(item.reporter_name || '-') + '</div>' +
+            '<div class="report-table-cell">' + escapeHtml(reportTime) + '</div>' +
+            '<div class="report-table-cell wrap">' + buildEtaReporterHtml(item) + '</div>' +
             '<div class="report-table-cell">' + buildReportLikeButtonHtml(item) + '</div>' +
           '</div>';
         }).join('');
         reportDataBody.innerHTML = renderReportRows('eta-detail', ['제보 일자', '도착 시각', '닉네임', '좋아요'], rows);
+        bindEtaDetailTooltipTriggers();
         ensureReportNoteTooltipDelegation();
         reportDataBody.querySelectorAll('.report-like-btn').forEach(function(btn) {
           if (btn.disabled || btn.classList.contains('disabled')) return;
@@ -17174,11 +17563,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           '?route_id=' + encodeURIComponent(String(routeId)) +
           '&day_type=' + encodeURIComponent(selectedDayType) +
           '&departure_time=' + encodeURIComponent(String(departureTime || '')) +
-          '&stop_id=' + encodeURIComponent(String(stopId))
+          '&stop_id=' + encodeURIComponent(String(stopId)) +
+          '&response_version=2'
         )
           .then(function(result) {
             if (!result.ok) throw new Error(result.data.error || '제보 내역을 불러오지 못했습니다.');
-            renderEtaDetailItems(result.data.items || []);
+            renderEtaDetailItems(result.data || {});
           })
           .catch(function(err) {
             renderReportError(err.message || '제보 내역을 불러오지 못했습니다.');
@@ -17196,10 +17586,20 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           var isAlightStop = stopName === alightStopName;
           var suffix = isBoardStop ? ' (탑승)' : (isAlightStop ? ' (하차)' : '');
           var stopLabel = escapeHtml(String(stop.sequence || '-') + '. ' + stopName + suffix);
-          var eta = String(stop.eta_time || '').trim();
-          var etaHtml = eta
-            ? '<span class="route-stop-eta" data-stop-id="' + escapeAttr(stop.stop_id) + '" data-stop-name="' + escapeAttr(stop.stop_name || '') + '" data-departure-time="' + escapeAttr(departureTime || '') + '">' + escapeHtml(eta) + '</span>'
-            : '';
+          var etaDisplay = String(stop.eta_display || stop.eta_time || '').trim();
+          if (!etaDisplay) etaDisplay = '미수집';
+          var etaHasEvidence = !!stop.eta_has_evidence;
+          var etaClickable = !!(stop.stop_id && departureTime);
+          var etaColor = String(stop.eta_color || 'gray').toLowerCase() === 'navy' ? 'is-navy' : 'is-gray';
+          var etaClasses = 'route-stop-eta ' + etaColor + (etaClickable ? ' is-clickable' : '');
+          var etaHtml = '<span class="' + etaClasses + '"' +
+            ' data-stop-id="' + escapeAttr(stop.stop_id) + '"' +
+            ' data-stop-name="' + escapeAttr(stop.stop_name || '') + '"' +
+            ' data-departure-time="' + escapeAttr(departureTime || '') + '"' +
+            ' data-eta-clickable="' + (etaClickable ? '1' : '0') + '"' +
+            ' data-eta-has-evidence="' + (etaHasEvidence ? '1' : '0') + '">' +
+            escapeHtml(etaDisplay) +
+          '</span>';
           return '<div class="route-stop-item' + ((isBoardStop || isAlightStop) ? ' highlight' : '') + '"><div class="route-stop-line"><span class="route-stop-label">' + stopLabel + '</span>' + etaHtml + '</div></div>';
         }).join('');
       }
@@ -17258,6 +17658,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function bindRouteStopEtaClicks(card, option) {
         if (!card) return;
         card.querySelectorAll('.route-stop-eta').forEach(function(node) {
+          if (String(node.getAttribute('data-eta-clickable') || '') !== '1') return;
           node.addEventListener('click', function(evt) {
             evt.preventDefault();
             evt.stopPropagation();
@@ -17406,6 +17807,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       if (reportDataBackdrop) reportDataBackdrop.addEventListener('click', closeReportDataModal);
       if (reportDataBody) {
         reportDataBody.addEventListener('scroll', function() {
+          hideEtaFloatingTooltip();
           if (reportDataState.mode !== 'my-reports') return;
           saveMyReportsScrollPosition();
           if ((reportDataBody.scrollTop + reportDataBody.clientHeight + 24) < reportDataBody.scrollHeight) return;

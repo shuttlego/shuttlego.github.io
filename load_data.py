@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import re
+import json
 import sqlite3
 import threading
 from collections import defaultdict
@@ -32,6 +33,7 @@ _has_route_uuid: bool | None = None
 _has_route_source_route_id: bool | None = None
 _has_stop_uuid: bool | None = None
 _has_stop_code: bool | None = None
+_has_tmap_tables: bool | None = None
 _endpoint_cache_lock = threading.Lock()
 _endpoint_cache: dict[tuple[int, str, str, str], dict] = {}
 _route_metadata_cache_lock = threading.Lock()
@@ -101,6 +103,7 @@ def init_db(db_path: str | None = None) -> int:
     global _has_route_source_route_id
     global _has_stop_uuid
     global _has_stop_code
+    global _has_tmap_tables
     path = db_path or str(DB_PATH)
     current_conn = getattr(_db_local, "conn", None)
     if current_conn is not None:
@@ -156,6 +159,7 @@ def init_db(db_path: str | None = None) -> int:
     _has_route_source_route_id = "source_route_id" in route_columns
     _has_stop_uuid = "stop_uuid" in stop_columns
     _has_stop_code = "stop_code" in stop_columns
+    _has_tmap_tables = None
     return generation
 
 
@@ -395,6 +399,26 @@ def _supports_stop_code() -> bool:
     return bool(_has_stop_code)
 
 
+def _supports_tmap_tables() -> bool:
+    global _has_tmap_tables
+    if _has_tmap_tables is None:
+        db = _db()
+        rows = db.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type='table'
+              AND name IN ('tmap_target', 'tmap_run', 'tmap_stop_observation', 'tmap_segment_observation')
+            """
+        ).fetchall()
+        names = {str(_row_get(r, "name", default="") or "").strip() for r in rows}
+        _has_tmap_tables = all(
+            table_name in names
+            for table_name in ("tmap_target", "tmap_run", "tmap_stop_observation", "tmap_segment_observation")
+        )
+    return bool(_has_tmap_tables)
+
+
 # ── 유틸리티 ───────────────────────────────────────────────────
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
@@ -519,6 +543,501 @@ def _get_variant_stops(db: sqlite3.Connection, variant_id: int) -> list[dict]:
         prev_lat = lat
         prev_lng = lng
     return items
+
+
+def _parse_hhmmss_to_minutes(value: str | None) -> int | None:
+    token = str(value or "").strip()
+    if not token:
+        return None
+    token = token.replace(":", "")
+    if len(token) not in (4, 6) or not token.isdigit():
+        return None
+    if len(token) == 4:
+        hh = int(token[:2])
+        mm = int(token[2:4])
+        ss = 0
+    else:
+        hh = int(token[:2])
+        mm = int(token[2:4])
+        ss = int(token[4:6])
+    if not (0 <= hh <= 23 and 0 <= mm <= 59 and 0 <= ss <= 59):
+        return None
+    rounded = hh * 60 + mm + (1 if ss >= 30 else 0)
+    return int(rounded % 1440)
+
+
+def _decode_google_polyline(encoded: str) -> list[tuple[float, float]]:
+    token = str(encoded or "").strip()
+    if not token:
+        return []
+    points: list[tuple[float, float]] = []
+    index = 0
+    lat = 0
+    lng = 0
+    length = len(token)
+    while index < length:
+        shift = 0
+        result = 0
+        while True:
+            if index >= length:
+                return []
+            b = ord(token[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlat = ~(result >> 1) if (result & 1) else (result >> 1)
+        lat += dlat
+
+        shift = 0
+        result = 0
+        while True:
+            if index >= length:
+                return []
+            b = ord(token[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlng = ~(result >> 1) if (result & 1) else (result >> 1)
+        lng += dlng
+        points.append((lat / 1e5, lng / 1e5))
+    return points
+
+
+def _encode_google_polyline(points: list[tuple[float, float]]) -> str:
+    if len(points) < 2:
+        return ""
+    encoded_parts: list[str] = []
+    prev_lat = 0
+    prev_lng = 0
+
+    def _encode_value(value: int) -> None:
+        chunk = ~(value << 1) if value < 0 else (value << 1)
+        while chunk >= 0x20:
+            encoded_parts.append(chr((0x20 | (chunk & 0x1F)) + 63))
+            chunk >>= 5
+        encoded_parts.append(chr(chunk + 63))
+
+    for lat, lng in points:
+        lat_i = int(round(float(lat) * 1e5))
+        lng_i = int(round(float(lng) * 1e5))
+        _encode_value(lat_i - prev_lat)
+        _encode_value(lng_i - prev_lng)
+        prev_lat = lat_i
+        prev_lng = lng_i
+    return "".join(encoded_parts)
+
+
+def _decode_json_coordinate_polyline(raw: str | None) -> list[tuple[float, float]]:
+    token = str(raw or "").strip()
+    if not token:
+        return []
+    try:
+        payload = json.loads(token)
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    points: list[tuple[float, float]] = []
+    for item in payload:
+        if not isinstance(item, list) or len(item) < 2:
+            continue
+        try:
+            lon = float(item[0])
+            lat = float(item[1])
+        except (TypeError, ValueError):
+            continue
+        points.append((lat, lon))
+    return points
+
+
+def _decode_any_polyline(raw: str | None) -> list[tuple[float, float]]:
+    token = str(raw or "").strip()
+    if not token:
+        return []
+    decoded = _decode_google_polyline(token)
+    if len(decoded) >= 2:
+        return decoded
+    decoded = _decode_json_coordinate_polyline(token)
+    if len(decoded) >= 2:
+        return decoded
+    return []
+
+
+def _latlng_to_xy_m(lat: float, lng: float, origin_lat: float, origin_lng: float) -> tuple[float, float]:
+    scale_x = 111320.0 * math.cos(math.radians(origin_lat))
+    scale_y = 110540.0
+    return (float(lng) - float(origin_lng)) * scale_x, (float(lat) - float(origin_lat)) * scale_y
+
+
+def _nearest_progress_and_distance_m(
+    lat: float,
+    lng: float,
+    points: list[tuple[float, float]],
+) -> tuple[float, float]:
+    if len(points) < 2:
+        return 0.0, float("inf")
+    best_progress = 0.0
+    best_dist = float("inf")
+    progress_offset = 0.0
+    for idx in range(len(points) - 1):
+        lat1, lng1 = points[idx]
+        lat2, lng2 = points[idx + 1]
+        origin_lat = (lat1 + lat2) / 2.0
+        origin_lng = (lng1 + lng2) / 2.0
+        x1, y1 = _latlng_to_xy_m(lat1, lng1, origin_lat, origin_lng)
+        x2, y2 = _latlng_to_xy_m(lat2, lng2, origin_lat, origin_lng)
+        px, py = _latlng_to_xy_m(lat, lng, origin_lat, origin_lng)
+        seg_x = x2 - x1
+        seg_y = y2 - y1
+        seg_len_sq = seg_x * seg_x + seg_y * seg_y
+        if seg_len_sq <= 1e-6:
+            dist = math.hypot(px - x1, py - y1)
+            seg_len = 0.0
+            t = 0.0
+        else:
+            t = ((px - x1) * seg_x + (py - y1) * seg_y) / seg_len_sq
+            t = min(1.0, max(0.0, t))
+            proj_x = x1 + t * seg_x
+            proj_y = y1 + t * seg_y
+            dist = math.hypot(px - proj_x, py - proj_y)
+            seg_len = math.sqrt(seg_len_sq)
+        progress = progress_offset + (seg_len * t)
+        if dist < best_dist:
+            best_dist = dist
+            best_progress = progress
+        progress_offset += _haversine_m(lat1, lng1, lat2, lng2)
+    return best_progress, best_dist
+
+
+def _segment_quality(
+    points: list[tuple[float, float]],
+    from_stop: dict,
+    to_stop: dict,
+    max_distance_m: float,
+) -> dict[str, float | bool]:
+    if len(points) < 2:
+        return {"valid": False, "score": -1e9, "from_dist_m": float("inf"), "to_dist_m": float("inf")}
+    from_progress, from_dist = _nearest_progress_and_distance_m(
+        float(from_stop.get("lat") or 0.0),
+        float(from_stop.get("lng") or 0.0),
+        points,
+    )
+    to_progress, to_dist = _nearest_progress_and_distance_m(
+        float(to_stop.get("lat") or 0.0),
+        float(to_stop.get("lng") or 0.0),
+        points,
+    )
+    monotonic = (to_progress - from_progress) > 3.0
+    distance_ok = (from_dist <= float(max_distance_m)) and (to_dist <= float(max_distance_m))
+    valid = bool(monotonic and distance_ok)
+    score = -float(from_dist + to_dist)
+    return {
+        "valid": valid,
+        "score": score,
+        "from_dist_m": float(from_dist),
+        "to_dist_m": float(to_dist),
+        "monotonic": bool(monotonic),
+    }
+
+
+def _fetch_tmap_recent_runs(
+    db: sqlite3.Connection,
+    *,
+    route_id: int,
+    day_type: str,
+    departure_time: str,
+    route_uuid: str | None,
+    limit: int,
+) -> list[dict]:
+    clean_route_uuid = str(route_uuid or "").strip()
+    if clean_route_uuid:
+        rows = db.execute(
+            """
+            SELECT
+                tr.run_id,
+                tr.called_at_utc,
+                tr.requested_start_time,
+                tr.status
+            FROM tmap_target tt
+            JOIN tmap_run tr ON tr.target_id = tt.target_id
+            WHERE tt.day_type = ?
+              AND tt.departure_time = ?
+              AND tr.status = 'success'
+              AND (tt.route_uuid = ? OR tt.route_id = ?)
+            ORDER BY tr.called_at_utc DESC, tr.run_id DESC
+            LIMIT ?
+            """,
+            (str(day_type), str(departure_time), clean_route_uuid, int(route_id), max(1, int(limit))),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT
+                tr.run_id,
+                tr.called_at_utc,
+                tr.requested_start_time,
+                tr.status
+            FROM tmap_target tt
+            JOIN tmap_run tr ON tr.target_id = tt.target_id
+            WHERE tt.day_type = ?
+              AND tt.departure_time = ?
+              AND tt.route_id = ?
+              AND tr.status = 'success'
+            ORDER BY tr.called_at_utc DESC, tr.run_id DESC
+            LIMIT ?
+            """,
+            (str(day_type), str(departure_time), int(route_id), max(1, int(limit))),
+        ).fetchall()
+    return [
+        {
+            "run_id": int(_row_get(row, "run_id", default=0) or 0),
+            "called_at_utc": str(_row_get(row, "called_at_utc", default="") or "").strip(),
+            "requested_start_time": str(_row_get(row, "requested_start_time", default="") or "").strip(),
+        }
+        for row in rows
+        if int(_row_get(row, "run_id", default=0) or 0) > 0
+    ]
+
+
+def get_tmap_eta_observations(
+    *,
+    route_id: int,
+    day_type: str,
+    departure_time: str,
+    stop_ids: list[int],
+    route_uuid: str | None = None,
+    stop_uuid_by_id: dict[int, str] | None = None,
+    limit_runs: int = 30,
+) -> dict[int, list[dict]]:
+    if not _supports_tmap_tables():
+        return {}
+    normalized_stop_ids: list[int] = []
+    seen: set[int] = set()
+    for raw in stop_ids or []:
+        stop_id = _coerce_int(raw)
+        if stop_id is None or stop_id <= 0 or stop_id in seen:
+            continue
+        seen.add(stop_id)
+        normalized_stop_ids.append(int(stop_id))
+    if not normalized_stop_ids:
+        return {}
+    db = _db()
+    runs = _fetch_tmap_recent_runs(
+        db,
+        route_id=int(route_id),
+        day_type=str(day_type),
+        departure_time=str(departure_time),
+        route_uuid=route_uuid,
+        limit=max(1, int(limit_runs)),
+    )
+    if not runs:
+        return {}
+    run_meta_by_id = {int(item["run_id"]): item for item in runs}
+    run_ids = [int(item["run_id"]) for item in runs]
+    run_placeholders = ",".join("?" for _ in run_ids)
+    stop_placeholders = ",".join("?" for _ in normalized_stop_ids)
+    stop_uuid_lookup = {
+        str(stop_uuid).strip(): int(stop_id)
+        for stop_id, stop_uuid in (stop_uuid_by_id or {}).items()
+        if _coerce_int(stop_id) and str(stop_uuid or "").strip()
+    }
+    rows = db.execute(
+        f"""
+        SELECT
+            tso.run_id,
+            tso.stop_seq,
+            tso.stop_id,
+            tso.stop_uuid,
+            tso.arrive_time,
+            tso.segment_distance_m,
+            tso.cumulative_distance_m
+        FROM tmap_stop_observation tso
+        WHERE tso.run_id IN ({run_placeholders})
+          AND (
+                tso.stop_id IN ({stop_placeholders})
+                OR (tso.stop_uuid IS NOT NULL AND tso.stop_uuid != '')
+              )
+        ORDER BY tso.run_id DESC, tso.stop_seq ASC
+        """,
+        tuple(run_ids + normalized_stop_ids),
+    ).fetchall()
+    grouped: dict[int, list[dict]] = defaultdict(list)
+    for row in rows:
+        run_id = int(_row_get(row, "run_id", default=0) or 0)
+        run_meta = run_meta_by_id.get(run_id)
+        if run_meta is None:
+            continue
+        stop_id = _coerce_int(_row_get(row, "stop_id", default=None))
+        if stop_id is None or stop_id <= 0:
+            stop_uuid = str(_row_get(row, "stop_uuid", default="") or "").strip()
+            if stop_uuid:
+                stop_id = stop_uuid_lookup.get(stop_uuid)
+        if stop_id is None or int(stop_id) not in seen:
+            continue
+        eta_minutes = _parse_hhmmss_to_minutes(_row_get(row, "arrive_time", default=""))
+        if eta_minutes is None:
+            continue
+        grouped[int(stop_id)].append(
+            {
+                "source": "tmap",
+                "eta_minutes": int(eta_minutes),
+                "run_id": run_id,
+                "stop_id": int(stop_id),
+                "stop_uuid": (str(_row_get(row, "stop_uuid", default="") or "").strip() or None),
+                "called_at_utc": str(run_meta.get("called_at_utc") or ""),
+                "requested_start_time": str(run_meta.get("requested_start_time") or ""),
+                "arrive_time": str(_row_get(row, "arrive_time", default="") or "").strip(),
+                "stop_seq": int(_row_get(row, "stop_seq", default=0) or 0),
+                "segment_distance_m": _coerce_int(_row_get(row, "segment_distance_m", default=None)),
+                "cumulative_distance_m": _coerce_int(_row_get(row, "cumulative_distance_m", default=None)),
+            }
+        )
+    return {int(stop_id): list(items) for stop_id, items in grouped.items()}
+
+
+def list_tmap_stop_reports_for_tuple(
+    *,
+    route_id: int,
+    route_uuid: str | None,
+    day_type: str,
+    departure_time: str,
+    stop_id: int,
+    stop_uuid: str | None = None,
+    limit_runs: int = 30,
+) -> list[dict]:
+    observations = get_tmap_eta_observations(
+        route_id=int(route_id),
+        route_uuid=route_uuid,
+        day_type=str(day_type),
+        departure_time=str(departure_time),
+        stop_ids=[int(stop_id)],
+        stop_uuid_by_id={int(stop_id): str(stop_uuid or "").strip()} if stop_uuid else None,
+        limit_runs=max(1, int(limit_runs)),
+    )
+    return list(observations.get(int(stop_id), []))
+
+
+def apply_tmap_polyline_overrides(
+    *,
+    route_id: int,
+    route_uuid: str | None,
+    day_type: str,
+    departure_time: str,
+    route_stops: list[dict],
+) -> dict:
+    stops = [dict(item or {}) for item in list(route_stops or [])]
+    total_segments = max(0, len(stops) - 1)
+    if total_segments <= 0 or not _supports_tmap_tables():
+        return {
+            "route_stops": stops,
+            "total_segments": total_segments,
+            "tmap_segments": 0,
+            "coverage_ratio": 0.0,
+            "run_called_at_utc": None,
+            "requested_start_time": None,
+        }
+    db = _db()
+    runs = _fetch_tmap_recent_runs(
+        db,
+        route_id=int(route_id),
+        route_uuid=route_uuid,
+        day_type=str(day_type),
+        departure_time=str(departure_time),
+        limit=1,
+    )
+    if not runs:
+        for stop in stops:
+            stop["next_polyline_source"] = "otp"
+        return {
+            "route_stops": stops,
+            "total_segments": total_segments,
+            "tmap_segments": 0,
+            "coverage_ratio": 0.0,
+            "run_called_at_utc": None,
+            "requested_start_time": None,
+        }
+    run = runs[0]
+    run_id = int(run["run_id"])
+    rows = db.execute(
+        """
+        SELECT from_seq, to_seq, distance_m, encoded_polyline
+        FROM tmap_segment_observation
+        WHERE run_id = ?
+        ORDER BY from_seq, to_seq
+        """,
+        (run_id,),
+    ).fetchall()
+    segment_by_from_seq: dict[int, dict] = {}
+    for row in rows:
+        from_seq = _coerce_int(_row_get(row, "from_seq", default=None))
+        to_seq = _coerce_int(_row_get(row, "to_seq", default=None))
+        if from_seq is None or to_seq is None:
+            continue
+        encoded = str(_row_get(row, "encoded_polyline", default="") or "").strip()
+        if not encoded:
+            continue
+        segment_by_from_seq[int(from_seq)] = {
+            "to_seq": int(to_seq),
+            "distance_m": _coerce_int(_row_get(row, "distance_m", default=None)),
+            "encoded_polyline": encoded,
+        }
+
+    tmap_selected = 0
+    for idx in range(total_segments):
+        current = dict(stops[idx] or {})
+        nxt = dict(stops[idx + 1] or {})
+        from_seq = _coerce_int(current.get("sequence"))
+        to_seq = _coerce_int(nxt.get("sequence"))
+        otp_encoded = str(current.get("next_encoded_polyline") or "").strip()
+        otp_points = _decode_any_polyline(otp_encoded)
+        otp_quality = _segment_quality(otp_points, current, nxt, max_distance_m=120.0)
+
+        tmap_row = segment_by_from_seq.get(int(from_seq or -1))
+        tmap_points: list[tuple[float, float]] = []
+        if (
+            tmap_row is not None
+            and from_seq is not None
+            and to_seq is not None
+            and int(tmap_row.get("to_seq") or -1) == int(to_seq)
+        ):
+            tmap_points = _decode_json_coordinate_polyline(tmap_row.get("encoded_polyline"))
+        tmap_quality = _segment_quality(tmap_points, current, nxt, max_distance_m=80.0)
+
+        chosen_source = "otp"
+        chosen_encoded = otp_encoded
+        if tmap_row is not None and tmap_quality["valid"]:
+            chosen_source = "tmap"
+            chosen_encoded = _encode_google_polyline(tmap_points)
+            if not chosen_encoded:
+                chosen_source = "otp"
+                chosen_encoded = otp_encoded
+        elif not otp_quality["valid"] and tmap_row is not None and len(tmap_points) >= 2:
+            fallback_encoded = _encode_google_polyline(tmap_points)
+            if fallback_encoded:
+                chosen_source = "tmap"
+                chosen_encoded = fallback_encoded
+        if chosen_source == "tmap":
+            tmap_selected += 1
+        current["next_encoded_polyline"] = chosen_encoded
+        current["next_polyline_source"] = chosen_source
+        if chosen_source == "tmap":
+            current["next_segment_distance_m"] = _coerce_int(tmap_row.get("distance_m")) if tmap_row else None
+        stops[idx] = current
+
+    if stops:
+        stops[-1]["next_polyline_source"] = "none"
+    return {
+        "route_stops": stops,
+        "total_segments": total_segments,
+        "tmap_segments": int(tmap_selected),
+        "coverage_ratio": (float(tmap_selected) / float(total_segments)) if total_segments > 0 else 0.0,
+        "run_called_at_utc": str(run.get("called_at_utc") or "").strip() or None,
+        "requested_start_time": str(run.get("requested_start_time") or "").strip() or None,
+    }
 
 
 # ── 공개 API ──────────────────────────────────────────────────
