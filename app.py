@@ -12,6 +12,7 @@ import os
 import queue
 import random
 import secrets
+import statistics
 import threading
 import time as _time
 import uuid
@@ -37,6 +38,7 @@ from prometheus_client import (
 
 import load_data
 import user_store
+from runtime_db_sync import RuntimeDbSyncWorker
 from load_data import (
     find_nearest_route_options,
     get_available_day_types,
@@ -188,6 +190,11 @@ AUTH_CLEANUP_LEASE_SEC = max(90, AUTH_CLEANUP_INTERVAL_SEC + BACKGROUND_TASK_LEA
 BI_SNAPSHOT_LEASE_SEC = max(90, BI_DB_SNAPSHOT_REFRESH_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
 GITHUB_CLEANUP_LEASE_SEC = max(90, AUTH_GITHUB_CLEANUP_INTERVAL_SEC + BACKGROUND_TASK_LEASE_BUFFER_SEC)
 BACKGROUND_WORKER_OWNER_ID = f"{uuid.uuid4().hex}:{os.getpid()}"
+APP_DB_S3_SYNC_ENABLED = _env_bool("APP_DB_S3_SYNC_ENABLED", False)
+APP_DB_S3_SYNC_INTERVAL_SEC = max(30, _env_int("APP_DB_S3_SYNC_INTERVAL_SEC", 300))
+APP_DB_S3_SYNC_JITTER_SEC = max(0, _env_int("APP_DB_S3_SYNC_JITTER_SEC", 30))
+APP_DB_S3_SYNC_WARM_CACHE = _env_bool("APP_DB_S3_SYNC_WARM_CACHE", False)
+APP_DB_S3_DEFAULT_PREFIX = str(os.environ.get("APP_DB_S3_DEFAULT_PREFIX", "db/dev") or "db/dev").strip()
 
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
@@ -235,6 +242,9 @@ _history_writer_thread: threading.Thread | None = None
 _history_writer_lock = threading.Lock()
 _history_writer_stop_event = threading.Event()
 _history_writer_shutdown_registered = False
+_runtime_db_sync_worker: RuntimeDbSyncWorker | None = None
+_runtime_db_sync_lock = threading.Lock()
+_runtime_db_sync_shutdown_registered = False
 
 # ── route_type 하위 호환 매핑 ──────────────────────────────
 _ROUTE_TYPE_COMPAT = {"1": "commute_in", "2": "commute_out", "5": "shuttle"}
@@ -436,12 +446,33 @@ HISTORY_WRITE_QUEUE_SIZE = Gauge(
     multiprocess_mode="livesum",
 )
 
+DB_ACTIVE_GENERATION = Gauge(
+    "shuttle_db_active_generation",
+    "Currently active backend DB generation number",
+    multiprocess_mode="mostrecent",
+)
+
+DB_SYNC_LAST_APPLIED_UNIX = Gauge(
+    "shuttle_db_sync_last_applied_unix_seconds",
+    "Unix timestamp when runtime DB sync was last applied",
+    multiprocess_mode="mostrecent",
+)
+
+DB_SYNC_APPLY_DURATION = Histogram(
+    "shuttle_db_sync_apply_duration_seconds",
+    "Runtime DB sync apply duration in seconds",
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
 
 # ── 요청 전/후 훅 (메트릭 수집) ──────────────────────────────
 @app.before_request
 def _before_request():
     request._prom_start_time = _time.time()
     request._prom_track_in_progress = request.path != "/metrics"
+    pinned_generation = load_data.pin_current_thread_db_generation(load_data.get_db_generation())
+    request._db_generation = pinned_generation
+    DB_ACTIVE_GENERATION.set(float(pinned_generation))
     if request._prom_track_in_progress:
         IN_PROGRESS_REQUESTS.inc()
 
@@ -930,37 +961,45 @@ def _metrics_registry():
 
 @app.after_request
 def _after_request(response):
-    if request.path == "/metrics":
-        return response
-    latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
-    url_rule = getattr(request, "url_rule", None)
-    if url_rule is not None and getattr(url_rule, "rule", None):
-        endpoint = url_rule.rule
-    elif request.path.startswith("/api/"):
-        endpoint = "/api/_unmatched"
-    else:
-        endpoint = request.path
-    method = request.method
-    status = str(response.status_code)
-    request_size = _safe_request_size_bytes()
-    response_size = _safe_response_size_bytes(response)
-    REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
-    REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
-    REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
-    RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
-    # 비즈니스 메트릭은 Flask가 실제로 매칭한 API 라우트만 집계한다.
-    # 이렇게 해야 /api/.env 같은 스캔 요청이 /api/_unmatched로 집계되지 않는다.
-    matched_api_endpoint = url_rule is not None and endpoint.startswith("/api/")
-    if matched_api_endpoint and _is_business_api_endpoint_for_auth_metrics(endpoint):
-        auth_state = _current_auth_state_for_metrics()
-        API_REQUEST_AUTH_STATE_COUNT.labels(auth_state=auth_state).inc()
-    if matched_api_endpoint:
-        site_id = _extract_site_id_for_metrics(endpoint)
-        if site_id:
-            API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
-    if getattr(request, "_prom_track_in_progress", False):
-        IN_PROGRESS_REQUESTS.dec()
-    return _attach_history_visitor_cookie_if_needed(response)
+    try:
+        if request.path == "/metrics":
+            return response
+        latency = _time.time() - getattr(request, "_prom_start_time", _time.time())
+        url_rule = getattr(request, "url_rule", None)
+        if url_rule is not None and getattr(url_rule, "rule", None):
+            endpoint = url_rule.rule
+        elif request.path.startswith("/api/"):
+            endpoint = "/api/_unmatched"
+        else:
+            endpoint = request.path
+        method = request.method
+        status = str(response.status_code)
+        request_size = _safe_request_size_bytes()
+        response_size = _safe_response_size_bytes(response)
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
+        REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(latency)
+        REQUEST_SIZE_TOTAL.labels(method=method, endpoint=endpoint).inc(request_size)
+        RESPONSE_SIZE_TOTAL.labels(method=method, endpoint=endpoint, status=status).inc(response_size)
+        # 비즈니스 메트릭은 Flask가 실제로 매칭한 API 라우트만 집계한다.
+        # 이렇게 해야 /api/.env 같은 스캔 요청이 /api/_unmatched로 집계되지 않는다.
+        matched_api_endpoint = url_rule is not None and endpoint.startswith("/api/")
+        if matched_api_endpoint and _is_business_api_endpoint_for_auth_metrics(endpoint):
+            auth_state = _current_auth_state_for_metrics()
+            API_REQUEST_AUTH_STATE_COUNT.labels(auth_state=auth_state).inc()
+        if matched_api_endpoint:
+            site_id = _extract_site_id_for_metrics(endpoint)
+            if site_id:
+                API_REQUEST_SITE_COUNT.labels(site_id=site_id, endpoint=endpoint).inc()
+        if getattr(request, "_prom_track_in_progress", False):
+            IN_PROGRESS_REQUESTS.dec()
+        return _attach_history_visitor_cookie_if_needed(response)
+    finally:
+        load_data.clear_current_thread_db_generation_pin()
+
+
+@app.teardown_request
+def _teardown_request(_exc):
+    load_data.clear_current_thread_db_generation_pin()
 
 
 # ── Prometheus / Health 엔드포인트 ───────────────────────────
@@ -1271,6 +1310,663 @@ def _signed_minutes_from_reference(target_time: str | None, reference_time: str 
     while delta > 720:
         delta -= 1440
     return delta
+
+
+def _minutes_to_hhmm(minutes_value: int | None) -> str:
+    if minutes_value is None:
+        return ""
+    normalized = int(minutes_value) % 1440
+    return f"{normalized // 60:02d}:{normalized % 60:02d}"
+
+
+def _parse_iso_datetime_safe(raw: object) -> datetime | None:
+    token = str(raw or "").strip()
+    if not token:
+        return None
+    try:
+        return datetime.fromisoformat(token.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _parse_tmap_requested_start_kst(raw: object) -> datetime | None:
+    token = str(raw or "").strip()
+    if len(token) != 12 or not token.isdigit():
+        return None
+    try:
+        return datetime(
+            int(token[0:4]),
+            int(token[4:6]),
+            int(token[6:8]),
+            int(token[8:10]),
+            int(token[10:12]),
+            0,
+            tzinfo=_KST,
+        )
+    except Exception:
+        return None
+
+
+def _parse_hhmmss_time(raw: object) -> tuple[int, int, int] | None:
+    token = str(raw or "").strip().replace(":", "")
+    if len(token) not in (4, 6) or not token.isdigit():
+        return None
+    if len(token) == 4:
+        hh, mm, ss = int(token[0:2]), int(token[2:4]), 0
+    else:
+        hh, mm, ss = int(token[0:2]), int(token[2:4]), int(token[4:6])
+    if not (0 <= hh <= 23 and 0 <= mm <= 59 and 0 <= ss <= 59):
+        return None
+    return hh, mm, ss
+
+
+def _estimate_tmap_arrival_iso_utc(
+    *,
+    requested_start_time: str | None,
+    arrive_time_hhmmss: str | None,
+    called_at_utc: str | None,
+) -> str:
+    called_dt = _parse_iso_datetime_safe(called_at_utc)
+    start_kst = _parse_tmap_requested_start_kst(requested_start_time)
+    arrival_time = _parse_hhmmss_time(arrive_time_hhmmss)
+    if start_kst is None:
+        if called_dt is not None:
+            return called_dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return ""
+    if arrival_time is None:
+        return start_kst.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    hh, mm, ss = arrival_time
+    arrival_kst = start_kst.replace(hour=hh, minute=mm, second=ss)
+    return arrival_kst.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _format_tmap_requested_start_label(raw: object) -> str:
+    dt = _parse_tmap_requested_start_kst(raw)
+    if dt is None:
+        return "-"
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _format_tmap_called_at_label(raw: object) -> str:
+    dt = _parse_iso_datetime_safe(raw)
+    if dt is None:
+        return "-"
+    return dt.astimezone(_KST).strftime("%Y-%m-%d %H:%M")
+
+
+def _minutes_around_anchor(values: list[int], anchor: float) -> list[float]:
+    adjusted: list[float] = []
+    for value in values:
+        candidate = float(value)
+        delta = candidate - float(anchor)
+        while delta <= -720.0:
+            delta += 1440.0
+        while delta > 720.0:
+            delta -= 1440.0
+        adjusted.append(float(anchor) + delta)
+    return adjusted
+
+
+def _outlier_mask(values: list[int]) -> list[bool]:
+    n = len(values)
+    if n < 3:
+        return [True] * n
+    try:
+        anchor = float(statistics.median(values))
+    except statistics.StatisticsError:
+        return [True] * n
+    adjusted = _minutes_around_anchor(values, anchor)
+    try:
+        median_value = float(statistics.median(adjusted))
+    except statistics.StatisticsError:
+        return [True] * n
+    deviations = [abs(item - median_value) for item in adjusted]
+    try:
+        mad = float(statistics.median(deviations))
+    except statistics.StatisticsError:
+        mad = 0.0
+    mask: list[bool] = []
+    if mad < 1e-6:
+        for item in adjusted:
+            mask.append(abs(item - median_value) <= 12.0)
+        return mask
+    for item in adjusted:
+        robust_z = 0.6745 * (item - median_value) / mad
+        mask.append(abs(robust_z) <= 3.5)
+    return mask
+
+
+def _user_outlier_mask(values: list[int]) -> list[bool]:
+    # user reports are sparse/valuable; keep all unless there are enough samples.
+    if len(values) < 6:
+        return [True] * len(values)
+    return _outlier_mask(values)
+
+
+def _signed_clock_delta_minutes(lhs_minutes: int, rhs_minutes: int) -> float:
+    delta = float(lhs_minutes) - float(rhs_minutes)
+    while delta <= -720.0:
+        delta += 1440.0
+    while delta > 720.0:
+        delta -= 1440.0
+    return float(delta)
+
+
+def _apply_clock_delta_minutes(base_minutes: int, delta_minutes: float) -> int:
+    return int(round((float(base_minutes) + float(delta_minutes)))) % 1440
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    if value < lower:
+        return lower
+    if value > upper:
+        return upper
+    return value
+
+
+def _hours_since_now(raw_dt: datetime | None) -> float:
+    if raw_dt is None:
+        return 0.0
+    now = _utc_now()
+    try:
+        delta = (now - raw_dt.astimezone(timezone.utc)).total_seconds() / 3600.0
+    except Exception:
+        return 0.0
+    return max(0.0, float(delta))
+
+
+def _user_observation_weight(obs: dict) -> float:
+    server_dt = _parse_iso_datetime_safe(obs.get("server_received_at"))
+    age_hours = _hours_since_now(server_dt)
+    # sparse user reports: long half-life
+    freshness = 0.5 ** (age_hours / (24.0 * 180.0))
+    reporter_factor = 1.1 if obs.get("user_id") is not None else 1.0
+    logged_in_like_count = int(obs.get("logged_in_like_count") or 0)
+    guest_like_count = int(obs.get("guest_like_count") or 0)
+    like_bonus = min(0.5, (logged_in_like_count * 0.1) + (guest_like_count * 0.03))
+    return float(freshness * reporter_factor * (1.0 + like_bonus))
+
+
+def _tmap_distance_reliability_factor(obs: dict) -> float:
+    seg_m = obs.get("segment_distance_m")
+    try:
+        seg_distance_m = float(seg_m)
+    except (TypeError, ValueError):
+        seg_distance_m = -1.0
+    if seg_distance_m <= 0.0:
+        return 1.0
+    distance_km = max(0.0, seg_distance_m / 1000.0)
+    factor = 1.05 - (0.15 * distance_km)
+    return _clamp(float(factor), 0.45, 1.0)
+
+
+def _tmap_observation_weight(obs: dict) -> float:
+    called_dt = _parse_iso_datetime_safe(obs.get("called_at_utc"))
+    age_hours = _hours_since_now(called_dt)
+    # system observations: slower decay to survive sparse collection cycle.
+    freshness = 0.5 ** (age_hours / (24.0 * 21.0))
+    trust = float(freshness * _tmap_distance_reliability_factor(obs))
+    if trust <= 0.0:
+        return 0.0
+    return 0.45 * trust
+
+
+def _min_user_share_for_count(user_count: int) -> float:
+    if user_count <= 0:
+        return 0.0
+    if user_count <= 1:
+        return 0.70
+    if user_count <= 3:
+        return 0.80
+    return 0.90
+
+
+def _weighted_center_minutes(
+    *,
+    observations: list[dict],
+    mask: list[bool],
+    value_key: str,
+    weight_fn: Callable[[dict], float],
+) -> dict | None:
+    weighted_sum = 0.0
+    weight_total = 0.0
+    valid_count = 0
+    for idx, obs in enumerate(observations):
+        if idx >= len(mask) or not mask[idx]:
+            continue
+        weight = weight_fn(obs)
+        if weight <= 0.0:
+            continue
+        minutes = int(obs.get(value_key) or 0) % 1440
+        weighted_sum += float(minutes) * weight
+        weight_total += float(weight)
+        valid_count += 1
+    if weight_total <= 0.0:
+        return None
+    return {
+        "minutes": int(round(weighted_sum / weight_total)) % 1440,
+        "weighted_sum": float(weighted_sum),
+        "weight_total": float(weight_total),
+        "valid_count": int(valid_count),
+    }
+
+
+def _derive_stop_user_tmap_bias(
+    *,
+    user_observations: list[dict],
+    tmap_observations: list[dict],
+) -> dict | None:
+    if not user_observations or not tmap_observations:
+        return None
+    user_values = [int(item.get("reported_clock_minutes") or 0) % 1440 for item in user_observations]
+    tmap_values = [int(item.get("eta_minutes") or 0) % 1440 for item in tmap_observations]
+    user_mask = _user_outlier_mask(user_values)
+    tmap_mask = _outlier_mask(tmap_values)
+    user_center = _weighted_center_minutes(
+        observations=user_observations,
+        mask=user_mask,
+        value_key="reported_clock_minutes",
+        weight_fn=_user_observation_weight,
+    )
+    tmap_center = _weighted_center_minutes(
+        observations=tmap_observations,
+        mask=tmap_mask,
+        value_key="eta_minutes",
+        weight_fn=_tmap_observation_weight,
+    )
+    if user_center is None or tmap_center is None:
+        return None
+    sample_count = min(
+        int(user_center.get("valid_count") or 0),
+        int(tmap_center.get("valid_count") or 0),
+    )
+    if sample_count <= 0:
+        return None
+    return {
+        "bias_minutes": _signed_clock_delta_minutes(
+            int(user_center["minutes"]),
+            int(tmap_center["minutes"]),
+        ),
+        "sample_count": int(sample_count),
+    }
+
+
+def _build_route_tmap_bias_context(
+    *,
+    stop_ids: list[int],
+    user_observations: dict[int, list[dict]],
+    tmap_observations: dict[int, list[dict]],
+) -> dict:
+    stop_bias_by_stop_id: dict[int, dict] = {}
+    expanded_route_bias_samples: list[float] = []
+    route_sample_count = 0
+    for stop_id in stop_ids:
+        stop_bias = _derive_stop_user_tmap_bias(
+            user_observations=list(user_observations.get(int(stop_id)) or []),
+            tmap_observations=list(tmap_observations.get(int(stop_id)) or []),
+        )
+        if stop_bias is None:
+            continue
+        sample_count = int(stop_bias.get("sample_count") or 0)
+        if sample_count <= 0:
+            continue
+        stop_bias_by_stop_id[int(stop_id)] = {
+            "bias_minutes": float(stop_bias["bias_minutes"]),
+            "sample_count": int(sample_count),
+        }
+        route_sample_count += int(sample_count)
+        repeat = min(5, int(sample_count))
+        expanded_route_bias_samples.extend([float(stop_bias["bias_minutes"])] * repeat)
+
+    route_bias_minutes: float | None = None
+    if expanded_route_bias_samples:
+        try:
+            route_bias_minutes = float(statistics.median(expanded_route_bias_samples))
+        except statistics.StatisticsError:
+            route_bias_minutes = None
+    return {
+        "route_bias_minutes": route_bias_minutes,
+        "route_bias_sample_count": int(route_sample_count),
+        "stop_bias_by_stop_id": stop_bias_by_stop_id,
+    }
+
+
+def _build_stop_eta_payload(
+    *,
+    user_observations: list[dict],
+    tmap_observations: list[dict],
+    stop_bias_minutes: float | None = None,
+    stop_bias_sample_count: int = 0,
+    route_bias_minutes: float | None = None,
+    route_bias_sample_count: int = 0,
+) -> dict:
+    user_values = [int(item.get("reported_clock_minutes") or 0) % 1440 for item in user_observations]
+    tmap_values = [int(item.get("eta_minutes") or 0) % 1440 for item in tmap_observations]
+    user_mask = _user_outlier_mask(user_values)
+    tmap_mask = _outlier_mask(tmap_values)
+
+    user_center = _weighted_center_minutes(
+        observations=user_observations,
+        mask=user_mask,
+        value_key="reported_clock_minutes",
+        weight_fn=_user_observation_weight,
+    )
+    user_weighted_sum = float(user_center.get("weighted_sum") or 0.0) if user_center is not None else 0.0
+    user_weight_total = float(user_center.get("weight_total") or 0.0) if user_center is not None else 0.0
+    valid_user_count = int(user_center.get("valid_count") or 0) if user_center is not None else 0
+
+    lambda_stop = 0.0
+    if stop_bias_minutes is not None:
+        lambda_stop = _clamp(float(stop_bias_sample_count) / 5.0, 0.0, 1.0)
+    lambda_route = 0.0
+    if route_bias_minutes is not None:
+        lambda_route = _clamp(float(route_bias_sample_count) / 10.0, 0.0, 1.0)
+    raw_bias_minutes = (lambda_stop * float(stop_bias_minutes or 0.0)) + (
+        (1.0 - lambda_stop) * lambda_route * float(route_bias_minutes or 0.0)
+    )
+    tmap_bias_minutes = _clamp(float(raw_bias_minutes), -8.0, 8.0)
+
+    tmap_weighted_sum = 0.0
+    tmap_weight_total = 0.0
+    valid_tmap_count = 0
+    latest_tmap: dict | None = None
+    for idx, obs in enumerate(tmap_observations):
+        if idx >= len(tmap_mask) or not tmap_mask[idx]:
+            continue
+        weight = _tmap_observation_weight(obs)
+        if weight <= 0:
+            continue
+        raw_minutes = int(obs.get("eta_minutes") or 0) % 1440
+        minutes = _apply_clock_delta_minutes(raw_minutes, tmap_bias_minutes)
+        tmap_weighted_sum += float(minutes) * weight
+        tmap_weight_total += weight
+        valid_tmap_count += 1
+        if latest_tmap is None:
+            latest_tmap = dict(obs)
+
+    if user_weight_total <= 0.0 and tmap_weight_total <= 0.0:
+        return {
+            "eta_time": "",
+            "eta_display": "미수집",
+            "eta_color": "gray",
+            "eta_has_evidence": False,
+            "eta_source": "none",
+            "eta_report_count": 0,
+            "eta_user_report_count": 0,
+            "eta_system_observation_count": 0,
+            "eta_system_meta": None,
+        }
+
+    if user_weight_total > 0.0 and tmap_weight_total > 0.0:
+        min_user_share = _min_user_share_for_count(valid_user_count)
+        min_user_weight = (min_user_share / (1.0 - min_user_share)) * tmap_weight_total
+        if user_weight_total < min_user_weight and min_user_weight > 0.0:
+            scale = min_user_weight / user_weight_total
+            user_weight_total *= scale
+            user_weighted_sum *= scale
+
+    total_weight = user_weight_total + tmap_weight_total
+    if total_weight <= 0.0:
+        return {
+            "eta_time": "",
+            "eta_display": "미수집",
+            "eta_color": "gray",
+            "eta_has_evidence": False,
+            "eta_source": "none",
+            "eta_report_count": 0,
+            "eta_user_report_count": 0,
+            "eta_system_observation_count": 0,
+            "eta_system_meta": None,
+        }
+    eta_minutes = int(round((user_weighted_sum + tmap_weighted_sum) / total_weight)) % 1440
+    eta_time = _minutes_to_hhmm(eta_minutes)
+    source = "mixed"
+    if valid_user_count > 0 and valid_tmap_count <= 0:
+        source = "user"
+    elif valid_user_count <= 0 and valid_tmap_count > 0:
+        source = "system"
+    system_meta = None
+    if latest_tmap is not None:
+        system_meta = {
+            "called_at_utc": str(latest_tmap.get("called_at_utc") or ""),
+            "requested_start_time": str(latest_tmap.get("requested_start_time") or ""),
+            "arrive_time": str(latest_tmap.get("arrive_time") or ""),
+            "eta_bias_minutes": int(round(tmap_bias_minutes)),
+        }
+    return {
+        "eta_time": eta_time,
+        "eta_display": eta_time if eta_time else "미수집",
+        "eta_color": "navy" if valid_user_count > 0 else "gray",
+        "eta_has_evidence": True,
+        "eta_source": source,
+        "eta_report_count": int(valid_user_count + valid_tmap_count),
+        "eta_user_report_count": int(valid_user_count),
+        "eta_system_observation_count": int(valid_tmap_count),
+        "eta_system_meta": system_meta,
+    }
+
+
+def _build_system_tooltip_text(item: dict, *, is_auto_input: bool) -> str:
+    if is_auto_input:
+        return "노선의 출발시각"
+    start_label = _format_tmap_requested_start_label(item.get("requested_start_time"))
+    called_label = _format_tmap_called_at_label(item.get("called_at_utc"))
+    return "\n".join(
+        [
+            "Tmap 실시간 교통정보 기반 (일반 차량 기준)",
+            f"  출발시간: {start_label}",
+            f"  호출시간: {called_label}",
+        ]
+    )
+
+
+def _serialize_system_arrival_item(item: dict, stop_name: str, route_name: str) -> dict:
+    report_id = f"system-{int(item.get('run_id') or 0)}-{int(item.get('stop_seq') or 0)}"
+    stop_seq = int(item.get("stop_seq") or 0)
+    is_auto_input = stop_seq == 1
+    client_reported_at = _estimate_tmap_arrival_iso_utc(
+        requested_start_time=str(item.get("requested_start_time") or ""),
+        arrive_time_hhmmss=str(item.get("arrive_time") or ""),
+        called_at_utc=str(item.get("called_at_utc") or ""),
+    )
+    return {
+        "id": report_id,
+        "route_id": 0,
+        "route_uuid": None,
+        "route_name": str(route_name or ""),
+        "route_type": "",
+        "day_type": "",
+        "direction": "",
+        "departure_time": "",
+        "arrive_time": _format_hhmm_from_hhmmss(item.get("arrive_time")),
+        "stop_id": int(item.get("stop_id") or 0),
+        "stop_uuid": (str(item.get("stop_uuid") or "").strip() or None),
+        "stop_name": str(stop_name or ""),
+        "stop_sequence": stop_seq,
+        "client_reported_at": client_reported_at,
+        "server_received_at": str(item.get("called_at_utc") or ""),
+        "service_date": "",
+        "time_valid": True,
+        "client_server_delta_sec": 0,
+        "eta_included": True,
+        "eta_excluded": False,
+        "eta_exclude_reason": "",
+        "report_state": "system",
+        "report_state_label": "",
+        "report_note": "",
+        "credit_awarded": False,
+        "credit_value": 0.0,
+        "is_deleted": False,
+        "deleted_at": None,
+        "deleted_reason": "",
+        "reporter_name": "자동입력" if is_auto_input else "Tmap",
+        "like_count": 0,
+        "liked_by_me": False,
+        "like_disabled": True,
+        "is_system": True,
+        "system_tooltip": _build_system_tooltip_text(item, is_auto_input=is_auto_input),
+        "system_requested_start_time": str(item.get("requested_start_time") or ""),
+        "system_called_at_utc": str(item.get("called_at_utc") or ""),
+        "system_arrive_time": str(item.get("arrive_time") or ""),
+        "is_auto_input": is_auto_input,
+    }
+
+
+def _format_hhmm_from_iso(raw: object) -> str:
+    dt = _parse_iso_datetime_safe(raw)
+    if dt is None:
+        return ""
+    return dt.astimezone(_KST).strftime("%H:%M")
+
+
+def _format_hhmm_from_hhmmss(raw: object) -> str:
+    parsed = _parse_hhmmss_time(raw)
+    if parsed is None:
+        return ""
+    return f"{int(parsed[0]):02d}:{int(parsed[1]):02d}"
+
+
+def _normalize_departure_time_to_hhmmss(raw: object) -> str:
+    token = str(raw or "").strip().replace(":", "")
+    if len(token) == 4 and token.isdigit():
+        return token + "00"
+    if len(token) == 6 and token.isdigit():
+        return token
+    return ""
+
+
+def _get_variant_first_stop_meta(
+    *,
+    route_id: int,
+    day_type: str,
+    departure_time: str,
+) -> dict | None:
+    try:
+        normalized_route_id = int(route_id)
+    except (TypeError, ValueError):
+        return None
+    if normalized_route_id <= 0:
+        return None
+    detail = get_route_detail(normalized_route_id, str(day_type), departure_time=str(departure_time))
+    if not detail:
+        return None
+    route_stops = list(detail.get("route_stops") or [])
+    if not route_stops:
+        return None
+    first_stop = dict(route_stops[0] or {})
+    try:
+        first_stop_id = int(first_stop.get("stop_id") or 0)
+    except (TypeError, ValueError):
+        first_stop_id = 0
+    first_stop_uuid = str(first_stop.get("stop_uuid") or "").strip() or None
+    if first_stop_id <= 0 and not first_stop_uuid:
+        return None
+    return {
+        "stop_id": first_stop_id,
+        "stop_uuid": first_stop_uuid,
+    }
+
+
+def _build_auto_input_system_observation(
+    *,
+    stop_id: int,
+    stop_uuid: str | None,
+    departure_time: str,
+) -> dict | None:
+    arrive_hhmmss = _normalize_departure_time_to_hhmmss(departure_time)
+    if not arrive_hhmmss:
+        return None
+    parsed_arrive_time = _parse_hhmmss_time(arrive_hhmmss)
+    if parsed_arrive_time is None:
+        return None
+    eta_minutes = int(parsed_arrive_time[0]) * 60 + int(parsed_arrive_time[1])
+    return {
+        "source": "tmap",
+        "eta_minutes": eta_minutes,
+        "run_id": 0,
+        "stop_id": int(stop_id),
+        "stop_uuid": (str(stop_uuid or "").strip() or None),
+        "called_at_utc": "",
+        "requested_start_time": "",
+        "arrive_time": arrive_hhmmss,
+        "stop_seq": 1,
+        "segment_distance_m": None,
+        "cumulative_distance_m": 0,
+    }
+
+
+def _apply_first_stop_auto_input_eta(route_stops: list[dict], departure_time: str) -> None:
+    if not route_stops:
+        return
+    first_stop = dict(route_stops[0] or {})
+    eta_hhmm = str(departure_time or "").strip()
+    eta_hhmmss = _normalize_departure_time_to_hhmmss(eta_hhmm)
+    if not eta_hhmm or not eta_hhmmss:
+        return
+    user_count = int(first_stop.get("eta_user_report_count") or 0)
+    system_count = max(1, int(first_stop.get("eta_system_observation_count") or 0))
+    first_stop["eta_time"] = eta_hhmm
+    first_stop["eta_display"] = eta_hhmm
+    first_stop["eta_has_evidence"] = True
+    first_stop["eta_source"] = "user" if user_count > 0 else "system"
+    first_stop["eta_color"] = "navy" if user_count > 0 else "gray"
+    first_stop["eta_user_report_count"] = int(user_count)
+    first_stop["eta_system_observation_count"] = int(system_count)
+    first_stop["eta_report_count"] = int(user_count + system_count)
+    system_meta = dict(first_stop.get("eta_system_meta") or {})
+    system_meta["called_at_utc"] = str(system_meta.get("called_at_utc") or "")
+    system_meta["requested_start_time"] = str(system_meta.get("requested_start_time") or "")
+    system_meta["arrive_time"] = eta_hhmmss
+    first_stop["eta_system_meta"] = system_meta
+    route_stops[0] = first_stop
+
+
+def _compact_eta_user_item(serialized_item: dict) -> dict:
+    return {
+        "id": int(serialized_item.get("id") or 0),
+        "kind": "user",
+        "reported_at": str(serialized_item.get("client_reported_at") or ""),
+        "arrive_time": _format_hhmm_from_iso(serialized_item.get("client_reported_at")),
+        "nickname": str(serialized_item.get("reporter_name") or "-"),
+        "like_count": int(serialized_item.get("like_count") or 0),
+        "liked_by_me": bool(serialized_item.get("liked_by_me")),
+        "like_disabled": bool(serialized_item.get("like_disabled")),
+        "report_state": str(serialized_item.get("report_state") or ""),
+        "report_state_label": str(serialized_item.get("report_state_label") or ""),
+        "report_note": str(serialized_item.get("report_note") or ""),
+        "is_deleted": bool(serialized_item.get("is_deleted")),
+        "deleted_reason": str(serialized_item.get("deleted_reason") or ""),
+        "eta_excluded": bool(serialized_item.get("eta_excluded")),
+        "eta_exclude_reason": str(serialized_item.get("eta_exclude_reason") or ""),
+    }
+
+
+def _compact_eta_system_item(item: dict) -> tuple[dict, dict]:
+    run_id = int(item.get("run_id") or 0)
+    stop_seq = int(item.get("stop_seq") or 0)
+    requested_start_time = str(item.get("requested_start_time") or "")
+    called_at_utc = str(item.get("called_at_utc") or "")
+    arrive_time = str(item.get("arrive_time") or "")
+    compact_item = {
+        "id": f"s:{run_id}:{stop_seq}",
+        "kind": "system",
+        "reported_at": _estimate_tmap_arrival_iso_utc(
+            requested_start_time=requested_start_time,
+            arrive_time_hhmmss=arrive_time,
+            called_at_utc=called_at_utc,
+        ),
+        "arrive_time": _format_hhmm_from_hhmmss(arrive_time),
+        "run_id": str(run_id),
+        "stop_sequence": stop_seq,
+        "auto_input": bool(stop_seq == 1),
+    }
+    run_meta = {
+        "provider": "tmap",
+        "basis": "car",
+        "requested_start_at": _format_tmap_requested_start_label(requested_start_time),
+        "called_at": _format_tmap_called_at_label(called_at_utc),
+    }
+    return compact_item, run_meta
 
 
 def _sort_route_options_by_search_mode(options: list[dict], search_mode: str, reference_time: str | None) -> list[dict]:
@@ -2403,6 +3099,11 @@ def _serialize_arrival_report_item(
         "like_count": like_count,
         "liked_by_me": liked_by_me,
         "like_disabled": bool(like_disabled),
+        "is_system": False,
+        "system_tooltip": "",
+        "system_requested_start_time": "",
+        "system_called_at_utc": "",
+        "system_arrive_time": "",
     }
 
 
@@ -2683,8 +3384,67 @@ def _start_auth_background_workers() -> None:
         threading.Thread(target=_github_cleanup_loop, daemon=True, name="github-cleanup-loop").start()
 
 
+def _record_db_generation_metrics(generation: int) -> None:
+    DB_ACTIVE_GENERATION.set(float(generation))
+    DB_SYNC_LAST_APPLIED_UNIX.set(float(_time.time()))
+
+
+def _on_runtime_db_synced(db_path, version_key: str, manifest_updated_at_utc: str | None = None) -> None:
+    started_at = _time.time()
+    try:
+        generation = init_db(str(db_path))
+        if APP_DB_S3_SYNC_WARM_CACHE:
+            warm_endpoint_cache()
+        _record_db_generation_metrics(generation)
+        app.logger.info(
+            "Runtime DB sync applied version=%s path=%s generation=%s manifest_updated_at_utc=%s",
+            version_key,
+            db_path,
+            generation,
+            manifest_updated_at_utc,
+        )
+    except Exception:
+        app.logger.exception("Failed to apply runtime DB sync version=%s", version_key)
+    finally:
+        DB_SYNC_APPLY_DURATION.observe(max(0.0, _time.time() - started_at))
+
+
+def _start_runtime_db_sync_worker() -> RuntimeDbSyncWorker | None:
+    global _runtime_db_sync_worker, _runtime_db_sync_shutdown_registered
+    if not APP_DB_S3_SYNC_ENABLED:
+        return None
+    with _runtime_db_sync_lock:
+        if _runtime_db_sync_worker is not None:
+            return _runtime_db_sync_worker
+        worker = RuntimeDbSyncWorker(
+            enabled=True,
+            interval_sec=APP_DB_S3_SYNC_INTERVAL_SEC,
+            jitter_sec=APP_DB_S3_SYNC_JITTER_SEC,
+            local_db_path=load_data.DB_PATH,
+            default_prefix=APP_DB_S3_DEFAULT_PREFIX,
+        )
+        if not worker.enabled:
+            _runtime_db_sync_worker = None
+            return None
+        _runtime_db_sync_worker = worker
+        if not _runtime_db_sync_shutdown_registered:
+            def _shutdown_runtime_sync() -> None:
+                with _runtime_db_sync_lock:
+                    if _runtime_db_sync_worker is not None:
+                        _runtime_db_sync_worker.stop(timeout_sec=2.0)
+            atexit.register(_shutdown_runtime_sync)
+            _runtime_db_sync_shutdown_registered = True
+        return worker
+
+
 def _run_startup_hooks() -> None:
-    init_db()
+    worker = _start_runtime_db_sync_worker()
+    if worker is not None:
+        worker.sync_once(on_updated=None)
+        generation = init_db(str(worker.active_db_path))
+    else:
+        generation = init_db()
+    _record_db_generation_metrics(generation)
     user_store.init_db()
     _start_history_writer()
     if APP_REFRESH_AUTH_METRICS_ON_STARTUP:
@@ -2699,6 +3459,8 @@ def _run_startup_hooks() -> None:
             app.logger.exception("Endpoint cache warm-up failed")
     if APP_ENABLE_BACKGROUND_WORKERS:
         _start_auth_background_workers()
+    if worker is not None:
+        worker.start(on_updated=_on_runtime_db_synced)
 
 
 @app.errorhandler(user_store.ReadOnlyModeError)
@@ -3791,6 +4553,11 @@ def api_submit_report():
     stop_id = int(tuple_meta["stop_id"])
     route_uuid = str(tuple_meta.get("route_uuid") or "").strip() or None
     stop_uuid = str(tuple_meta.get("stop_uuid") or "").strip() or None
+    if load_data.is_variant_departure_stop(
+        variant_id=int(tuple_meta.get("variant_id") or 0),
+        stop_sequence=int(tuple_meta.get("stop_sequence") or 0),
+    ):
+        return jsonify({"error": "출발 정류장은 자동입력되므로 제보할 수 없습니다."}), 400
 
     auth_user, _ = _get_current_user(with_touch=False)
     if auth_user is not None:
@@ -3876,6 +4643,7 @@ def api_report_eta_detail():
     stop_uuid = request.args.get("stop_uuid", default="", type=str).strip() or None
     day_type = request.args.get("day_type", default="weekday").strip() or "weekday"
     departure_time = request.args.get("departure_time", default="", type=str).strip()
+    response_version = max(1, int(request.args.get("response_version", default=1, type=int) or 1))
     has_id_pair = route_id is not None and stop_id is not None
     has_uuid_pair = bool(route_uuid and stop_uuid)
     if (not has_id_pair and not has_uuid_pair) or not departure_time:
@@ -3907,19 +4675,114 @@ def api_report_eta_detail():
         visitor_id=viewer_visitor_id,
     )
     nickname_map = user_store.get_active_nickname_map_by_user_ids(user_ids)
+    system_items = load_data.list_tmap_stop_reports_for_tuple(
+        route_id=int(route_id or 0),
+        route_uuid=route_uuid,
+        day_type=day_type,
+        departure_time=departure_time,
+        stop_id=int(stop_id or 0),
+        stop_uuid=stop_uuid,
+        limit_runs=30,
+    )
+    first_stop_meta = _get_variant_first_stop_meta(
+        route_id=int(route_id or 0),
+        day_type=day_type,
+        departure_time=departure_time,
+    )
+    if first_stop_meta is not None:
+        requested_stop_id = int(stop_id or 0)
+        requested_stop_uuid = str(stop_uuid or "").strip()
+        first_stop_id = int(first_stop_meta.get("stop_id") or 0)
+        first_stop_uuid = str(first_stop_meta.get("stop_uuid") or "").strip()
+        is_first_stop = (
+            (requested_stop_id > 0 and first_stop_id > 0 and requested_stop_id == first_stop_id)
+            or (bool(requested_stop_uuid) and bool(first_stop_uuid) and requested_stop_uuid == first_stop_uuid)
+        )
+        if is_first_stop:
+            auto_input_item = _build_auto_input_system_observation(
+                stop_id=first_stop_id or requested_stop_id,
+                stop_uuid=first_stop_uuid or requested_stop_uuid or None,
+                departure_time=departure_time,
+            )
+            if auto_input_item is not None:
+                # First stop is always represented as a single auto-input record.
+                # Drop all first-stop Tmap observations to prevent duplicate "auto input" rows.
+                non_auto_items = [
+                    item
+                    for item in system_items
+                    if int(item.get("stop_seq") or 0) != 1
+                ]
+                system_items = [auto_input_item] + non_auto_items
+    if response_version >= 2:
+        compact_user_items: list[dict] = []
+        for item in items:
+            serialized = _serialize_arrival_report_item(
+                item,
+                nickname_map=nickname_map,
+                like_state_map=like_state_map,
+                viewer_user_id=viewer_user_id,
+                viewer_visitor_id=viewer_visitor_id,
+            )
+            compact_user_items.append(_compact_eta_user_item(serialized))
+        compact_system_items: list[dict] = []
+        run_meta_by_id: dict[str, dict] = {}
+        for item in system_items:
+            compact_item, run_meta = _compact_eta_system_item(item)
+            compact_system_items.append(compact_item)
+            run_id_key = str(compact_item.get("run_id") or "")
+            if run_id_key and run_id_key not in run_meta_by_id:
+                run_meta_by_id[run_id_key] = run_meta
+        merged_items = compact_user_items + compact_system_items
+        merged_items.sort(
+            key=lambda item: (
+                str(item.get("reported_at") or ""),
+                str(item.get("id") or ""),
+            ),
+            reverse=True,
+        )
+        payload: dict[str, object] = {
+            "version": 2,
+            "items": merged_items,
+            "runs": run_meta_by_id,
+        }
+        if not merged_items:
+            payload["empty_code"] = "TMAP_COLLECTING"
+        resp = make_response(jsonify(payload))
+        return _attach_history_visitor_cookie_if_needed(resp)
+
+    serialized_items = [
+        _serialize_arrival_report_item(
+            item,
+            nickname_map=nickname_map,
+            like_state_map=like_state_map,
+            viewer_user_id=viewer_user_id,
+            viewer_visitor_id=viewer_visitor_id,
+        )
+        for item in items
+    ]
+    route_name_hint = str(items[0].get("route_name") or "").strip() if items else ""
+    stop_name_hint = str(items[0].get("stop_name") or "").strip() if items else ""
+    serialized_system_items = [
+        _serialize_system_arrival_item(
+            item,
+            stop_name=stop_name_hint,
+            route_name=route_name_hint,
+        )
+        for item in system_items
+    ]
+    merged_items = serialized_items + serialized_system_items
+    merged_items.sort(
+        key=lambda item: (
+            str(item.get("client_reported_at") or ""),
+            str(item.get("server_received_at") or ""),
+            str(item.get("id") or ""),
+        ),
+        reverse=True,
+    )
     resp = make_response(
         jsonify(
             {
-                "items": [
-                    _serialize_arrival_report_item(
-                        item,
-                        nickname_map=nickname_map,
-                        like_state_map=like_state_map,
-                        viewer_user_id=viewer_user_id,
-                        viewer_visitor_id=viewer_visitor_id,
-                    )
-                    for item in items
-                ]
+                "items": merged_items
             }
         )
     )
@@ -5341,9 +6204,27 @@ def api_route_detail(route_id: int):
         return jsonify({"error": "노선을 찾을 수 없습니다."}), 404
     selected_departure_time = str(detail.get("selected_departure_time") or "").strip()
     route_uuid = str(detail.get("route_uuid") or "").strip() or None
+    route_stops = [dict(stop or {}) for stop in detail.get("route_stops", []) or []]
+    if selected_departure_time and route_stops:
+        polyline_result = load_data.apply_tmap_polyline_overrides(
+            route_id=route_id,
+            route_uuid=route_uuid,
+            day_type=day_type,
+            departure_time=selected_departure_time,
+            route_stops=route_stops,
+        )
+        route_stops = list(polyline_result.get("route_stops") or route_stops)
+        detail["polyline_source"] = "tmap" if int(polyline_result.get("tmap_segments") or 0) > 0 else "otp"
+        detail["polyline_tmap_coverage_ratio"] = round(float(polyline_result.get("coverage_ratio") or 0.0), 4)
+        detail["polyline_tmap_segments"] = int(polyline_result.get("tmap_segments") or 0)
+        detail["polyline_total_segments"] = int(polyline_result.get("total_segments") or 0)
+        detail["polyline_tmap_run_called_at_utc"] = polyline_result.get("run_called_at_utc")
+        detail["polyline_tmap_requested_start_time"] = polyline_result.get("requested_start_time")
+    detail["route_stops"] = route_stops
+
     stop_ids = []
     stop_uuid_by_id: dict[int, str] = {}
-    for stop in detail.get("route_stops", []) or []:
+    for stop in route_stops:
         try:
             stop_id_value = int(stop.get("stop_id"))
         except (TypeError, ValueError):
@@ -5352,8 +6233,18 @@ def api_route_detail(route_id: int):
         stop_uuid = str(stop.get("stop_uuid") or "").strip()
         if stop_uuid:
             stop_uuid_by_id[stop_id_value] = stop_uuid
+    for stop in route_stops:
+        stop["eta_time"] = ""
+        stop["eta_display"] = "미수집"
+        stop["eta_color"] = "gray"
+        stop["eta_has_evidence"] = False
+        stop["eta_source"] = "none"
+        stop["eta_report_count"] = 0
+        stop["eta_user_report_count"] = 0
+        stop["eta_system_observation_count"] = 0
+
     if selected_departure_time and stop_ids:
-        eta_map = user_store.get_arrival_eta_map(
+        user_observations = user_store.get_arrival_eta_observations(
             route_id=route_id,
             route_uuid=route_uuid,
             day_type=day_type,
@@ -5361,16 +6252,47 @@ def api_route_detail(route_id: int):
             stop_ids=stop_ids,
             stop_uuid_by_id=stop_uuid_by_id,
         )
-        for stop in detail.get("route_stops", []) or []:
+        tmap_observations = load_data.get_tmap_eta_observations(
+            route_id=route_id,
+            route_uuid=route_uuid,
+            day_type=day_type,
+            departure_time=selected_departure_time,
+            stop_ids=stop_ids,
+            stop_uuid_by_id=stop_uuid_by_id,
+            limit_runs=30,
+        )
+        bias_context = _build_route_tmap_bias_context(
+            stop_ids=stop_ids,
+            user_observations=user_observations,
+            tmap_observations=tmap_observations,
+        )
+        route_bias_minutes = bias_context.get("route_bias_minutes")
+        route_bias_sample_count = int(bias_context.get("route_bias_sample_count") or 0)
+        stop_bias_by_stop_id = dict(bias_context.get("stop_bias_by_stop_id") or {})
+        for stop in route_stops:
             try:
                 stop_id = int(stop.get("stop_id"))
             except (TypeError, ValueError):
                 continue
-            eta = eta_map.get(stop_id)
-            if not eta:
-                continue
-            stop["eta_time"] = eta.get("eta_time")
-            stop["eta_report_count"] = int(eta.get("report_count") or 0)
+            stop_bias = dict(stop_bias_by_stop_id.get(stop_id) or {})
+            eta_payload = _build_stop_eta_payload(
+                user_observations=list(user_observations.get(stop_id) or []),
+                tmap_observations=list(tmap_observations.get(stop_id) or []),
+                stop_bias_minutes=(
+                    float(stop_bias.get("bias_minutes"))
+                    if stop_bias.get("bias_minutes") is not None
+                    else None
+                ),
+                stop_bias_sample_count=int(stop_bias.get("sample_count") or 0),
+                route_bias_minutes=(
+                    float(route_bias_minutes)
+                    if route_bias_minutes is not None
+                    else None
+                ),
+                route_bias_sample_count=route_bias_sample_count,
+            )
+            stop.update(eta_payload)
+    _apply_first_stop_auto_input_eta(route_stops, selected_departure_time)
     return jsonify(detail)
 
 

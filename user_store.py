@@ -4029,6 +4029,7 @@ def get_arrival_eta_map(
             if stop_uuid:
                 normalized_stop_uuids.append(stop_uuid)
 
+    eta_like_weight_counts: dict[int, dict[str, int]] = {}
     with _conn_ctx() as conn:
         if clean_route_uuid and normalized_stop_uuids:
             uuid_placeholders = ",".join("?" for _ in normalized_stop_uuids)
@@ -4143,6 +4144,122 @@ def get_arrival_eta_map(
             "report_count": int(bucket["report_count"]),
         }
     return result
+
+
+def get_arrival_eta_observations(
+    route_id: int,
+    day_type: str,
+    departure_time: str,
+    stop_ids: list[int],
+    *,
+    route_uuid: str | None = None,
+    stop_uuid_by_id: dict[int, str] | None = None,
+) -> dict[int, list[dict]]:
+    normalized_stop_ids: list[int] = []
+    seen: set[int] = set()
+    for raw in stop_ids or []:
+        try:
+            sid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if sid <= 0 or sid in seen:
+            continue
+        seen.add(sid)
+        normalized_stop_ids.append(sid)
+    if not normalized_stop_ids:
+        return {}
+
+    placeholders = ",".join("?" for _ in normalized_stop_ids)
+    clean_route_uuid = str(route_uuid or "").strip()
+    stop_uuid_by_id = stop_uuid_by_id or {}
+    normalized_stop_uuids: list[str] = []
+    if clean_route_uuid:
+        for sid in normalized_stop_ids:
+            stop_uuid = str(stop_uuid_by_id.get(int(sid)) or "").strip()
+            if stop_uuid:
+                normalized_stop_uuids.append(stop_uuid)
+
+    with _conn_ctx() as conn:
+        if clean_route_uuid and normalized_stop_uuids:
+            uuid_placeholders = ",".join("?" for _ in normalized_stop_uuids)
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM arrival_reports
+                WHERE (
+                    (
+                        route_uuid = ?
+                        AND day_type = ?
+                        AND departure_time = ?
+                        AND stop_uuid IN ({uuid_placeholders})
+                    ) OR (
+                        route_id = ?
+                        AND day_type = ?
+                        AND departure_time = ?
+                        AND stop_id IN ({placeholders})
+                    )
+                )
+                  AND deleted_at IS NULL
+                ORDER BY id DESC
+                """,
+                tuple(
+                    [clean_route_uuid, str(day_type), str(departure_time)]
+                    + normalized_stop_uuids
+                    + [int(route_id), str(day_type), str(departure_time)]
+                    + normalized_stop_ids
+                ),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM arrival_reports
+                WHERE route_id = ?
+                  AND day_type = ?
+                  AND departure_time = ?
+                  AND stop_id IN ({placeholders})
+                  AND deleted_at IS NULL
+                ORDER BY id DESC
+                """,
+                tuple([int(route_id), str(day_type), str(departure_time)] + normalized_stop_ids),
+            ).fetchall()
+        eta_like_weight_counts = _load_eta_like_weight_counts(
+            conn,
+            [int(row["id"]) for row in rows if row["id"] is not None],
+        )
+
+    annotated = _annotate_arrival_reports([
+        _row_to_arrival_report(row) or {}
+        for row in rows
+    ])
+    grouped: dict[int, list[dict]] = {}
+    for item in annotated:
+        if not item.get("eta_included"):
+            continue
+        try:
+            stop_id_value = int(item["stop_id"])
+        except (TypeError, ValueError):
+            continue
+        if stop_id_value not in seen:
+            continue
+        grouped.setdefault(stop_id_value, []).append(
+            {
+                "source": "user",
+                "report_id": int(item.get("id") or 0),
+                "user_id": (int(item["user_id"]) if item.get("user_id") is not None else None),
+                "reported_clock_minutes": int(item.get("reported_clock_minutes") or 0) % 1440,
+                "client_reported_at": str(item.get("client_reported_at") or "").strip(),
+                "server_received_at": str(item.get("server_received_at") or "").strip(),
+                "time_valid": bool(item.get("time_valid")),
+                "logged_in_like_count": int(
+                    (eta_like_weight_counts.get(int(item.get("id") or 0)) or {}).get("logged_in_like_count") or 0
+                ),
+                "guest_like_count": int(
+                    (eta_like_weight_counts.get(int(item.get("id") or 0)) or {}).get("guest_like_count") or 0
+                ),
+            }
+        )
+    return grouped
 
 
 def list_arrival_leaderboard(window: str = "all", limit: int = 100) -> list[dict]:

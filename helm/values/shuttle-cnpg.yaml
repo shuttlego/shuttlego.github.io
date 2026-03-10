@@ -41,7 +41,6 @@ cluster:
       cpu: "3000m"
       memory: 12Gi
   irsaRoleArn: ""
-  irsaRoleAnnotationKey: eks.samsungspc.com/role-arn
   initdb:
     database: shuttlego
     owner: shuttlego

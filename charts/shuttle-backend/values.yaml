@@ -11,6 +11,22 @@ image:
 
 imagePullSecrets: []
 
+awsModels:
+  secretName: ""
+  key: endpoints.json
+  mountPath: /root/.aws/models/endpoints.json
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+lease:
+  enabled: true
+  name: db-publish-lease
+  durationSec: 120
+  acquireTimeoutSec: 60
+
 slotReplicas:
   blue: 1
   green: 0
@@ -78,6 +94,17 @@ backend:
     USER_STORE_POSTGRES_USER: shuttlego
     SESSION_TOUCH_MIN_INTERVAL_SEC: "0"
     CORS_ORIGINS: ""
+  dbSync:
+    enabled: false
+    intervalSec: 300
+    jitterSec: 30
+    warmCacheOnUpdate: false
+    defaultPrefix: db/dev
+    s3:
+      bucket: ""
+      prefix: db/dev
+      manifestKey: db/dev/latest.json
+      region: ap-northeast-2
   extraEnv: []
 
 health:
@@ -105,14 +132,39 @@ dataVolume:
   fsType: ext4
 
 cronJobs:
+  nodeSelector: null
+  tolerations: []
   authCleanup:
     enabled: true
     schedule: "17 * * * *"
+    concurrencyPolicy: Forbid
+    suspend: false
+    startingDeadlineSeconds: 1200
+    backoffLimit: 0
+    activeDeadlineSeconds: 600
+    ttlSecondsAfterFinished: 600
     successfulJobsHistoryLimit: 2
     failedJobsHistoryLimit: 2
   githubCleanup:
     enabled: true
     schedule: "*/5 * * * *"
+    concurrencyPolicy: Forbid
+    suspend: false
+    startingDeadlineSeconds: 1200
+    backoffLimit: 0
+    activeDeadlineSeconds: 600
+    ttlSecondsAfterFinished: 600
     maxJobsPerRun: 20
     successfulJobsHistoryLimit: 2
     failedJobsHistoryLimit: 2
+
+tmapCollector:
+  enabled: false
+  replicas: 1
+  localDbPath: /app/data/data.db
+  requestTimeoutSec: 20
+  dailyQuotaLimit: 1000
+  quotaCooldownSec: 3600
+  publishEveryCalls: 50
+  keepRunsPerTarget: 30
+  resources: {}
