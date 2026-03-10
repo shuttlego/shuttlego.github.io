@@ -2,6 +2,8 @@
 {{- $slotTag := get $imageTags "blue" }}
 {{- $defaultTag := default .Chart.AppVersion .Values.image.tag }}
 {{- $effectiveTag := default $defaultTag $slotTag }}
+{{- $cronNodeSelector := .Values.cronJobs.nodeSelector }}
+{{- $cronTolerations := .Values.cronJobs.tolerations }}
 {{- if .Values.cronJobs.authCleanup.enabled }}
 apiVersion: batch/v1
 kind: CronJob
@@ -11,10 +13,16 @@ metadata:
     {{- include "shuttle-backend.labels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.cronJobs.authCleanup.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronJobs.authCleanup.concurrencyPolicy | quote }}
+  suspend: {{ .Values.cronJobs.authCleanup.suspend | default false }}
+  startingDeadlineSeconds: {{ .Values.cronJobs.authCleanup.startingDeadlineSeconds }}
   successfulJobsHistoryLimit: {{ .Values.cronJobs.authCleanup.successfulJobsHistoryLimit }}
   failedJobsHistoryLimit: {{ .Values.cronJobs.authCleanup.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
+      backoffLimit: {{ .Values.cronJobs.authCleanup.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.cronJobs.authCleanup.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: {{ .Values.cronJobs.authCleanup.ttlSecondsAfterFinished }}
       template:
         metadata:
           labels:
@@ -23,11 +31,11 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: {{ include "shuttle-backend.serviceAccountName" . }}
-          {{- with .Values.backend.nodeSelector }}
+          {{- with $cronNodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.backend.tolerations }}
+          {{- with $cronTolerations }}
           tolerations:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -67,10 +75,16 @@ metadata:
     {{- include "shuttle-backend.labels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.cronJobs.githubCleanup.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronJobs.githubCleanup.concurrencyPolicy | quote }}
+  suspend: {{ .Values.cronJobs.githubCleanup.suspend | default false }}
+  startingDeadlineSeconds: {{ .Values.cronJobs.githubCleanup.startingDeadlineSeconds }}
   successfulJobsHistoryLimit: {{ .Values.cronJobs.githubCleanup.successfulJobsHistoryLimit }}
   failedJobsHistoryLimit: {{ .Values.cronJobs.githubCleanup.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
+      backoffLimit: {{ .Values.cronJobs.githubCleanup.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.cronJobs.githubCleanup.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: {{ .Values.cronJobs.githubCleanup.ttlSecondsAfterFinished }}
       template:
         metadata:
           labels:
@@ -79,11 +93,11 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: {{ include "shuttle-backend.serviceAccountName" . }}
-          {{- with .Values.backend.nodeSelector }}
+          {{- with $cronNodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.backend.tolerations }}
+          {{- with $cronTolerations }}
           tolerations:
             {{- toYaml . | nindent 12 }}
           {{- end }}

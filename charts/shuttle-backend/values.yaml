@@ -132,14 +132,28 @@ dataVolume:
   fsType: ext4
 
 cronJobs:
+  nodeSelector: null
+  tolerations: []
   authCleanup:
     enabled: true
     schedule: "17 * * * *"
+    concurrencyPolicy: Forbid
+    suspend: false
+    startingDeadlineSeconds: 1200
+    backoffLimit: 0
+    activeDeadlineSeconds: 600
+    ttlSecondsAfterFinished: 600
     successfulJobsHistoryLimit: 2
     failedJobsHistoryLimit: 2
   githubCleanup:
     enabled: true
     schedule: "*/5 * * * *"
+    concurrencyPolicy: Forbid
+    suspend: false
+    startingDeadlineSeconds: 1200
+    backoffLimit: 0
+    activeDeadlineSeconds: 600
+    ttlSecondsAfterFinished: 600
     maxJobsPerRun: 20
     successfulJobsHistoryLimit: 2
     failedJobsHistoryLimit: 2
