@@ -3392,16 +3392,23 @@ def _record_db_generation_metrics(generation: int) -> None:
 def _on_runtime_db_synced(db_path, version_key: str, manifest_updated_at_utc: str | None = None) -> None:
     started_at = _time.time()
     try:
-        generation = init_db(str(db_path))
+        prewarmed_endpoint_cache = None
         if APP_DB_S3_SYNC_WARM_CACHE:
+            prewarmed_endpoint_cache = load_data.build_endpoint_cache_bundle(str(db_path))
+        generation = init_db(
+            str(db_path),
+            prewarmed_endpoint_cache=prewarmed_endpoint_cache,
+        )
+        if APP_DB_S3_SYNC_WARM_CACHE and prewarmed_endpoint_cache is None:
             warm_endpoint_cache()
         _record_db_generation_metrics(generation)
         app.logger.info(
-            "Runtime DB sync applied version=%s path=%s generation=%s manifest_updated_at_utc=%s",
+            "Runtime DB sync applied version=%s path=%s generation=%s manifest_updated_at_utc=%s prewarmed_endpoint_cache=%s",
             version_key,
             db_path,
             generation,
             manifest_updated_at_utc,
+            "yes" if prewarmed_endpoint_cache is not None else "no",
         )
     except Exception:
         app.logger.exception("Failed to apply runtime DB sync version=%s", version_key)
@@ -5555,7 +5562,7 @@ def api_github_webhook():
 
 @app.route("/api/shuttle/depart/options")
 def api_shuttle_depart_options():
-    """출근 노선 후보 최대 3개."""
+    """탑승 가능한 노선 후보 최대 3개."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -5619,7 +5626,7 @@ def api_shuttle_depart_options():
 
     results = find_nearest_route_options(
         site_id=site_id,
-        route_type="commute_in",
+        route_types=("commute_in", "shuttle"),
         lat=lat,
         lon=lng,
         day_type=day_type,
@@ -5634,7 +5641,7 @@ def api_shuttle_depart_options():
             _record_route_search()
             return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         _record_route_search()
-        return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
+        return jsonify({"error": "해당 사업장의 탑승 가능한 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
     all_last_times = []  # 시간 필터로 빈 결과 시 마지막 출발시간 추적용
@@ -5725,8 +5732,8 @@ def api_shuttle_depart_options():
             positions.append({"lat": terminus["lat"], "lng": terminus["lng"], "label": "종착"})
 
         message = (
-            f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
-            f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
+            f"{place_name}에서 이동하기 위해서는 {ns['name']} 정류장에서 "
+            f"{r['route_name']} {'셔틀' if str(r.get('route_type') or '') == 'shuttle' else '출근'} 버스(노선)를 탑승하세요."
         )
         bus_segment_polylines = _segment_polylines_between_sequences(
             route_stops,
@@ -5739,6 +5746,7 @@ def api_shuttle_depart_options():
             "message": message,
             "route_name": r["route_name"],
             "route_id": r["route_id"],
+            "route_type": r["route_type"],
             "operator": ", ".join(r["companies"]),
             "nearest_stop_name": ns["name"],
             "nearest_stop_sequence": ns.get("sequence"),
@@ -5763,7 +5771,7 @@ def api_shuttle_depart_options():
 
 @app.route("/api/shuttle/depart")
 def api_shuttle_depart():
-    """출근: 가장 가까운 1개 노선."""
+    """탑승: 가장 가까운 1개 노선."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -5777,11 +5785,11 @@ def api_shuttle_depart():
     _record_route_search_source_metric("depart")
 
     results = find_nearest_route_options(
-        site_id=site_id, route_type="commute_in", lat=lat, lon=lng,
+        site_id=site_id, route_types=("commute_in", "shuttle"), lat=lat, lon=lng,
         day_type=day_type, max_routes=1,
     )
     if not results:
-        return jsonify({"error": "해당 사업장의 출근 노선/정류장을 찾을 수 없습니다."}), 404
+        return jsonify({"error": "해당 사업장의 탑승 가능한 노선/정류장을 찾을 수 없습니다."}), 404
 
     r = results[0]
     ns = {
@@ -5854,8 +5862,8 @@ def api_shuttle_depart():
         positions.append({"lat": terminus["lat"], "lng": terminus["lng"], "label": "종착"})
 
     message = (
-        f"{place_name}에서 출근하기 위해서는 {ns['name']} 정류장에서 "
-        f"{r['route_name']} 출근 버스(노선)를 탑승하세요."
+        f"{place_name}에서 이동하기 위해서는 {ns['name']} 정류장에서 "
+        f"{r['route_name']} {'셔틀' if str(r.get('route_type') or '') == 'shuttle' else '출근'} 버스(노선)를 탑승하세요."
     )
     bus_segment_polylines = _segment_polylines_between_sequences(
         route_stops,
@@ -5867,6 +5875,7 @@ def api_shuttle_depart():
         "positions": positions,
         "message": message,
         "route_name": r["route_name"],
+        "route_type": r["route_type"],
         "nearest_stop_name": ns["name"],
         "nearest_stop_sequence": ns.get("sequence"),
         "terminus_name": terminus["stop_name"] if terminus else "",
@@ -5882,7 +5891,7 @@ def api_shuttle_depart():
 
 @app.route("/api/shuttle/arrive/options")
 def api_shuttle_arrive_options():
-    """퇴근 노선 후보 최대 3개."""
+    """하차 가능한 노선 후보 최대 3개."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -5946,7 +5955,7 @@ def api_shuttle_arrive_options():
 
     results = find_nearest_route_options(
         site_id=site_id,
-        route_type="commute_out",
+        route_types=("commute_out", "shuttle"),
         lat=lat,
         lon=lng,
         day_type=day_type,
@@ -5961,7 +5970,7 @@ def api_shuttle_arrive_options():
             _record_route_search()
             return jsonify({"options": [], "walk_otp_enabled": OTP_WALK_ENABLED})
         _record_route_search()
-        return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
+        return jsonify({"error": "해당 사업장의 하차 가능한 노선/정류장을 찾을 수 없습니다."}), 404
 
     options = []
     all_last_times = []
@@ -6036,7 +6045,7 @@ def api_shuttle_arrive_options():
         positions.append({"lat": lat, "lng": lng, "label": "도착"})
 
         message = (
-            f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
+            f"{place_name}(으)로 가기 위해서는 {r['route_name']} {'셔틀' if str(r.get('route_type') or '') == 'shuttle' else '퇴근'} 버스를 "
             f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
         )
         bus_segment_polylines = _segment_polylines_between_sequences(
@@ -6064,6 +6073,7 @@ def api_shuttle_arrive_options():
             "message": message,
             "route_name": r["route_name"],
             "route_id": r["route_id"],
+            "route_type": r["route_type"],
             "operator": ", ".join(r["companies"]),
             "start_stop_name": first["stop_name"] if first else "",
             "start_stop_sequence": first_seq,
@@ -6088,7 +6098,7 @@ def api_shuttle_arrive_options():
 
 @app.route("/api/shuttle/arrive")
 def api_shuttle_arrive():
-    """퇴근: 가장 가까운 1개 노선."""
+    """하차: 가장 가까운 1개 노선."""
     site_id = request.args.get("site_id", default="0000011")
     lat = request.args.get("lat", type=float)
     lng = request.args.get("lng", type=float)
@@ -6102,11 +6112,11 @@ def api_shuttle_arrive():
     _record_route_search_source_metric("arrive")
 
     results = find_nearest_route_options(
-        site_id=site_id, route_type="commute_out", lat=lat, lon=lng,
+        site_id=site_id, route_types=("commute_out", "shuttle"), lat=lat, lon=lng,
         day_type=day_type, max_routes=1,
     )
     if not results:
-        return jsonify({"error": "해당 사업장의 퇴근 노선/정류장을 찾을 수 없습니다."}), 404
+        return jsonify({"error": "해당 사업장의 하차 가능한 노선/정류장을 찾을 수 없습니다."}), 404
 
     r = results[0]
     ns = {
@@ -6177,7 +6187,7 @@ def api_shuttle_arrive():
     positions.append({"lat": lat, "lng": lng, "label": "도착"})
 
     message = (
-        f"{place_name}(으)로 가기 위해서는 {r['route_name']} 퇴근 버스를 "
+        f"{place_name}(으)로 가기 위해서는 {r['route_name']} {'셔틀' if str(r.get('route_type') or '') == 'shuttle' else '퇴근'} 버스를 "
         f"{first['stop_name'] if first else ''}에서 탑승하고 {ns['name']}에서 하차하세요."
     )
     bus_segment_polylines = _segment_polylines_between_sequences(
@@ -6190,6 +6200,7 @@ def api_shuttle_arrive():
         "positions": positions,
         "message": message,
         "route_name": r["route_name"],
+        "route_type": r["route_type"],
         "start_stop_name": first["stop_name"] if first else "",
         "start_stop_sequence": first_seq,
         "getoff_stop_name": ns["name"],

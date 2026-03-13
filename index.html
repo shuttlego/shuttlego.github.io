@@ -3324,9 +3324,30 @@
       background: #fffde7;
     }
     .route-option-card .route-name {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
       font-weight: 700;
       font-size: 15px;
       color: #333;
+    }
+    .route-option-card .route-name-text {
+      display: inline-block;
+    }
+    .route-option-card .route-shuttle-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 20px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: #111;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.01em;
     }
     .route-option-card .route-meta {
       font-size: 13px;
@@ -13287,6 +13308,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!isMobile()) {
           var routeNameHtml = '<span class="hl">' + escapeHtml(option.route_name) + '</span>';
           var routeTimeHtml = '<span class="hl">' + escapeHtml(timeStr) + '분</span>';
+          var serviceLabel = getRouteServiceLabel(option.route_type, isDepart);
+          var routePurposeLabel = isShuttleRouteType(option.route_type) ? '이동하기 위해서는' : '출근하기 위해서는';
           var stopBadgeHtml = function(nameText) {
             return '<span class="msg-pill msg-pill-stop"><span class="msg-inline-icon msg-icon-stop" aria-hidden="true"></span>' +
               '<span>' + escapeHtml(nameText || '') + '</span></span>';
@@ -13296,10 +13319,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               '<span>' + escapeHtml(nameText || '') + '</span></span>';
           };
           var msgHtml = isDepart
-            ? escapeHtml(placeName) + '에서 출근하기 위해서는 ' + stopBadgeHtml(option.nearest_stop_name) +
-              ' 정류장에서 ' + routeNameHtml + ' ' + routeTimeHtml + ' 출근 노선 버스에 탑승하세요.'
+            ? escapeHtml(placeName) + '에서 ' + routePurposeLabel + ' ' + stopBadgeHtml(option.nearest_stop_name) +
+              ' 정류장에서 ' + routeNameHtml + ' ' + routeTimeHtml + ' ' + serviceLabel + ' 노선 버스에 탑승하세요.'
             : escapeHtml(placeName) + '(으)로 가기 위해서는 ' + routeNameHtml + ' ' + routeTimeHtml +
-              ' 퇴근 노선을 ' + startBadgeHtml(option.start_stop_name) + '에서 탑승하고 ' +
+              ' ' + serviceLabel + ' 노선을 ' + startBadgeHtml(option.start_stop_name) + '에서 탑승하고 ' +
               stopBadgeHtml(option.getoff_stop_name) + '에서 하차하세요.';
           showShuttleResult(msgHtml);
         } else {
@@ -13899,6 +13922,25 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         document.getElementById('sortByTime').classList.toggle('active', currentSortMode === 'time');
       }
 
+      function isShuttleRouteType(routeType) {
+        return String(routeType || '').trim().toLowerCase() === 'shuttle';
+      }
+
+      function getRouteServiceLabel(routeType, isDepart) {
+        if (isShuttleRouteType(routeType)) return '셔틀';
+        return isDepart ? '출근' : '퇴근';
+      }
+
+      function buildRouteNameHtml(option) {
+        var routeName = escapeHtml((option && option.route_name) || '');
+        var htmlParts = [];
+        if (isShuttleRouteType(option && option.route_type)) {
+          htmlParts.push('<span class="route-shuttle-badge">셔틀</span>');
+        }
+        htmlParts.push('<span class="route-name-text">' + routeName + '</span>');
+        return htmlParts.join('');
+      }
+
       function renderRouteCards(options, placeName, isDepart) {
         routeOptionsWrap.innerHTML = '';
         expandedOptionIndex = -1;
@@ -13911,12 +13953,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           card.className = 'route-option-card' + (idx === 0 ? ' selected' : '');
           card.setAttribute('data-route-index', String(idx));
           var timeStr = (opt.board_time != null && opt.board_time !== '') ? opt.board_time : getDepartureTimeStr();
+          var serviceLabel = getRouteServiceLabel(opt.route_type, isDepart);
           var pathDetailDefault = isDepart
             ? escapeHtml(placeName) + ' → ' + escapeHtml(opt.nearest_stop_name) + ' → ' + escapeHtml(opt.terminus_name)
             : escapeHtml(opt.start_stop_name) + ' → ' + escapeHtml(opt.getoff_stop_name) + ' 하차 → ' + escapeHtml(placeName);
           var selectedDetailHtml = buildSelectedRouteDetailHtml(opt, placeName, isDepart, null);
           var distStr = formatDistance(opt.distance_m);
-          var metaLine = distStr + ' · ' + timeStr + '분 노선';
+          var metaLine = distStr + ' · ' + timeStr + '분 ' + serviceLabel + ' 노선';
           var allTimes = opt.all_departure_times || [];
           var timesHtml = allTimes.map(function(t) {
             var isCurrent = (t === timeStr);
@@ -13942,7 +13985,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           card.innerHTML =
             '<div class="card-main">' +
               '<div class="card-title-wrap">' +
-                '<div class="route-name">' + escapeHtml(opt.route_name) + '</div>' +
+                '<div class="route-name">' + buildRouteNameHtml(opt) + '</div>' +
                 '<div class="route-meta">' + escapeHtml(metaLine) + '</div>' +
               '</div>' +
               '<button type="button" class="btn-route-detail" data-idx="' + idx + '">노선 상세</button>' +
