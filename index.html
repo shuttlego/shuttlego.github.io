@@ -6531,6 +6531,9 @@
       var historyLoading = false;
       var historyLastLoadedAtMs = 0;
       var PLACE_HISTORY_REFRESH_INTERVAL_MS = 30000;
+      var PLACE_HISTORY_OPTIMISTIC_TTL_MS = 120000;
+      var PLACE_HISTORY_SYNC_DELAY_MS = 350;
+      var placeHistoryRefreshTimer = null;
       var POLICY_TERMS_TEXT = (
 `## Shuttle Go 이용약관
 
@@ -6723,6 +6726,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function resetPlaceHistoryState() {
+        if (placeHistoryRefreshTimer) {
+          clearTimeout(placeHistoryRefreshTimer);
+          placeHistoryRefreshTimer = null;
+        }
         historyItems = [];
         historyNextCursor = null;
         historyHasMore = false;
@@ -7823,8 +7830,100 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         placeHistoryPopover.style.top = (rect.bottom + 6) + 'px';
       }
 
+      function normalizePlaceHistoryKeyword(value) {
+        return String(value || '').trim().toLowerCase();
+      }
+
+      function getPlaceHistoryTimestampMs(value) {
+        var dt = new Date(value || '');
+        var ms = dt.getTime();
+        return isNaN(ms) ? 0 : ms;
+      }
+
+      function isOptimisticPlaceHistoryItem(item) {
+        return !!(item && item._optimistic);
+      }
+
+      function pruneOptimisticPlaceHistory(items) {
+        var nowMs = Date.now();
+        return (Array.isArray(items) ? items : []).filter(function(item) {
+          if (!isOptimisticPlaceHistoryItem(item)) return true;
+          var itemMs = getPlaceHistoryTimestampMs(item.searched_at);
+          if (!itemMs) return false;
+          return (nowMs - itemMs) <= PLACE_HISTORY_OPTIMISTIC_TTL_MS;
+        });
+      }
+
+      function dedupePlaceHistoryItems(items) {
+        var seen = {};
+        var deduped = [];
+        (Array.isArray(items) ? items : []).forEach(function(item) {
+          if (!item) return;
+          var idKey = item.id != null ? ('id:' + String(item.id)) : '';
+          var fallbackKey = 'kw:' + normalizePlaceHistoryKeyword(item.keyword) + '|at:' + String(item.searched_at || '');
+          var key = idKey || fallbackKey;
+          if (!key || seen[key]) return;
+          seen[key] = true;
+          deduped.push(item);
+        });
+        return deduped;
+      }
+
+      function mergeServerPlaceHistoryItems(serverItems, currentItems) {
+        var serverList = Array.isArray(serverItems) ? serverItems : [];
+        var currentList = pruneOptimisticPlaceHistory(currentItems);
+        var optimisticOnly = currentList.filter(function(item) { return isOptimisticPlaceHistoryItem(item); });
+        var optimisticRemain = optimisticOnly.filter(function(localItem) {
+          var localKeyword = normalizePlaceHistoryKeyword(localItem.keyword);
+          if (!localKeyword) return false;
+          var localMs = getPlaceHistoryTimestampMs(localItem.searched_at);
+          return !serverList.some(function(serverItem) {
+            var serverKeyword = normalizePlaceHistoryKeyword(serverItem && serverItem.keyword);
+            if (!serverKeyword || serverKeyword !== localKeyword) return false;
+            var serverMs = getPlaceHistoryTimestampMs(serverItem && serverItem.searched_at);
+            if (!localMs || !serverMs) return true;
+            return Math.abs(serverMs - localMs) <= PLACE_HISTORY_OPTIMISTIC_TTL_MS;
+          });
+        });
+        return dedupePlaceHistoryItems(optimisticRemain.concat(serverList));
+      }
+
+      function schedulePlaceHistorySync(delayMs) {
+        if (!authState.logged_in) return;
+        if (placeHistoryRefreshTimer) {
+          clearTimeout(placeHistoryRefreshTimer);
+          placeHistoryRefreshTimer = null;
+        }
+        var wait = Number(delayMs);
+        if (!isFinite(wait) || wait < 0) wait = 0;
+        placeHistoryRefreshTimer = setTimeout(function() {
+          placeHistoryRefreshTimer = null;
+          loadPlaceHistory(true, { keepExistingOnReset: true });
+        }, wait);
+      }
+
+      function markPlaceHistorySearched(keyword) {
+        if (!authState.logged_in) return;
+        var cleanKeyword = String(keyword || '').trim();
+        if (!cleanKeyword) return;
+        var optimisticItem = {
+          id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          keyword: cleanKeyword,
+          searched_at: new Date().toISOString(),
+          _optimistic: true
+        };
+        historyItems = dedupePlaceHistoryItems(pruneOptimisticPlaceHistory([optimisticItem].concat(historyItems))).slice(0, 100);
+        historyHasMore = true;
+        historyLastLoadedAtMs = 0;
+        if (placeHistoryPopover && placeHistoryPopover.classList.contains('show')) {
+          renderPlaceHistory();
+        }
+        schedulePlaceHistorySync(PLACE_HISTORY_SYNC_DELAY_MS);
+      }
+
       function renderPlaceHistory() {
         if (!placeHistoryPopover) return;
+        historyItems = pruneOptimisticPlaceHistory(historyItems);
         placeHistoryPopover.innerHTML = '';
         if (!historyItems || historyItems.length === 0) {
           var emptyEl = document.createElement('div');
@@ -7862,6 +7961,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             evt.stopPropagation();
             var id = this.getAttribute('data-id');
             if (!id) return;
+            if (isOptimisticPlaceHistoryItem(item) || String(id).indexOf('local-') === 0) {
+              historyItems = historyItems.filter(function(hist) { return String(hist.id) !== String(id); });
+              renderPlaceHistory();
+              return;
+            }
             fetch(API_BASE + '/api/me/history/place-search/' + encodeURIComponent(id), {
               method: 'DELETE'
             }).then(function(r) {
@@ -7899,7 +8003,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           .then(function(payload) {
             if (!payload.ok) throw new Error(payload.data.error || '히스토리 조회 실패');
             var items = Array.isArray(payload.data.items) ? payload.data.items : [];
-            historyItems = reset ? items : historyItems.concat(items);
+            if (reset) {
+              historyItems = mergeServerPlaceHistoryItems(items, historyItems);
+            } else {
+              historyItems = dedupePlaceHistoryItems(pruneOptimisticPlaceHistory(historyItems).concat(items));
+            }
             historyNextCursor = payload.data.next_cursor || null;
             historyHasMore = !!payload.data.has_more;
             historyLastLoadedAtMs = Date.now();
@@ -7925,14 +8033,16 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         historyOpenInput = inputEl;
         positionHistoryPopover();
         placeHistoryPopover.classList.add('show');
+        historyItems = pruneOptimisticPlaceHistory(historyItems);
         renderPlaceHistory();
         if (!authState.logged_in) return;
         if (historyItems.length === 0) {
           loadPlaceHistory(true);
           return;
         }
+        var hasOptimistic = historyItems.some(function(item) { return isOptimisticPlaceHistoryItem(item); });
         var isStale = !historyLastLoadedAtMs || (Date.now() - historyLastLoadedAtMs) >= PLACE_HISTORY_REFRESH_INTERVAL_MS;
-        if (isStale) {
+        if (hasOptimistic || isStale) {
           loadPlaceHistory(true, { keepExistingOnReset: true });
         }
       }
@@ -14130,6 +14240,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q))
           .then(function(r) { return r.json(); })
           .then(function(data) {
+            markPlaceHistorySearched(q);
             places = (data.documents || []).map(function(doc) {
               var copied = Object.assign({}, doc || {});
               copied._place_source = 'search';
