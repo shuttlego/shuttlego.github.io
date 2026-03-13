@@ -1,7 +1,4 @@
-{{- $imageTags := default (dict) .Values.image.tags }}
-{{- $slotTag := get $imageTags "blue" }}
-{{- $defaultTag := default .Chart.AppVersion .Values.image.tag }}
-{{- $effectiveTag := default $defaultTag $slotTag }}
+{{- $sharedTag := default .Chart.AppVersion .Values.image.tag }}
 {{- $cronNodeSelector := .Values.cronJobs.nodeSelector }}
 {{- $cronTolerations := .Values.cronJobs.tolerations }}
 {{- if .Values.cronJobs.authCleanup.enabled }}
@@ -45,7 +42,7 @@ spec:
           {{- end }}
           containers:
             - name: auth-cleanup
-              image: "{{ .Values.image.repository }}:{{ $effectiveTag }}"
+              image: "{{ .Values.image.repository }}:{{ $sharedTag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               command:
                 - python
@@ -107,7 +104,7 @@ spec:
           {{- end }}
           containers:
             - name: github-cleanup
-              image: "{{ .Values.image.repository }}:{{ $effectiveTag }}"
+              image: "{{ .Values.image.repository }}:{{ $sharedTag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               command:
                 - python

@@ -3441,8 +3441,18 @@ def _run_startup_hooks() -> None:
     worker = _start_runtime_db_sync_worker()
     if worker is not None:
         worker.sync_once(on_updated=None)
+        if not os.path.exists(str(worker.active_db_path)):
+            raise RuntimeError(
+                "DB bootstrap failed: no local snapshot available after S3 sync. "
+                "Check DB_S3_* settings/permissions and manifest object."
+            )
         generation = init_db(str(worker.active_db_path))
     else:
+        if APP_DB_S3_SYNC_ENABLED:
+            raise RuntimeError(
+                "APP_DB_S3_SYNC_ENABLED=1 but runtime DB sync worker is unavailable. "
+                "Check DB_S3_BUCKET/DB_S3_PREFIX/DB_S3_MANIFEST_KEY."
+            )
         generation = init_db()
     _record_db_generation_metrics(generation)
     user_store.init_db()

@@ -224,6 +224,30 @@ class _PostgresCompatConnection:
                 pass
             self._raise_compat_error(exc)
 
+    def executemany(self, query: str, seq_of_params):
+        sql = str(query or "")
+        params_list = list(seq_of_params or [])
+        if not params_list:
+            return _SyntheticCursor(rowcount=0, lastrowid=self._last_insert_id)
+        cursor = self._conn.cursor(row_factory=dict_row)
+        try:
+            cursor.executemany(self._convert_query(sql), params_list)
+            # executemany does not expose per-row RETURNING values consistently.
+            self._last_insert_id = None
+            rowcount = int(cursor.rowcount or 0)
+            cursor.close()
+            return _SyntheticCursor(rowcount=rowcount, lastrowid=self._last_insert_id)
+        except Exception as exc:  # pragma: no cover - runtime compatibility path
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            try:
+                cursor.close()
+            except Exception:
+                pass
+            self._raise_compat_error(exc)
+
     def commit(self) -> None:
         self._conn.commit()
 
