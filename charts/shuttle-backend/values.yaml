@@ -167,4 +167,11 @@ tmapCollector:
   quotaCooldownSec: 3600
   publishEveryCalls: 50
   keepRunsPerTarget: 30
+  seq30DailyLimitPerKey: 100
+  routeDailyLimitPerKey: 1000
+  callWindowStartHourKst: 8
+  callWindowEndHourKst: 17
+  pacingJitterMin: 0.75
+  pacingJitterMax: 1.35
+  pacingMinSleepSec: 1
   resources: {}

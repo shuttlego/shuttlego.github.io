@@ -62,6 +62,20 @@ spec:
               value: {{ default 50 .Values.tmapCollector.publishEveryCalls | quote }}
             - name: TMAP_KEEP_RUNS_PER_TARGET
               value: {{ default 30 .Values.tmapCollector.keepRunsPerTarget | quote }}
+            - name: TMAP_SEQ30_DAILY_LIMIT_PER_KEY
+              value: {{ default 100 .Values.tmapCollector.seq30DailyLimitPerKey | quote }}
+            - name: TMAP_ROUTE_DAILY_LIMIT_PER_KEY
+              value: {{ default 1000 .Values.tmapCollector.routeDailyLimitPerKey | quote }}
+            - name: TMAP_CALL_WINDOW_START_HOUR_KST
+              value: {{ default 8 .Values.tmapCollector.callWindowStartHourKst | quote }}
+            - name: TMAP_CALL_WINDOW_END_HOUR_KST
+              value: {{ default 17 .Values.tmapCollector.callWindowEndHourKst | quote }}
+            - name: TMAP_PACING_JITTER_MIN
+              value: {{ default 0.75 .Values.tmapCollector.pacingJitterMin | quote }}
+            - name: TMAP_PACING_JITTER_MAX
+              value: {{ default 1.35 .Values.tmapCollector.pacingJitterMax | quote }}
+            - name: TMAP_PACING_MIN_SLEEP_SEC
+              value: {{ default 1 .Values.tmapCollector.pacingMinSleepSec | quote }}
             - name: DB_S3_BUCKET
               value: {{ default "" $dbSyncS3.bucket | quote }}
             - name: DB_S3_PREFIX

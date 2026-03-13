@@ -5,16 +5,19 @@ Collection strategy:
 1) Prefer routeSequential30 (32-stop window, step 31 overlap).
 2) If seq30 is quota-blocked (429 or quota error), switch to routes API.
 3) routes API uses 7-stop window (start + 5 via + end), step 6 overlap.
-4) Keep collecting on current API phase until that phase is blocked.
-5) Keep the latest N runs per target (source-integrated rolling window).
+4) Rotate across multiple app keys; if a key is quota-blocked, mark it unavailable.
+5) Keep collecting on current API phase until that phase is blocked.
+6) Keep the latest N runs per target (source-integrated rolling window).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+import random
 import re
 import sqlite3
 import tempfile
@@ -49,6 +52,12 @@ DEFAULT_TMAP_ROUTE_URL = "https://apis.openapi.sk.com/tmap/routes"
 API_SEQ30 = "seq30"
 API_ROUTE = "route"
 POINT_B_PATTERN = re.compile(r"^B(\d+)$")
+WEEKDAY_BALANCE_LOOKAHEAD_MATCHES = 14
+RETRYABLE_ROUTE_ERROR_CODES = {"1100", "1101"}
+DEFAULT_SEQ30_DAILY_LIMIT_PER_KEY = 100
+DEFAULT_ROUTE_DAILY_LIMIT_PER_KEY = 1000
+DEFAULT_CALL_WINDOW_START_HOUR_KST = 8
+DEFAULT_CALL_WINDOW_END_HOUR_KST = 17
 
 
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -69,6 +78,28 @@ def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
     return max(minimum, value)
 
 
+def _clamp_int(value: int, *, minimum: int, maximum: int) -> int:
+    return min(maximum, max(minimum, int(value)))
+
+
+def _parse_app_keys_from_env() -> list[str]:
+    parsed: list[str] = []
+    raw_multi = str(os.environ.get("TMAP_APP_KEYS", "") or "").strip()
+    if raw_multi:
+        parsed.extend([token.strip() for token in re.split(r"[\s,;]+", raw_multi) if token.strip()])
+    raw_single = str(os.environ.get("TMAP_APP_KEY", "") or "").strip()
+    if raw_single:
+        parsed.append(raw_single)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for key in parsed:
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped
+
+
 def _parse_iso_datetime(raw: str | None) -> datetime | None:
     if not raw:
         return None
@@ -76,6 +107,18 @@ def _parse_iso_datetime(raw: str | None) -> datetime | None:
         return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+def _next_kst_midnight_utc(now_utc: datetime) -> datetime:
+    now_kst = now_utc.astimezone(KST)
+    next_day = now_kst.date() + timedelta(days=1)
+    next_midnight_kst = datetime(
+        year=next_day.year,
+        month=next_day.month,
+        day=next_day.day,
+        tzinfo=KST,
+    )
+    return next_midnight_kst.astimezone(timezone.utc)
 
 
 def _to_kst_yyyymmddhhmm(dt: datetime) -> str:
@@ -137,11 +180,82 @@ def _point_name(stop: StopRow) -> str:
     return name if name else f"stop-{stop.seq}"
 
 
+@dataclass(frozen=True)
+class RoutePayloadPlan:
+    points: list[StopRow]
+    dropped_consecutive: int
+    dropped_via_equals_end: int
+    start_equals_end: bool
+
+    @property
+    def changed(self) -> bool:
+        return self.dropped_consecutive > 0 or self.dropped_via_equals_end > 0
+
+
+def _coord_token(stop: StopRow) -> str:
+    return f"{stop.lon:.7f},{stop.lat:.7f}"
+
+
+def _prepare_route_payload_points(points: list[StopRow]) -> RoutePayloadPlan:
+    if len(points) < 2:
+        return RoutePayloadPlan(
+            points=list(points),
+            dropped_consecutive=0,
+            dropped_via_equals_end=0,
+            start_equals_end=True,
+        )
+
+    original_end_token = _coord_token(points[-1])
+    filtered: list[StopRow] = [points[0]]
+    dropped_consecutive = 0
+    dropped_via_equals_end = 0
+
+    for stop in points[1:-1]:
+        token = _coord_token(stop)
+        if token == original_end_token:
+            dropped_via_equals_end += 1
+            continue
+        if token == _coord_token(filtered[-1]):
+            dropped_consecutive += 1
+            continue
+        filtered.append(stop)
+
+    end_stop = points[-1]
+    if _coord_token(filtered[-1]) == _coord_token(end_stop):
+        dropped_consecutive += 1
+    else:
+        filtered.append(end_stop)
+
+    if len(filtered) <= 1:
+        start_equals_end = True
+    else:
+        start_equals_end = _coord_token(filtered[0]) == _coord_token(filtered[-1])
+
+    return RoutePayloadPlan(
+        points=filtered,
+        dropped_consecutive=dropped_consecutive,
+        dropped_via_equals_end=dropped_via_equals_end,
+        start_equals_end=start_equals_end,
+    )
+
+
+def _is_retryable_route_failure(http_code: int | None, error_code: str | None, error_message: str | None) -> bool:
+    token = str(error_code or "").strip()
+    if token in RETRYABLE_ROUTE_ERROR_CODES:
+        return True
+    if int(http_code or 0) == 400 and token == "400":
+        return True
+    msg = str(error_message or "")
+    if "WR312" in msg:
+        return True
+    return any(code in msg for code in RETRYABLE_ROUTE_ERROR_CODES)
+
+
 def _build_seq30_payload(points: list[StopRow], start_time: str) -> dict[str, Any]:
     start = points[0]
     end = points[-1]
     via = points[1:-1]
-    return {
+    payload: dict[str, Any] = {
         "reqCoordType": "WGS84GEO",
         "resCoordType": "WGS84GEO",
         "startName": _point_name(start),
@@ -153,7 +267,9 @@ def _build_seq30_payload(points: list[StopRow], start_time: str) -> dict[str, An
         "endY": f"{end.lat:.7f}",
         "searchOption": "0",
         "carType": "1",
-        "viaPoints": [
+    }
+    if via:
+        payload["viaPoints"] = [
             {
                 "viaPointId": f"vp{idx:02d}",
                 "viaPointName": _point_name(stop),
@@ -161,8 +277,8 @@ def _build_seq30_payload(points: list[StopRow], start_time: str) -> dict[str, An
                 "viaY": f"{stop.lat:.7f}",
             }
             for idx, stop in enumerate(via, start=1)
-        ],
-    }
+        ]
+    return payload
 
 
 def _build_route_payload(points: list[StopRow], start_time: str) -> dict[str, Any]:
@@ -414,10 +530,19 @@ def _is_quota_block(http_code: int | None, error_code: str | None) -> bool:
     return "QUOTA" in token or "LIMIT_EXCEEDED" in token
 
 
+def _mask_app_key(app_key: str) -> str:
+    token = str(app_key or "").strip()
+    if len(token) <= 8:
+        if len(token) <= 2:
+            return "***"
+        return f"{token[:1]}***{token[-1:]}"
+    return f"{token[:4]}...{token[-4:]}"
+
+
 @dataclass
 class CollectorConfig:
     local_db_path: Path
-    tmap_app_key: str
+    tmap_app_keys: tuple[str, ...]
     seq30_url: str
     route_url: str
     request_timeout_sec: float
@@ -425,6 +550,13 @@ class CollectorConfig:
     publish_every_calls: int
     keep_runs_per_target: int
     idle_sleep_sec: int
+    seq30_daily_limit_per_key: int
+    route_daily_limit_per_key: int
+    call_window_start_hour_kst: int
+    call_window_end_hour_kst: int
+    pacing_jitter_min: float
+    pacing_jitter_max: float
+    pacing_min_sleep_sec: int
     run_once: bool
 
 
@@ -509,8 +641,11 @@ def _resolve_start_datetime_kst(
     departure_time: str,
     now_kst: datetime,
     holiday_resolver: HolidayResolver,
+    weekday_usage: dict[int, int] | None = None,
 ) -> datetime:
+    code = str(day_type or "").strip().lower()
     hh, mm = _parse_hhmm(departure_time)
+    candidates: list[tuple[int, datetime]] = []
     for offset in range(0, 400):
         candidate_date = (now_kst + timedelta(days=offset)).date()
         candidate_dt = datetime(
@@ -524,49 +659,93 @@ def _resolve_start_datetime_kst(
         if candidate_dt <= now_kst:
             continue
         if _matches_day_type(day_type, candidate_date, holiday_resolver):
-            return candidate_dt
-    raise RuntimeError(f"No valid future start date for day_type={day_type} departure={departure_time}")
+            if code != "weekday":
+                return candidate_dt
+            candidates.append((offset, candidate_dt))
+    if not candidates:
+        raise RuntimeError(f"No valid future start date for day_type={day_type} departure={departure_time}")
+
+    usage = weekday_usage or {}
+    shortlist = candidates[:WEEKDAY_BALANCE_LOOKAHEAD_MATCHES]
+    selected = min(
+        shortlist,
+        key=lambda item: (int(usage.get(item[1].weekday(), 0)), int(item[0])),
+    )
+    if selected[0] != shortlist[0][0]:
+        LOG.debug(
+            "Weekday-balanced start date selected nearest=%s selected=%s usage=%s",
+            shortlist[0][1].date().isoformat(),
+            selected[1].date().isoformat(),
+            usage,
+        )
+    return selected[1]
+
+
+def _load_target_weekday_usage(conn: sqlite3.Connection, *, target_id: str, limit: int = 200) -> dict[int, int]:
+    rows = conn.execute(
+        """
+        SELECT requested_start_time
+        FROM tmap_run
+        WHERE target_id = ?
+          AND status = 'success'
+          AND requested_start_time IS NOT NULL
+        ORDER BY called_at_utc DESC, run_id DESC
+        LIMIT ?
+        """,
+        (target_id, max(1, int(limit))),
+    ).fetchall()
+    usage: dict[int, int] = {}
+    for row in rows:
+        token = str(row[0] or "").strip()
+        if len(token) < 8:
+            continue
+        date_token = token[:8]
+        try:
+            kst_date = datetime.strptime(date_token, "%Y%m%d").date()
+        except ValueError:
+            continue
+        wd = int(kst_date.weekday())
+        usage[wd] = int(usage.get(wd, 0)) + 1
+    return usage
 
 
 def _state_key_for_api(api_name: str) -> str:
     return f"collector.api_state.{api_name}"
 
 
-def _load_api_state(conn: sqlite3.Connection, api_name: str) -> dict[str, Any]:
-    key = _state_key_for_api(api_name)
+def _state_key_for_app_key(api_name: str, app_key: str) -> str:
+    token = str(app_key or "").strip()
+    digest = hashlib.sha1(token.encode("utf-8")).hexdigest()[:16]
+    api_token = str(api_name or "").strip().lower() or "unknown"
+    return f"collector.app_key_state.{api_token}.{digest}"
+
+
+def _state_key_for_api_pacing(api_name: str, kst_day: date) -> str:
+    api_token = str(api_name or "").strip().lower() or "unknown"
+    return f"collector.api_pacing.{api_token}.{kst_day.strftime('%Y%m%d')}"
+
+
+def _load_state_json(conn: sqlite3.Connection, state_key: str) -> dict[str, Any]:
     row = conn.execute(
         "SELECT state_value FROM tmap_collector_state WHERE state_key = ?",
-        (key,),
+        (state_key,),
     ).fetchone()
     if row is None or row[0] is None:
-        return {"blocked_until_utc": None, "last_http_code": None, "last_error_code": None}
+        return {}
     raw = str(row[0] or "").strip()
     if not raw:
-        return {"blocked_until_utc": None, "last_http_code": None, "last_error_code": None}
+        return {}
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
-            return {
-                "blocked_until_utc": parsed.get("blocked_until_utc"),
-                "last_http_code": parsed.get("last_http_code"),
-                "last_error_code": parsed.get("last_error_code"),
-            }
+            return parsed
     except Exception:
         pass
-    return {"blocked_until_utc": None, "last_http_code": None, "last_error_code": None}
+    return {}
 
 
-def _save_api_state(conn: sqlite3.Connection, api_name: str, state: dict[str, Any]) -> None:
-    key = _state_key_for_api(api_name)
-    value = json.dumps(
-        {
-            "blocked_until_utc": state.get("blocked_until_utc"),
-            "last_http_code": state.get("last_http_code"),
-            "last_error_code": state.get("last_error_code"),
-        },
-        ensure_ascii=True,
-        separators=(",", ":"),
-    )
+def _save_state_json(conn: sqlite3.Connection, state_key: str, state: dict[str, Any]) -> None:
+    value = json.dumps(state, ensure_ascii=True, separators=(",", ":"))
     now = utc_now_iso()
     conn.execute(
         """
@@ -576,39 +755,66 @@ def _save_api_state(conn: sqlite3.Connection, api_name: str, state: dict[str, An
             state_value = excluded.state_value,
             updated_at = excluded.updated_at
         """,
-        (key, value, now),
+        (state_key, value, now),
     )
 
 
-def _get_blocked_until(conn: sqlite3.Connection, api_name: str) -> datetime | None:
-    state = _load_api_state(conn, api_name)
+def _load_collector_state(conn: sqlite3.Connection, state_key: str) -> dict[str, Any]:
+    parsed = _load_state_json(conn, state_key)
+    return {
+        "blocked_until_utc": parsed.get("blocked_until_utc"),
+        "last_http_code": parsed.get("last_http_code"),
+        "last_error_code": parsed.get("last_error_code"),
+    }
+
+
+def _save_collector_state(conn: sqlite3.Connection, state_key: str, state: dict[str, Any]) -> None:
+    _save_state_json(
+        conn,
+        state_key,
+        {
+            "blocked_until_utc": state.get("blocked_until_utc"),
+            "last_http_code": state.get("last_http_code"),
+            "last_error_code": state.get("last_error_code"),
+        },
+    )
+
+
+def _get_blocked_until(conn: sqlite3.Connection, *, state_key: str) -> datetime | None:
+    state = _load_collector_state(conn, state_key)
     return _parse_iso_datetime(state.get("blocked_until_utc"))
 
 
-def _clear_block_if_expired(conn: sqlite3.Connection, api_name: str, now_utc: datetime) -> None:
-    state = _load_api_state(conn, api_name)
+def _clear_block_if_expired(
+    conn: sqlite3.Connection,
+    *,
+    state_key: str,
+    now_utc: datetime,
+) -> bool:
+    state = _load_collector_state(conn, state_key)
     blocked_until = _parse_iso_datetime(state.get("blocked_until_utc"))
     if blocked_until is None:
-        return
+        return False
     if blocked_until.astimezone(timezone.utc) > now_utc:
-        return
+        return False
     state["blocked_until_utc"] = None
-    _save_api_state(conn, api_name, state)
+    _save_collector_state(conn, state_key, state)
+    return True
 
 
 def _set_blocked(
     conn: sqlite3.Connection,
     *,
-    api_name: str,
+    state_key: str,
     blocked_until_utc: datetime,
     http_code: int | None,
     error_code: str | None,
 ) -> None:
-    state = _load_api_state(conn, api_name)
+    state = _load_collector_state(conn, state_key)
     state["blocked_until_utc"] = blocked_until_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     state["last_http_code"] = int(http_code) if http_code is not None else None
     state["last_error_code"] = str(error_code or "") or None
-    _save_api_state(conn, api_name, state)
+    _save_collector_state(conn, state_key, state)
 
 
 class TmapCollector:
@@ -617,6 +823,107 @@ class TmapCollector:
         self.s3_config = S3DbConfig.from_env(default_prefix="db/dev")
         self.s3_store = S3DbStore(self.s3_config) if self.s3_config.enabled else None
         self.current_version_key = ""
+        self._app_keys: list[str] = list(config.tmap_app_keys)
+        self._app_key_labels: list[str] = [_mask_app_key(k) for k in self._app_keys]
+        self._app_key_cursor = 0
+        self._rng = random.Random()
+
+    def _app_key_state_key(self, *, api_name: str, key_idx: int) -> str:
+        app_key = self._app_keys[int(key_idx)]
+        return _state_key_for_app_key(api_name, app_key)
+
+    def _window_bounds_for_kst_day(self, kst_day: date) -> tuple[datetime, datetime]:
+        start_dt = datetime(
+            year=kst_day.year,
+            month=kst_day.month,
+            day=kst_day.day,
+            hour=self.config.call_window_start_hour_kst,
+            minute=0,
+            tzinfo=KST,
+        )
+        end_dt = datetime(
+            year=kst_day.year,
+            month=kst_day.month,
+            day=kst_day.day,
+            hour=self.config.call_window_end_hour_kst,
+            minute=0,
+            tzinfo=KST,
+        )
+        return start_dt, end_dt
+
+    def _is_within_call_window(self, now_kst: datetime) -> bool:
+        start_dt, end_dt = self._window_bounds_for_kst_day(now_kst.date())
+        return start_dt <= now_kst < end_dt
+
+    def _next_window_start_kst(self, now_kst: datetime) -> datetime:
+        start_dt, end_dt = self._window_bounds_for_kst_day(now_kst.date())
+        if now_kst < start_dt:
+            return start_dt
+        if now_kst < end_dt:
+            return now_kst
+        next_day = now_kst.date() + timedelta(days=1)
+        return self._window_bounds_for_kst_day(next_day)[0]
+
+    def _daily_budget_for_api(self, api_name: str) -> int:
+        key_count = max(0, len(self._app_keys))
+        if api_name == API_SEQ30:
+            return max(0, self.config.seq30_daily_limit_per_key * key_count)
+        return max(0, self.config.route_daily_limit_per_key * key_count)
+
+    def _load_pacing_calls_used(self, conn: sqlite3.Connection, *, api_name: str, kst_day: date) -> int:
+        state = _load_state_json(conn, _state_key_for_api_pacing(api_name, kst_day))
+        try:
+            used = int(state.get("calls_used") or 0)
+        except Exception:
+            used = 0
+        return max(0, used)
+
+    def _record_pacing_call(self, conn: sqlite3.Connection, *, api_name: str, now_utc: datetime) -> int:
+        now_kst = now_utc.astimezone(KST)
+        state_key = _state_key_for_api_pacing(api_name, now_kst.date())
+        state = _load_state_json(conn, state_key)
+        try:
+            used = int(state.get("calls_used") or 0)
+        except Exception:
+            used = 0
+        used = max(0, used) + 1
+        state["calls_used"] = used
+        state["updated_at"] = utc_now_iso()
+        _save_state_json(conn, state_key, state)
+        conn.commit()
+        return used
+
+    def _compute_pacing_sleep(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        api_name: str,
+        now_utc: datetime,
+    ) -> tuple[int, str, int, int, int]:
+        now_kst = now_utc.astimezone(KST)
+        window_start, window_end = self._window_bounds_for_kst_day(now_kst.date())
+        if now_kst < window_start:
+            sleep_sec = max(1, int((window_start - now_kst).total_seconds()))
+            return sleep_sec, "before_window", 0, 0, 0
+        if now_kst >= window_end:
+            next_start = self._window_bounds_for_kst_day(now_kst.date() + timedelta(days=1))[0]
+            sleep_sec = max(1, int((next_start - now_kst).total_seconds()))
+            return sleep_sec, "after_window", 0, 0, 0
+
+        budget = self._daily_budget_for_api(api_name)
+        used = self._load_pacing_calls_used(conn, api_name=api_name, kst_day=now_kst.date())
+        remaining_calls = max(0, budget - used)
+        remaining_window_sec = max(1, int((window_end - now_kst).total_seconds()))
+        if remaining_calls <= 0:
+            next_start = self._window_bounds_for_kst_day(now_kst.date() + timedelta(days=1))[0]
+            sleep_sec = max(1, int((next_start - now_kst).total_seconds()))
+            return sleep_sec, "daily_budget_exhausted", 0, remaining_window_sec, budget
+
+        base_interval = float(remaining_window_sec) / float(remaining_calls)
+        jitter = self._rng.uniform(self.config.pacing_jitter_min, self.config.pacing_jitter_max)
+        sleep_sec = max(self.config.pacing_min_sleep_sec, int(round(base_interval * jitter)))
+        sleep_sec = min(max(1, sleep_sec), remaining_window_sec)
+        return sleep_sec, "paced", remaining_calls, remaining_window_sec, budget
 
     def _open_conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.config.local_db_path))
@@ -663,45 +970,187 @@ class TmapCollector:
         finally:
             lease.release()
 
+    def _iter_app_key_indexes(self) -> list[int]:
+        total = len(self._app_keys)
+        if total <= 0:
+            return []
+        start = self._app_key_cursor % total
+        return [((start + offset) % total) for offset in range(total)]
+
+    def _advance_app_key_cursor(self, used_idx: int) -> None:
+        total = len(self._app_keys)
+        if total <= 0:
+            return
+        self._app_key_cursor = (int(used_idx) + 1) % total
+
+    def _available_app_key_indexes(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        api_name: str,
+        now_utc: datetime,
+        ordered_indexes: list[int] | None = None,
+    ) -> tuple[list[int], datetime | None]:
+        indexes = ordered_indexes if ordered_indexes is not None else list(range(len(self._app_keys)))
+        available: list[int] = []
+        wake_ts: datetime | None = None
+        changed = False
+        for idx in indexes:
+            state_key = self._app_key_state_key(api_name=api_name, key_idx=idx)
+            if _clear_block_if_expired(conn, state_key=state_key, now_utc=now_utc):
+                changed = True
+            blocked_until = _get_blocked_until(conn, state_key=state_key)
+            if blocked_until is None:
+                available.append(idx)
+                continue
+            blocked_until_utc = blocked_until.astimezone(timezone.utc)
+            if blocked_until_utc <= now_utc:
+                available.append(idx)
+                continue
+            if wake_ts is None or blocked_until_utc < wake_ts:
+                wake_ts = blocked_until_utc
+        if changed:
+            conn.commit()
+        return available, wake_ts
+
+    def _block_app_key_for_quota(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        key_idx: int,
+        http_code: int | None,
+        error_code: str | None,
+        api_name: str,
+    ) -> datetime:
+        now_utc = datetime.now(timezone.utc)
+        # Free-tier quota is daily; wait until next KST midnight before reusing this key.
+        blocked_until = _next_kst_midnight_utc(now_utc)
+        _set_blocked(
+            conn,
+            state_key=self._app_key_state_key(api_name=api_name, key_idx=key_idx),
+            blocked_until_utc=blocked_until,
+            http_code=http_code,
+            error_code=error_code,
+        )
+        conn.commit()
+        LOG.warning(
+            "App key blocked key=%s api=%s until=%s code=%s err=%s",
+            self._app_key_labels[key_idx],
+            api_name,
+            blocked_until.replace(microsecond=0).isoformat(),
+            http_code,
+            error_code,
+        )
+        return blocked_until
+
     def _call_tmap(
         self,
+        conn: sqlite3.Connection,
         *,
+        api_name: str,
         url: str,
         payload: dict[str, Any],
-    ) -> tuple[int, dict[str, Any] | None, str | None, str | None]:
-        headers = {
-            "Content-Type": "application/json",
-            "appKey": self.config.tmap_app_key,
-        }
-        try:
-            resp = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=self.config.request_timeout_sec,
+    ) -> tuple[int, Any | None, str | None, str | None, int]:
+        now_utc = datetime.now(timezone.utc)
+        candidate_indexes, wake_ts = self._available_app_key_indexes(
+            conn,
+            api_name=api_name,
+            now_utc=now_utc,
+            ordered_indexes=self._iter_app_key_indexes(),
+        )
+        if not candidate_indexes:
+            wake_token = (
+                wake_ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                if wake_ts is not None
+                else None
             )
-        except Exception as exc:
-            return 0, None, "request_error", str(exc)
+            return 429, None, "all_keys_blocked", wake_token, 0
 
-        if resp.status_code != 200:
-            err_code = str(resp.status_code)
-            err_message = (resp.text or "")[:1000]
+        attempts = 0
+        for key_idx in candidate_indexes:
+            attempts += 1
+            app_key = self._app_keys[key_idx]
+            headers = {
+                "Content-Type": "application/json",
+                "appKey": app_key,
+            }
+            pace_sleep_sec, pace_reason, remaining_calls, remaining_window_sec, budget = self._compute_pacing_sleep(
+                conn,
+                api_name=api_name,
+                now_utc=datetime.now(timezone.utc),
+            )
+            LOG.info(
+                "Pacing sleep api=%s key=%s sec=%s reason=%s remaining_calls=%s window_remaining_sec=%s budget=%s",
+                api_name,
+                self._app_key_labels[key_idx],
+                pace_sleep_sec,
+                pace_reason,
+                remaining_calls,
+                remaining_window_sec,
+                budget,
+            )
+            time.sleep(max(1, int(pace_sleep_sec)))
             try:
-                body = resp.json()
-                if isinstance(body, dict):
-                    err = body.get("error")
-                    if isinstance(err, dict):
-                        err_code = str(err.get("code") or err.get("id") or err_code)
-                    err_message = json.dumps(body, ensure_ascii=True)[:1000]
-            except Exception:
-                pass
-            return int(resp.status_code), None, err_code, err_message
+                resp = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.config.request_timeout_sec,
+                )
+            except Exception as exc:
+                self._advance_app_key_cursor(key_idx)
+                return 0, None, "request_error", str(exc), attempts
+            self._record_pacing_call(conn, api_name=api_name, now_utc=datetime.now(timezone.utc))
 
-        try:
-            body = resp.json()
-        except Exception as exc:
-            return int(resp.status_code), None, "invalid_json", f"invalid_json:{exc}"
-        return int(resp.status_code), body, None, None
+            err_code: str | None = None
+            err_message: str | None = None
+            body: Any | None = None
+            if resp.status_code != 200:
+                err_code = str(resp.status_code)
+                err_message = (resp.text or "")[:1000]
+                try:
+                    parsed = resp.json()
+                    if isinstance(parsed, dict):
+                        err = parsed.get("error")
+                        if isinstance(err, dict):
+                            err_code = str(err.get("code") or err.get("id") or err_code)
+                        err_message = json.dumps(parsed, ensure_ascii=True)[:1000]
+                except Exception:
+                    pass
+                if _is_quota_block(resp.status_code, err_code):
+                    self._block_app_key_for_quota(
+                        conn,
+                        key_idx=key_idx,
+                        http_code=int(resp.status_code),
+                        error_code=err_code,
+                        api_name=api_name,
+                    )
+                    self._advance_app_key_cursor(key_idx)
+                    continue
+                self._advance_app_key_cursor(key_idx)
+                return int(resp.status_code), None, err_code, err_message, attempts
+
+            try:
+                parsed_ok = resp.json()
+                body = parsed_ok
+            except Exception as exc:
+                self._advance_app_key_cursor(key_idx)
+                return int(resp.status_code), None, "invalid_json", f"invalid_json:{exc}", attempts
+            self._advance_app_key_cursor(key_idx)
+            return int(resp.status_code), body, None, None, attempts
+
+        # every currently available key was quota-blocked by this call.
+        wake_ts_token = None
+        now_utc = datetime.now(timezone.utc)
+        _, wake_ts = self._available_app_key_indexes(
+            conn,
+            api_name=api_name,
+            now_utc=now_utc,
+            ordered_indexes=list(range(len(self._app_keys))),
+        )
+        if wake_ts is not None:
+            wake_ts_token = wake_ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return 429, None, "all_keys_blocked", wake_ts_token, attempts
 
     def _collect_target_seq30(
         self,
@@ -716,11 +1165,15 @@ class TmapCollector:
             return 0, "no_stops", None, None
 
         now_kst = datetime.now(timezone.utc).astimezone(KST)
+        weekday_usage = None
+        if str(target.day_type or "").strip().lower() == "weekday":
+            weekday_usage = _load_target_weekday_usage(conn, target_id=target.target_id)
         start_dt = _resolve_start_datetime_kst(
             day_type=target.day_type,
             departure_time=target.departure_time,
             now_kst=now_kst,
             holiday_resolver=holiday_resolver,
+            weekday_usage=weekday_usage,
         )
 
         chunks = _chunks_seq30(stops)
@@ -742,11 +1195,13 @@ class TmapCollector:
                 chunk_start_dt = start_dt + timedelta(minutes=max(0, elapsed_min))
 
             payload = _build_seq30_payload(chunk_points, _to_kst_yyyymmddhhmm(chunk_start_dt))
-            code, body, err_code, err = self._call_tmap(
+            code, body, err_code, err, used_calls = self._call_tmap(
+                conn,
+                api_name=API_SEQ30,
                 url=f"{self.config.seq30_url}?version=1&format=json",
                 payload=payload,
             )
-            api_calls_used += 1
+            api_calls_used += used_calls
             run_http_code = code if code > 0 else None
 
             if code != 200 or body is None:
@@ -894,11 +1349,15 @@ class TmapCollector:
             return 0, "no_stops", None, None
 
         now_kst = datetime.now(timezone.utc).astimezone(KST)
+        weekday_usage = None
+        if str(target.day_type or "").strip().lower() == "weekday":
+            weekday_usage = _load_target_weekday_usage(conn, target_id=target.target_id)
         start_dt = _resolve_start_datetime_kst(
             day_type=target.day_type,
             departure_time=target.departure_time,
             now_kst=now_kst,
             holiday_resolver=holiday_resolver,
+            weekday_usage=weekday_usage,
         )
 
         chunks = _chunks_route(stops)
@@ -911,6 +1370,9 @@ class TmapCollector:
 
         stop_rows: list[dict[str, Any]] = []
         seg_rows: list[dict[str, Any]] = []
+        normalized_chunks = 0
+        retried_chunks = 0
+        synthetic_chunks = 0
 
         for chunk_idx, (global_start_idx, chunk_points) in enumerate(chunks):
             chunk_start_dt = start_dt
@@ -919,13 +1381,86 @@ class TmapCollector:
                 elapsed_min = int(first_stop.estimated_elapsed_min or 0)
                 chunk_start_dt = start_dt + timedelta(minutes=max(0, elapsed_min))
 
-            payload = _build_route_payload(chunk_points, _to_kst_yyyymmddhhmm(chunk_start_dt))
-            code, body, err_code, err = self._call_tmap(
+            payload_plan = _prepare_route_payload_points(chunk_points)
+            payload_points = payload_plan.points
+            if payload_plan.changed:
+                normalized_chunks += 1
+                LOG.info(
+                    "Route chunk normalized target=%s chunk=%s start_seq=%s points=%s->%s drop_consecutive=%s drop_via_end=%s",
+                    target.target_id,
+                    chunk_idx + 1,
+                    global_start_idx + 1,
+                    len(chunk_points),
+                    len(payload_points),
+                    payload_plan.dropped_consecutive,
+                    payload_plan.dropped_via_equals_end,
+                )
+
+            invalid_payload = len(payload_points) < 2 or (
+                len(payload_points) == 2 and payload_plan.start_equals_end
+            )
+            if invalid_payload:
+                synthetic_chunks += 1
+                LOG.warning(
+                    "Route chunk skipped API due to invalid payload target=%s chunk=%s start_seq=%s points=%s payload_points=%s start_equals_end=%s",
+                    target.target_id,
+                    chunk_idx + 1,
+                    global_start_idx + 1,
+                    len(chunk_points),
+                    len(payload_points),
+                    payload_plan.start_equals_end,
+                )
+                chunk_stop_rows, chunk_seg_rows = _derive_route_chunk_observations(
+                    features=[],
+                    chunk_points=chunk_points,
+                    global_start_idx=global_start_idx,
+                    chunk_start_dt=chunk_start_dt,
+                )
+                stop_rows.extend(chunk_stop_rows)
+                seg_rows.extend(chunk_seg_rows)
+                continue
+
+            payload = _build_route_payload(payload_points, _to_kst_yyyymmddhhmm(chunk_start_dt))
+            code, body, err_code, err, used_calls = self._call_tmap(
+                conn,
+                api_name=API_ROUTE,
                 url=f"{self.config.route_url}?version=1&format=json",
                 payload=payload,
             )
-            api_calls_used += 1
+            api_calls_used += used_calls
             run_http_code = code if code > 0 else None
+
+            if code != 200 or body is None:
+                retryable = _is_retryable_route_failure(code, err_code, err)
+                start_end_only = [chunk_points[0], chunk_points[-1]]
+                start_end_only_valid = len(start_end_only) == 2 and (
+                    _coord_token(start_end_only[0]) != _coord_token(start_end_only[1])
+                )
+                using_start_end_only = (
+                    len(payload_points) == 2
+                    and _coord_token(payload_points[0]) == _coord_token(start_end_only[0])
+                    and _coord_token(payload_points[1]) == _coord_token(start_end_only[1])
+                )
+                if retryable and start_end_only_valid and not using_start_end_only:
+                    retried_chunks += 1
+                    LOG.warning(
+                        "Route chunk retrying with start/end only target=%s chunk=%s start_seq=%s code=%s err=%s",
+                        target.target_id,
+                        chunk_idx + 1,
+                        global_start_idx + 1,
+                        code,
+                        err_code,
+                    )
+                    retry_payload = _build_route_payload(start_end_only, _to_kst_yyyymmddhhmm(chunk_start_dt))
+                    code2, body2, err_code2, err2, used_calls2 = self._call_tmap(
+                        conn,
+                        api_name=API_ROUTE,
+                        url=f"{self.config.route_url}?version=1&format=json",
+                        payload=retry_payload,
+                    )
+                    api_calls_used += used_calls2
+                    run_http_code = code2 if code2 > 0 else run_http_code
+                    code, body, err_code, err = code2, body2, err_code2, err2
 
             if code != 200 or body is None:
                 run_status = "http_error" if code > 0 else "request_error"
@@ -948,6 +1483,14 @@ class TmapCollector:
             )
             stop_rows.extend(chunk_stop_rows)
             seg_rows.extend(chunk_seg_rows)
+
+        LOG.info(
+            "Route collection chunk summary target=%s normalized=%s retried=%s synthetic=%s",
+            target.target_id,
+            normalized_chunks,
+            retried_chunks,
+            synthetic_chunks,
+        )
 
         finished_at = utc_now_iso()
         if run_status == "success" and api_calls_used <= 0:
@@ -1029,6 +1572,21 @@ class TmapCollector:
             upserted, inactive = refresh_targets(conn)
             conn.commit()
             LOG.info("Targets refreshed upserted=%s inactive=%s", upserted, inactive)
+            LOG.info(
+                "TMAP app keys configured count=%s labels=%s",
+                len(self._app_keys),
+                ",".join(self._app_key_labels),
+            )
+            LOG.info(
+                "TMAP pacing config window=%02d:00-%02d:00(KST) seq30_limit_per_key=%s route_limit_per_key=%s jitter=[%s,%s] min_sleep_sec=%s",
+                self.config.call_window_start_hour_kst,
+                self.config.call_window_end_hour_kst,
+                self.config.seq30_daily_limit_per_key,
+                self.config.route_daily_limit_per_key,
+                self.config.pacing_jitter_min,
+                self.config.pacing_jitter_max,
+                self.config.pacing_min_sleep_sec,
+            )
 
             holiday_resolver = HolidayResolver(conn)
             total_calls = 0
@@ -1038,12 +1596,36 @@ class TmapCollector:
 
             while True:
                 now_utc = datetime.now(timezone.utc)
-                _clear_block_if_expired(conn, API_SEQ30, now_utc)
-                _clear_block_if_expired(conn, API_ROUTE, now_utc)
+                now_kst = now_utc.astimezone(KST)
+                if not self._is_within_call_window(now_kst):
+                    if self.config.run_once:
+                        LOG.warning(
+                            "Outside call window in run_once mode now_kst=%s window=%02d:00-%02d:00",
+                            now_kst.replace(microsecond=0).isoformat(),
+                            self.config.call_window_start_hour_kst,
+                            self.config.call_window_end_hour_kst,
+                        )
+                        break
+                    if changed and calls_since_publish > 0 and self.s3_store is not None:
+                        if self._publish_db(conn, reason="outside_call_window"):
+                            calls_since_publish = 0
+                    next_window_start = self._next_window_start_kst(now_kst)
+                    sleep_sec = max(1, int((next_window_start - now_kst).total_seconds()))
+                    LOG.info(
+                        "Outside call window now_kst=%s window=%02d:00-%02d:00 sleep_sec=%s",
+                        now_kst.replace(microsecond=0).isoformat(),
+                        self.config.call_window_start_hour_kst,
+                        self.config.call_window_end_hour_kst,
+                        sleep_sec,
+                    )
+                    time.sleep(sleep_sec)
+                    continue
+                _clear_block_if_expired(conn, state_key=_state_key_for_api(API_SEQ30), now_utc=now_utc)
+                _clear_block_if_expired(conn, state_key=_state_key_for_api(API_ROUTE), now_utc=now_utc)
                 conn.commit()
 
-                seq30_blocked_until = _get_blocked_until(conn, API_SEQ30)
-                route_blocked_until = _get_blocked_until(conn, API_ROUTE)
+                seq30_blocked_until = _get_blocked_until(conn, state_key=_state_key_for_api(API_SEQ30))
+                route_blocked_until = _get_blocked_until(conn, state_key=_state_key_for_api(API_ROUTE))
                 seq30_blocked = bool(
                     seq30_blocked_until is not None and now_utc < seq30_blocked_until.astimezone(timezone.utc)
                 )
@@ -1051,29 +1633,86 @@ class TmapCollector:
                     route_blocked_until is not None and now_utc < route_blocked_until.astimezone(timezone.utc)
                 )
 
-                if phase == API_SEQ30 and seq30_blocked:
-                    phase = API_ROUTE
+                seq30_keys, seq30_key_wake_ts = self._available_app_key_indexes(
+                    conn,
+                    api_name=API_SEQ30,
+                    now_utc=now_utc,
+                )
+                route_keys, route_key_wake_ts = self._available_app_key_indexes(
+                    conn,
+                    api_name=API_ROUTE,
+                    now_utc=now_utc,
+                )
+                seq30_ready = (not seq30_blocked) and bool(seq30_keys)
+                route_ready = (not route_blocked) and bool(route_keys)
 
-                if phase == API_ROUTE and route_blocked:
-                    if not seq30_blocked:
+                if phase == API_SEQ30 and not seq30_ready:
+                    if route_ready:
+                        phase = API_ROUTE
+                    else:
+                        if changed and calls_since_publish > 0 and self.s3_store is not None:
+                            if self._publish_db(conn, reason="all_blocked"):
+                                calls_since_publish = 0
+                        if self.config.run_once:
+                            LOG.warning("No available API/key combination in run_once mode")
+                            break
+                        wake_candidates: list[datetime] = []
+                        if seq30_blocked_until is not None and seq30_blocked:
+                            wake_candidates.append(seq30_blocked_until.astimezone(timezone.utc))
+                        if route_blocked_until is not None and route_blocked:
+                            wake_candidates.append(route_blocked_until.astimezone(timezone.utc))
+                        if seq30_key_wake_ts is not None:
+                            wake_candidates.append(seq30_key_wake_ts)
+                        if route_key_wake_ts is not None:
+                            wake_candidates.append(route_key_wake_ts)
+                        wake_ts = min(wake_candidates) if wake_candidates else None
+                        if wake_ts is None:
+                            sleep_sec = max(1, self.config.idle_sleep_sec)
+                        else:
+                            sleep_sec = max(1, int((wake_ts - now_utc).total_seconds()))
+                        LOG.warning(
+                            "No available API/key combination phase=%s seq30_blocked=%s route_blocked=%s seq30_keys=%s route_keys=%s sleep_sec=%s",
+                            phase,
+                            seq30_blocked,
+                            route_blocked,
+                            len(seq30_keys),
+                            len(route_keys),
+                            sleep_sec,
+                        )
+                        time.sleep(sleep_sec)
+                        continue
+
+                if phase == API_ROUTE and not route_ready:
+                    if seq30_ready:
                         phase = API_SEQ30
                     else:
                         if changed and calls_since_publish > 0 and self.s3_store is not None:
                             if self._publish_db(conn, reason="all_blocked"):
                                 calls_since_publish = 0
                         if self.config.run_once:
-                            LOG.warning("Both APIs blocked in run_once mode")
+                            LOG.warning("No available API/key combination in run_once mode")
                             break
-                        wake_list = [seq30_blocked_until, route_blocked_until]
-                        wake_ts = min([d for d in wake_list if d is not None], default=None)
+                        wake_candidates = []
+                        if seq30_blocked_until is not None and seq30_blocked:
+                            wake_candidates.append(seq30_blocked_until.astimezone(timezone.utc))
+                        if route_blocked_until is not None and route_blocked:
+                            wake_candidates.append(route_blocked_until.astimezone(timezone.utc))
+                        if seq30_key_wake_ts is not None:
+                            wake_candidates.append(seq30_key_wake_ts)
+                        if route_key_wake_ts is not None:
+                            wake_candidates.append(route_key_wake_ts)
+                        wake_ts = min(wake_candidates) if wake_candidates else None
                         if wake_ts is None:
                             sleep_sec = max(1, self.config.idle_sleep_sec)
                         else:
-                            sleep_sec = max(1, int((wake_ts.astimezone(timezone.utc) - now_utc).total_seconds()))
+                            sleep_sec = max(1, int((wake_ts - now_utc).total_seconds()))
                         LOG.warning(
-                            "Both APIs blocked seq30_until=%s route_until=%s sleep_sec=%s",
-                            seq30_blocked_until.isoformat() if seq30_blocked_until else None,
-                            route_blocked_until.isoformat() if route_blocked_until else None,
+                            "No available API/key combination phase=%s seq30_blocked=%s route_blocked=%s seq30_keys=%s route_keys=%s sleep_sec=%s",
+                            phase,
+                            seq30_blocked,
+                            route_blocked,
+                            len(seq30_keys),
+                            len(route_keys),
                             sleep_sec,
                         )
                         time.sleep(sleep_sec)
@@ -1099,16 +1738,21 @@ class TmapCollector:
                     time.sleep(sleep_sec)
                     continue
 
-                if phase == API_ROUTE and route_blocked:
-                    if not seq30_blocked:
+                if phase == API_ROUTE and not route_ready:
+                    if seq30_ready:
                         phase = API_SEQ30
                     else:
                         sleep_sec = max(1, self.config.idle_sleep_sec)
                         time.sleep(sleep_sec)
                         continue
 
-                if phase == API_SEQ30 and seq30_blocked:
-                    phase = API_ROUTE
+                if phase == API_SEQ30 and not seq30_ready:
+                    if route_ready:
+                        phase = API_ROUTE
+                    else:
+                        sleep_sec = max(1, self.config.idle_sleep_sec)
+                        time.sleep(sleep_sec)
+                        continue
 
                 if phase == API_SEQ30:
                     calls, status, code, err_code = self._collect_target_seq30(conn, target, holiday_resolver)
@@ -1136,11 +1780,12 @@ class TmapCollector:
                     if published:
                         calls_since_publish = 0
 
-                if _is_quota_block(code, err_code):
+                all_keys_blocked = str(err_code or "") == "all_keys_blocked"
+                if _is_quota_block(code, err_code) and not all_keys_blocked:
                     blocked_until = datetime.now(timezone.utc) + timedelta(seconds=self.config.cooldown_sec)
                     _set_blocked(
                         conn,
-                        api_name=phase,
+                        state_key=_state_key_for_api(phase),
                         blocked_until_utc=blocked_until,
                         http_code=code,
                         error_code=err_code,
@@ -1162,6 +1807,11 @@ class TmapCollector:
                     else:
                         # route cycle ended by block; switch back to seq30 next.
                         phase = API_SEQ30
+                elif all_keys_blocked:
+                    if changed and calls_since_publish > 0 and self.s3_store is not None:
+                        published = self._publish_db(conn, reason=f"{phase}_all_keys_blocked")
+                        if published:
+                            calls_since_publish = 0
 
                 if self.config.run_once:
                     break
@@ -1219,14 +1869,41 @@ def main() -> int:
     )
 
     args = parse_args()
-    app_key = str(os.environ.get("TMAP_APP_KEY", "") or "").strip()
-    if not app_key:
-        LOG.error("TMAP_APP_KEY is required")
+    app_keys = _parse_app_keys_from_env()
+    if not app_keys:
+        LOG.error("TMAP_APP_KEY or TMAP_APP_KEYS is required")
         return 2
+
+    window_start_hour = _clamp_int(
+        _env_int("TMAP_CALL_WINDOW_START_HOUR_KST", DEFAULT_CALL_WINDOW_START_HOUR_KST, minimum=0),
+        minimum=0,
+        maximum=23,
+    )
+    window_end_hour = _clamp_int(
+        _env_int("TMAP_CALL_WINDOW_END_HOUR_KST", DEFAULT_CALL_WINDOW_END_HOUR_KST, minimum=0),
+        minimum=1,
+        maximum=23,
+    )
+    if window_end_hour <= window_start_hour:
+        LOG.error(
+            "Invalid call window start=%s end=%s. Expect start < end within 0-23.",
+            window_start_hour,
+            window_end_hour,
+        )
+        return 2
+    pacing_jitter_min = _env_float("TMAP_PACING_JITTER_MIN", 0.75, minimum=0.01)
+    pacing_jitter_max = _env_float("TMAP_PACING_JITTER_MAX", 1.35, minimum=0.01)
+    if pacing_jitter_max < pacing_jitter_min:
+        LOG.warning(
+            "TMAP_PACING_JITTER_MAX(%s) < MIN(%s); using MIN for both",
+            pacing_jitter_max,
+            pacing_jitter_min,
+        )
+        pacing_jitter_max = pacing_jitter_min
 
     config = CollectorConfig(
         local_db_path=Path(str(args.db_path)).resolve(),
-        tmap_app_key=app_key,
+        tmap_app_keys=tuple(app_keys),
         seq30_url=str(os.environ.get("TMAP_ROUTE_SEQUENTIAL30_URL", DEFAULT_TMAP_SEQ30_URL)).strip(),
         route_url=str(os.environ.get("TMAP_ROUTE_URL", DEFAULT_TMAP_ROUTE_URL)).strip(),
         request_timeout_sec=_env_float("TMAP_HTTP_TIMEOUT_SEC", 20.0, minimum=1.0),
@@ -1234,6 +1911,21 @@ def main() -> int:
         publish_every_calls=_env_int("TMAP_PUBLISH_EVERY_CALLS", 50, minimum=1),
         keep_runs_per_target=_env_int("TMAP_KEEP_RUNS_PER_TARGET", 30, minimum=1),
         idle_sleep_sec=_env_int("TMAP_IDLE_SLEEP_SEC", 60, minimum=1),
+        seq30_daily_limit_per_key=_env_int(
+            "TMAP_SEQ30_DAILY_LIMIT_PER_KEY",
+            DEFAULT_SEQ30_DAILY_LIMIT_PER_KEY,
+            minimum=1,
+        ),
+        route_daily_limit_per_key=_env_int(
+            "TMAP_ROUTE_DAILY_LIMIT_PER_KEY",
+            DEFAULT_ROUTE_DAILY_LIMIT_PER_KEY,
+            minimum=1,
+        ),
+        call_window_start_hour_kst=window_start_hour,
+        call_window_end_hour_kst=window_end_hour,
+        pacing_jitter_min=pacing_jitter_min,
+        pacing_jitter_max=pacing_jitter_max,
+        pacing_min_sleep_sec=_env_int("TMAP_PACING_MIN_SLEEP_SEC", 1, minimum=1),
         run_once=bool(args.once),
     )
 
