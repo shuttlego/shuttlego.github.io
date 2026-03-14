@@ -30,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -446,6 +447,32 @@ def start_frontend() -> None:
         def log_message(self, format, *args):
             # 기본 로그는 그대로 출력
             super().log_message(format, *args)
+
+        def _should_serve_spa_fallback(self) -> bool:
+            path = urllib.parse.urlparse(self.path).path or "/"
+            if path == "/r" or path.startswith("/r/"):
+                return True
+            return False
+
+        def do_GET(self):
+            if self._should_serve_spa_fallback():
+                original_path = self.path
+                self.path = "/index.html"
+                try:
+                    return super().do_GET()
+                finally:
+                    self.path = original_path
+            return super().do_GET()
+
+        def do_HEAD(self):
+            if self._should_serve_spa_fallback():
+                original_path = self.path
+                self.path = "/index.html"
+                try:
+                    return super().do_HEAD()
+                finally:
+                    self.path = original_path
+            return super().do_HEAD()
 
     class QuietServer(http.server.ThreadingHTTPServer):
         def handle_error(self, request, client_address):

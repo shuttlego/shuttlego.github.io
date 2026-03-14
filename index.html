@@ -3,8 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="favicon.png" />
-  <title>셔틀 검색</title>
+  <base href="/" />
+  <title>셔틀Go: 셔틀 검색</title>
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="셔틀Go: 셔틀 검색" />
+  <meta property="og:description" content="셔틀 출근/퇴근 노선을 빠르게 찾고 공유하세요." />
+  <meta property="og:image" content="/stop_icon.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="셔틀Go: 셔틀 검색" />
+  <meta name="twitter:description" content="셔틀 출근/퇴근 노선을 빠르게 찾고 공유하세요." />
+  <meta name="twitter:image" content="/stop_icon.png" />
+  <link rel="icon" type="image/png" href="/stop_icon.png" />
+  <link rel="shortcut icon" href="/stop_icon.png" />
+  <link rel="apple-touch-icon" href="/stop_icon.png" />
   <script>
     (function() {
       if (location.hostname !== 'shuttle-go.com') return;
@@ -3429,6 +3441,12 @@
       min-width: 0;
       cursor: pointer;
     }
+    .route-option-card .route-card-actions {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
     .route-option-card .btn-route-detail {
       flex-shrink: 0;
       padding: 4px 10px;
@@ -3441,14 +3459,236 @@
       cursor: pointer;
       white-space: nowrap;
     }
+    .route-option-card .btn-route-share {
+      flex-shrink: 0;
+      padding: 4px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #222;
+      background: #fff;
+      border: 1px solid #d5d5d5;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
     .route-option-card .btn-route-detail:hover {
       background: #e8e8e8;
       border-color: #ccc;
+    }
+    .route-option-card .btn-route-share:hover {
+      background: #f5f5f5;
+      border-color: #c6c6c6;
     }
     .route-option-card.expanded .btn-route-detail {
       background: #fee500;
       border-color: #e6d000;
       color: #333;
+    }
+    .route-shared-banner {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      border: 1px solid #d9e6f4;
+      border-radius: 10px;
+      background: #f6fbff;
+    }
+    .route-shared-banner-text {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      color: #36516d;
+      font-size: 13px;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+    .route-shared-banner-message {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .route-shared-banner-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .route-shared-banner-btn {
+      padding: 6px 10px;
+      border: 1px solid #b8cfe7;
+      border-radius: 8px;
+      background: #fff;
+      color: #244869;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .route-shared-banner-btn:hover {
+      background: #eef6ff;
+    }
+    .route-shared-banner-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #dbeafe;
+      color: #1d4f91;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      vertical-align: middle;
+    }
+    .route-shared-empty {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 18px 16px;
+      border-radius: 12px;
+      background: #fff;
+      border: 1px solid #e4e4e4;
+      color: #444;
+    }
+    .route-shared-empty-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #222;
+    }
+    .route-shared-empty-body {
+      font-size: 14px;
+      line-height: 1.55;
+      color: #555;
+      white-space: pre-line;
+    }
+    .route-shared-empty-actions {
+      display: flex;
+      justify-content: flex-start;
+    }
+    .route-shared-empty-btn {
+      padding: 8px 14px;
+      border: 1px solid #d6d6d6;
+      border-radius: 8px;
+      background: #fafafa;
+      color: #333;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .route-shared-empty-btn:hover {
+      background: #f2f2f2;
+    }
+    body.route-share-preview-open {
+      overflow: hidden;
+    }
+    .route-share-preview-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 260;
+      background: rgba(7, 12, 25, 0.64);
+    }
+    .route-share-preview-backdrop.show {
+      display: block;
+    }
+    .route-share-preview-modal {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: min(560px, calc(100vw - 32px));
+      transform: translate(-50%, -50%);
+      padding: 22px 22px 18px;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 28px 72px rgba(7, 16, 33, 0.28);
+      color: #1f2937;
+    }
+    .route-share-preview-title {
+      margin: 0 0 8px;
+      font-size: 21px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .route-share-preview-body {
+      margin: 0 0 14px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #475569;
+    }
+    .route-share-preview-text {
+      width: 100%;
+      min-height: 240px;
+      padding: 14px 15px;
+      border: 1px solid #d7e1ed;
+      border-radius: 12px;
+      background: #f8fbff;
+      color: #0f172a;
+      font-size: 14px;
+      line-height: 1.6;
+      font-family: inherit;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .route-share-preview-text:focus {
+      outline: none;
+      border-color: #9ec5ef;
+      box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.26);
+    }
+    .route-share-preview-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .route-share-preview-btn {
+      min-width: 104px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .route-share-preview-btn:hover {
+      background: #f8fafc;
+    }
+    .route-share-preview-btn.primary {
+      border-color: #b8cfe7;
+      background: #eef6ff;
+      color: #15446e;
+    }
+    .route-share-preview-btn.primary:hover {
+      background: #e0eefc;
+    }
+    @media (max-width: 768px) {
+      .route-shared-banner-text {
+        display: block;
+      }
+      .route-shared-banner-message {
+        display: block;
+        margin-top: 8px;
+        white-space: normal;
+        overflow: visible;
+      }
+      .route-shared-banner-actions {
+        width: 100%;
+      }
+      .route-shared-banner-btn {
+        width: 100%;
+      }
+      .route-option-card .route-card-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
     }
     .route-detail-panel {
       display: none;
@@ -6415,6 +6655,16 @@
       var routeModeDirection = null;
       var routeModePlaceName = '';
       var routePlaceInputSubmitting = false;
+      var sharedRouteState = {
+        active: false,
+        token: '',
+        snapshot: null,
+        createdAt: '',
+        expiresAt: ''
+      };
+      var routeShareTokenCache = new Map();
+      var routeSharePreviewDialog = null;
+      var pendingSharedRouteToken = '';
       var endpointOptionsAll = [];
       var endpointOptions = [];
       var selectedEndpoints = new Set();
@@ -8587,6 +8837,75 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         mapped._search_text = getEndpointOptionSearchText(mapped);
         mapped._search_choseong = extractHangulChoseong(mapped._search_text);
         return mapped;
+      }
+
+      function buildSharedEndpointOptionSummary(raw) {
+        if (raw && typeof raw === 'object') {
+          return mapEndpointOption({
+            endpoint_name: String(raw.endpoint_name || ''),
+            route_count: Number(raw.route_count || 0),
+            endpoint_primary_name: String(raw.endpoint_primary_name || ''),
+            endpoint_display_name: String(raw.endpoint_display_name || ''),
+            endpoint_components: Array.isArray(raw.endpoint_components) ? raw.endpoint_components : []
+          });
+        }
+        return mapEndpointOption({
+          endpoint_name: String(raw || ''),
+          route_count: 0,
+          endpoint_primary_name: String(raw || ''),
+          endpoint_display_name: String(raw || ''),
+          endpoint_components: [String(raw || '')]
+        });
+      }
+
+      function getSelectedEndpointOptionSummaries() {
+        if (!endpointOptionsAll.length || !selectedEndpoints.size) return [];
+        return endpointOptionsAll
+          .filter(function(opt) { return selectedEndpoints.has(opt.endpoint_name); })
+          .map(function(opt) {
+            return {
+              endpoint_name: String(opt.endpoint_name || ''),
+              route_count: Number(opt.route_count || 0),
+              endpoint_primary_name: String(opt.endpoint_primary_name || ''),
+              endpoint_display_name: String(opt.endpoint_display_name || ''),
+              endpoint_components: Array.isArray(opt.endpoint_components)
+                ? opt.endpoint_components.slice()
+                : []
+            };
+          });
+      }
+
+      function applySharedEndpointSnapshot(snapshot) {
+        var direction = String(snapshot && snapshot.direction || '').trim().toLowerCase();
+        endpointContextKey = getEndpointContextKey(direction || 'depart');
+        endpointOptionsAll = [];
+        endpointOptions = [];
+        selectedEndpoints = new Set();
+        endpointDraftEndpoints = null;
+
+        var endpointSummaries = Array.isArray(snapshot && snapshot.endpoint_options)
+          ? snapshot.endpoint_options
+          : [];
+        endpointSummaries.forEach(function(item) {
+          var mapped = buildSharedEndpointOptionSummary(item);
+          if (!mapped.endpoint_name) return;
+          endpointOptionsAll.push(mapped);
+        });
+
+        var selectedNames = Array.isArray(snapshot && snapshot.selected_endpoints)
+          ? snapshot.selected_endpoints
+          : [];
+        selectedNames.forEach(function(name) {
+          var value = String(name || '').trim();
+          if (value) selectedEndpoints.add(value);
+        });
+
+        if (selectedEndpoints.size === 0 && endpointOptionsAll.length > 0) {
+          endpointOptionsAll.forEach(function(opt) { selectedEndpoints.add(opt.endpoint_name); });
+        }
+        endpointOptions = endpointOptionsAll.slice();
+        persistCurrentEndpointSelection({ saveRemote: false });
+        updateEndpointTriggerText();
       }
 
       function resetEndpointSearch() {
@@ -10920,7 +11239,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function loadSites() {
         setSiteSelectorEnabled(false);
-        fetch(API_BASE + '/api/sites')
+        return fetch(API_BASE + '/api/sites')
           .then(function(r) { return r.json(); })
           .then(function(data) {
             var list = data.sites || [];
@@ -13714,6 +14033,565 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       var currentIsDepart = null;
       var expandedOptionIndex = -1;
 
+      function removeSharedRouteBanner() {
+        if (!routeOptionsWrap) return;
+        var existing = routeOptionsWrap.querySelector('.route-shared-banner');
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      }
+
+      function deactivateSharedRouteView(opts) {
+        opts = opts || {};
+        sharedRouteState.active = false;
+        sharedRouteState.token = '';
+        sharedRouteState.snapshot = null;
+        sharedRouteState.createdAt = '';
+        sharedRouteState.expiresAt = '';
+        pendingSharedRouteToken = '';
+        removeSharedRouteBanner();
+        if (opts.replaceUrl !== false) replaceUrlWithHomePath();
+      }
+
+      function clearPendingSharedRouteUrl() {
+        if (!pendingSharedRouteToken) return;
+        pendingSharedRouteToken = '';
+        if (!sharedRouteState.active) replaceUrlWithHomePath();
+      }
+
+      function getCurrentSharePlacePayload() {
+        var lat = Number(lastPlace && lastPlace.y);
+        var lng = Number(lastPlace && lastPlace.x);
+        if (!isFinite(lat) || !isFinite(lng)) return null;
+        return {
+          place_name: String(currentPlaceName || (lastPlace && lastPlace.place_name) || '선택한 장소'),
+          lat: lat,
+          lng: lng
+        };
+      }
+
+      function getSuccessfulWalkShareSnapshot(option, isDepart) {
+        var positions = Array.isArray(option && option.positions) ? option.positions : [];
+        var leg = getOptionWalkLegPositions(positions, isDepart);
+        if (!leg) return null;
+        var key = buildWalkPathCacheKey(leg.fromPos, leg.toPos);
+        if (!key || !walkPathCache.has(key)) return null;
+        var walkInfo = walkPathCache.get(key);
+        if (!isSuccessfulWalkPathResult(walkInfo)) return null;
+        return {
+          has_route: true,
+          path_points: cloneJsonValue(walkInfo.path_points || []),
+          distance_m: Number(walkInfo.distance_m || 0) || null,
+          duration_sec: Number(walkInfo.duration_sec || 0) || null,
+          status: String(walkInfo.status || 'ok'),
+          source: String(walkInfo.source || '')
+        };
+      }
+
+      function routeStopsHaveVariantDetail(routeStops) {
+        if (!Array.isArray(routeStops) || routeStops.length === 0) return false;
+        return routeStops.some(function(stop) {
+          if (!stop || typeof stop !== 'object') return false;
+          return (
+            Object.prototype.hasOwnProperty.call(stop, 'eta_time') ||
+            Object.prototype.hasOwnProperty.call(stop, 'eta_display') ||
+            Object.prototype.hasOwnProperty.call(stop, 'eta_source') ||
+            Object.prototype.hasOwnProperty.call(stop, 'eta_has_evidence') ||
+            Object.prototype.hasOwnProperty.call(stop, 'eta_report_count')
+          );
+        });
+      }
+
+      function buildSharedVariantDetailSnapshot(option) {
+        var routeStops = Array.isArray(option && option.route_stops) ? option.route_stops : [];
+        if (!routeStopsHaveVariantDetail(routeStops)) return null;
+        return {
+          selected_departure_time: String(option && (option.__activeDetailTime || option.__originBoardTime || option.board_time) || ''),
+          route_stops: cloneJsonValue(routeStops),
+          selected_operator: String(option && option.operator || '')
+        };
+      }
+
+      function findRouteShareStop(option, sequence, displayName) {
+        var routeStops = Array.isArray(option && option.route_stops) ? option.route_stops : [];
+        var seqText = normalizeStopSequence(sequence);
+        var nameText = normalizeStopName(displayName);
+        var matched = null;
+        if (seqText) {
+          matched = routeStops.find(function(stop) {
+            return normalizeStopSequence(stop && stop.sequence) === seqText;
+          }) || null;
+        }
+        if (!matched && nameText) {
+          matched = routeStops.find(function(stop) {
+            return normalizeStopName(stop && stop.stop_name) === nameText;
+          }) || null;
+        }
+        return matched;
+      }
+
+      function formatRouteShareStopSequence(sequence) {
+        var numeric = Number(sequence);
+        if (isFinite(numeric) && numeric > 0) return String(Math.round(numeric)) + '번째 정류장';
+        return '';
+      }
+
+      function formatRouteShareStopText(option, displayName, sequence) {
+        var matchedStop = findRouteShareStop(option, sequence, displayName);
+        var matchedName = String(matchedStop && matchedStop.stop_name || '').trim();
+        var primaryName = String(displayName || '').trim();
+        if (!primaryName && matchedName) primaryName = matchedName;
+        if (!primaryName) primaryName = '-';
+        var extras = [];
+        if (matchedName && matchedName !== primaryName) {
+          extras.push(matchedName);
+        }
+        var sequenceLabel = formatRouteShareStopSequence(sequence || (matchedStop && matchedStop.sequence));
+        if (sequenceLabel) {
+          extras.push(sequenceLabel);
+        }
+        return primaryName + (extras.length ? ' (' + extras.join(', ') + ')' : '');
+      }
+
+      function formatRouteShareBoardTime(timeText) {
+        var value = String(timeText || '').trim();
+        return value ? (value + '분') : '-';
+      }
+
+      function buildRouteShareMessage(snapshot, option) {
+        snapshot = snapshot || {};
+        option = option || {};
+        var isDepart = String(snapshot.direction || '').trim().toLowerCase() === 'depart';
+        var place = snapshot.place || {};
+        var placeName = String(place.place_name || '선택한 위치').trim() || '선택한 위치';
+        var siteName = String(snapshot.site_name || '사업장').trim() || '사업장';
+        var routeName = String(option.route_name || '').trim() || '-';
+        var boardTime = formatRouteShareBoardTime(option.__activeDetailTime || option.__originBoardTime || option.board_time || snapshot.departure_time);
+        var boardStopText = isDepart
+          ? formatRouteShareStopText(option, option.nearest_stop_name, option.nearest_stop_sequence)
+          : formatRouteShareStopText(option, option.start_stop_name, option.start_stop_sequence);
+        var alightStopText = isDepart
+          ? formatRouteShareStopText(option, option.terminus_name, option.terminus_sequence)
+          : formatRouteShareStopText(option, option.getoff_stop_name, option.getoff_stop_sequence);
+        var originText = isDepart ? placeName : siteName;
+        var destinationText = isDepart ? siteName : placeName;
+        return [
+          '[셔틀Go: 셔틀 검색]',
+          '- 노선명: ' + routeName,
+          '- 출발: ' + originText,
+          '- 탑승: ' + boardStopText,
+          '- 탑승시각: ' + boardTime,
+          '- 하차: ' + alightStopText,
+          '- 도착: ' + destinationText
+        ].join('\n');
+      }
+
+      function buildRouteShareCopyText(snapshot, option, shareUrl) {
+        var message = buildRouteShareMessage(snapshot, option);
+        var cleanUrl = String(shareUrl || '').trim();
+        return cleanUrl ? (message + '\n\n' + cleanUrl) : message;
+      }
+
+      function getRouteShareCacheKey(snapshot) {
+        try {
+          return JSON.stringify(snapshot || {});
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function ensureRouteSharePreviewDialog() {
+        if (routeSharePreviewDialog) return routeSharePreviewDialog;
+        var backdrop = document.createElement('div');
+        backdrop.className = 'route-share-preview-backdrop';
+        backdrop.setAttribute('aria-hidden', 'true');
+        backdrop.innerHTML =
+          '<div class="route-share-preview-modal" role="dialog" aria-modal="true" aria-labelledby="routeSharePreviewTitle">' +
+            '<h3 class="route-share-preview-title" id="routeSharePreviewTitle">노선 공유</h3>' +
+            '<p class="route-share-preview-body">아래 문구와 링크를 그대로 복사해 공유할 수 있습니다.</p>' +
+            '<textarea class="route-share-preview-text" readonly></textarea>' +
+            '<div class="route-share-preview-actions">' +
+              '<button type="button" class="route-share-preview-btn" data-share-preview-close="1">닫기</button>' +
+              '<button type="button" class="route-share-preview-btn primary" data-share-preview-copy="1">문구와 링크 복사</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(backdrop);
+        routeSharePreviewDialog = {
+          backdrop: backdrop,
+          modal: backdrop.querySelector('.route-share-preview-modal'),
+          title: backdrop.querySelector('.route-share-preview-title'),
+          body: backdrop.querySelector('.route-share-preview-body'),
+          textarea: backdrop.querySelector('.route-share-preview-text'),
+          copyButton: backdrop.querySelector('[data-share-preview-copy="1"]'),
+          closeButton: backdrop.querySelector('[data-share-preview-close="1"]')
+        };
+        backdrop.addEventListener('click', function(e) {
+          if (e.target === backdrop) closeRouteSharePreviewDialog();
+        });
+        if (routeSharePreviewDialog.closeButton) {
+          routeSharePreviewDialog.closeButton.addEventListener('click', closeRouteSharePreviewDialog);
+        }
+        if (routeSharePreviewDialog.copyButton) {
+          routeSharePreviewDialog.copyButton.addEventListener('click', function() {
+            var value = routeSharePreviewDialog && routeSharePreviewDialog.textarea
+              ? routeSharePreviewDialog.textarea.value
+              : '';
+            copyTextToClipboard(value)
+              .then(function() {
+                if (!routeSharePreviewDialog || !routeSharePreviewDialog.copyButton) return;
+                routeSharePreviewDialog.copyButton.textContent = '복사됨';
+                setTimeout(function() {
+                  if (!routeSharePreviewDialog || !routeSharePreviewDialog.copyButton) return;
+                  routeSharePreviewDialog.copyButton.textContent = '문구와 링크 복사';
+                }, 1600);
+              })
+              .catch(function() {
+                window.prompt('공유 문구를 복사하세요.', value);
+              });
+          });
+        }
+        document.addEventListener('keydown', function(e) {
+          if (!routeSharePreviewDialog || !routeSharePreviewDialog.backdrop) return;
+          if (!routeSharePreviewDialog.backdrop.classList.contains('show')) return;
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            closeRouteSharePreviewDialog();
+          }
+        });
+        return routeSharePreviewDialog;
+      }
+
+      function openRouteSharePreviewDialog(copyText, routeName, bodyText) {
+        var dialog = ensureRouteSharePreviewDialog();
+        if (!dialog) return;
+        if (dialog.title) {
+          dialog.title.textContent = String(routeName || '').trim()
+            ? (String(routeName).trim() + ' 공유')
+            : '노선 공유';
+        }
+        if (dialog.body) {
+          dialog.body.textContent = String(bodyText || '아래 문구와 링크를 그대로 복사해 공유할 수 있습니다.');
+        }
+        if (dialog.textarea) {
+          dialog.textarea.value = String(copyText || '');
+          dialog.textarea.scrollTop = 0;
+        }
+        if (dialog.copyButton) {
+          dialog.copyButton.textContent = '문구와 링크 복사';
+        }
+        dialog.backdrop.classList.add('show');
+        dialog.backdrop.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('route-share-preview-open');
+        if (dialog.textarea && typeof dialog.textarea.focus === 'function') {
+          dialog.textarea.focus();
+          dialog.textarea.select();
+        }
+      }
+
+      function closeRouteSharePreviewDialog() {
+        if (!routeSharePreviewDialog || !routeSharePreviewDialog.backdrop) return;
+        routeSharePreviewDialog.backdrop.classList.remove('show');
+        routeSharePreviewDialog.backdrop.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('route-share-preview-open');
+      }
+
+      function buildRouteShareSnapshot(option, card) {
+        var placePayload = getCurrentSharePlacePayload();
+        var routeOption = cloneJsonValue(option);
+        if (!placePayload || !routeOption || typeof routeOption !== 'object') return null;
+        var isDepart = !!currentIsDepart;
+        var selectedSiteOption = siteSelect && siteSelect.options ? siteSelect.options[siteSelect.selectedIndex] : null;
+        var availableDayTypes = DAY_TYPE_OPTIONS.map(function(item) {
+          return String(item && item.value || '').trim();
+        }).filter(function(value) { return value.length > 0; });
+        var snapshot = {
+          version: 1,
+          site_id: String(selectedSiteId || ''),
+          site_name: selectedSiteOption ? String(selectedSiteOption.text || '') : '',
+          available_day_types: availableDayTypes,
+          day_type: String(selectedDayType || ''),
+          direction: isDepart ? 'depart' : 'arrive',
+          departure_time: getDepartureTimeStr(),
+          place: placePayload,
+          place_source: String(currentPlaceSource || 'unknown'),
+          route_search_mode: normalizeRouteSearchMode(currentRouteSearchModeUsed || activeRouteSearchMode),
+          max_distance_km: normalizeRouteMaxDistanceKm(maxDistanceKm),
+          selected_endpoints: getSelectedEndpointNamesSorted(),
+          endpoint_options: getSelectedEndpointOptionSummaries(),
+          route_option: routeOption,
+          shared_detail_open: !!(card && card.classList.contains('expanded')),
+          detail_highlight_target: cloneJsonValue(option && option.__detailHighlightTarget || null)
+        };
+        var sharedVariantDetail = buildSharedVariantDetailSnapshot(option);
+        if (sharedVariantDetail) snapshot.shared_variant_detail = sharedVariantDetail;
+        var walkSnapshot = getSuccessfulWalkShareSnapshot(option, isDepart);
+        if (walkSnapshot) snapshot.walk_path = walkSnapshot;
+        return snapshot;
+      }
+
+      function renderSharedRouteBanner() {
+        removeSharedRouteBanner();
+        if (!sharedRouteState.active || !routeOptionsWrap || !routeOptionsWrap.classList.contains('show')) return;
+        var banner = document.createElement('div');
+        banner.className = 'route-shared-banner';
+        banner.innerHTML =
+          '<div class="route-shared-banner-text">' +
+            '<span class="route-shared-banner-badge">공유된 결과</span>' +
+            '<span class="route-shared-banner-message">이 결과는 공유 시점 기준입니다.</span>' +
+          '</div>' +
+          '<div class="route-shared-banner-actions">' +
+            '<button type="button" class="route-shared-banner-btn" id="sharedRouteRefreshBtn">최신 정보로 다시 검색</button>' +
+          '</div>';
+        routeOptionsWrap.insertBefore(banner, routeOptionsWrap.firstChild || null);
+        var refreshBtn = banner.querySelector('#sharedRouteRefreshBtn');
+        if (refreshBtn) {
+          refreshBtn.addEventListener('click', function() {
+            runLatestSearchFromSharedRoute();
+          });
+        }
+      }
+
+      function showSharedRouteStateCard(title, body, opts) {
+        opts = opts || {};
+        setRouteMode(false);
+        closeMaxDistancePopover();
+        clearSearchOverlays();
+        clearShuttleOverlays();
+        hideShuttleErrorOverlay();
+        shuttleMessage.classList.remove('show');
+        if (panelTitle) panelTitle.textContent = '공유 링크';
+        var btnBack = document.getElementById('btnBackFromRoutes');
+        if (btnBack) btnBack.style.display = 'none';
+        if (resultsPlaceholder) resultsPlaceholder.style.display = 'none';
+        if (resultsList) {
+          resultsList.style.display = 'none';
+          resultsList.innerHTML = '';
+        }
+        if (routeSortBar) routeSortBar.classList.remove('show');
+        if (routeOptionsWrap) {
+          routeOptionsWrap.classList.add('show');
+          routeOptionsWrap.innerHTML = '';
+          var card = document.createElement('div');
+          card.className = 'route-shared-empty';
+          card.innerHTML =
+            '<div class="route-shared-empty-title">' + escapeHtml(title || '공유 링크') + '</div>' +
+            '<div class="route-shared-empty-body">' + escapeHtml(body || '') + '</div>';
+          if (opts.showHomeButton) {
+            var actions = document.createElement('div');
+            actions.className = 'route-shared-empty-actions';
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'route-shared-empty-btn';
+            btn.textContent = '메인으로 가기';
+            btn.addEventListener('click', function() {
+              location.href = location.origin + '/';
+            });
+            actions.appendChild(btn);
+            card.appendChild(actions);
+          }
+          routeOptionsWrap.appendChild(card);
+        }
+        if (isMobile()) setSheetState('sheet-half');
+      }
+
+      function showSharedRouteLoading() {
+        showSharedRouteStateCard('공유 링크', '공유된 노선 정보를 불러오는 중입니다...');
+      }
+
+      function primeSharedWalkCache(snapshot, option, isDepart) {
+        var walk = snapshot && snapshot.walk_path;
+        if (!walk || walk.has_route !== true || !Array.isArray(walk.path_points) || walk.path_points.length === 0) return;
+        var positions = Array.isArray(option && option.positions) ? option.positions : [];
+        var leg = getOptionWalkLegPositions(positions, isDepart);
+        if (!leg) return;
+        var key = buildWalkPathCacheKey(leg.fromPos, leg.toPos);
+        if (!key) return;
+        setWalkPathCache(key, {
+          has_route: true,
+          path_points: cloneJsonValue(walk.path_points || []),
+          distance_m: Number(walk.distance_m || 0) || null,
+          duration_sec: Number(walk.duration_sec || 0) || null,
+          status: String(walk.status || 'ok'),
+          source: String(walk.source || 'shared')
+        });
+      }
+
+      function hydrateSharedRouteSnapshot(snapshot, meta) {
+        if (!snapshot || typeof snapshot !== 'object') {
+          showSharedRouteStateCard('공유 링크 오류', '공유 데이터 형식이 올바르지 않습니다.', { showHomeButton: true });
+          return;
+        }
+        var direction = String(snapshot.direction || '').trim().toLowerCase();
+        var isDepart = direction === 'depart';
+        if (direction !== 'depart' && direction !== 'arrive') {
+          showSharedRouteStateCard('공유 링크 오류', '지원하지 않는 공유 데이터입니다.', { showHomeButton: true });
+          return;
+        }
+        var routeOption = cloneJsonValue(snapshot.route_option);
+        if (!routeOption || typeof routeOption !== 'object') {
+          showSharedRouteStateCard('공유 링크 오류', '공유된 노선 정보를 복원하지 못했습니다.', { showHomeButton: true });
+          return;
+        }
+        var place = snapshot.place || {};
+        var placeName = String(place.place_name || '선택한 장소').trim() || '선택한 장소';
+        var placeLat = Number(place.lat);
+        var placeLng = Number(place.lng);
+        if (!isFinite(placeLat) || !isFinite(placeLng)) {
+          showSharedRouteStateCard('공유 링크 오류', '공유된 위치 정보를 복원하지 못했습니다.', { showHomeButton: true });
+          return;
+        }
+
+        sharedRouteState.active = true;
+        sharedRouteState.token = String(meta && meta.token || '');
+        sharedRouteState.snapshot = cloneJsonValue(snapshot);
+        sharedRouteState.createdAt = String(meta && meta.createdAt || '');
+        sharedRouteState.expiresAt = String(meta && meta.expiresAt || '');
+        pendingSharedRouteToken = sharedRouteState.token;
+        var sharedSnapshotCacheKey = getRouteShareCacheKey(snapshot);
+        if (sharedSnapshotCacheKey && sharedRouteState.token) {
+          routeShareTokenCache.set(sharedSnapshotCacheKey, sharedRouteState.token);
+        }
+
+        if (siteSelect && siteSelect.querySelector('option[value="' + String(snapshot.site_id || '') + '"]')) {
+          siteSelect.value = String(snapshot.site_id || '');
+        }
+        selectedSiteId = String(snapshot.site_id || selectedSiteId || '');
+        updateSiteTriggerText();
+
+        var dayTypeValues = Array.isArray(snapshot.available_day_types)
+          ? snapshot.available_day_types.slice()
+          : DAY_TYPE_OPTIONS.map(function(opt) { return opt.value; });
+        if (dayTypeValues.indexOf(String(snapshot.day_type || '')) < 0) {
+          dayTypeValues.push(String(snapshot.day_type || ''));
+        }
+        applyAvailableDayTypes(dayTypeValues);
+        selectedDayType = String(snapshot.day_type || selectedDayType || 'weekday');
+        pendingDayType = selectedDayType;
+
+        var timeText = String(snapshot.departure_time || '').trim();
+        var timeMatch = timeText.match(/^(\d{1,2}):(\d{2})$/);
+        if (timeMatch) {
+          departureTime.h = Math.max(0, Math.min(23, Number(timeMatch[1]) || 0));
+          departureTime.m = Math.max(0, Math.min(59, Number(timeMatch[2]) || 0));
+        }
+        updateDepartureTriggerText();
+
+        activeRouteSearchMode = normalizeRouteSearchMode(snapshot.route_search_mode || activeRouteSearchMode);
+        currentRouteSearchModeUsed = activeRouteSearchMode;
+        maxDistanceKm = normalizeRouteMaxDistanceKm(snapshot.max_distance_km);
+        maxDistancePendingKm = maxDistanceKm;
+        routeMaxDistanceSessionDirty = true;
+        updateMaxDistanceUi();
+
+        applySharedEndpointSnapshot(snapshot);
+        lastPlace = {
+          place_name: placeName,
+          x: String(placeLng),
+          y: String(placeLat),
+          _place_source: String(snapshot.place_source || 'unknown'),
+          place_source: String(snapshot.place_source || 'unknown')
+        };
+        lastShuttleType = direction;
+        currentPlaceSource = String(snapshot.place_source || 'unknown');
+
+        var sharedVariantDetail = (
+          snapshot.shared_variant_detail &&
+          typeof snapshot.shared_variant_detail === 'object'
+        ) ? cloneJsonValue(snapshot.shared_variant_detail) : null;
+        routeOption.__sharedVariantDetail = sharedVariantDetail;
+        routeOption.__sharedVariantHydrated = !!(
+          sharedVariantDetail &&
+          Array.isArray(sharedVariantDetail.route_stops) &&
+          sharedVariantDetail.route_stops.length > 0
+        );
+        if (routeOption.__sharedVariantHydrated) {
+          routeOption.__activeDetailTime = String(
+            sharedVariantDetail.selected_departure_time ||
+            routeOption.__activeDetailTime ||
+            routeOption.board_time ||
+            ''
+          );
+          if (String(sharedVariantDetail.selected_operator || '').trim()) {
+            routeOption.operator = String(sharedVariantDetail.selected_operator || '').trim();
+          }
+        }
+        if (snapshot.detail_highlight_target && typeof snapshot.detail_highlight_target === 'object') {
+          routeOption.__detailHighlightTarget = cloneJsonValue(snapshot.detail_highlight_target);
+        }
+        primeSharedWalkCache(snapshot, routeOption, isDepart);
+
+        var options = [routeOption];
+        options._searchMode = activeRouteSearchMode;
+        renderRouteOptions(options, placeName, isDepart, '', true);
+        renderSharedRouteBanner();
+        if (isMobile()) {
+          setSheetState(snapshot.shared_detail_open ? 'sheet-half' : 'sheet-peek');
+        }
+
+        if (snapshot.shared_detail_open) {
+          var sharedCard = routeOptionsWrap ? routeOptionsWrap.querySelector('.route-option-card') : null;
+          if (sharedCard) {
+            activateRouteCardDetailView(
+              sharedCard,
+              routeOption,
+              placeName,
+              isDepart,
+              0,
+              routeOption.__detailHighlightTarget || null,
+              false
+            );
+          }
+        }
+      }
+
+      function runLatestSearchFromSharedRoute() {
+        var snapshot = sharedRouteState.snapshot;
+        if (!snapshot || typeof snapshot !== 'object') return;
+        var place = snapshot.place || {};
+        var lat = Number(place.lat);
+        var lng = Number(place.lng);
+        if (!isFinite(lat) || !isFinite(lng)) return;
+        runRouteSearchWithPlace(
+          {
+            place_name: String(place.place_name || '선택한 장소'),
+            x: String(lng),
+            y: String(lat),
+            _place_source: String(snapshot.place_source || 'unknown'),
+            place_source: String(snapshot.place_source || 'unknown')
+          },
+          String(snapshot.direction || 'depart'),
+          { preserveSheetState: isMobile(), placeSource: String(snapshot.place_source || 'unknown') }
+        );
+      }
+
+      function loadSharedRouteSnapshot(token) {
+        var cleanToken = String(token || '').trim();
+        if (!cleanToken) return Promise.resolve(false);
+        showSharedRouteLoading();
+        return fetchJson(API_BASE + '/api/route-shares/' + encodeURIComponent(cleanToken))
+          .then(function(result) {
+            if (result.ok) {
+              hydrateSharedRouteSnapshot(result.data && result.data.snapshot || {}, {
+                token: result.data && result.data.token || cleanToken,
+                createdAt: result.data && result.data.created_at || '',
+                expiresAt: result.data && result.data.expires_at || ''
+              });
+              return true;
+            }
+            if (result.status === 410) {
+              showSharedRouteStateCard('공유 링크 만료', '만료된 공유 링크입니다.', { showHomeButton: true });
+              return false;
+            }
+            if (result.status === 404) {
+              showSharedRouteStateCard('공유 링크 없음', '존재하지 않는 공유 링크입니다.', { showHomeButton: true });
+              return false;
+            }
+            throw new Error(result.data && result.data.error || '공유 링크를 불러오지 못했습니다.');
+          })
+          .catch(function(err) {
+            showSharedRouteStateCard('공유 링크 오류', err && err.message ? err.message : '공유 링크를 불러오지 못했습니다.', { showHomeButton: true });
+            return false;
+          });
+      }
+
       function formatMaxDistanceKm(value) {
         var rounded = Math.round(value);
         if (Math.abs(value - rounded) < 0.001) return String(rounded);
@@ -13941,6 +14819,112 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return htmlParts.join('');
       }
 
+      function resetRouteShareButtonLabel(button, originalText) {
+        if (!button) return;
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+
+      function shareRouteOption(option, card, button) {
+        if (!button || !option) return;
+        var originalText = button.getAttribute('data-default-label') || button.textContent || '공유';
+        var snapshot = buildRouteShareSnapshot(option, card);
+        if (!snapshot) {
+          showShuttleError('공유 링크를 만들 수 없습니다.');
+          resetRouteShareButtonLabel(button, originalText);
+          return;
+        }
+
+        var shareCacheKey = getRouteShareCacheKey(snapshot);
+        button.disabled = true;
+        button.textContent = '링크 생성 중...';
+
+        var createShareTokenPromise = Promise.resolve().then(function() {
+          if (sharedRouteState.active && sharedRouteState.token) {
+            return String(sharedRouteState.token || '').trim();
+          }
+          if (shareCacheKey && routeShareTokenCache.has(shareCacheKey)) {
+            return String(routeShareTokenCache.get(shareCacheKey) || '').trim();
+          }
+          return fetchJson(API_BASE + '/api/route-shares', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ snapshot: snapshot })
+          })
+            .then(function(result) {
+              if (!result.ok) {
+                throw new Error(result.data && result.data.error || '공유 링크 생성에 실패했습니다.');
+              }
+              var createdToken = String(result.data && result.data.token || '').trim();
+              if (!createdToken) {
+                throw new Error('공유 링크 생성에 실패했습니다.');
+              }
+              if (shareCacheKey) {
+                routeShareTokenCache.set(shareCacheKey, createdToken);
+              }
+              return createdToken;
+            });
+        });
+
+        createShareTokenPromise
+          .then(function(token) {
+            var shareUrl = buildRouteShareUrl(token);
+            var shareCopyText = buildRouteShareCopyText(snapshot, option, shareUrl);
+            var shareMessage = buildRouteShareMessage(snapshot, option);
+            var mobileSharePayload = {
+              title: '셔틀Go: 셔틀 검색',
+              text: shareMessage,
+              url: shareUrl
+            };
+            if (!isMobile()) {
+              openRouteSharePreviewDialog(shareCopyText, option.route_name || '노선');
+              return 'previewed';
+            }
+            var canUseNativeShare = (
+              navigator.share &&
+              typeof navigator.share === 'function' &&
+              (!navigator.canShare || navigator.canShare(mobileSharePayload))
+            );
+            if (canUseNativeShare) {
+              return navigator.share(mobileSharePayload)
+                .then(function() {
+                  return 'shared';
+                })
+                .catch(function(err) {
+                  if (err && err.name === 'AbortError') return 'cancelled';
+                  return copyTextToClipboard(shareCopyText)
+                    .then(function() { return 'copied'; })
+                    .catch(function() {
+                      window.prompt('공유 문구를 복사하세요.', shareCopyText);
+                      return 'prompted';
+                    });
+                });
+            }
+            openRouteSharePreviewDialog(
+              shareCopyText,
+              option.route_name || '노선',
+              window.isSecureContext
+                ? '이 브라우저에서는 기본 공유 기능을 사용할 수 없어 복사용 문구를 보여드립니다.'
+                : '기본 공유 기능은 보통 HTTPS 또는 localhost 환경에서만 동작합니다. 현재는 복사용 문구를 보여드립니다.'
+            );
+            return 'previewed';
+          })
+          .then(function(mode) {
+            if (mode === 'cancelled' || mode === 'previewed') {
+              resetRouteShareButtonLabel(button, originalText);
+              return;
+            }
+            button.textContent = mode === 'shared' ? '공유됨' : '복사됨';
+            setTimeout(function() {
+              resetRouteShareButtonLabel(button, originalText);
+            }, 1800);
+          })
+          .catch(function(err) {
+            resetRouteShareButtonLabel(button, originalText);
+            showShuttleError(err && err.message ? err.message : '공유 링크 생성에 실패했습니다.');
+          });
+      }
+
       function renderRouteCards(options, placeName, isDepart) {
         routeOptionsWrap.innerHTML = '';
         expandedOptionIndex = -1;
@@ -13948,6 +14932,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         // "더 가져오기" 버튼 제거 (재렌더 시)
         var existingBtn = routeOptionsWrap.querySelector('.btn-load-more-routes');
         if (existingBtn) existingBtn.remove();
+        var showShareButton = true;
         options.forEach(function(opt, idx) {
           var card = document.createElement('div');
           card.className = 'route-option-card' + (idx === 0 ? ' selected' : '');
@@ -13988,7 +14973,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                 '<div class="route-name">' + buildRouteNameHtml(opt) + '</div>' +
                 '<div class="route-meta">' + escapeHtml(metaLine) + '</div>' +
               '</div>' +
-              '<button type="button" class="btn-route-detail" data-idx="' + idx + '">노선 상세</button>' +
+              '<div class="route-card-actions">' +
+                '<button type="button" class="btn-route-detail" data-idx="' + idx + '">상세</button>' +
+                (showShareButton
+                  ? '<button type="button" class="btn-route-share" data-idx="' + idx + '" data-default-label="↗ 공유">↗ 공유</button>'
+                  : '') +
+              '</div>' +
             '</div>' +
             '<div class="route-detail">' +
               '<div class="route-detail-default">' + pathDetailDefault + '</div>' +
@@ -14006,8 +14996,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               (dbUpdatedAt ? '<div class="route-db-updated">마지막 업데이트: ' + escapeHtml(dbUpdatedAt) + '</div>' : '') +
             '</div>';
           var btnDetail = card.querySelector('.btn-route-detail');
+          var btnShare = card.querySelector('.btn-route-share');
           card.addEventListener('click', function(e) {
-            if (e.target.closest('.btn-route-detail')) return;
+            if (e.target.closest('.btn-route-detail') || e.target.closest('.btn-route-share')) return;
             activateRouteCardOptionView(card, opt, placeName, isDepart);
           });
           btnDetail.addEventListener('click', function(e) {
@@ -14018,6 +15009,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             }
             activateRouteCardDetailView(card, opt, placeName, isDepart, idx, null, false);
           });
+          if (btnShare) {
+            btnShare.addEventListener('click', function(e) {
+              e.stopPropagation();
+              shareRouteOption(opt, card, btnShare);
+            });
+          }
           routeOptionsWrap.appendChild(card);
         });
         // 마지막 배치가 3개(max_routes)이면 "더 가져오기" 버튼 표시
@@ -14149,6 +15146,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function goBackFromRouteOptions() {
+        if (sharedRouteState.active) {
+          deactivateSharedRouteView();
+        } else {
+          clearPendingSharedRouteUrl();
+        }
         routeRequestSerial += 1;
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
         lastPlace = null;
@@ -14198,6 +15200,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function runRouteSearchWithPlace(place, direction, opts) {
         opts = opts || {};
+        if (sharedRouteState.active) {
+          deactivateSharedRouteView();
+        } else {
+          clearPendingSharedRouteUrl();
+        }
         closeBubble();
         setMapDimmed(false);
         deselectPlace();
@@ -14270,6 +15277,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function doSearch() {
+        if (sharedRouteState.active) {
+          deactivateSharedRouteView();
+        } else {
+          clearPendingSharedRouteUrl();
+        }
         var routeInput = getActiveRouteModePlaceInput();
         var q = routeInput ? String(routeInput.value || '').trim() : searchInput.value.trim();
         if (!q) return;
@@ -14778,6 +15790,72 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               return { ok: r.ok, status: r.status, data: data || {} };
             });
           });
+      }
+
+      function parseShareTokenFromLocation() {
+        var path = String(location.pathname || '').trim();
+        var match = path.match(/^\/r\/([^/?#]+)\/?$/);
+        if (match && match[1]) {
+          try {
+            return decodeURIComponent(match[1]);
+          } catch (e) {
+            return String(match[1] || '').trim();
+          }
+        }
+        try {
+          var params = new URLSearchParams(location.search || '');
+          return String(params.get('share') || '').trim();
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function buildRouteShareUrl(token) {
+        return location.origin + '/r/' + encodeURIComponent(String(token || '').trim());
+      }
+
+      function replaceUrlWithHomePath() {
+        if (!window.history || typeof window.history.replaceState !== 'function') return;
+        window.history.replaceState(null, '', '/');
+      }
+
+      function copyTextToClipboard(text) {
+        var value = String(text || '');
+        if (!value) return Promise.reject(new Error('copy_text_empty'));
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          return navigator.clipboard.writeText(value);
+        }
+        return new Promise(function(resolve, reject) {
+          var textarea = document.createElement('textarea');
+          textarea.value = value;
+          textarea.setAttribute('readonly', 'readonly');
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          textarea.style.pointerEvents = 'none';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          try {
+            var copied = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (!copied) {
+              reject(new Error('copy_exec_failed'));
+              return;
+            }
+            resolve();
+          } catch (err) {
+            document.body.removeChild(textarea);
+            reject(err);
+          }
+        });
+      }
+
+      function cloneJsonValue(value) {
+        try {
+          return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+          return null;
+        }
       }
 
       function parseTimeToMinutes(timeText) {
@@ -17893,6 +18971,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           operatorInfo.textContent = nextOperatorText;
           operatorInfo.style.display = nextOperatorText ? '' : 'none';
         }
+        option.operator = nextOperatorText;
         if (card.classList.contains('expanded') && card.classList.contains('selected')) {
           drawRouteDetailOnMap(option, placeName, isDepart, option.__detailHighlightTarget || null, false);
           if (option.__detailOpenedFromMapLabel) {
@@ -17928,12 +19007,40 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         option.__detailHighlightTarget = highlightTarget || null;
         option.__detailOpenedFromMapLabel = !!isFromMapLabel;
         enhanceRouteDetailPanel(card, option, placeName, isDepart);
+        if (option.__sharedVariantHydrated && option.__sharedVariantDetail) {
+          option.__sharedVariantHydrated = false;
+          applyRouteVariantDetailToCard(
+            card,
+            option,
+            placeName,
+            isDepart,
+            cloneJsonValue(option.__sharedVariantDetail)
+          );
+          return;
+        }
+        if (sharedRouteState.active && routeStopsHaveVariantDetail(option.route_stops || [])) {
+          applyRouteVariantDetailToCard(
+            card,
+            option,
+            placeName,
+            isDepart,
+            {
+              selected_departure_time: option.__activeDetailTime || option.__originBoardTime,
+              route_stops: cloneJsonValue(option.route_stops || []),
+              selected_operator: option.operator || ''
+            }
+          );
+          return;
+        }
         loadRouteVariantDetail(card, option, placeName, isDepart, option.__activeDetailTime || option.__originBoardTime);
       };
 
       var _baseRenderRouteCards = renderRouteCards;
       renderRouteCards = function(options, placeName, isDepart) {
         _baseRenderRouteCards(options, placeName, isDepart);
+        if (sharedRouteState.active) {
+          renderSharedRouteBanner();
+        }
         var cards = routeOptionsWrap ? routeOptionsWrap.querySelectorAll('.route-option-card') : [];
         cards.forEach(function(card, idx) {
           var option = options[idx];
@@ -18080,14 +19187,22 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       updateDevDebugUi();
 
       updateAccountMenuUi();
+      pendingSharedRouteToken = parseShareTokenFromLocation();
+      if (pendingSharedRouteToken) {
+        showSharedRouteLoading();
+      }
       if (typeof kakao !== 'undefined' && kakao.maps) {
         initMap();
         refreshAuthState().finally(function() {
-          loadSites();
-          updateMapControlsPosition();
-          if (isMobile()) {
-            setSheetState('sheet-peek');
-          }
+          Promise.resolve(loadSites())
+            .finally(function() {
+              updateMapControlsPosition();
+              if (pendingSharedRouteToken) {
+                loadSharedRouteSnapshot(pendingSharedRouteToken);
+              } else if (isMobile()) {
+                setSheetState('sheet-peek');
+              }
+            });
         });
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';

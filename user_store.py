@@ -566,6 +566,19 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS route_shares (
+              token TEXT PRIMARY KEY,
+              creator_user_id INTEGER,
+              creator_visitor_id TEXT,
+              snapshot_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              expires_at TEXT NOT NULL,
+              FOREIGN KEY(creator_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS arrival_reports (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id INTEGER,
@@ -753,6 +766,12 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_anon_route_history_searched_at ON anonymous_route_search_history(searched_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_route_shares_creator_user_id ON route_shares(creator_user_id, created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_route_shares_expires_at ON route_shares(expires_at)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_arrival_reports_user_id_id ON arrival_reports(user_id, id DESC)"
@@ -1693,6 +1712,93 @@ def set_endpoint_preference(
             (int(user_id), str(site_id), str(day_type), str(direction), payload, now),
         )
         conn.commit()
+
+
+def create_route_share(
+    snapshot: dict[str, Any],
+    *,
+    expires_in_days: int = 30,
+    creator_user_id: int | None = None,
+    creator_visitor_id: str | None = None,
+) -> dict[str, Any]:
+    _ensure_writes_allowed()
+    if not isinstance(snapshot, dict):
+        raise ValueError("snapshot must be an object")
+
+    payload = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+    ttl_days = max(1, int(expires_in_days))
+    now_dt = utc_now()
+    now = utc_iso(now_dt)
+    expires_at = utc_iso(now_dt + timedelta(days=ttl_days))
+    clean_visitor_id = str(creator_visitor_id or "").strip() or None
+
+    with _conn_ctx() as conn:
+        for _ in range(8):
+            token = secrets.token_urlsafe(9)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO route_shares(
+                      token, creator_user_id, creator_visitor_id, snapshot_json, created_at, expires_at
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        token,
+                        int(creator_user_id) if creator_user_id is not None else None,
+                        clean_visitor_id,
+                        payload,
+                        now,
+                        expires_at,
+                    ),
+                )
+                conn.commit()
+                return {
+                    "token": token,
+                    "created_at": now,
+                    "expires_at": expires_at,
+                }
+            except sqlite3.IntegrityError:
+                conn.rollback()
+                continue
+    raise UserStoreError("공유 토큰 생성에 실패했습니다.")
+
+
+def get_route_share(token: str) -> dict[str, Any] | None:
+    clean_token = str(token or "").strip()
+    if not clean_token:
+        return None
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            """
+            SELECT token, creator_user_id, creator_visitor_id, snapshot_json, created_at, expires_at
+            FROM route_shares
+            WHERE token = ?
+            LIMIT 1
+            """,
+            (clean_token,),
+        ).fetchone()
+    if row is None:
+        return None
+    try:
+        snapshot = json.loads(str(row["snapshot_json"] or "{}"))
+    except json.JSONDecodeError:
+        snapshot = {}
+    expires_dt = parse_iso(str(row["expires_at"] or ""))
+    is_expired = expires_dt is not None and expires_dt <= utc_now()
+    return {
+        "token": str(row["token"] or clean_token),
+        "creator_user_id": (
+            int(row["creator_user_id"])
+            if row["creator_user_id"] is not None
+            else None
+        ),
+        "creator_visitor_id": str(row["creator_visitor_id"] or "").strip() or None,
+        "snapshot": snapshot if isinstance(snapshot, dict) else {},
+        "created_at": str(row["created_at"] or ""),
+        "expires_at": str(row["expires_at"] or ""),
+        "expired": bool(is_expired),
+    }
 
 
 def add_place_history(user_id: int, keyword: str) -> None:
@@ -4441,6 +4547,7 @@ def cleanup_old_data(
         conn.execute("DELETE FROM route_search_history WHERE searched_at < ?", (route_cutoff,))
         conn.execute("DELETE FROM anonymous_place_search_history WHERE searched_at < ?", (place_cutoff,))
         conn.execute("DELETE FROM anonymous_route_search_history WHERE searched_at < ?", (route_cutoff,))
+        conn.execute("DELETE FROM route_shares WHERE expires_at <= ?", (now,))
         if prune_auth_states:
             conn.execute("DELETE FROM oauth_states WHERE expires_at <= ?", (now,))
             conn.execute(

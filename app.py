@@ -142,6 +142,8 @@ AUTH_NICKNAME_MAX_LEN = max(AUTH_NICKNAME_MIN_LEN, _env_int("AUTH_NICKNAME_MAX_L
 AUTH_PENDING_SIGNUP_TTL_SEC = max(60, _env_int("AUTH_PENDING_SIGNUP_TTL_SEC", 900))
 AUTH_OAUTH_STATE_TTL_SEC = max(60, _env_int("AUTH_OAUTH_STATE_TTL_SEC", 600))
 AUTH_METRICS_REFRESH_SEC = max(30, _env_int("AUTH_METRICS_REFRESH_SEC", 300))
+ROUTE_SHARE_TTL_DAYS = max(1, _env_int("ROUTE_SHARE_TTL_DAYS", 30))
+ROUTE_SHARE_MAX_SNAPSHOT_BYTES = max(65536, _env_int("ROUTE_SHARE_MAX_SNAPSHOT_BYTES", 300000))
 APP_REFRESH_AUTH_METRICS_ON_STARTUP = _env_bool("APP_REFRESH_AUTH_METRICS_ON_STARTUP", True)
 APP_WARM_ENDPOINT_CACHE_ON_STARTUP = _env_bool("APP_WARM_ENDPOINT_CACHE_ON_STARTUP", True)
 APP_ENABLE_BACKGROUND_WORKERS = _env_bool("APP_ENABLE_BACKGROUND_WORKERS", True)
@@ -1282,6 +1284,44 @@ def _parse_max_distance_km(raw: str | None) -> float:
 def _parse_route_search_mode(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
     return value if value in {"distance", "time"} else _DEFAULT_ROUTE_SEARCH_MODE
+
+
+def _route_share_payload_is_valid(snapshot: Any) -> bool:
+    if not isinstance(snapshot, dict):
+        return False
+
+    site_id = str(snapshot.get("site_id") or "").strip()
+    day_type = str(snapshot.get("day_type") or "").strip()
+    direction = str(snapshot.get("direction") or "").strip().lower()
+    if not site_id or not day_type or direction not in {"depart", "arrive"}:
+        return False
+
+    place = snapshot.get("place")
+    if not isinstance(place, dict):
+        return False
+    try:
+        lat = float(place.get("lat"))
+        lng = float(place.get("lng"))
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(lat) or not math.isfinite(lng):
+        return False
+
+    option = snapshot.get("route_option")
+    if not isinstance(option, dict):
+        return False
+    try:
+        route_id = int(option.get("route_id"))
+    except (TypeError, ValueError):
+        return False
+    if route_id <= 0:
+        return False
+
+    departure_time = str(snapshot.get("departure_time") or "").strip()
+    if departure_time and _clock_minutes_from_text(departure_time) is None:
+        return False
+
+    return True
 
 
 def _clock_minutes_from_text(raw: str | None) -> int | None:
@@ -4203,6 +4243,76 @@ def api_search():
 @app.route("/api/sites")
 def api_sites():
     return jsonify({"sites": get_sites(), "db_updated_at": get_db_updated_at()})
+
+
+@app.route("/api/route-shares", methods=["POST"])
+def api_route_shares_create():
+    auth_user, _ = _get_current_user(with_touch=False)
+    creator_visitor_id = _ensure_history_visitor_id()
+    payload = request.get_json(silent=True) or {}
+    snapshot = payload.get("snapshot")
+    if not _route_share_payload_is_valid(snapshot):
+        resp = make_response(jsonify({"error": "공유할 노선 정보가 올바르지 않습니다."}), 400)
+        return _attach_history_visitor_cookie_if_needed(resp)
+
+    try:
+        serialized = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError):
+        resp = make_response(jsonify({"error": "공유 데이터를 직렬화하지 못했습니다."}), 400)
+        return _attach_history_visitor_cookie_if_needed(resp)
+    if len(serialized) > ROUTE_SHARE_MAX_SNAPSHOT_BYTES:
+        resp = make_response(jsonify({"error": "공유할 데이터가 너무 큽니다."}), 413)
+        return _attach_history_visitor_cookie_if_needed(resp)
+
+    snapshot = dict(snapshot)
+    try:
+        snapshot["version"] = max(1, int(snapshot.get("version") or 1))
+    except (TypeError, ValueError):
+        snapshot["version"] = 1
+
+    created = user_store.create_route_share(
+        snapshot=snapshot,
+        expires_in_days=ROUTE_SHARE_TTL_DAYS,
+        creator_user_id=(int(auth_user["id"]) if auth_user else None),
+        creator_visitor_id=creator_visitor_id,
+    )
+    resp = make_response(
+        jsonify(
+            {
+                "token": created["token"],
+                "expires_at": created["expires_at"],
+                "share_path": f"/r/{created['token']}",
+                "query_path": f"/?share={created['token']}",
+            }
+        )
+    )
+    return _attach_history_visitor_cookie_if_needed(resp)
+
+
+@app.route("/api/route-shares/<token>")
+def api_route_shares_get(token: str):
+    record = user_store.get_route_share(token)
+    if record is None:
+        return jsonify({"error": "공유 링크를 찾을 수 없습니다.", "code": "route_share_not_found"}), 404
+    if record.get("expired"):
+        return (
+            jsonify(
+                {
+                    "error": "만료된 공유 링크입니다.",
+                    "code": "route_share_expired",
+                    "expires_at": record.get("expires_at"),
+                }
+            ),
+            410,
+        )
+    return jsonify(
+        {
+            "token": record.get("token"),
+            "created_at": record.get("created_at"),
+            "expires_at": record.get("expires_at"),
+            "snapshot": record.get("snapshot") or {},
+        }
+    )
 
 
 @app.route("/api/shuttle/day-types")
