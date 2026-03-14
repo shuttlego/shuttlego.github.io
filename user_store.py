@@ -423,6 +423,21 @@ def _conn_ctx() -> Iterator[Any]:
         conn.close()
 
 
+@contextmanager
+def connection_scope() -> Iterator[Any]:
+    with _conn_ctx() as conn:
+        yield conn
+
+
+@contextmanager
+def _conn_ctx_optional(conn: Any | None = None) -> Iterator[Any]:
+    if conn is not None:
+        yield conn
+        return
+    with _conn_ctx() as owned_conn:
+        yield owned_conn
+
+
 def init_db(db_path: str | None = None) -> None:
     configure(db_path)
     with _conn_ctx() as conn:
@@ -977,6 +992,16 @@ def _row_to_user(row: sqlite3.Row | None) -> dict | None:
     }
 
 
+def _default_preferences(now: str | None = None) -> dict:
+    value = now or utc_iso()
+    return {
+        "selected_site_id": None,
+        "route_search_mode": DEFAULT_ROUTE_SEARCH_MODE,
+        "route_max_distance_km": float(DEFAULT_ROUTE_MAX_DISTANCE_KM),
+        "updated_at": value,
+    }
+
+
 def get_user_by_id(user_id: int) -> dict | None:
     with _conn_ctx() as conn:
         row = conn.execute(
@@ -1340,6 +1365,14 @@ def create_session(
     with _conn_ctx() as conn:
         conn.execute(
             """
+            INSERT INTO user_preferences(user_id, selected_site_id, route_search_mode, route_max_distance_km, updated_at)
+            VALUES(?, NULL, NULL, NULL, ?)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (int(user_id), now),
+        )
+        conn.execute(
+            """
             INSERT INTO user_sessions(session_token_hash, user_id, expires_at, created_at, last_seen_at, user_agent, ip)
             VALUES(?, ?, ?, ?, ?, ?, ?)
             """,
@@ -1356,13 +1389,17 @@ def create_session(
         conn.commit()
 
 
-def get_user_by_session_hash(session_token_hash: str) -> dict | None:
+def get_user_session_snapshot(
+    session_token_hash: str,
+    *,
+    conn: Any | None = None,
+) -> dict | None:
     now = utc_iso()
-    with _conn_ctx() as conn:
-        row = conn.execute(
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
             """
             SELECT u.id, u.public_user_id, u.nickname, u.email, u.email_consent, u.status, u.created_at, u.updated_at,
-                   s.expires_at
+                   s.expires_at, s.last_seen_at
             FROM user_sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.session_token_hash = ?
@@ -1372,13 +1409,31 @@ def get_user_by_session_hash(session_token_hash: str) -> dict | None:
             """,
             (str(session_token_hash), now),
         ).fetchone()
-        return _row_to_user(row)
+        user = _row_to_user(row)
+        if user is None:
+            return None
+        return {
+            "user": user,
+            "expires_at": row["expires_at"],
+            "last_seen_at": row["last_seen_at"],
+        }
+
+
+def get_user_by_session_hash(
+    session_token_hash: str,
+    *,
+    conn: Any | None = None,
+) -> dict | None:
+    snapshot = get_user_session_snapshot(str(session_token_hash), conn=conn)
+    return dict(snapshot["user"]) if snapshot is not None else None
 
 
 def touch_session(
     session_token_hash: str,
     expires_at: datetime | None = None,
     min_interval_sec: int = 0,
+    *,
+    conn: Any | None = None,
 ) -> None:
     if should_skip_noncritical_writes():
         return
@@ -1389,15 +1444,15 @@ def touch_session(
     now_dt = utc_now()
     now = utc_iso(now_dt)
     min_allowed_seen_at = utc_iso(now_dt - timedelta(seconds=min_interval)) if min_interval > 0 else None
-    with _conn_ctx() as conn:
+    with _conn_ctx_optional(conn) as active_conn:
         if expires_at is None:
             if min_allowed_seen_at is None:
-                conn.execute(
+                active_conn.execute(
                     "UPDATE user_sessions SET last_seen_at = ? WHERE session_token_hash = ?",
                     (now, str(session_token_hash)),
                 )
             else:
-                conn.execute(
+                active_conn.execute(
                     """
                     UPDATE user_sessions
                     SET last_seen_at = ?
@@ -1408,12 +1463,12 @@ def touch_session(
                 )
         else:
             if min_allowed_seen_at is None:
-                conn.execute(
+                active_conn.execute(
                     "UPDATE user_sessions SET last_seen_at = ?, expires_at = ? WHERE session_token_hash = ?",
                     (now, utc_iso(expires_at), str(session_token_hash)),
                 )
             else:
-                conn.execute(
+                active_conn.execute(
                     """
                     UPDATE user_sessions
                     SET last_seen_at = ?, expires_at = ?
@@ -1422,7 +1477,7 @@ def touch_session(
                     """,
                     (now, utc_iso(expires_at), str(session_token_hash), min_allowed_seen_at),
                 )
-        conn.commit()
+        active_conn.commit()
 
 
 def delete_session(session_token_hash: str) -> None:
@@ -1522,7 +1577,12 @@ def get_user_metrics_snapshot(
     }
 
 
-def get_preferences(user_id: int) -> dict:
+def get_preferences(
+    user_id: int,
+    *,
+    conn: Any | None = None,
+    create_if_missing: bool = True,
+) -> dict:
     def _normalize_search_mode(raw: object) -> str:
         value = str(raw or "").strip().lower()
         return value if value in {"distance", "time"} else DEFAULT_ROUTE_SEARCH_MODE
@@ -1538,8 +1598,8 @@ def get_preferences(user_id: int) -> dict:
             value = 30.0
         return float(value)
 
-    with _conn_ctx() as conn:
-        row = conn.execute(
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
             """
             SELECT selected_site_id, route_search_mode, route_max_distance_km, updated_at
             FROM user_preferences
@@ -1549,27 +1609,17 @@ def get_preferences(user_id: int) -> dict:
         ).fetchone()
         if row is None:
             now = utc_iso()
-            if is_read_only_mode():
-                return {
-                    "selected_site_id": None,
-                    "route_search_mode": DEFAULT_ROUTE_SEARCH_MODE,
-                    "route_max_distance_km": float(DEFAULT_ROUTE_MAX_DISTANCE_KM),
-                    "updated_at": now,
-                }
-            conn.execute(
+            if (not create_if_missing) or is_read_only_mode():
+                return _default_preferences(now)
+            active_conn.execute(
                 """
                 INSERT INTO user_preferences(user_id, selected_site_id, route_search_mode, route_max_distance_km, updated_at)
                 VALUES(?, NULL, NULL, NULL, ?)
                 """,
                 (int(user_id), now),
             )
-            conn.commit()
-            return {
-                "selected_site_id": None,
-                "route_search_mode": DEFAULT_ROUTE_SEARCH_MODE,
-                "route_max_distance_km": float(DEFAULT_ROUTE_MAX_DISTANCE_KM),
-                "updated_at": now,
-            }
+            active_conn.commit()
+            return _default_preferences(now)
         return {
             "selected_site_id": row["selected_site_id"],
             "route_search_mode": _normalize_search_mode(row["route_search_mode"]),
@@ -1586,7 +1636,7 @@ def set_preferences(
     route_max_distance_km: float | int | None | object = _PREFERENCE_UNSET,
 ) -> dict:
     _ensure_writes_allowed()
-    current = get_preferences(int(user_id))
+    current = get_preferences(int(user_id), create_if_missing=False)
     next_site_id = current.get("selected_site_id")
     next_search_mode = str(current.get("route_search_mode") or DEFAULT_ROUTE_SEARCH_MODE)
     next_max_distance_km = float(current.get("route_max_distance_km") or DEFAULT_ROUTE_MAX_DISTANCE_KM)

@@ -3780,7 +3780,9 @@
         width: 100%;
         max-width: none;
         margin: 0;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr) 40px;
+        column-gap: 8px;
+        row-gap: 6px;
       }
       .header-left {
         order: 2;
@@ -3908,11 +3910,29 @@
         width: auto;
         max-width: 52vw;
       }
+      .route-mode-left {
+        grid-row: 1;
+      }
+      .route-mode-secondline {
+        grid-row: 2;
+      }
+      .route-mode-actions {
+        grid-row: 1 / span 2;
+        align-self: stretch;
+        width: 40px;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 6px;
+      }
       .route-mode-back-btn {
         height: 40px;
-        width: 44px;
-        min-width: 44px;
+        width: 40px;
+        min-width: 40px;
         padding: 0;
+        order: 2;
+        font-size: 11px;
+        line-height: 1.1;
       }
       .route-mode-issue-btn {
         width: 40px;
@@ -3928,6 +3948,7 @@
         min-width: 40px;
         height: 40px;
         font-size: 18px;
+        order: 1;
       }
       .route-mode-swap-btn,
       .route-mode-swap-spacer {
@@ -3948,6 +3969,8 @@
       }
       .route-mode-place-label,
       .route-endpoint-trigger {
+        width: 100%;
+        max-width: none;
         min-height: 40px;
         font-size: 13px;
         padding: 9px 10px;
@@ -6568,6 +6591,8 @@
       var selectedSiteId = '0000013';
       var selectedDayType = 'weekday';
       var dbUpdatedAt = '';
+      var siteListLoaded = false;
+      var siteSelectionTouchedByUser = false;
       var selectedPlaceIndex = -1;
       var bubbleOverlay = null;
       var bubbleState = null;
@@ -8008,6 +8033,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             refreshAccountMenuRankBadge();
             refreshNoticeSpotlightHint();
             return authState;
+          })
+          .then(function(state) {
+            return syncSelectedSiteFromAuthPreferences().then(function() {
+              return state;
+            });
           })
           .catch(function() {
             authState = { logged_in: false, user: null, preferences: {} };
@@ -9697,6 +9727,73 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var siteTriggerTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
         if (siteTriggerTextEl) siteTriggerTextEl.textContent = opt ? opt.text : '';
       }
+      function siteOptionExists(siteId) {
+        var value = String(siteId || '').trim();
+        if (!value || !siteSelect || !siteSelect.options) return false;
+        for (var i = 0; i < siteSelect.options.length; i++) {
+          if (String(siteSelect.options[i].value || '') === value) return true;
+        }
+        return false;
+      }
+      function getPreferredSiteIdFromAuthState() {
+        return authState && authState.preferences
+          ? String(authState.preferences.selected_site_id || '').trim()
+          : '';
+      }
+      function resolveInitialSiteId() {
+        var preferredSiteId = getPreferredSiteIdFromAuthState();
+        if (siteOptionExists(preferredSiteId)) return preferredSiteId;
+        if (siteOptionExists(selectedSiteId)) return selectedSiteId;
+        if (siteOptionExists('0000013')) return '0000013';
+        if (siteSelect && siteSelect.options && siteSelect.options.length > 0) {
+          return String(siteSelect.options[0].value || '').trim() || '0000011';
+        }
+        return '0000011';
+      }
+      function setSelectedSiteValue(siteId) {
+        var nextSiteId = String(siteId || '').trim();
+        if (!siteOptionExists(nextSiteId)) return false;
+        if (siteSelect && siteSelect.value !== nextSiteId) siteSelect.value = nextSiteId;
+        selectedSiteId = nextSiteId;
+        updateSiteTriggerText();
+        return true;
+      }
+      function applySiteSelection(siteId, opts) {
+        opts = opts || {};
+        var previousSiteId = String(selectedSiteId || '').trim();
+        if (!setSelectedSiteValue(siteId)) return Promise.resolve(false);
+        var changed = previousSiteId !== selectedSiteId;
+
+        if (opts.persistPreference && authState.logged_in) {
+          fetch(API_BASE + '/api/me/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_site_id: selectedSiteId })
+          }).catch(function() {});
+        }
+        if (!changed && opts.forceRefreshDayTypes !== true) {
+          return Promise.resolve(false);
+        }
+        return refreshDayTypeOptionsForSite(selectedSiteId).then(function(applied) {
+          if (applied !== false && opts.refreshResults !== false) {
+            refreshLastShuttleResult();
+          }
+          return true;
+        });
+      }
+      function syncSelectedSiteFromAuthPreferences() {
+        if (!siteListLoaded || siteSelectionTouchedByUser || lastPlace || sharedRouteState.active) {
+          return Promise.resolve(false);
+        }
+        var preferredSiteId = getPreferredSiteIdFromAuthState();
+        if (!preferredSiteId || preferredSiteId === selectedSiteId || !siteOptionExists(preferredSiteId)) {
+          return Promise.resolve(false);
+        }
+        return applySiteSelection(preferredSiteId, {
+          persistPreference: false,
+          refreshResults: false
+        });
+      }
       function setSiteSelectorEnabled(enabled) {
         if (!siteSelectTrigger) return;
         siteSelectTrigger.disabled = !enabled;
@@ -9736,7 +9833,6 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             var val = this.getAttribute('data-value');
             if (siteSelect && val !== siteSelect.value) {
               siteSelect.value = val;
-              selectedSiteId = val;
               siteSelect.dispatchEvent(new Event('change'));
             }
             updateSiteTriggerText();
@@ -11224,6 +11320,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function loadSites() {
+        siteListLoaded = false;
         setSiteSelectorEnabled(false);
         return fetch(API_BASE + '/api/sites')
           .then(function(r) { return r.json(); })
@@ -11238,42 +11335,25 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
                 siteSelect.appendChild(new Option(site.site_name, String(site.site_id)));
               });
             }
-            var preferredSiteId = authState && authState.preferences
-              ? String(authState.preferences.selected_site_id || '').trim()
-              : '';
-            if (preferredSiteId && siteSelect.querySelector('option[value=\"' + preferredSiteId + '\"]')) {
-              siteSelect.value = preferredSiteId;
-            } else if (siteSelect.querySelector('option[value="0000013"]')) {
-              siteSelect.value = '0000013';
-            }
-            selectedSiteId = siteSelect.value;
-            updateSiteTriggerText();
+            setSelectedSiteValue(resolveInitialSiteId());
+            siteListLoaded = true;
+            setSiteSelectorEnabled(true);
             return refreshDayTypeOptionsForSite(selectedSiteId);
           })
           .catch(function() {
             siteSelect.innerHTML = '';
             siteSelect.appendChild(new Option('삼성전자(기흥/화성)', '0000011'));
-            siteSelect.value = '0000011';
-            selectedSiteId = '0000011';
-            updateSiteTriggerText();
-            return refreshDayTypeOptionsForSite(selectedSiteId);
-          })
-          .finally(function() {
+            setSelectedSiteValue('0000011');
+            siteListLoaded = true;
             setSiteSelectorEnabled(true);
+            return refreshDayTypeOptionsForSite(selectedSiteId);
           });
       }
 
       siteSelect.addEventListener('change', function() {
-        selectedSiteId = siteSelect.value;
-        if (authState.logged_in) {
-          fetch(API_BASE + '/api/me/preferences', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selected_site_id: selectedSiteId })
-          }).catch(function() {});
-        }
-        refreshDayTypeOptionsForSite(selectedSiteId).then(function(applied) {
-          if (applied !== false) refreshLastShuttleResult();
+        siteSelectionTouchedByUser = true;
+        applySiteSelection(siteSelect.value, {
+          persistPreference: true
         });
       });
       if (siteSelectTrigger) siteSelectTrigger.addEventListener('click', openSitePickerModal);
@@ -19179,17 +19259,17 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
       if (typeof kakao !== 'undefined' && kakao.maps) {
         initMap();
-        refreshAuthState().finally(function() {
-          Promise.resolve(loadSites())
-            .finally(function() {
-              updateMapControlsPosition();
-              if (pendingSharedRouteToken) {
-                loadSharedRouteSnapshot(pendingSharedRouteToken);
-              } else if (isMobile()) {
-                setSheetState('sheet-peek');
-              }
-            });
-        });
+        var authReadyPromise = refreshAuthState();
+        var sitesReadyPromise = Promise.resolve(loadSites());
+        Promise.allSettled([authReadyPromise, sitesReadyPromise])
+          .finally(function() {
+            updateMapControlsPosition();
+            if (pendingSharedRouteToken) {
+              loadSharedRouteSnapshot(pendingSharedRouteToken);
+            } else if (isMobile()) {
+              setSheetState('sheet-peek');
+            }
+          });
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
       }

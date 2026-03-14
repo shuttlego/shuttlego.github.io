@@ -2951,38 +2951,57 @@ def _create_auth_session_for_user(user: dict) -> str:
     return raw_token
 
 
-def _get_current_user(with_touch: bool = False) -> tuple[dict | None, str | None]:
+def _is_session_touch_due(last_seen_at: str | None, min_interval_sec: int) -> bool:
+    interval = max(0, int(min_interval_sec or 0))
+    if interval <= 0:
+        return True
+    parsed = user_store.parse_iso(last_seen_at)
+    if parsed is None:
+        return True
+    return (_utc_now() - parsed) >= timedelta(seconds=interval)
+
+
+def _get_current_user(with_touch: bool = False, conn: Any | None = None) -> tuple[dict | None, str | None]:
     if getattr(request, "_auth_user_cache_loaded", False):
         user = getattr(request, "_auth_user_cache_user", None)
         token_hash = getattr(request, "_auth_user_cache_token_hash", None)
+        session_last_seen_at = getattr(request, "_auth_user_cache_last_seen_at", None)
     else:
         raw_token = _session_token_from_request()
         if not raw_token:
             request._auth_user_cache_loaded = True
             request._auth_user_cache_user = None
             request._auth_user_cache_token_hash = None
+            request._auth_user_cache_last_seen_at = None
             request._auth_user_cache_touched = False
             return None, None
         token_hash = _hash_session_token(raw_token)
-        user = user_store.get_user_by_session_hash(token_hash)
+        snapshot = user_store.get_user_session_snapshot(token_hash, conn=conn)
+        user = dict(snapshot["user"]) if snapshot is not None else None
+        session_last_seen_at = str(snapshot.get("last_seen_at") or "") if snapshot is not None else None
         request._auth_user_cache_loaded = True
         request._auth_user_cache_user = user
         request._auth_user_cache_token_hash = token_hash
+        request._auth_user_cache_last_seen_at = session_last_seen_at
         request._auth_user_cache_touched = False
 
     if with_touch and user is not None and not getattr(request, "_auth_user_cache_touched", False):
-        if AUTH_SESSION_SLIDING:
-            user_store.touch_session(
-                token_hash,
-                expires_at=_utc_now() + timedelta(days=AUTH_SESSION_TTL_DAYS),
-                min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
-            )
-        else:
-            user_store.touch_session(
-                token_hash,
-                expires_at=None,
-                min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
-            )
+        if _is_session_touch_due(session_last_seen_at, AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC):
+            if AUTH_SESSION_SLIDING:
+                user_store.touch_session(
+                    token_hash,
+                    expires_at=_utc_now() + timedelta(days=AUTH_SESSION_TTL_DAYS),
+                    min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
+                    conn=conn,
+                )
+            else:
+                user_store.touch_session(
+                    token_hash,
+                    expires_at=None,
+                    min_interval_sec=AUTH_SESSION_TOUCH_MIN_INTERVAL_SEC,
+                    conn=conn,
+                )
+            request._auth_user_cache_last_seen_at = user_store.utc_iso()
         request._auth_user_cache_touched = True
     return user, token_hash
 
@@ -3755,24 +3774,29 @@ def api_auth_signup_complete():
 
 @app.route("/api/auth/me")
 def api_auth_me():
-    user, token_hash = _get_current_user(with_touch=True)
-    if user is None:
+    raw_token = _session_token_from_request()
+    if not raw_token:
         resp = make_response(jsonify({"logged_in": False, "user": None, "preferences": {}}))
-        if token_hash is not None:
-            _clear_auth_session_cookie(resp)
         return resp
-    prefs = user_store.get_preferences(int(user["id"]))
-    return jsonify(
-        {
-            "logged_in": True,
-            "user": _serialize_user_profile(user),
-            "preferences": {
-                "selected_site_id": prefs.get("selected_site_id"),
-                "route_search_mode": prefs.get("route_search_mode"),
-                "route_max_distance_km": prefs.get("route_max_distance_km"),
-            },
-        }
-    )
+    with user_store.connection_scope() as conn:
+        user, token_hash = _get_current_user(with_touch=True, conn=conn)
+        if user is None:
+            resp = make_response(jsonify({"logged_in": False, "user": None, "preferences": {}}))
+            if token_hash is not None:
+                _clear_auth_session_cookie(resp)
+            return resp
+        prefs = user_store.get_preferences(int(user["id"]), conn=conn, create_if_missing=False)
+        return jsonify(
+            {
+                "logged_in": True,
+                "user": _serialize_user_profile(user),
+                "preferences": {
+                    "selected_site_id": prefs.get("selected_site_id"),
+                    "route_search_mode": prefs.get("route_search_mode"),
+                    "route_max_distance_km": prefs.get("route_max_distance_km"),
+                },
+            }
+        )
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -3815,7 +3839,7 @@ def api_me_preferences():
 
     user_id = int(user["id"])
     if request.method == "GET":
-        prefs = user_store.get_preferences(user_id)
+        prefs = user_store.get_preferences(user_id, create_if_missing=False)
         return jsonify(
             {
                 "selected_site_id": prefs.get("selected_site_id"),
