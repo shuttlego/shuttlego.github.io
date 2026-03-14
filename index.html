@@ -3497,7 +3497,7 @@
     }
     .route-shared-banner-text {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       min-width: 0;
       color: #36516d;
@@ -3507,17 +3507,18 @@
     }
     .route-shared-banner-message {
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      flex: 1 1 auto;
+      white-space: normal;
     }
     .route-shared-banner-actions {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: stretch;
       gap: 8px;
+      width: 100%;
     }
     .route-shared-banner-btn {
+      width: 100%;
       padding: 6px 10px;
       border: 1px solid #b8cfe7;
       border-radius: 8px;
@@ -3670,21 +3671,6 @@
       background: #e0eefc;
     }
     @media (max-width: 768px) {
-      .route-shared-banner-text {
-        display: block;
-      }
-      .route-shared-banner-message {
-        display: block;
-        margin-top: 8px;
-        white-space: normal;
-        overflow: visible;
-      }
-      .route-shared-banner-actions {
-        width: 100%;
-      }
-      .route-shared-banner-btn {
-        width: 100%;
-      }
       .route-option-card .route-card-actions {
         flex-wrap: wrap;
         justify-content: flex-end;
