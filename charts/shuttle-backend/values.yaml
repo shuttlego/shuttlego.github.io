@@ -180,4 +180,8 @@ tmapCollector:
   pacingJitterMin: 0.75
   pacingJitterMax: 1.35
   pacingMinSleepSec: 1
+  drainJitterMinSec: 2
+  drainJitterMaxSec: 12
+  requireAllPairsExhausted: false
+  drainPairFailureThreshold: 8
   resources: {}

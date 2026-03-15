@@ -76,6 +76,14 @@ spec:
               value: {{ default 1.35 .Values.tmapCollector.pacingJitterMax | quote }}
             - name: TMAP_PACING_MIN_SLEEP_SEC
               value: {{ default 1 .Values.tmapCollector.pacingMinSleepSec | quote }}
+            - name: TMAP_DRAIN_JITTER_MIN_SEC
+              value: {{ default 2 .Values.tmapCollector.drainJitterMinSec | quote }}
+            - name: TMAP_DRAIN_JITTER_MAX_SEC
+              value: {{ default 12 .Values.tmapCollector.drainJitterMaxSec | quote }}
+            - name: TMAP_REQUIRE_ALL_PAIRS_EXHAUSTED
+              value: {{ ternary "1" "0" (default false .Values.tmapCollector.requireAllPairsExhausted) | quote }}
+            - name: TMAP_DRAIN_PAIR_FAILURE_THRESHOLD
+              value: {{ default 8 .Values.tmapCollector.drainPairFailureThreshold | quote }}
             - name: DB_S3_BUCKET
               value: {{ default "" $dbSyncS3.bucket | quote }}
             - name: DB_S3_PREFIX
