@@ -92,7 +92,11 @@ def _open_connection(path: str) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: str | None = None) -> int:
+def init_db(
+    db_path: str | None = None,
+    *,
+    prewarmed_endpoint_cache: dict[tuple[str, str, str], dict] | None = None,
+) -> int:
     """SQLite DB 연결 설정. 각 스레드는 자체 read-only connection을 사용한다."""
     global _db_path
     global _db_generation
@@ -125,6 +129,10 @@ def init_db(db_path: str | None = None) -> int:
                 _db_paths_by_generation.pop(old_generation, None)
     with _endpoint_cache_lock:
         _endpoint_cache.clear()
+        if prewarmed_endpoint_cache:
+            for cache_key, cache_entry in prewarmed_endpoint_cache.items():
+                site_id, day_type, direction = cache_key
+                _endpoint_cache[(generation, site_id, day_type, direction)] = cache_entry
     with _route_metadata_cache_lock:
         _route_metadata_cache.clear()
     with _report_stop_exclusion_lock:
@@ -1048,7 +1056,8 @@ def get_sites() -> list[dict]:
 
 def get_available_day_types(site_id: str) -> list[str]:
     """
-    선택 사업장에서 출퇴근 노선(commute_in/commute_out)이 실제 존재하는 day_type 목록을 반환한다.
+    선택 사업장에서 검색 가능한 노선(commute_in/commute_out/shuttle)이
+    실제 존재하는 day_type 목록을 반환한다.
     '테스트' 노선은 제외한다.
     """
     rows = _db().execute(
@@ -1057,7 +1066,7 @@ def get_available_day_types(site_id: str) -> list[str]:
         FROM route ro
         JOIN service_variant sv ON sv.route_id = ro.route_id
         WHERE ro.site_id = ?
-          AND ro.route_type IN ('commute_in', 'commute_out')
+          AND ro.route_type IN ('commute_in', 'commute_out', 'shuttle')
           AND ro.route_name NOT LIKE '%테스트%'
         ORDER BY
           CASE sv.day_type
@@ -1129,6 +1138,31 @@ def _normalize_endpoint_name(raw_name: str | None) -> str:
     return name.strip()
 
 
+def _route_type_sql_condition(column: str, route_types: str | list[str] | tuple[str, ...]) -> tuple[str, list[object]]:
+    normalized = _normalize_route_types(route_types)
+    if not normalized:
+        raise ValueError("route_types must not be empty")
+    if len(normalized) == 1:
+        return f"{column} = ?", [normalized[0]]
+    placeholders = ",".join("?" for _ in normalized)
+    return f"{column} IN ({placeholders})", list(normalized)
+
+
+def _normalize_route_types(route_types: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if route_types is None:
+        return tuple()
+    if isinstance(route_types, str):
+        raw_values = [route_types]
+    else:
+        raw_values = list(route_types)
+    ordered: list[str] = []
+    for raw in raw_values:
+        value = str(raw or "").strip()
+        if value and value not in ordered:
+            ordered.append(value)
+    return tuple(ordered)
+
+
 def _endpoint_route_type(direction: str) -> str:
     if direction == "depart":
         return "commute_in"
@@ -1137,34 +1171,31 @@ def _endpoint_route_type(direction: str) -> str:
     raise ValueError("direction must be 'depart' or 'arrive'")
 
 
-def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
-    """
-    사업장/요일/방향별 endpoint 인덱스를 1회 생성한다.
-    반환:
-    {
-        "options": [{"endpoint_name": str, "route_count": int}, ...],
-        "endpoint_to_routes": {endpoint_name: {route_id, ...}},
-    }
+def _endpoint_seq_column(direction: str) -> str:
+    return "es.max_seq" if direction == "depart" else "es.min_seq"
 
-    규칙:
-    - 동일 명칭 정규화(_normalize_endpoint_name)
-    - endpoint 정류장끼리 100m 이내면 하나의 옵션 그룹으로 병합
-    - 옵션명 구성요소는 반드시 같은 방향 노선의 실제 endpoint 명칭만 사용
-    - 옵션별 route 집합은 "선택된 사업장 기점을 해당 노선이 1회 이상 포함하는지"
-      기준으로 매핑한다.
-      (즉, 실제 시/종점뿐 아니라 같은 노선 내 경유 기점도 포함한다.)
-    """
-    db = _db()
-    route_type = _endpoint_route_type(direction)
-    endpoint_seq_col = "es.max_seq" if direction == "depart" else "es.min_seq"
 
-    endpoint_rows = db.execute(
+def _fetch_endpoint_rows(
+    *,
+    db: sqlite3.Connection | None = None,
+    site_id: str,
+    day_type: str,
+    direction: str,
+    route_types: str | list[str] | tuple[str, ...],
+) -> list[sqlite3.Row]:
+    db = db or _db()
+    route_type_sql, route_type_params = _route_type_sql_condition("route_type", route_types)
+    endpoint_seq_col = _endpoint_seq_column(direction)
+    params: list[object] = [site_id]
+    params.extend(route_type_params)
+    params.append(day_type)
+    return db.execute(
         f"""
         WITH target_routes AS (
             SELECT route_id
             FROM route
             WHERE site_id = ?
-              AND route_type = ?
+              AND {route_type_sql}
               AND route_name NOT LIKE '%테스트%'
         ),
         first_variant AS (
@@ -1183,6 +1214,7 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
         SELECT
             fv.route_id,
             ro.route_name,
+            ro.route_type,
             vs_ep.stop_id AS endpoint_stop_id,
             st_ep.name AS endpoint_name,
             st_ep.lat AS endpoint_lat,
@@ -1195,14 +1227,49 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
            AND vs_ep.seq = {endpoint_seq_col}
         LEFT JOIN stop st_ep ON st_ep.stop_id = vs_ep.stop_id
         """,
-        (site_id, route_type, day_type),
+        tuple(params),
     ).fetchall()
 
-    if not endpoint_rows:
-        return {"options": [], "endpoint_to_routes": {}}
 
+def _fetch_serviceable_rows(
+    *,
+    db: sqlite3.Connection | None = None,
+    site_id: str,
+    day_type: str,
+    route_types: str | list[str] | tuple[str, ...],
+) -> list[sqlite3.Row]:
+    db = db or _db()
+    route_type_sql, route_type_params = _route_type_sql_condition("ro.route_type", route_types)
+    params: list[object] = [site_id]
+    params.extend(route_type_params)
+    params.append(day_type)
+    return db.execute(
+        f"""
+        SELECT DISTINCT
+            sv.route_id,
+            ro.route_name,
+            ro.route_type,
+            st.name AS stop_name
+        FROM route ro
+        JOIN service_variant sv ON sv.route_id = ro.route_id
+        JOIN variant_stop vs ON vs.variant_id = sv.variant_id
+        JOIN stop st ON st.stop_id = vs.stop_id
+        WHERE ro.site_id = ?
+          AND {route_type_sql}
+          AND sv.day_type = ?
+          AND ro.route_name NOT LIKE '%테스트%'
+        """,
+        tuple(params),
+    ).fetchall()
+
+
+def _collect_endpoint_group_source(
+    endpoint_rows: list[sqlite3.Row],
+    serviceable_rows: list[sqlite3.Row],
+) -> dict[str, object]:
     name_to_direct_routes: dict[str, set[int]] = defaultdict(set)
     name_to_endpoint_stops: dict[str, set[int]] = defaultdict(set)
+    component_name_to_serviceable_routes: dict[str, set[int]] = defaultdict(set)
     route_name_by_id: dict[int, str] = {}
     stop_coords: dict[int, tuple[float, float]] = {}
 
@@ -1223,33 +1290,7 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
             continue
         stop_coords[sid] = (lat, lon)
 
-    if not name_to_direct_routes:
-        return {"options": [], "endpoint_to_routes": {}}
-
-    # 옵션 구성요소로 사용되는 endpoint 명칭(정규화값)만 별도 집계한다.
     candidate_component_names = set(name_to_direct_routes.keys())
-    component_name_to_serviceable_routes: dict[str, set[int]] = defaultdict(set)
-
-    # "선택한 기점을 포함하는 모든 노선" 매핑을 위해,
-    # day_type의 모든 variant 정류장을 스캔해 옵션 구성요소 명칭과 일치하는 route를 수집한다.
-    serviceable_rows = db.execute(
-        """
-        SELECT DISTINCT
-            sv.route_id,
-            ro.route_name,
-            st.name AS stop_name
-        FROM route ro
-        JOIN service_variant sv ON sv.route_id = ro.route_id
-        JOIN variant_stop vs ON vs.variant_id = sv.variant_id
-        JOIN stop st ON st.stop_id = vs.stop_id
-        WHERE ro.site_id = ?
-          AND ro.route_type = ?
-          AND sv.day_type = ?
-          AND ro.route_name NOT LIKE '%테스트%'
-        """,
-        (site_id, route_type, day_type),
-    ).fetchall()
-
     for row in serviceable_rows:
         normalized = _normalize_endpoint_name(row["stop_name"])
         if not normalized or normalized not in candidate_component_names:
@@ -1258,6 +1299,23 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
         component_name_to_serviceable_routes[normalized].add(rid)
         if rid not in route_name_by_id:
             route_name_by_id[rid] = str(row["route_name"] or "").strip()
+
+    return {
+        "name_to_direct_routes": name_to_direct_routes,
+        "name_to_endpoint_stops": name_to_endpoint_stops,
+        "component_name_to_serviceable_routes": component_name_to_serviceable_routes,
+        "route_name_by_id": route_name_by_id,
+        "stop_coords": stop_coords,
+    }
+
+
+def _cluster_endpoint_name_sets(source: dict[str, object]) -> list[set[str]]:
+    name_to_direct_routes = source["name_to_direct_routes"]
+    name_to_endpoint_stops = source["name_to_endpoint_stops"]
+    stop_coords = source["stop_coords"]
+
+    if not name_to_direct_routes:
+        return []
 
     stop_grid: dict[tuple[int, int], list[int]] = defaultdict(list)
     for sid, (lat, lon) in stop_coords.items():
@@ -1288,12 +1346,6 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
             endpoint_stop_to_names[sid].add(name)
             endpoint_stop_ids.add(sid)
 
-    # endpoint stop끼리 100m 근접한 관계를 구성
-    endpoint_nearby_map: dict[int, set[int]] = {}
-    for sid in endpoint_stop_ids:
-        endpoint_nearby_map[sid] = nearby_stop_ids(sid).intersection(endpoint_stop_ids)
-
-    # 이름 기준 DSU로 endpoint name 클러스터링
     parent: dict[str, str] = {name: name for name in name_to_direct_routes}
     rank: dict[str, int] = {name: 0 for name in name_to_direct_routes}
 
@@ -1315,9 +1367,7 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
             rank[ra] += 1
 
     for sid, names in endpoint_stop_to_names.items():
-        nearby_endpoint_stops = endpoint_nearby_map.get(sid, set())
-        if not nearby_endpoint_stops:
-            continue
+        nearby_endpoint_stops = nearby_stop_ids(sid).intersection(endpoint_stop_ids)
         for near_sid in nearby_endpoint_stops:
             near_names = endpoint_stop_to_names.get(near_sid)
             if not near_names:
@@ -1329,62 +1379,292 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
     cluster_to_names: dict[str, set[str]] = defaultdict(set)
     for name in name_to_direct_routes.keys():
         cluster_to_names[find_name(name)].add(name)
+    return list(cluster_to_names.values())
 
-    endpoint_to_routes: dict[str, set[int]] = {}
-    endpoint_option_meta: dict[str, dict] = {}
-    for clustered_names in cluster_to_names.values():
-        direct_route_ids: set[int] = set()
-        for name in clustered_names:
-            direct_route_ids.update(name_to_direct_routes.get(name, set()))
 
-        component_name_to_routes: dict[str, set[int]] = defaultdict(set)
-        for name in clustered_names:
-            component_name_to_routes[name].update(name_to_direct_routes.get(name, set()))
+def _build_endpoint_display_name(primary_name: str, component_names: list[str]) -> str:
+    display_lines = [primary_name] + [f"  {name}" for name in component_names if name != primary_name]
+    return "\n".join(display_lines)
 
-        if component_name_to_routes:
-            primary_name = sorted(
-                component_name_to_routes.keys(),
-                key=lambda name: (-len(component_name_to_routes[name]), name),
-            )[0]
-            remaining_names = sorted([name for name in component_name_to_routes.keys() if name != primary_name])
-            ordered_names = [primary_name] + remaining_names
-        else:
-            ordered_names = sorted(clustered_names)
-            primary_name = ordered_names[0] if ordered_names else ""
 
-        option_name = " / ".join(ordered_names)
-        dedup_name = option_name
+def _build_group_payload(
+    clustered_names: set[str],
+    source: dict[str, object],
+    *,
+    used_group_names: set[str] | None = None,
+) -> dict[str, object]:
+    name_to_direct_routes = source["name_to_direct_routes"]
+    component_name_to_serviceable_routes = source["component_name_to_serviceable_routes"]
+    name_to_endpoint_stops = source["name_to_endpoint_stops"]
+
+    direct_route_ids: set[int] = set()
+    component_name_to_routes: dict[str, set[int]] = defaultdict(set)
+    for name in clustered_names:
+        direct_route_ids.update(name_to_direct_routes.get(name, set()))
+        component_name_to_routes[name].update(name_to_direct_routes.get(name, set()))
+
+    if component_name_to_routes:
+        primary_name = sorted(
+            component_name_to_routes.keys(),
+            key=lambda name: (-len(component_name_to_routes[name]), name),
+        )[0]
+        remaining_names = sorted([name for name in component_name_to_routes.keys() if name != primary_name])
+        ordered_names = [primary_name] + remaining_names
+    else:
+        ordered_names = sorted(clustered_names)
+        primary_name = ordered_names[0] if ordered_names else ""
+
+    group_name = " / ".join(ordered_names)
+    if used_group_names is not None:
+        dedup_name = group_name
         suffix = 2
-        while dedup_name in endpoint_to_routes:
-            dedup_name = f"{option_name} ({suffix})"
+        while dedup_name in used_group_names:
+            dedup_name = f"{group_name} ({suffix})"
             suffix += 1
-        # route 매핑은 canonical endpoint만이 아니라,
-        # 동일 사업장 기점을 경유/포함하는 노선까지 포함한다.
-        mapped_route_ids: set[int] = set()
-        for name in clustered_names:
-            mapped_route_ids.update(component_name_to_serviceable_routes.get(name, set()))
-        if not mapped_route_ids:
-            # 예외적으로 서비스 가능 매핑이 비어 있으면 기존 canonical 매핑을 폴백으로 사용한다.
-            mapped_route_ids = set(direct_route_ids)
-        endpoint_to_routes[dedup_name] = mapped_route_ids
-        display_lines = [primary_name] + [f"  {name}" for name in ordered_names[1:]]
-        endpoint_option_meta[dedup_name] = {
-            "endpoint_primary_name": primary_name,
-            "endpoint_components": ordered_names,
-            "endpoint_display_name": "\n".join(display_lines),
-        }
+        used_group_names.add(dedup_name)
+        group_name = dedup_name
+
+    mapped_route_ids: set[int] = set()
+    for name in clustered_names:
+        mapped_route_ids.update(component_name_to_serviceable_routes.get(name, set()))
+    if not mapped_route_ids:
+        mapped_route_ids = set(direct_route_ids)
+
+    endpoint_stop_ids: set[int] = set()
+    for name in clustered_names:
+        endpoint_stop_ids.update(name_to_endpoint_stops.get(name, set()))
+
+    return {
+        "group_name": group_name,
+        "primary_name": primary_name,
+        "component_names": ordered_names,
+        "route_ids": mapped_route_ids,
+        "endpoint_stop_ids": endpoint_stop_ids,
+    }
+
+
+def _merge_endpoint_group(base_group: dict[str, object], addon_group: dict[str, object]) -> None:
+    existing_components = set(base_group["component_names"])
+    for name in addon_group["component_names"]:
+        if name in existing_components:
+            continue
+        base_group["component_names"].append(name)
+        existing_components.add(name)
+    base_group["route_ids"].update(addon_group["route_ids"])
+    base_group["endpoint_stop_ids"].update(addon_group["endpoint_stop_ids"])
+
+
+def _build_group_stop_index(groups: list[dict[str, object]], stop_coords: dict[int, tuple[float, float]]) -> dict[str, object]:
+    stop_to_groups: dict[int, set[str]] = defaultdict(set)
+    stop_grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    indexed_stop_coords: dict[int, tuple[float, float]] = {}
+    for group in groups:
+        group_name = str(group["group_name"])
+        for sid in group["endpoint_stop_ids"]:
+            stop_to_groups[sid].add(group_name)
+            coord = stop_coords.get(sid)
+            if coord is None:
+                continue
+            indexed_stop_coords[sid] = coord
+    for sid, (lat, lon) in indexed_stop_coords.items():
+        gx = math.floor(lat / _ENDPOINT_GRID_CELL_DEG)
+        gy = math.floor(lon / _ENDPOINT_GRID_CELL_DEG)
+        stop_grid[(gx, gy)].append(sid)
+    return {
+        "stop_to_groups": stop_to_groups,
+        "stop_coords": indexed_stop_coords,
+        "stop_grid": stop_grid,
+    }
+
+
+def _index_group_stops(
+    *,
+    group_name: str,
+    stop_ids: set[int],
+    stop_index: dict[str, object],
+    stop_coords: dict[int, tuple[float, float]],
+) -> None:
+    stop_to_groups = stop_index["stop_to_groups"]
+    indexed_stop_coords = stop_index["stop_coords"]
+    stop_grid = stop_index["stop_grid"]
+    for sid in stop_ids:
+        stop_to_groups[sid].add(group_name)
+        coord = stop_coords.get(sid)
+        if coord is None or sid in indexed_stop_coords:
+            continue
+        indexed_stop_coords[sid] = coord
+        lat, lon = coord
+        gx = math.floor(lat / _ENDPOINT_GRID_CELL_DEG)
+        gy = math.floor(lon / _ENDPOINT_GRID_CELL_DEG)
+        stop_grid[(gx, gy)].append(sid)
+
+
+def _find_matching_groups_for_shuttle_group(
+    shuttle_group: dict[str, object],
+    existing_component_name_to_groups: dict[str, set[str]],
+    existing_group_stop_index: dict[str, object],
+    shuttle_stop_coords: dict[int, tuple[float, float]],
+) -> set[str]:
+    exact_matches: set[str] = set()
+    for name in shuttle_group["component_names"]:
+        exact_matches.update(existing_component_name_to_groups.get(name, set()))
+    if exact_matches:
+        return exact_matches
+
+    stop_to_groups = existing_group_stop_index["stop_to_groups"]
+    stop_coords = existing_group_stop_index["stop_coords"]
+    stop_grid = existing_group_stop_index["stop_grid"]
+    proximity_matches: set[str] = set()
+    for sid in shuttle_group["endpoint_stop_ids"]:
+        coord = shuttle_stop_coords.get(sid)
+        if coord is None:
+            continue
+        lat, lon = coord
+        gx = math.floor(lat / _ENDPOINT_GRID_CELL_DEG)
+        gy = math.floor(lon / _ENDPOINT_GRID_CELL_DEG)
+        for dx in (-2, -1, 0, 1, 2):
+            for dy in (-2, -1, 0, 1, 2):
+                for cand_sid in stop_grid.get((gx + dx, gy + dy), []):
+                    cand_coord = stop_coords.get(cand_sid)
+                    if cand_coord is None:
+                        continue
+                    cand_lat, cand_lon = cand_coord
+                    if _haversine_m(lat, lon, cand_lat, cand_lon) <= _ENDPOINT_GROUP_DISTANCE_M:
+                        proximity_matches.update(stop_to_groups.get(cand_sid, set()))
+    return proximity_matches
+
+
+def _build_endpoint_cache(
+    site_id: str,
+    day_type: str,
+    direction: str,
+    *,
+    db: sqlite3.Connection | None = None,
+) -> dict:
+    """
+    사업장/요일/방향별 endpoint 인덱스를 1회 생성한다.
+    기존 출/퇴근 endpoint 그룹을 기준으로 유지하되,
+    동일 방향 셔틀 endpoint를 기존 그룹에 편입하고
+    편입되지 않는 셔틀 endpoint는 신규 그룹으로 노출한다.
+    """
+    primary_route_type = _endpoint_route_type(direction)
+    baseline_endpoint_rows = _fetch_endpoint_rows(
+        db=db,
+        site_id=site_id,
+        day_type=day_type,
+        direction=direction,
+        route_types=primary_route_type,
+    )
+    baseline_serviceable_rows = _fetch_serviceable_rows(
+        db=db,
+        site_id=site_id,
+        day_type=day_type,
+        route_types=primary_route_type,
+    )
+    baseline_source = _collect_endpoint_group_source(baseline_endpoint_rows, baseline_serviceable_rows)
+
+    baseline_groups: list[dict[str, object]] = []
+    used_group_names: set[str] = set()
+    for clustered_names in _cluster_endpoint_name_sets(baseline_source):
+        baseline_groups.append(
+            _build_group_payload(
+                clustered_names,
+                baseline_source,
+                used_group_names=used_group_names,
+            )
+        )
+
+    shuttle_endpoint_rows = _fetch_endpoint_rows(
+        db=db,
+        site_id=site_id,
+        day_type=day_type,
+        direction=direction,
+        route_types="shuttle",
+    )
+    shuttle_serviceable_rows = _fetch_serviceable_rows(
+        db=db,
+        site_id=site_id,
+        day_type=day_type,
+        route_types="shuttle",
+    )
+    shuttle_source = _collect_endpoint_group_source(shuttle_endpoint_rows, shuttle_serviceable_rows)
+
+    route_name_by_id: dict[int, str] = {}
+    route_name_by_id.update(baseline_source["route_name_by_id"])
+    route_name_by_id.update(shuttle_source["route_name_by_id"])
+
+    if shuttle_source["name_to_direct_routes"]:
+        shuttle_groups: list[dict[str, object]] = []
+        for clustered_names in _cluster_endpoint_name_sets(shuttle_source):
+            shuttle_groups.append(_build_group_payload(clustered_names, shuttle_source))
+
+        existing_groups_by_name = {str(group["group_name"]): group for group in baseline_groups}
+        existing_component_name_to_groups: dict[str, set[str]] = defaultdict(set)
+        for group in baseline_groups:
+            group_name = str(group["group_name"])
+            for name in group["component_names"]:
+                existing_component_name_to_groups[name].add(group_name)
+        existing_group_stop_index = _build_group_stop_index(
+            baseline_groups,
+            baseline_source["stop_coords"],
+        )
+
+        shuttle_only_groups: list[dict[str, object]] = []
+        for shuttle_group in shuttle_groups:
+            matched_groups = _find_matching_groups_for_shuttle_group(
+                shuttle_group,
+                existing_component_name_to_groups,
+                existing_group_stop_index,
+                shuttle_source["stop_coords"],
+            )
+            if not matched_groups:
+                shuttle_only_groups.append(shuttle_group)
+                continue
+            for group_name in sorted(matched_groups):
+                target_group = existing_groups_by_name.get(group_name)
+                if target_group is None:
+                    continue
+                _merge_endpoint_group(target_group, shuttle_group)
+                for component_name in shuttle_group["component_names"]:
+                    existing_component_name_to_groups[component_name].add(group_name)
+                _index_group_stops(
+                    group_name=group_name,
+                    stop_ids=shuttle_group["endpoint_stop_ids"],
+                    stop_index=existing_group_stop_index,
+                    stop_coords=shuttle_source["stop_coords"],
+                )
+
+        for shuttle_group in shuttle_only_groups:
+            group_name = str(shuttle_group["group_name"])
+            dedup_name = group_name
+            suffix = 2
+            while dedup_name in used_group_names:
+                dedup_name = f"{group_name} ({suffix})"
+                suffix += 1
+            used_group_names.add(dedup_name)
+            shuttle_group["group_name"] = dedup_name
+            baseline_groups.append(shuttle_group)
 
     options: list[dict] = []
+    endpoint_to_routes: dict[str, set[int]] = {}
     endpoint_search_blob: dict[str, str] = {}
-    for endpoint, route_ids in endpoint_to_routes.items():
-        meta = endpoint_option_meta.get(endpoint, {})
+    for group in sorted(baseline_groups, key=lambda item: str(item["group_name"])):
+        endpoint_name = str(group["group_name"])
+        primary_name = str(group["primary_name"])
+        component_names = [
+            str(name).strip()
+            for name in list(group["component_names"])
+            if str(name).strip()
+        ]
+        route_ids = set(group["route_ids"])
+        endpoint_to_routes[endpoint_name] = route_ids
         options.append(
             {
-                "endpoint_name": endpoint,
+                "endpoint_name": endpoint_name,
                 "route_count": len(route_ids),
-                "endpoint_primary_name": str(meta.get("endpoint_primary_name", "")),
-                "endpoint_components": list(meta.get("endpoint_components", [])),
-                "endpoint_display_name": str(meta.get("endpoint_display_name", "")),
+                "endpoint_primary_name": primary_name,
+                "endpoint_components": component_names,
+                "endpoint_display_name": _build_endpoint_display_name(primary_name, component_names),
             }
         )
         route_names = sorted(
@@ -1394,13 +1674,46 @@ def _build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
                 if route_name_by_id.get(rid, "").strip()
             }
         )
-        endpoint_search_blob[endpoint] = "\n".join(name.casefold() for name in route_names)
-    options.sort(key=lambda item: item["endpoint_name"])
+        endpoint_search_blob[endpoint_name] = "\n".join(name.casefold() for name in route_names)
+
     return {
         "options": options,
         "endpoint_to_routes": endpoint_to_routes,
         "endpoint_search_blob": endpoint_search_blob,
     }
+
+
+def build_endpoint_cache_bundle(
+    db_path: str | Path,
+) -> dict[tuple[str, str, str], dict]:
+    """
+    활성 DB를 교체하기 전에 candidate snapshot 기준 endpoint cache 전체를 미리 계산한다.
+    반환 키는 (site_id, day_type, direction)이며, init_db()가 generation-aware cache로 주입한다.
+    """
+    conn = _open_connection(str(Path(db_path).expanduser().resolve()))
+    try:
+        site_rows = conn.execute("SELECT site_id FROM site ORDER BY site_id").fetchall()
+        day_rows = conn.execute("SELECT DISTINCT day_type FROM service_variant ORDER BY day_type").fetchall()
+        site_ids = [str(row["site_id"]) for row in site_rows]
+        day_types = [str(row["day_type"]) for row in day_rows]
+        bundle: dict[tuple[str, str, str], dict] = {}
+        for site_id in site_ids:
+            for day_type in day_types:
+                bundle[(site_id, day_type, "depart")] = _build_endpoint_cache(
+                    site_id,
+                    day_type,
+                    "depart",
+                    db=conn,
+                )
+                bundle[(site_id, day_type, "arrive")] = _build_endpoint_cache(
+                    site_id,
+                    day_type,
+                    "arrive",
+                    db=conn,
+                )
+        return bundle
+    finally:
+        conn.close()
 
 
 def _get_or_build_endpoint_cache(site_id: str, day_type: str, direction: str) -> dict:
@@ -1505,27 +1818,29 @@ def _find_nearby_stops(
     lon: float,
     max_stops: int = 50,
     site_id: str | None = None,
-    route_type: str | None = None,
+    route_types: str | list[str] | tuple[str, ...] | None = None,
     day_type: str | None = None,
 ) -> list[tuple[int, str, float, float, float]]:
     """
     RTree 기반 근접 정류장 검색.
     바운딩 박스를 점진 확장하여 max_stops개 이상 후보 확보 후 거리순 정렬.
-    site_id/route_type/day_type이 주어지면 해당 범위의 정류장만 후보로 사용한다.
+    site_id/route_types/day_type이 주어지면 해당 범위의 정류장만 후보로 사용한다.
     반환: [(stop_id, name, lat, lon, distance_m), ...]
     """
     db = _db()
     delta = 0.01  # 약 1.1km
     clean_day_type = str(day_type or "").strip() or None
-    use_scope = site_id is not None and route_type is not None
+    normalized_route_types = _normalize_route_types(route_types)
+    use_scope = site_id is not None and bool(normalized_route_types)
     use_scope_table = use_scope and _supports_stop_scope()
     for _ in range(8):  # 최대 약 2.56도 확장
         if use_scope_table:
+            route_type_sql, route_type_params = _route_type_sql_condition("ss.route_type", normalized_route_types)
             day_type_scope_sql = "AND ss.day_type = ?" if clean_day_type else ""
             params: list[object] = [
                 site_id,
-                route_type,
             ]
+            params.extend(route_type_params)
             if clean_day_type:
                 params.append(clean_day_type)
             params.extend(
@@ -1543,7 +1858,7 @@ def _find_nearby_stops(
                 JOIN stop_rtree r ON r.stop_id = ss.stop_id
                 JOIN stop s ON s.stop_id = ss.stop_id
                 WHERE ss.site_id = ?
-                  AND ss.route_type = ?
+                  AND {route_type_sql}
                   {day_type_scope_sql}
                   AND s.lat IS NOT NULL
                   AND s.lon IS NOT NULL
@@ -1554,11 +1869,12 @@ def _find_nearby_stops(
             ).fetchall()
         elif use_scope:
             # stop_scope 없는 구버전 DB 호환용 폴백
+            route_type_sql, route_type_params = _route_type_sql_condition("ro.route_type", normalized_route_types)
             day_type_scope_sql = "AND sv.day_type = ?" if clean_day_type else ""
             params = [
                 site_id,
-                route_type,
             ]
+            params.extend(route_type_params)
             if clean_day_type:
                 params.append(clean_day_type)
             params.extend(
@@ -1578,7 +1894,7 @@ def _find_nearby_stops(
                 JOIN stop s ON s.stop_id = vs.stop_id
                 JOIN stop_rtree r ON r.stop_id = s.stop_id
                 WHERE ro.site_id = ?
-                  AND ro.route_type = ?
+                  AND {route_type_sql}
                   {day_type_scope_sql}
                   AND s.lat IS NOT NULL
                   AND s.lon IS NOT NULL
@@ -1624,18 +1940,22 @@ def _find_routes_from_stops(
     stop_ids: list[int],
     stop_dist: dict[int, tuple[str, float, float, float]],
     site_id: str,
-    route_type: str,
+    route_types: str | list[str] | tuple[str, ...],
     day_type: str,
     include_route_ids: set[int] | None = None,
     exclude_route_name_keyword: str | None = None,
-) -> dict[int, tuple[float, int, str]]:
+) -> dict[int, tuple[float, int, str, str]]:
     """
     정류장 목록에서 해당 조건의 노선을 찾아 route별 최소 거리 반환.
-    반환: {route_id: (min_dist, best_stop_id, route_name)}
+    반환: {route_id: (min_dist, best_stop_id, route_name, route_type)}
     """
     if not stop_ids:
         return {}
+    normalized_route_types = _normalize_route_types(route_types)
+    if not normalized_route_types:
+        return {}
     placeholders = ",".join("?" * len(stop_ids))
+    route_type_sql, route_type_params = _route_type_sql_condition("r.route_type", normalized_route_types)
     query = f"""
         SELECT DISTINCT r.route_id, r.route_name, r.route_type,
                vs.stop_id
@@ -1644,13 +1964,13 @@ def _find_routes_from_stops(
         JOIN route r ON r.route_id = sv.route_id
         WHERE vs.stop_id IN ({placeholders})
           AND r.site_id = ?
-          AND r.route_type = ?
+          AND {route_type_sql}
           AND sv.day_type = ?
     """
-    params = stop_ids + [site_id, route_type, day_type]
+    params = stop_ids + [site_id] + list(route_type_params) + [day_type]
     rows = db.execute(query, params).fetchall()
 
-    route_best: dict[int, tuple[float, int, str]] = {}
+    route_best: dict[int, tuple[float, int, str, str]] = {}
     for r in rows:
         rid = _coerce_int(_row_get(r, "route_id", index=0))
         rname = str(_row_get(r, "route_name", index=1, default="") or "")
@@ -1665,13 +1985,13 @@ def _find_routes_from_stops(
             continue
         dist = stop_dist[sid][3]
         if rid not in route_best or dist < route_best[rid][0]:
-            route_best[rid] = (dist, sid, rname)
+            route_best[rid] = (dist, sid, rname, route_type_value)
     return route_best
 
 
 def find_nearest_route_options(
     site_id: str,
-    route_type: str,
+    route_types: str | list[str] | tuple[str, ...],
     lat: float,
     lon: float,
     day_type: str = "weekday",
@@ -1711,12 +2031,15 @@ def find_nearest_route_options(
     db = _db()
     excluded = set(exclude_route_ids) if exclude_route_ids else set()
     include_ids = set(include_route_ids) if include_route_ids is not None else None
+    normalized_route_types = _normalize_route_types(route_types)
 
     if include_ids is not None and not include_ids:
         return []
+    if not normalized_route_types:
+        return []
 
     # 점진 확장: 50 → 150 → 500개 정류장으로 넓혀가며 max_routes개 노선 확보
-    route_best: dict[int, tuple[float, int, str]] = {}
+    route_best: dict[int, tuple[float, int, str, str]] = {}
     stop_dist: dict[int, tuple[str, float, float, float]] = {}
     searched_stop_ids: set[int] = set()
 
@@ -1727,7 +2050,7 @@ def find_nearest_route_options(
             lon,
             max_stops=max_stops,
             site_id=site_id,
-            route_type=route_type,
+            route_types=normalized_route_types,
             day_type=day_type,
         )
         if not nearby:
@@ -1748,16 +2071,16 @@ def find_nearest_route_options(
                 new_stop_ids,
                 stop_dist,
                 site_id,
-                route_type,
+                normalized_route_types,
                 day_type,
                 include_route_ids=include_ids,
                 exclude_route_name_keyword=exclude_route_name_keyword,
             )
-            for rid, (dist, sid, rname) in new_routes.items():
+            for rid, (dist, sid, rname, route_type_value) in new_routes.items():
                 if rid in excluded:
                     continue
                 if rid not in route_best or dist < route_best[rid][0]:
-                    route_best[rid] = (dist, sid, rname)
+                    route_best[rid] = (dist, sid, rname, route_type_value)
 
         if len(route_best) >= max_routes:
             break
@@ -1781,7 +2104,7 @@ def find_nearest_route_options(
     stop_uuid_by_id: dict[int, str] = {}
     stop_code_by_id: dict[int, str] = {}
     if sorted_routes and (_supports_stop_uuid() or _supports_stop_code()):
-        stop_ids = [int(best_stop_id) for _route_id, (_dist, best_stop_id, _name) in sorted_routes]
+        stop_ids = [int(best_stop_id) for _route_id, (_dist, best_stop_id, _name, _route_type) in sorted_routes]
         placeholders = ",".join("?" for _ in stop_ids)
         select_cols = ["stop_id"]
         if _supports_stop_uuid():
@@ -1804,7 +2127,7 @@ def find_nearest_route_options(
                 stop_code_by_id[stop_id] = stop_code
 
     results = []
-    for route_id, (dist, best_stop_id, route_name) in sorted_routes:
+    for route_id, (dist, best_stop_id, route_name, route_type_value) in sorted_routes:
         sname, slat, slon, sdist = stop_dist[best_stop_id]
         metadata = _get_route_metadata(db, route_id, day_type)
         if metadata is None:
@@ -1819,7 +2142,7 @@ def find_nearest_route_options(
                 "route_id": route_id,
                 "route_uuid": route_uuid_by_id.get(int(route_id)),
                 "route_name": route_name,
-                "route_type": route_type,
+                "route_type": route_type_value,
                 "nearest_stop": {
                     "stop_id": best_stop_id,
                     "stop_uuid": stop_uuid_by_id.get(int(best_stop_id)),
@@ -2053,7 +2376,7 @@ def get_report_nearby_stops(
         lon,
         max_stops=150,
         site_id=site_id,
-        route_type="commute_in",
+        route_types="commute_in",
         day_type=clean_day_type,
     )
     nearby_out = _find_nearby_stops(
@@ -2061,7 +2384,7 @@ def get_report_nearby_stops(
         lon,
         max_stops=150,
         site_id=site_id,
-        route_type="commute_out",
+        route_types="commute_out",
         day_type=clean_day_type,
     )
 
@@ -2759,7 +3082,7 @@ def get_report_candidate_options(
         lon,
         max_stops=150,
         site_id=site_id,
-        route_type="commute_in",
+        route_types="commute_in",
         day_type=day_type,
     )
     nearby_out = _find_nearby_stops(
@@ -2767,7 +3090,7 @@ def get_report_candidate_options(
         lon,
         max_stops=150,
         site_id=site_id,
-        route_type="commute_out",
+        route_types="commute_out",
         day_type=day_type,
     )
 

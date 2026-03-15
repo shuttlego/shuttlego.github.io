@@ -15,6 +15,7 @@ import sqlite3
 import tempfile
 import threading
 import unicodedata
+import zlib
 from calendar import monthrange
 from collections import deque
 from contextlib import contextmanager
@@ -59,6 +60,7 @@ _IDENTITY_TABLES = {
     "arrival_reports",
     "arrival_report_likes",
     "issue_likes",
+    "issue_sync_outbox",
     "consent_events",
     "github_cleanup_jobs",
 }
@@ -74,6 +76,12 @@ _INSERT_TABLE_PATTERN = re.compile(
     r"^\s*INSERT\s+INTO\s+(?P<table>[a-zA-Z_][a-zA-Z0-9_]*)\b",
     flags=re.IGNORECASE,
 )
+try:
+    _POSTGRES_POOL_MAX_IDLE = max(1, int(os.environ.get("USER_STORE_POSTGRES_POOL_MAX_IDLE", "20")))
+except (TypeError, ValueError):
+    _POSTGRES_POOL_MAX_IDLE = 20
+_postgres_pool_lock = threading.Lock()
+_postgres_idle_conns: dict[str, list[Any]] = {}
 
 
 class UserStoreError(Exception):
@@ -129,8 +137,10 @@ class _PostgresCompatConnection:
     def __init__(self, dsn: str):
         if psycopg is None or dict_row is None:
             raise RuntimeError("psycopg dependency is required when USER_STORE_BACKEND=postgres")
-        self._conn = psycopg.connect(dsn, autocommit=False, row_factory=dict_row)
+        self._dsn = str(dsn)
+        self._conn = _acquire_postgres_raw_connection(self._dsn)
         self._last_insert_id: int | None = None
+        self._released = False
 
     def _convert_query(self, query: str) -> str:
         text = _AUTOINCREMENT_PATTERN.sub(
@@ -255,7 +265,57 @@ class _PostgresCompatConnection:
         self._conn.rollback()
 
     def close(self) -> None:
-        self._conn.close()
+        if self._released:
+            return
+        self._released = True
+        conn = self._conn
+        self._conn = None
+        _release_postgres_raw_connection(self._dsn, conn)
+
+
+def _is_postgres_conn_closed(conn: Any) -> bool:
+    try:
+        return bool(getattr(conn, "closed", False))
+    except Exception:
+        return True
+
+
+def _acquire_postgres_raw_connection(dsn: str):
+    with _postgres_pool_lock:
+        idle = _postgres_idle_conns.get(dsn) or []
+        while idle:
+            conn = idle.pop()
+            if not _is_postgres_conn_closed(conn):
+                return conn
+        _postgres_idle_conns[dsn] = idle
+    if psycopg is None or dict_row is None:
+        raise RuntimeError("psycopg dependency is required when USER_STORE_BACKEND=postgres")
+    return psycopg.connect(dsn, autocommit=False, row_factory=dict_row)
+
+
+def _release_postgres_raw_connection(dsn: str, conn: Any) -> None:
+    if conn is None or _is_postgres_conn_closed(conn):
+        return
+    try:
+        conn.rollback()
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return
+    should_close = False
+    with _postgres_pool_lock:
+        idle = _postgres_idle_conns.setdefault(dsn, [])
+        if len(idle) >= _POSTGRES_POOL_MAX_IDLE:
+            should_close = True
+        else:
+            idle.append(conn)
+    if should_close:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def utc_now() -> datetime:
@@ -423,6 +483,21 @@ def _conn_ctx() -> Iterator[Any]:
         conn.close()
 
 
+@contextmanager
+def connection_scope() -> Iterator[Any]:
+    with _conn_ctx() as conn:
+        yield conn
+
+
+@contextmanager
+def _conn_ctx_optional(conn: Any | None = None) -> Iterator[Any]:
+    if conn is not None:
+        yield conn
+        return
+    with _conn_ctx() as owned_conn:
+        yield owned_conn
+
+
 def init_db(db_path: str | None = None) -> None:
     configure(db_path)
     with _conn_ctx() as conn:
@@ -566,6 +641,19 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS route_shares (
+              token TEXT PRIMARY KEY,
+              creator_user_id INTEGER,
+              creator_visitor_id TEXT,
+              snapshot_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              expires_at TEXT NOT NULL,
+              FOREIGN KEY(creator_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS arrival_reports (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id INTEGER,
@@ -631,6 +719,137 @@ def init_db(db_path: str | None = None) -> None:
               created_at TEXT NOT NULL,
               UNIQUE(issue_number, actor_key),
               FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+            """
+        )
+        issue_like_columns = {
+            str(row["name"] or "").strip()
+            for row in conn.execute("PRAGMA table_info(issue_likes)").fetchall()
+        }
+        if "issue_id" not in issue_like_columns:
+            conn.execute("ALTER TABLE issue_likes ADD COLUMN issue_id TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS issue_threads (
+              id TEXT PRIMARY KEY,
+              github_issue_number INTEGER UNIQUE,
+              github_node_id TEXT,
+              kind TEXT NOT NULL DEFAULT 'issue',
+              sync_status TEXT NOT NULL DEFAULT 'synced',
+              state TEXT NOT NULL DEFAULT 'open',
+              title TEXT NOT NULL,
+              body TEXT NOT NULL DEFAULT '',
+              labels_json TEXT NOT NULL DEFAULT '[]',
+              github_url TEXT,
+              author_login TEXT,
+              author_public_user_id TEXT,
+              author_visitor_id TEXT,
+              author_display_name TEXT,
+              is_repo_owner INTEGER NOT NULL DEFAULT 0,
+              is_notice INTEGER NOT NULL DEFAULT 0,
+              comment_count INTEGER NOT NULL DEFAULT 0,
+              comments_loaded INTEGER NOT NULL DEFAULT 0,
+              github_created_at TEXT,
+              github_updated_at TEXT,
+              github_closed_at TEXT,
+              visible_created_at TEXT NOT NULL,
+              visible_updated_at TEXT NOT NULL,
+              last_synced_at TEXT,
+              last_error TEXT,
+              deleted_at TEXT,
+              deleted_reason TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        issue_thread_columns = {
+            str(row["name"] or "").strip()
+            for row in conn.execute("PRAGMA table_info(issue_threads)").fetchall()
+        }
+        if "author_visitor_id" not in issue_thread_columns:
+            conn.execute("ALTER TABLE issue_threads ADD COLUMN author_visitor_id TEXT")
+        if "deleted_at" not in issue_thread_columns:
+            conn.execute("ALTER TABLE issue_threads ADD COLUMN deleted_at TEXT")
+        if "deleted_reason" not in issue_thread_columns:
+            conn.execute("ALTER TABLE issue_threads ADD COLUMN deleted_reason TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS issue_comments (
+              id TEXT PRIMARY KEY,
+              issue_id TEXT NOT NULL,
+              github_comment_id BIGINT UNIQUE,
+              sync_status TEXT NOT NULL DEFAULT 'synced',
+              body TEXT NOT NULL DEFAULT '',
+              github_url TEXT,
+              author_login TEXT,
+              author_public_user_id TEXT,
+              author_visitor_id TEXT,
+              author_display_name TEXT,
+              is_repo_owner INTEGER NOT NULL DEFAULT 0,
+              is_bot INTEGER NOT NULL DEFAULT 0,
+              github_created_at TEXT,
+              github_updated_at TEXT,
+              visible_created_at TEXT NOT NULL,
+              visible_updated_at TEXT NOT NULL,
+              last_synced_at TEXT,
+              last_error TEXT,
+              deleted_at TEXT,
+              deleted_reason TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY(issue_id) REFERENCES issue_threads(id) ON DELETE CASCADE
+            )
+            """
+        )
+        issue_comment_columns = {
+            str(row["name"] or "").strip()
+            for row in conn.execute("PRAGMA table_info(issue_comments)").fetchall()
+        }
+        if "author_visitor_id" not in issue_comment_columns:
+            conn.execute("ALTER TABLE issue_comments ADD COLUMN author_visitor_id TEXT")
+        if "deleted_at" not in issue_comment_columns:
+            conn.execute("ALTER TABLE issue_comments ADD COLUMN deleted_at TEXT")
+        if "deleted_reason" not in issue_comment_columns:
+            conn.execute("ALTER TABLE issue_comments ADD COLUMN deleted_reason TEXT")
+        if is_postgres_backend():
+            comment_id_type_row = conn.execute(
+                """
+                SELECT data_type, udt_name
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'issue_comments'
+                  AND column_name = 'github_comment_id'
+                LIMIT 1
+                """
+            ).fetchone()
+            if comment_id_type_row is not None:
+                current_data_type = str(comment_id_type_row.get("data_type") or "").strip().lower()
+                current_udt_name = str(comment_id_type_row.get("udt_name") or "").strip().lower()
+                if current_data_type in {"smallint", "integer"} or current_udt_name in {"int2", "int4"}:
+                    conn.execute(
+                        """
+                        ALTER TABLE issue_comments
+                        ALTER COLUMN github_comment_id TYPE BIGINT
+                        USING github_comment_id::BIGINT
+                        """
+                    )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS issue_sync_outbox (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              entity_type TEXT NOT NULL,
+              entity_id TEXT NOT NULL,
+              issue_id TEXT,
+              operation TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              attempts INTEGER NOT NULL DEFAULT 0,
+              next_attempt_at TEXT NOT NULL,
+              last_error TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY(issue_id) REFERENCES issue_threads(id) ON DELETE CASCADE
             )
             """
         )
@@ -755,6 +974,12 @@ def init_db(db_path: str | None = None) -> None:
             "CREATE INDEX IF NOT EXISTS idx_anon_route_history_searched_at ON anonymous_route_search_history(searched_at)"
         )
         conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_route_shares_creator_user_id ON route_shares(creator_user_id, created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_route_shares_expires_at ON route_shares(expires_at)"
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_arrival_reports_user_id_id ON arrival_reports(user_id, id DESC)"
         )
         conn.execute(
@@ -779,7 +1004,49 @@ def init_db(db_path: str | None = None) -> None:
             "CREATE INDEX IF NOT EXISTS idx_issue_likes_issue_number ON issue_likes(issue_number, id DESC)"
         )
         conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_likes_issue_id ON issue_likes(issue_id, id DESC)"
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_issue_likes_actor_key ON issue_likes(actor_key, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_threads_kind_state_created ON issue_threads(kind, state, visible_created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_threads_notice_created ON issue_threads(is_notice, visible_created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_threads_sync_status ON issue_threads(sync_status, visible_created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_threads_deleted_created ON issue_threads(deleted_at, visible_created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_threads_author_user ON issue_threads(author_public_user_id, deleted_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_threads_author_visitor ON issue_threads(author_visitor_id, deleted_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_comments_issue_created ON issue_comments(issue_id, visible_created_at ASC, id ASC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_comments_issue_deleted_created ON issue_comments(issue_id, deleted_at, visible_created_at ASC, id ASC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_comments_author_user ON issue_comments(author_public_user_id, deleted_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_comments_author_visitor ON issue_comments(author_visitor_id, deleted_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_comments_sync_status ON issue_comments(sync_status, created_at ASC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_outbox_due ON issue_sync_outbox(status, next_attempt_at, created_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issue_outbox_entity ON issue_sync_outbox(entity_type, entity_id, created_at DESC)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_notice_ack_state_user_id ON notice_ack_state(user_id)"
@@ -955,6 +1222,16 @@ def _row_to_user(row: sqlite3.Row | None) -> dict | None:
         "status": str(row["status"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+    }
+
+
+def _default_preferences(now: str | None = None) -> dict:
+    value = now or utc_iso()
+    return {
+        "selected_site_id": None,
+        "route_search_mode": DEFAULT_ROUTE_SEARCH_MODE,
+        "route_max_distance_km": float(DEFAULT_ROUTE_MAX_DISTANCE_KM),
+        "updated_at": value,
     }
 
 
@@ -1321,6 +1598,14 @@ def create_session(
     with _conn_ctx() as conn:
         conn.execute(
             """
+            INSERT INTO user_preferences(user_id, selected_site_id, route_search_mode, route_max_distance_km, updated_at)
+            VALUES(?, NULL, NULL, NULL, ?)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (int(user_id), now),
+        )
+        conn.execute(
+            """
             INSERT INTO user_sessions(session_token_hash, user_id, expires_at, created_at, last_seen_at, user_agent, ip)
             VALUES(?, ?, ?, ?, ?, ?, ?)
             """,
@@ -1337,13 +1622,17 @@ def create_session(
         conn.commit()
 
 
-def get_user_by_session_hash(session_token_hash: str) -> dict | None:
+def get_user_session_snapshot(
+    session_token_hash: str,
+    *,
+    conn: Any | None = None,
+) -> dict | None:
     now = utc_iso()
-    with _conn_ctx() as conn:
-        row = conn.execute(
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
             """
             SELECT u.id, u.public_user_id, u.nickname, u.email, u.email_consent, u.status, u.created_at, u.updated_at,
-                   s.expires_at
+                   s.expires_at, s.last_seen_at
             FROM user_sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.session_token_hash = ?
@@ -1353,13 +1642,31 @@ def get_user_by_session_hash(session_token_hash: str) -> dict | None:
             """,
             (str(session_token_hash), now),
         ).fetchone()
-        return _row_to_user(row)
+        user = _row_to_user(row)
+        if user is None:
+            return None
+        return {
+            "user": user,
+            "expires_at": row["expires_at"],
+            "last_seen_at": row["last_seen_at"],
+        }
+
+
+def get_user_by_session_hash(
+    session_token_hash: str,
+    *,
+    conn: Any | None = None,
+) -> dict | None:
+    snapshot = get_user_session_snapshot(str(session_token_hash), conn=conn)
+    return dict(snapshot["user"]) if snapshot is not None else None
 
 
 def touch_session(
     session_token_hash: str,
     expires_at: datetime | None = None,
     min_interval_sec: int = 0,
+    *,
+    conn: Any | None = None,
 ) -> None:
     if should_skip_noncritical_writes():
         return
@@ -1370,15 +1677,15 @@ def touch_session(
     now_dt = utc_now()
     now = utc_iso(now_dt)
     min_allowed_seen_at = utc_iso(now_dt - timedelta(seconds=min_interval)) if min_interval > 0 else None
-    with _conn_ctx() as conn:
+    with _conn_ctx_optional(conn) as active_conn:
         if expires_at is None:
             if min_allowed_seen_at is None:
-                conn.execute(
+                active_conn.execute(
                     "UPDATE user_sessions SET last_seen_at = ? WHERE session_token_hash = ?",
                     (now, str(session_token_hash)),
                 )
             else:
-                conn.execute(
+                active_conn.execute(
                     """
                     UPDATE user_sessions
                     SET last_seen_at = ?
@@ -1389,12 +1696,12 @@ def touch_session(
                 )
         else:
             if min_allowed_seen_at is None:
-                conn.execute(
+                active_conn.execute(
                     "UPDATE user_sessions SET last_seen_at = ?, expires_at = ? WHERE session_token_hash = ?",
                     (now, utc_iso(expires_at), str(session_token_hash)),
                 )
             else:
-                conn.execute(
+                active_conn.execute(
                     """
                     UPDATE user_sessions
                     SET last_seen_at = ?, expires_at = ?
@@ -1403,7 +1710,7 @@ def touch_session(
                     """,
                     (now, utc_iso(expires_at), str(session_token_hash), min_allowed_seen_at),
                 )
-        conn.commit()
+        active_conn.commit()
 
 
 def delete_session(session_token_hash: str) -> None:
@@ -1503,7 +1810,12 @@ def get_user_metrics_snapshot(
     }
 
 
-def get_preferences(user_id: int) -> dict:
+def get_preferences(
+    user_id: int,
+    *,
+    conn: Any | None = None,
+    create_if_missing: bool = True,
+) -> dict:
     def _normalize_search_mode(raw: object) -> str:
         value = str(raw or "").strip().lower()
         return value if value in {"distance", "time"} else DEFAULT_ROUTE_SEARCH_MODE
@@ -1519,8 +1831,8 @@ def get_preferences(user_id: int) -> dict:
             value = 30.0
         return float(value)
 
-    with _conn_ctx() as conn:
-        row = conn.execute(
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
             """
             SELECT selected_site_id, route_search_mode, route_max_distance_km, updated_at
             FROM user_preferences
@@ -1530,27 +1842,17 @@ def get_preferences(user_id: int) -> dict:
         ).fetchone()
         if row is None:
             now = utc_iso()
-            if is_read_only_mode():
-                return {
-                    "selected_site_id": None,
-                    "route_search_mode": DEFAULT_ROUTE_SEARCH_MODE,
-                    "route_max_distance_km": float(DEFAULT_ROUTE_MAX_DISTANCE_KM),
-                    "updated_at": now,
-                }
-            conn.execute(
+            if (not create_if_missing) or is_read_only_mode():
+                return _default_preferences(now)
+            active_conn.execute(
                 """
                 INSERT INTO user_preferences(user_id, selected_site_id, route_search_mode, route_max_distance_km, updated_at)
                 VALUES(?, NULL, NULL, NULL, ?)
                 """,
                 (int(user_id), now),
             )
-            conn.commit()
-            return {
-                "selected_site_id": None,
-                "route_search_mode": DEFAULT_ROUTE_SEARCH_MODE,
-                "route_max_distance_km": float(DEFAULT_ROUTE_MAX_DISTANCE_KM),
-                "updated_at": now,
-            }
+            active_conn.commit()
+            return _default_preferences(now)
         return {
             "selected_site_id": row["selected_site_id"],
             "route_search_mode": _normalize_search_mode(row["route_search_mode"]),
@@ -1567,7 +1869,7 @@ def set_preferences(
     route_max_distance_km: float | int | None | object = _PREFERENCE_UNSET,
 ) -> dict:
     _ensure_writes_allowed()
-    current = get_preferences(int(user_id))
+    current = get_preferences(int(user_id), create_if_missing=False)
     next_site_id = current.get("selected_site_id")
     next_search_mode = str(current.get("route_search_mode") or DEFAULT_ROUTE_SEARCH_MODE)
     next_max_distance_km = float(current.get("route_max_distance_km") or DEFAULT_ROUTE_MAX_DISTANCE_KM)
@@ -1693,6 +1995,93 @@ def set_endpoint_preference(
             (int(user_id), str(site_id), str(day_type), str(direction), payload, now),
         )
         conn.commit()
+
+
+def create_route_share(
+    snapshot: dict[str, Any],
+    *,
+    expires_in_days: int = 30,
+    creator_user_id: int | None = None,
+    creator_visitor_id: str | None = None,
+) -> dict[str, Any]:
+    _ensure_writes_allowed()
+    if not isinstance(snapshot, dict):
+        raise ValueError("snapshot must be an object")
+
+    payload = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+    ttl_days = max(1, int(expires_in_days))
+    now_dt = utc_now()
+    now = utc_iso(now_dt)
+    expires_at = utc_iso(now_dt + timedelta(days=ttl_days))
+    clean_visitor_id = str(creator_visitor_id or "").strip() or None
+
+    with _conn_ctx() as conn:
+        for _ in range(8):
+            token = secrets.token_urlsafe(9)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO route_shares(
+                      token, creator_user_id, creator_visitor_id, snapshot_json, created_at, expires_at
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        token,
+                        int(creator_user_id) if creator_user_id is not None else None,
+                        clean_visitor_id,
+                        payload,
+                        now,
+                        expires_at,
+                    ),
+                )
+                conn.commit()
+                return {
+                    "token": token,
+                    "created_at": now,
+                    "expires_at": expires_at,
+                }
+            except sqlite3.IntegrityError:
+                conn.rollback()
+                continue
+    raise UserStoreError("공유 토큰 생성에 실패했습니다.")
+
+
+def get_route_share(token: str) -> dict[str, Any] | None:
+    clean_token = str(token or "").strip()
+    if not clean_token:
+        return None
+    with _conn_ctx() as conn:
+        row = conn.execute(
+            """
+            SELECT token, creator_user_id, creator_visitor_id, snapshot_json, created_at, expires_at
+            FROM route_shares
+            WHERE token = ?
+            LIMIT 1
+            """,
+            (clean_token,),
+        ).fetchone()
+    if row is None:
+        return None
+    try:
+        snapshot = json.loads(str(row["snapshot_json"] or "{}"))
+    except json.JSONDecodeError:
+        snapshot = {}
+    expires_dt = parse_iso(str(row["expires_at"] or ""))
+    is_expired = expires_dt is not None and expires_dt <= utc_now()
+    return {
+        "token": str(row["token"] or clean_token),
+        "creator_user_id": (
+            int(row["creator_user_id"])
+            if row["creator_user_id"] is not None
+            else None
+        ),
+        "creator_visitor_id": str(row["creator_visitor_id"] or "").strip() or None,
+        "snapshot": snapshot if isinstance(snapshot, dict) else {},
+        "created_at": str(row["created_at"] or ""),
+        "expires_at": str(row["expires_at"] or ""),
+        "expired": bool(is_expired),
+    }
 
 
 def add_place_history(user_id: int, keyword: str) -> None:
@@ -3561,13 +3950,14 @@ def get_notice_ack_number(
     *,
     user_id: int | None = None,
     visitor_id: str | None = None,
+    conn: Any | None = None,
 ) -> int:
     actor_key, _, _ = _normalize_arrival_like_actor(user_id, visitor_id)
     if not actor_key:
         return 0
 
-    with _conn_ctx() as conn:
-        row = conn.execute(
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
             """
             SELECT last_ack_notice_number
             FROM notice_ack_state
@@ -3590,6 +3980,7 @@ def ack_notice_number(
     *,
     user_id: int | None = None,
     visitor_id: str | None = None,
+    conn: Any | None = None,
 ) -> int:
     _ensure_writes_allowed()
     normalized_notice_number = max(0, int(notice_number))
@@ -3597,9 +3988,10 @@ def ack_notice_number(
     if not actor_key:
         raise ValueError("ack_actor_required")
 
+    owns_conn = conn is None
     now = utc_iso()
-    with _conn_ctx() as conn:
-        existing = conn.execute(
+    with _conn_ctx_optional(conn) as active_conn:
+        existing = active_conn.execute(
             """
             SELECT last_ack_notice_number
             FROM notice_ack_state
@@ -3616,7 +4008,7 @@ def ack_notice_number(
                 current_ack = 0
         next_ack = max(current_ack, normalized_notice_number)
         if existing is None:
-            conn.execute(
+            active_conn.execute(
                 """
                 INSERT INTO notice_ack_state(actor_key, user_id, visitor_id, last_ack_notice_number, updated_at)
                 VALUES(?, ?, ?, ?, ?)
@@ -3630,7 +4022,7 @@ def ack_notice_number(
                 ),
             )
         else:
-            conn.execute(
+            active_conn.execute(
                 """
                 UPDATE notice_ack_state
                 SET last_ack_notice_number = ?, updated_at = ?
@@ -3642,96 +4034,1560 @@ def ack_notice_number(
                     actor_key,
                 ),
             )
-        conn.commit()
+        if owns_conn:
+            active_conn.commit()
 
     return int(next_ack)
 
 
+def _new_issue_public_id(prefix: str) -> str:
+    return f"{str(prefix or 'iss').strip()[:8]}_{secrets.token_hex(12)}"
+
+
+def new_issue_thread_id() -> str:
+    return _new_issue_public_id("iss")
+
+
+def new_issue_comment_id() -> str:
+    return _new_issue_public_id("isc")
+
+
+def _parse_json_list(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(item or "").strip() for item in raw if str(item or "").strip()]
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item or "").strip() for item in parsed if str(item or "").strip()]
+
+
+def _row_to_issue_thread_item(row: Any | None) -> dict | None:
+    if row is None:
+        return None
+    try:
+        github_issue_number = int(row["github_issue_number"]) if row["github_issue_number"] is not None else None
+    except (TypeError, ValueError):
+        github_issue_number = None
+    try:
+        comment_count = max(0, int(row["comment_count"] or 0))
+    except (TypeError, ValueError):
+        comment_count = 0
+    return {
+        "id": str(row["id"] or "").strip(),
+        "number": github_issue_number,
+        "github_issue_number": github_issue_number,
+        "github_node_id": str(row["github_node_id"] or "").strip(),
+        "kind": str(row["kind"] or "issue").strip() or "issue",
+        "sync_status": str(row["sync_status"] or "synced").strip() or "synced",
+        "state": str(row["state"] or "open").strip() or "open",
+        "title": str(row["title"] or ""),
+        "body": str(row["body"] or ""),
+        "labels": _parse_json_list(row["labels_json"]),
+        "url": str(row["github_url"] or ""),
+        "created_at": str(row["visible_created_at"] or row["created_at"] or ""),
+        "updated_at": str(row["visible_updated_at"] or row["updated_at"] or ""),
+        "closed_at": str(row["github_closed_at"] or ""),
+        "user": str(row["author_login"] or ""),
+        "display_name": str(row["author_display_name"] or ""),
+        "author_user_id": str(row["author_public_user_id"] or ""),
+        "is_repo_owner": bool(int(row["is_repo_owner"] or 0)),
+        "is_notice": bool(int(row["is_notice"] or 0)),
+        "comments": comment_count,
+        "like_count": 0,
+        "liked_by_me": False,
+        "comments_loaded": bool(int(row["comments_loaded"] or 0)),
+        "last_synced_at": str(row["last_synced_at"] or ""),
+        "last_error": str(row["last_error"] or ""),
+        "is_deleted": bool(str(row["deleted_at"] or "").strip()),
+        "deleted_at": (str(row["deleted_at"] or "").strip() or None),
+        "deleted_reason": str(row["deleted_reason"] or "").strip(),
+    }
+
+
+def _row_to_issue_comment_item(row: Any | None) -> dict | None:
+    if row is None:
+        return None
+    try:
+        github_comment_id = int(row["github_comment_id"]) if row["github_comment_id"] is not None else None
+    except (TypeError, ValueError):
+        github_comment_id = None
+    return {
+        "id": str(row["id"] or "").strip(),
+        "github_comment_id": github_comment_id,
+        "body": str(row["body"] or ""),
+        "created_at": str(row["visible_created_at"] or row["created_at"] or ""),
+        "updated_at": str(row["visible_updated_at"] or row["updated_at"] or ""),
+        "user": str(row["author_login"] or ""),
+        "display_name": str(row["author_display_name"] or ""),
+        "nickname": str(row["author_display_name"] or ""),
+        "user_id": str(row["author_public_user_id"] or ""),
+        "is_bot": bool(int(row["is_bot"] or 0)),
+        "is_repo_owner": bool(int(row["is_repo_owner"] or 0)),
+        "url": str(row["github_url"] or ""),
+        "sync_status": str(row["sync_status"] or "synced").strip() or "synced",
+        "last_error": str(row["last_error"] or ""),
+        "is_deleted": bool(str(row["deleted_at"] or "").strip()),
+        "deleted_at": (str(row["deleted_at"] or "").strip() or None),
+        "deleted_reason": str(row["deleted_reason"] or "").strip(),
+    }
+
+
+def _surrogate_issue_number_for_like(issue_id: str) -> int:
+    # Keep surrogate in signed 32-bit range for legacy issue_likes.issue_number.
+    crc = int(zlib.crc32(str(issue_id or "").encode("utf-8")))
+    return -((crc % 2147483647) + 1)
+
+
+def get_issue_thread_by_id(
+    issue_id: str,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> dict | None:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        return None
+    with _conn_ctx_optional(conn) as active_conn:
+        if include_deleted:
+            row = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_threads
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (normalized_issue_id,),
+            ).fetchone()
+        else:
+            row = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_threads
+                WHERE id = ?
+                  AND deleted_at IS NULL
+                LIMIT 1
+                """,
+                (normalized_issue_id,),
+            ).fetchone()
+    return _row_to_issue_thread_item(row)
+
+
+def get_issue_thread_by_github_number(
+    github_issue_number: int,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> dict | None:
+    try:
+        normalized_number = int(github_issue_number)
+    except (TypeError, ValueError):
+        return None
+    if normalized_number <= 0:
+        return None
+    with _conn_ctx_optional(conn) as active_conn:
+        if include_deleted:
+            row = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_threads
+                WHERE github_issue_number = ?
+                LIMIT 1
+                """,
+                (normalized_number,),
+            ).fetchone()
+        else:
+            row = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_threads
+                WHERE github_issue_number = ?
+                  AND deleted_at IS NULL
+                LIMIT 1
+                """,
+                (normalized_number,),
+            ).fetchone()
+    return _row_to_issue_thread_item(row)
+
+
+def resolve_issue_thread_ref(
+    issue_ref: str,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> dict | None:
+    normalized_ref = str(issue_ref or "").strip()
+    if not normalized_ref:
+        return None
+    thread = get_issue_thread_by_id(normalized_ref, include_deleted=include_deleted, conn=conn)
+    if thread is not None:
+        return thread
+    if normalized_ref.isdigit():
+        return get_issue_thread_by_github_number(int(normalized_ref), include_deleted=include_deleted, conn=conn)
+    return None
+
+
+def list_issue_comments(
+    issue_id: str,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> list[dict]:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        return []
+    with _conn_ctx_optional(conn) as active_conn:
+        if include_deleted:
+            rows = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_comments
+                WHERE issue_id = ?
+                ORDER BY visible_created_at ASC, id ASC
+                """,
+                (normalized_issue_id,),
+            ).fetchall()
+        else:
+            rows = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_comments
+                WHERE issue_id = ?
+                  AND deleted_at IS NULL
+                ORDER BY visible_created_at ASC, id ASC
+                """,
+                (normalized_issue_id,),
+            ).fetchall()
+    return [item for item in (_row_to_issue_comment_item(row) for row in rows) if item is not None]
+
+
+def get_issue_comment_by_id(
+    comment_id: str,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> dict | None:
+    normalized_comment_id = str(comment_id or "").strip()
+    if not normalized_comment_id:
+        return None
+    with _conn_ctx_optional(conn) as active_conn:
+        if include_deleted:
+            row = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_comments
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (normalized_comment_id,),
+            ).fetchone()
+        else:
+            row = active_conn.execute(
+                """
+                SELECT *
+                FROM issue_comments
+                WHERE id = ?
+                  AND deleted_at IS NULL
+                LIMIT 1
+                """,
+                (normalized_comment_id,),
+            ).fetchone()
+    return _row_to_issue_comment_item(row)
+
+
+def _count_issue_comments(
+    issue_id: str,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> int:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        return 0
+    with _conn_ctx_optional(conn) as active_conn:
+        if include_deleted:
+            row = active_conn.execute(
+                "SELECT COUNT(*) AS cnt FROM issue_comments WHERE issue_id = ?",
+                (normalized_issue_id,),
+            ).fetchone()
+        else:
+            row = active_conn.execute(
+                "SELECT COUNT(*) AS cnt FROM issue_comments WHERE issue_id = ? AND deleted_at IS NULL",
+                (normalized_issue_id,),
+            ).fetchone()
+    if row is None:
+        return 0
+    try:
+        return max(0, int(row["cnt"] or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _update_issue_comment_count(issue_id: str, *, conn: Any | None = None) -> int:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        return 0
+    owns_conn = conn is None
+    now = utc_iso()
+    with _conn_ctx_optional(conn) as active_conn:
+        count = _count_issue_comments(normalized_issue_id, conn=active_conn)
+        active_conn.execute(
+            """
+            UPDATE issue_threads
+            SET comment_count = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (int(count), now, normalized_issue_id),
+        )
+        if owns_conn:
+            active_conn.commit()
+    return int(count)
+
+
+def _issue_matches_filters(
+    issue: dict,
+    *,
+    kind: str,
+    state: str,
+    labels: list[str] | None,
+    q: str,
+) -> bool:
+    issue_kind = str(issue.get("kind") or ("notice" if issue.get("is_notice") else "issue")).strip().lower()
+    issue_state = str(issue.get("state") or "open").strip().lower()
+    is_notice = bool(issue.get("is_notice"))
+    if kind == "issue" and is_notice:
+        return False
+    if kind == "notice" and not is_notice:
+        return False
+    if kind == "all" and state in {"open", "closed"} and is_notice:
+        return False
+    if state in {"open", "closed"} and issue_state != state:
+        return False
+    expected_labels = [str(item or "").strip() for item in (labels or []) if str(item or "").strip()]
+    if expected_labels:
+        issue_labels = set(str(item or "").strip() for item in issue.get("labels") or [])
+        for label in expected_labels:
+            if label not in issue_labels:
+                return False
+    q_lower = str(q or "").strip().casefold()
+    if q_lower:
+        haystack = (
+            f"{issue.get('title') or ''}\n"
+            f"{issue.get('body') or ''}\n"
+            f"{issue.get('display_name') or ''}\n"
+            f"{issue.get('user') or ''}\n"
+            f"{issue_kind}"
+        ).casefold()
+        if q_lower not in haystack:
+            return False
+    return True
+
+
+def list_issue_threads(
+    *,
+    kind: str = "all",
+    state: str = "all",
+    labels: list[str] | None = None,
+    q: str = "",
+    page: int = 1,
+    per_page: int = 10,
+    conn: Any | None = None,
+) -> dict:
+    normalized_kind = str(kind or "all").strip().lower()
+    if normalized_kind not in {"all", "issue", "notice"}:
+        normalized_kind = "all"
+    normalized_state = str(state or "all").strip().lower()
+    if normalized_state not in {"all", "open", "closed"}:
+        normalized_state = "all"
+    normalized_page = max(1, int(page or 1))
+    normalized_per_page = max(1, min(int(per_page or 10), 100))
+
+    with _conn_ctx_optional(conn) as active_conn:
+        rows = active_conn.execute(
+            """
+            SELECT *
+            FROM issue_threads
+            WHERE deleted_at IS NULL
+            ORDER BY visible_created_at DESC, id DESC
+            """
+        ).fetchall()
+
+    filtered: list[dict] = []
+    for row in rows:
+        item = _row_to_issue_thread_item(row)
+        if item is None:
+            continue
+        if not _issue_matches_filters(
+            item,
+            kind=normalized_kind,
+            state=normalized_state,
+            labels=labels,
+            q=q,
+        ):
+            continue
+        filtered.append(item)
+
+    start = (normalized_page - 1) * normalized_per_page
+    end = start + normalized_per_page
+    return {
+        "issues": filtered[start:end],
+        "pagination": {
+            "page": normalized_page,
+            "per_page": normalized_per_page,
+            "has_prev": normalized_page > 1,
+            "has_next": end < len(filtered),
+            "total_count": len(filtered),
+        },
+    }
+
+
+def list_issue_threads_requiring_comment_sync(
+    *,
+    limit: int = 100,
+    conn: Any | None = None,
+) -> list[dict]:
+    normalized_limit = max(1, min(int(limit or 100), 5000))
+    with _conn_ctx_optional(conn) as active_conn:
+        rows = active_conn.execute(
+            """
+            SELECT *
+            FROM issue_threads
+            WHERE github_issue_number IS NOT NULL
+              AND github_issue_number > 0
+              AND deleted_at IS NULL
+              AND comments_loaded = 0
+              AND comment_count > 0
+            ORDER BY visible_updated_at DESC, github_issue_number DESC
+            LIMIT ?
+            """,
+            (normalized_limit,),
+        ).fetchall()
+    items: list[dict] = []
+    for row in rows:
+        item = _row_to_issue_thread_item(row)
+        if item is None:
+            continue
+        items.append(item)
+    return items
+
+
+def list_notice_head_rows(limit: int = 100, *, conn: Any | None = None) -> list[dict]:
+    normalized_limit = max(1, min(int(limit or 100), 500))
+    with _conn_ctx_optional(conn) as active_conn:
+        rows = active_conn.execute(
+            """
+            SELECT id, github_issue_number, title, visible_created_at
+            FROM issue_threads
+            WHERE is_notice = 1
+              AND deleted_at IS NULL
+              AND github_issue_number IS NOT NULL
+            ORDER BY github_issue_number DESC, visible_created_at DESC
+            LIMIT ?
+            """,
+            (normalized_limit,),
+        ).fetchall()
+    result: list[dict] = []
+    for row in rows:
+        try:
+            github_issue_number = int(row["github_issue_number"])
+        except (TypeError, ValueError):
+            continue
+        if github_issue_number <= 0:
+            continue
+        result.append(
+            {
+                "id": str(row["id"] or "").strip(),
+                "number": github_issue_number,
+                "title": str(row["title"] or "").strip(),
+                "created_at": str(row["visible_created_at"] or ""),
+            }
+        )
+    return result
+
+
+def create_local_issue_thread(
+    *,
+    title: str,
+    body: str,
+    labels: list[str] | None = None,
+    author_login: str = "",
+    author_public_user_id: str = "",
+    author_visitor_id: str = "",
+    author_display_name: str = "",
+    sync_status: str = "pending_create",
+    conn: Any | None = None,
+) -> dict:
+    _ensure_writes_allowed()
+    owns_conn = conn is None
+    now = utc_iso()
+    issue_id = new_issue_thread_id()
+    labels_json = json.dumps([str(item or "").strip() for item in (labels or []) if str(item or "").strip()], ensure_ascii=False)
+    with _conn_ctx_optional(conn) as active_conn:
+        active_conn.execute(
+            """
+            INSERT INTO issue_threads(
+              id, github_issue_number, github_node_id, kind, sync_status, state, title, body, labels_json,
+              github_url, author_login, author_public_user_id, author_visitor_id, author_display_name, is_repo_owner, is_notice,
+              comment_count, comments_loaded, github_created_at, github_updated_at, github_closed_at,
+              visible_created_at, visible_updated_at, last_synced_at, last_error, deleted_at, deleted_reason, created_at, updated_at
+            )
+            VALUES(?, NULL, NULL, 'issue', ?, 'open', ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0, 0, 1, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+            """,
+            (
+                issue_id,
+                str(sync_status or "pending_create"),
+                str(title or "").strip(),
+                str(body or ""),
+                labels_json,
+                str(author_login or "").strip(),
+                str(author_public_user_id or "").strip(),
+                str(author_visitor_id or "").strip()[:64],
+                str(author_display_name or "").strip(),
+                now,
+                now,
+                now,
+                now,
+            ),
+        )
+        if owns_conn:
+            active_conn.commit()
+    thread = get_issue_thread_by_id(issue_id, conn=conn)
+    if thread is None:
+        raise ValueError("failed_to_create_issue_thread")
+    return thread
+
+
+def create_local_issue_comment(
+    issue_id: str,
+    *,
+    body: str,
+    author_login: str = "",
+    author_public_user_id: str = "",
+    author_visitor_id: str = "",
+    author_display_name: str = "",
+    is_repo_owner: bool = False,
+    is_bot: bool = False,
+    sync_status: str = "pending_create",
+    conn: Any | None = None,
+) -> dict:
+    _ensure_writes_allowed()
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        raise ValueError("invalid_issue_id")
+    owns_conn = conn is None
+    now = utc_iso()
+    comment_id = new_issue_comment_id()
+    with _conn_ctx_optional(conn) as active_conn:
+        active_conn.execute(
+            """
+            INSERT INTO issue_comments(
+              id, issue_id, github_comment_id, sync_status, body, github_url, author_login, author_public_user_id,
+              author_visitor_id, author_display_name, is_repo_owner, is_bot, github_created_at, github_updated_at,
+              visible_created_at, visible_updated_at, last_synced_at, last_error, deleted_at, deleted_reason, created_at, updated_at
+            )
+            VALUES(?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+            """,
+            (
+                comment_id,
+                normalized_issue_id,
+                str(sync_status or "pending_create"),
+                str(body or ""),
+                str(author_login or "").strip(),
+                str(author_public_user_id or "").strip(),
+                str(author_visitor_id or "").strip()[:64],
+                str(author_display_name or "").strip(),
+                1 if is_repo_owner else 0,
+                1 if is_bot else 0,
+                now,
+                now,
+                now,
+                now,
+            ),
+        )
+        _update_issue_comment_count(normalized_issue_id, conn=active_conn)
+        if owns_conn:
+            active_conn.commit()
+    comments = list_issue_comments(normalized_issue_id, conn=conn)
+    for item in comments:
+        if str(item.get("id") or "") == comment_id:
+            return item
+    raise ValueError("failed_to_create_issue_comment")
+
+
+def upsert_issue_thread_from_github(issue: dict, *, conn: Any | None = None, comments_loaded: bool | None = None) -> dict | None:
+    if not isinstance(issue, dict):
+        return None
+    try:
+        github_issue_number = int(issue.get("number") or 0)
+    except (TypeError, ValueError):
+        github_issue_number = 0
+    if github_issue_number <= 0:
+        return None
+    owns_conn = conn is None
+    now = utc_iso()
+    preferred_local_id = str(issue.get("local_issue_id") or "").strip()
+    labels_json = json.dumps([str(item or "").strip() for item in issue.get("labels") or [] if str(item or "").strip()], ensure_ascii=False)
+    created_at = str(issue.get("created_at") or now)
+    updated_at = str(issue.get("updated_at") or created_at or now)
+    closed_at = str(issue.get("closed_at") or "").strip() or None
+    with _conn_ctx_optional(conn) as active_conn:
+        existing_row = None
+        if preferred_local_id:
+            existing_row = active_conn.execute(
+                "SELECT * FROM issue_threads WHERE id = ? LIMIT 1",
+                (preferred_local_id,),
+            ).fetchone()
+        if existing_row is None:
+            existing_row = active_conn.execute(
+                "SELECT * FROM issue_threads WHERE github_issue_number = ? LIMIT 1",
+                (github_issue_number,),
+            ).fetchone()
+        issue_id = str(existing_row["id"] or "").strip() if existing_row is not None else (preferred_local_id or new_issue_thread_id())
+        local_comment_count = _count_issue_comments(issue_id, conn=active_conn)
+        try:
+            remote_comment_count = max(0, int(issue.get("comments") or 0))
+        except (TypeError, ValueError):
+            remote_comment_count = 0
+        next_comment_count = max(local_comment_count, remote_comment_count)
+        if comments_loaded is None:
+            next_comments_loaded = bool(int(existing_row["comments_loaded"] or 0)) if existing_row is not None else False
+        else:
+            next_comments_loaded = bool(comments_loaded)
+        # Reconcile에서 원격 댓글 수가 로컬보다 많게 관측되면
+        # 이후 댓글 backfill 대상으로 잡히도록 loaded 플래그를 내려둔다.
+        if remote_comment_count > local_comment_count:
+            next_comments_loaded = False
+        if existing_row is None:
+            active_conn.execute(
+                """
+                INSERT INTO issue_threads(
+                  id, github_issue_number, github_node_id, kind, sync_status, state, title, body, labels_json,
+                  github_url, author_login, author_public_user_id, author_visitor_id, author_display_name, is_repo_owner, is_notice,
+                  comment_count, comments_loaded, github_created_at, github_updated_at, github_closed_at,
+                  visible_created_at, visible_updated_at, last_synced_at, last_error, deleted_at, deleted_reason, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, 'synced', ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+                """,
+                (
+                    issue_id,
+                    github_issue_number,
+                    str(issue.get("github_node_id") or "").strip() or None,
+                    "notice" if issue.get("is_notice") else "issue",
+                    str(issue.get("state") or "open"),
+                    str(issue.get("title") or ""),
+                    str(issue.get("body") or ""),
+                    labels_json,
+                    str(issue.get("url") or ""),
+                    str(issue.get("user") or ""),
+                    str(issue.get("author_user_id") or ""),
+                    str(issue.get("display_name") or ""),
+                    1 if issue.get("is_repo_owner") else 0,
+                    1 if issue.get("is_notice") else 0,
+                    int(next_comment_count),
+                    1 if next_comments_loaded else 0,
+                    created_at,
+                    updated_at,
+                    closed_at,
+                    created_at,
+                    updated_at,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+        else:
+            visible_created_at = str(existing_row["visible_created_at"] or created_at or now)
+            active_conn.execute(
+                """
+                UPDATE issue_threads
+                SET github_issue_number = ?,
+                    github_node_id = ?,
+                    kind = ?,
+                    sync_status = 'synced',
+                    state = ?,
+                    title = ?,
+                    body = ?,
+                    labels_json = ?,
+                    github_url = ?,
+                    author_login = ?,
+                    author_public_user_id = ?,
+                    author_display_name = ?,
+                    is_repo_owner = ?,
+                    is_notice = ?,
+                    comment_count = ?,
+                    comments_loaded = ?,
+                    github_created_at = ?,
+                    github_updated_at = ?,
+                    github_closed_at = ?,
+                    visible_created_at = ?,
+                    visible_updated_at = ?,
+                    last_synced_at = ?,
+                    last_error = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    github_issue_number,
+                    str(issue.get("github_node_id") or "").strip() or None,
+                    "notice" if issue.get("is_notice") else "issue",
+                    str(issue.get("state") or "open"),
+                    str(issue.get("title") or ""),
+                    str(issue.get("body") or ""),
+                    labels_json,
+                    str(issue.get("url") or ""),
+                    str(issue.get("user") or ""),
+                    str(issue.get("author_user_id") or ""),
+                    str(issue.get("display_name") or ""),
+                    1 if issue.get("is_repo_owner") else 0,
+                    1 if issue.get("is_notice") else 0,
+                    int(next_comment_count),
+                    1 if next_comments_loaded else 0,
+                    created_at,
+                    updated_at,
+                    closed_at,
+                    visible_created_at,
+                    updated_at,
+                    now,
+                    now,
+                    issue_id,
+                ),
+            )
+        if owns_conn:
+            active_conn.commit()
+    return get_issue_thread_by_id(issue_id, conn=conn)
+
+
+def mark_issue_comments_loaded(issue_id: str, loaded: bool = True, *, conn: Any | None = None) -> None:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        return
+    owns_conn = conn is None
+    now = utc_iso()
+    with _conn_ctx_optional(conn) as active_conn:
+        active_conn.execute(
+            """
+            UPDATE issue_threads
+            SET comments_loaded = ?, updated_at = ?, last_synced_at = ?
+            WHERE id = ?
+            """,
+            (1 if loaded else 0, now, now if loaded else None, normalized_issue_id),
+        )
+        if owns_conn:
+            active_conn.commit()
+
+
+def upsert_issue_comment_from_github(issue_id: str, comment: dict, *, conn: Any | None = None) -> dict | None:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id or not isinstance(comment, dict):
+        return None
+    try:
+        github_comment_id = int(comment.get("github_comment_id") or comment.get("id") or 0)
+    except (TypeError, ValueError):
+        github_comment_id = 0
+    if github_comment_id <= 0:
+        return None
+    owns_conn = conn is None
+    now = utc_iso()
+    preferred_local_id = str(comment.get("local_comment_id") or "").strip()
+    created_at = str(comment.get("created_at") or now)
+    updated_at = str(comment.get("updated_at") or created_at or now)
+    with _conn_ctx_optional(conn) as active_conn:
+        existing_row = None
+        if preferred_local_id:
+            existing_row = active_conn.execute(
+                "SELECT * FROM issue_comments WHERE id = ? LIMIT 1",
+                (preferred_local_id,),
+            ).fetchone()
+        if existing_row is None:
+            existing_row = active_conn.execute(
+                "SELECT * FROM issue_comments WHERE github_comment_id = ? LIMIT 1",
+                (github_comment_id,),
+            ).fetchone()
+        comment_id = str(existing_row["id"] or "").strip() if existing_row is not None else (preferred_local_id or new_issue_comment_id())
+        if existing_row is None:
+            active_conn.execute(
+                """
+                INSERT INTO issue_comments(
+                  id, issue_id, github_comment_id, sync_status, body, github_url, author_login, author_public_user_id,
+                  author_visitor_id, author_display_name, is_repo_owner, is_bot, github_created_at, github_updated_at,
+                  visible_created_at, visible_updated_at, last_synced_at, last_error, deleted_at, deleted_reason, created_at, updated_at
+                )
+                VALUES(?, ?, ?, 'synced', ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+                """,
+                (
+                    comment_id,
+                    normalized_issue_id,
+                    github_comment_id,
+                    str(comment.get("body") or ""),
+                    str(comment.get("url") or ""),
+                    str(comment.get("user") or ""),
+                    str(comment.get("user_id") or ""),
+                    str(comment.get("display_name") or ""),
+                    1 if comment.get("is_repo_owner") else 0,
+                    1 if comment.get("is_bot") else 0,
+                    created_at,
+                    updated_at,
+                    created_at,
+                    updated_at,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+        else:
+            visible_created_at = str(existing_row["visible_created_at"] or created_at or now)
+            active_conn.execute(
+                """
+                UPDATE issue_comments
+                SET issue_id = ?,
+                    github_comment_id = ?,
+                    sync_status = 'synced',
+                    body = ?,
+                    github_url = ?,
+                    author_login = ?,
+                    author_public_user_id = ?,
+                    author_display_name = ?,
+                    is_repo_owner = ?,
+                    is_bot = ?,
+                    github_created_at = ?,
+                    github_updated_at = ?,
+                    visible_created_at = ?,
+                    visible_updated_at = ?,
+                    last_synced_at = ?,
+                    last_error = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    normalized_issue_id,
+                    github_comment_id,
+                    str(comment.get("body") or ""),
+                    str(comment.get("url") or ""),
+                    str(comment.get("user") or ""),
+                    str(comment.get("user_id") or ""),
+                    str(comment.get("display_name") or ""),
+                    1 if comment.get("is_repo_owner") else 0,
+                    1 if comment.get("is_bot") else 0,
+                    created_at,
+                    updated_at,
+                    visible_created_at,
+                    updated_at,
+                    now,
+                    now,
+                    comment_id,
+                ),
+            )
+        _update_issue_comment_count(normalized_issue_id, conn=active_conn)
+        if owns_conn:
+            active_conn.commit()
+    comments = list_issue_comments(normalized_issue_id, conn=conn)
+    for item in comments:
+        if str(item.get("id") or "") == comment_id:
+            return item
+    return None
+
+
+def delete_issue_comment_by_github_comment_id(github_comment_id: int, *, conn: Any | None = None) -> bool:
+    try:
+        normalized_github_comment_id = int(github_comment_id)
+    except (TypeError, ValueError):
+        return False
+    if normalized_github_comment_id <= 0:
+        return False
+    owns_conn = conn is None
+    with _conn_ctx_optional(conn) as active_conn:
+        existing = active_conn.execute(
+            """
+            SELECT id, issue_id
+            FROM issue_comments
+            WHERE github_comment_id = ?
+            LIMIT 1
+            """,
+            (normalized_github_comment_id,),
+        ).fetchone()
+        if existing is None:
+            return False
+        active_conn.execute(
+            "DELETE FROM issue_comments WHERE id = ?",
+            (str(existing["id"] or "").strip(),),
+        )
+        _update_issue_comment_count(str(existing["issue_id"] or "").strip(), conn=active_conn)
+        if owns_conn:
+            active_conn.commit()
+    return True
+
+
+def get_issue_detail(
+    issue_ref: str,
+    *,
+    include_deleted: bool = False,
+    conn: Any | None = None,
+) -> dict | None:
+    thread = resolve_issue_thread_ref(issue_ref, include_deleted=include_deleted, conn=conn)
+    if thread is None:
+        return None
+    return {
+        "issue": thread,
+        "comments": list_issue_comments(
+            str(thread.get("id") or ""),
+            include_deleted=include_deleted,
+            conn=conn,
+        ),
+    }
+
+
+def _normalize_issue_delete_actor(
+    author_public_user_id: str | None,
+    visitor_id: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_public_user_id = str(author_public_user_id or "").strip()[:64] or None
+    if normalized_public_user_id is not None:
+        return normalized_public_user_id, None
+    normalized_visitor_id = str(visitor_id or "").strip()[:64] or None
+    return None, normalized_visitor_id
+
+
+def _is_issue_row_owned_by_actor(
+    row: Any | None,
+    *,
+    actor_public_user_id: str | None,
+    actor_visitor_id: str | None,
+) -> bool:
+    if row is None:
+        return False
+    row_public_user_id = str(row["author_public_user_id"] or "").strip()
+    if actor_public_user_id is not None:
+        return bool(row_public_user_id and row_public_user_id == actor_public_user_id)
+    row_visitor_id = str(row["author_visitor_id"] or "").strip()
+    return bool(
+        not row_public_user_id
+        and actor_visitor_id is not None
+        and row_visitor_id
+        and row_visitor_id == actor_visitor_id
+    )
+
+
+def get_issue_thread_delete_capability(
+    issue_ids: list[str] | tuple[str, ...] | None,
+    *,
+    author_public_user_id: str | None = None,
+    visitor_id: str | None = None,
+    conn: Any | None = None,
+) -> dict[str, bool]:
+    normalized_issue_ids: list[str] = []
+    seen: set[str] = set()
+    for raw in issue_ids or []:
+        issue_id = str(raw or "").strip()
+        if not issue_id or issue_id in seen:
+            continue
+        seen.add(issue_id)
+        normalized_issue_ids.append(issue_id)
+    if not normalized_issue_ids:
+        return {}
+
+    capability_map: dict[str, bool] = {issue_id: False for issue_id in normalized_issue_ids}
+    actor_public_user_id, actor_visitor_id = _normalize_issue_delete_actor(author_public_user_id, visitor_id)
+    if actor_public_user_id is None and actor_visitor_id is None:
+        return capability_map
+
+    placeholders = ",".join("?" for _ in normalized_issue_ids)
+    with _conn_ctx_optional(conn) as active_conn:
+        rows = active_conn.execute(
+            f"""
+            SELECT id, author_public_user_id, author_visitor_id
+            FROM issue_threads
+            WHERE id IN ({placeholders})
+              AND deleted_at IS NULL
+              AND is_notice = 0
+            """,
+            tuple(normalized_issue_ids),
+        ).fetchall()
+    for row in rows:
+        issue_id = str(row["id"] or "").strip()
+        if not issue_id:
+            continue
+        capability_map[issue_id] = _is_issue_row_owned_by_actor(
+            row,
+            actor_public_user_id=actor_public_user_id,
+            actor_visitor_id=actor_visitor_id,
+        )
+    return capability_map
+
+
+def get_issue_comment_delete_capability(
+    comment_ids: list[str] | tuple[str, ...] | None,
+    *,
+    author_public_user_id: str | None = None,
+    visitor_id: str | None = None,
+    conn: Any | None = None,
+) -> dict[str, bool]:
+    normalized_comment_ids: list[str] = []
+    seen: set[str] = set()
+    for raw in comment_ids or []:
+        comment_id = str(raw or "").strip()
+        if not comment_id or comment_id in seen:
+            continue
+        seen.add(comment_id)
+        normalized_comment_ids.append(comment_id)
+    if not normalized_comment_ids:
+        return {}
+
+    capability_map: dict[str, bool] = {comment_id: False for comment_id in normalized_comment_ids}
+    actor_public_user_id, actor_visitor_id = _normalize_issue_delete_actor(author_public_user_id, visitor_id)
+    if actor_public_user_id is None and actor_visitor_id is None:
+        return capability_map
+
+    placeholders = ",".join("?" for _ in normalized_comment_ids)
+    with _conn_ctx_optional(conn) as active_conn:
+        rows = active_conn.execute(
+            f"""
+            SELECT c.id, c.author_public_user_id, c.author_visitor_id
+            FROM issue_comments c
+            JOIN issue_threads t ON t.id = c.issue_id
+            WHERE c.id IN ({placeholders})
+              AND c.deleted_at IS NULL
+              AND t.deleted_at IS NULL
+            """,
+            tuple(normalized_comment_ids),
+        ).fetchall()
+    for row in rows:
+        comment_id = str(row["id"] or "").strip()
+        if not comment_id:
+            continue
+        capability_map[comment_id] = _is_issue_row_owned_by_actor(
+            row,
+            actor_public_user_id=actor_public_user_id,
+            actor_visitor_id=actor_visitor_id,
+        )
+    return capability_map
+
+
+def soft_delete_issue_thread(
+    issue_id: str,
+    *,
+    author_public_user_id: str | None = None,
+    visitor_id: str | None = None,
+    deleted_reason: str = "author_deleted",
+    conn: Any | None = None,
+) -> dict | None:
+    _ensure_writes_allowed()
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        raise ValueError("invalid_issue_id")
+
+    actor_public_user_id, actor_visitor_id = _normalize_issue_delete_actor(author_public_user_id, visitor_id)
+    if actor_public_user_id is None and actor_visitor_id is None:
+        raise ValueError("delete_actor_required")
+
+    owns_conn = conn is None
+    now = utc_iso()
+    normalized_reason = str(deleted_reason or "author_deleted").strip()[:120] or "author_deleted"
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
+            """
+            SELECT id, github_issue_number, is_notice, author_public_user_id, author_visitor_id, deleted_at
+            FROM issue_threads
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (normalized_issue_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("issue_not_found")
+        if str(row["deleted_at"] or "").strip():
+            raise ValueError("already_deleted")
+        if bool(int(row["is_notice"] or 0)):
+            raise ValueError("notice_delete_forbidden")
+        if not _is_issue_row_owned_by_actor(
+            row,
+            actor_public_user_id=actor_public_user_id,
+            actor_visitor_id=actor_visitor_id,
+        ):
+            raise ValueError("delete_not_allowed")
+
+        try:
+            github_issue_number = int(row["github_issue_number"] or 0)
+        except (TypeError, ValueError):
+            github_issue_number = 0
+        if github_issue_number <= 0:
+            github_issue_number = _surrogate_issue_number_for_like(normalized_issue_id)
+
+        active_conn.execute(
+            """
+            UPDATE issue_threads
+            SET deleted_at = ?,
+                deleted_reason = ?,
+                sync_status = 'deleted',
+                comment_count = 0,
+                last_error = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, normalized_reason, now, normalized_issue_id),
+        )
+        active_conn.execute(
+            """
+            UPDATE issue_comments
+            SET deleted_at = COALESCE(deleted_at, ?),
+                deleted_reason = CASE WHEN deleted_at IS NULL THEN ? ELSE deleted_reason END,
+                sync_status = 'deleted',
+                updated_at = ?
+            WHERE issue_id = ?
+            """,
+            (now, normalized_reason, now, normalized_issue_id),
+        )
+        active_conn.execute(
+            """
+            UPDATE issue_sync_outbox
+            SET status = 'completed',
+                last_error = ?,
+                updated_at = ?
+            WHERE status IN ('pending', 'failed', 'in_progress')
+              AND (
+                (entity_type = 'issue_thread' AND entity_id = ?)
+                OR (entity_type = 'issue_comment' AND issue_id = ?)
+              )
+            """,
+            ("cancelled_by_local_delete", now, normalized_issue_id, normalized_issue_id),
+        )
+        active_conn.execute(
+            """
+            DELETE FROM issue_likes
+            WHERE issue_id = ?
+               OR issue_number = ?
+            """,
+            (normalized_issue_id, github_issue_number),
+        )
+        if owns_conn:
+            active_conn.commit()
+
+    return get_issue_thread_by_id(normalized_issue_id, include_deleted=True, conn=conn)
+
+
+def soft_delete_issue_comment(
+    comment_id: str,
+    *,
+    issue_id: str | None = None,
+    author_public_user_id: str | None = None,
+    visitor_id: str | None = None,
+    deleted_reason: str = "author_deleted",
+    conn: Any | None = None,
+) -> dict | None:
+    _ensure_writes_allowed()
+    normalized_comment_id = str(comment_id or "").strip()
+    if not normalized_comment_id:
+        raise ValueError("invalid_comment_id")
+    normalized_issue_id = str(issue_id or "").strip() or None
+
+    actor_public_user_id, actor_visitor_id = _normalize_issue_delete_actor(author_public_user_id, visitor_id)
+    if actor_public_user_id is None and actor_visitor_id is None:
+        raise ValueError("delete_actor_required")
+
+    owns_conn = conn is None
+    now = utc_iso()
+    normalized_reason = str(deleted_reason or "author_deleted").strip()[:120] or "author_deleted"
+    with _conn_ctx_optional(conn) as active_conn:
+        row = active_conn.execute(
+            """
+            SELECT c.id, c.issue_id, c.author_public_user_id, c.author_visitor_id, c.deleted_at,
+                   t.deleted_at AS issue_deleted_at
+            FROM issue_comments c
+            JOIN issue_threads t ON t.id = c.issue_id
+            WHERE c.id = ?
+            LIMIT 1
+            """,
+            (normalized_comment_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("comment_not_found")
+        row_issue_id = str(row["issue_id"] or "").strip()
+        if normalized_issue_id is not None and row_issue_id != normalized_issue_id:
+            raise ValueError("comment_not_found")
+        if str(row["issue_deleted_at"] or "").strip():
+            raise ValueError("issue_not_found")
+        if str(row["deleted_at"] or "").strip():
+            raise ValueError("already_deleted")
+        if not _is_issue_row_owned_by_actor(
+            row,
+            actor_public_user_id=actor_public_user_id,
+            actor_visitor_id=actor_visitor_id,
+        ):
+            raise ValueError("delete_not_allowed")
+
+        active_conn.execute(
+            """
+            UPDATE issue_comments
+            SET deleted_at = ?,
+                deleted_reason = ?,
+                sync_status = 'deleted',
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, normalized_reason, now, normalized_comment_id),
+        )
+        _update_issue_comment_count(row_issue_id, conn=active_conn)
+        active_conn.execute(
+            """
+            UPDATE issue_sync_outbox
+            SET status = 'completed',
+                last_error = ?,
+                updated_at = ?
+            WHERE status IN ('pending', 'failed', 'in_progress')
+              AND entity_type = 'issue_comment'
+              AND entity_id = ?
+            """,
+            ("cancelled_by_local_delete", now, normalized_comment_id),
+        )
+        if owns_conn:
+            active_conn.commit()
+    return get_issue_comment_by_id(normalized_comment_id, include_deleted=True, conn=conn)
+
+
+def enqueue_issue_sync_task(
+    *,
+    entity_type: str,
+    entity_id: str,
+    issue_id: str | None,
+    operation: str,
+    payload: dict | None,
+    conn: Any | None = None,
+) -> int:
+    _ensure_writes_allowed()
+    normalized_entity_type = str(entity_type or "").strip()
+    normalized_entity_id = str(entity_id or "").strip()
+    normalized_operation = str(operation or "").strip()
+    if not normalized_entity_type or not normalized_entity_id or not normalized_operation:
+        raise ValueError("invalid_issue_sync_task")
+    owns_conn = conn is None
+    now = utc_iso()
+    payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    with _conn_ctx_optional(conn) as active_conn:
+        existing = active_conn.execute(
+            """
+            SELECT id
+            FROM issue_sync_outbox
+            WHERE entity_type = ?
+              AND entity_id = ?
+              AND operation = ?
+              AND status IN ('pending', 'failed', 'in_progress')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (normalized_entity_type, normalized_entity_id, normalized_operation),
+        ).fetchone()
+        if existing is None:
+            cur = active_conn.execute(
+                """
+                INSERT INTO issue_sync_outbox(
+                  entity_type, entity_id, issue_id, operation, payload_json, status,
+                  attempts, next_attempt_at, last_error, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, ?)
+                """,
+                (
+                    normalized_entity_type,
+                    normalized_entity_id,
+                    (str(issue_id or "").strip() or None),
+                    normalized_operation,
+                    payload_json,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            task_id = int(cur.lastrowid or 0)
+        else:
+            task_id = int(existing["id"])
+            active_conn.execute(
+                """
+                UPDATE issue_sync_outbox
+                SET issue_id = ?,
+                    payload_json = ?,
+                    status = 'pending',
+                    next_attempt_at = ?,
+                    last_error = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    (str(issue_id or "").strip() or None),
+                    payload_json,
+                    now,
+                    now,
+                    task_id,
+                ),
+            )
+        if owns_conn:
+            active_conn.commit()
+    return int(task_id)
+
+
+def claim_due_issue_sync_task() -> dict | None:
+    if is_read_only_mode():
+        return None
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT id, entity_type, entity_id, issue_id, operation, payload_json, status, attempts, next_attempt_at, last_error, created_at, updated_at
+            FROM issue_sync_outbox
+            WHERE status IN ('pending', 'failed')
+              AND next_attempt_at <= ?
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (now,),
+        ).fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        cur = conn.execute(
+            """
+            UPDATE issue_sync_outbox
+            SET status = 'in_progress', attempts = attempts + 1, updated_at = ?
+            WHERE id = ? AND status IN ('pending', 'failed')
+            """,
+            (now, int(row["id"])),
+        )
+        if cur.rowcount <= 0:
+            conn.commit()
+            return None
+        updated = conn.execute(
+            """
+            SELECT id, entity_type, entity_id, issue_id, operation, payload_json, status, attempts, next_attempt_at, last_error, created_at, updated_at
+            FROM issue_sync_outbox
+            WHERE id = ?
+            """,
+            (int(row["id"]),),
+        ).fetchone()
+        conn.commit()
+    if updated is None:
+        return None
+    try:
+        payload = json.loads(str(updated["payload_json"] or "{}"))
+    except Exception:
+        payload = {}
+    return {
+        "id": int(updated["id"]),
+        "entity_type": str(updated["entity_type"] or ""),
+        "entity_id": str(updated["entity_id"] or ""),
+        "issue_id": str(updated["issue_id"] or ""),
+        "operation": str(updated["operation"] or ""),
+        "payload": payload if isinstance(payload, dict) else {},
+        "status": str(updated["status"] or ""),
+        "attempts": int(updated["attempts"] or 0),
+        "next_attempt_at": str(updated["next_attempt_at"] or ""),
+        "last_error": str(updated["last_error"] or ""),
+        "created_at": str(updated["created_at"] or ""),
+        "updated_at": str(updated["updated_at"] or ""),
+    }
+
+
+def complete_issue_sync_task(task_id: int) -> None:
+    if is_read_only_mode():
+        return
+    now = utc_iso()
+    with _conn_ctx() as conn:
+        conn.execute(
+            """
+            UPDATE issue_sync_outbox
+            SET status = 'completed', last_error = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now, int(task_id)),
+        )
+        conn.commit()
+
+
+def fail_issue_sync_task(task_id: int, error: str, retry_after_sec: int = 30) -> None:
+    if is_read_only_mode():
+        return
+    now_dt = utc_now()
+    now = utc_iso(now_dt)
+    next_try = utc_iso(now_dt + timedelta(seconds=max(10, int(retry_after_sec))))
+    with _conn_ctx() as conn:
+        conn.execute(
+            """
+            UPDATE issue_sync_outbox
+            SET status = 'failed',
+                last_error = ?,
+                next_attempt_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (str(error or "")[:1000], next_try, now, int(task_id)),
+        )
+        conn.commit()
+
+
+def mark_issue_thread_sync_failed(issue_id: str, error: str, *, conn: Any | None = None) -> None:
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        return
+    owns_conn = conn is None
+    now = utc_iso()
+    with _conn_ctx_optional(conn) as active_conn:
+        active_conn.execute(
+            """
+            UPDATE issue_threads
+            SET sync_status = 'sync_failed', last_error = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (str(error or "")[:1000], now, normalized_issue_id),
+        )
+        if owns_conn:
+            active_conn.commit()
+
+
+def mark_issue_comment_sync_failed(comment_id: str, error: str, *, conn: Any | None = None) -> None:
+    normalized_comment_id = str(comment_id or "").strip()
+    if not normalized_comment_id:
+        return
+    owns_conn = conn is None
+    now = utc_iso()
+    with _conn_ctx_optional(conn) as active_conn:
+        active_conn.execute(
+            """
+            UPDATE issue_comments
+            SET sync_status = 'sync_failed', last_error = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (str(error or "")[:1000], now, normalized_comment_id),
+        )
+        if owns_conn:
+            active_conn.commit()
+
+
 def get_issue_like_state(
-    issue_numbers: list[int] | tuple[int, ...] | None,
+    issue_ids: list[str] | tuple[str, ...] | None,
     *,
     user_id: int | None = None,
     visitor_id: str | None = None,
-) -> dict[int, dict]:
-    normalized_issue_numbers: list[int] = []
-    seen: set[int] = set()
-    for raw in issue_numbers or []:
-        try:
-            issue_number = int(raw)
-        except (TypeError, ValueError):
+    conn: Any | None = None,
+) -> dict[str, dict]:
+    normalized_issue_ids: list[str] = []
+    seen: set[str] = set()
+    for raw in issue_ids or []:
+        issue_id = str(raw or "").strip()
+        if not issue_id or issue_id in seen:
             continue
-        if issue_number <= 0 or issue_number in seen:
-            continue
-        seen.add(issue_number)
-        normalized_issue_numbers.append(issue_number)
-    if not normalized_issue_numbers:
+        seen.add(issue_id)
+        normalized_issue_ids.append(issue_id)
+    if not normalized_issue_ids:
         return {}
 
     actor_key, _, _ = _normalize_arrival_like_actor(user_id, visitor_id)
-    placeholders = ",".join("?" for _ in normalized_issue_numbers)
-    with _conn_ctx() as conn:
-        rows = conn.execute(
+    placeholders = ",".join("?" for _ in normalized_issue_ids)
+    with _conn_ctx_optional(conn) as active_conn:
+        legacy_rows = active_conn.execute(
             f"""
-            SELECT issue_number, actor_key
-            FROM issue_likes
-            WHERE issue_number IN ({placeholders})
+            SELECT t.id AS issue_id, l.actor_key
+            FROM issue_likes l
+            JOIN issue_threads t ON t.github_issue_number = l.issue_number
+            WHERE t.id IN ({placeholders})
             """,
-            tuple(normalized_issue_numbers),
+            tuple(normalized_issue_ids),
+        ).fetchall()
+        rows = active_conn.execute(
+            f"""
+            SELECT issue_id, actor_key
+            FROM issue_likes
+            WHERE issue_id IN ({placeholders})
+            """,
+            tuple(normalized_issue_ids),
         ).fetchall()
 
-    state_map: dict[int, dict] = {
-        int(issue_number): {"like_count": 0, "liked_by_me": False}
-        for issue_number in normalized_issue_numbers
+        state_map: dict[str, dict] = {
+        issue_id: {"like_count": 0, "liked_by_me": False}
+        for issue_id in normalized_issue_ids
     }
-    for row in rows:
-        issue_number = int(row["issue_number"])
-        state = state_map.setdefault(issue_number, {"like_count": 0, "liked_by_me": False})
+    seen_actor_keys: dict[str, set[str]] = {
+        issue_id: set()
+        for issue_id in normalized_issue_ids
+    }
+    for row in list(legacy_rows) + list(rows):
+        issue_id = str(row["issue_id"] or "").strip()
+        if not issue_id:
+            continue
+        row_actor_key = str(row["actor_key"] or "").strip()
+        if not row_actor_key or row_actor_key in seen_actor_keys.setdefault(issue_id, set()):
+            continue
+        seen_actor_keys[issue_id].add(row_actor_key)
+        state = state_map.setdefault(issue_id, {"like_count": 0, "liked_by_me": False})
         state["like_count"] = int(state["like_count"]) + 1
-        if actor_key and str(row["actor_key"] or "") == actor_key:
+        if actor_key and row_actor_key == actor_key:
             state["liked_by_me"] = True
     return state_map
 
 
 def toggle_issue_like(
-    issue_number: int,
+    issue_id: str,
     *,
     user_id: int | None = None,
     visitor_id: str | None = None,
+    conn: Any | None = None,
 ) -> dict:
     _ensure_writes_allowed()
-    normalized_issue_number = int(issue_number)
-    if normalized_issue_number <= 0:
-        raise ValueError("invalid_issue_number")
+    normalized_issue_id = str(issue_id or "").strip()
+    if not normalized_issue_id:
+        raise ValueError("invalid_issue_id")
 
     actor_key, normalized_user_id, normalized_visitor_id = _normalize_arrival_like_actor(user_id, visitor_id)
     if not actor_key:
         raise ValueError("like_actor_required")
 
-    with _conn_ctx() as conn:
-        existing = conn.execute(
+    owns_conn = conn is None
+    with _conn_ctx_optional(conn) as active_conn:
+        thread = active_conn.execute(
+            "SELECT id, github_issue_number FROM issue_threads WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+            (normalized_issue_id,),
+        ).fetchone()
+        if thread is None:
+            raise ValueError("invalid_issue_id")
+        raw_issue_number = thread["github_issue_number"]
+        try:
+            github_issue_number = int(raw_issue_number) if raw_issue_number is not None else 0
+        except (TypeError, ValueError):
+            github_issue_number = 0
+        if github_issue_number <= 0:
+            # Legacy UNIQUE(issue_number, actor_key) 제약과 공존하도록
+            # GitHub 번호가 없는 로컬 이슈는 INT4 범위의 음수 surrogate를 사용한다.
+            github_issue_number = _surrogate_issue_number_for_like(normalized_issue_id)
+        existing = active_conn.execute(
             """
             SELECT id
             FROM issue_likes
-            WHERE issue_number = ? AND actor_key = ?
+            WHERE actor_key = ?
+              AND (
+                issue_id = ?
+                OR issue_number = ?
+              )
             LIMIT 1
             """,
-            (normalized_issue_number, actor_key),
+            (actor_key, normalized_issue_id, github_issue_number),
         ).fetchone()
         liked = False
         if existing is not None:
-            conn.execute(
+            active_conn.execute(
                 "DELETE FROM issue_likes WHERE id = ?",
                 (int(existing["id"]),),
             )
             liked = False
         else:
-            conn.execute(
+            active_conn.execute(
                 """
-                INSERT INTO issue_likes(issue_number, actor_key, user_id, visitor_id, created_at)
-                VALUES(?, ?, ?, ?, ?)
+                INSERT INTO issue_likes(issue_number, issue_id, actor_key, user_id, visitor_id, created_at)
+                VALUES(?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    normalized_issue_number,
+                    github_issue_number,
+                    normalized_issue_id,
                     actor_key,
                     normalized_user_id,
                     normalized_visitor_id,
@@ -3739,14 +5595,24 @@ def toggle_issue_like(
                 ),
             )
             liked = True
-        count_row = conn.execute(
-            "SELECT COUNT(*) AS like_count FROM issue_likes WHERE issue_number = ?",
-            (normalized_issue_number,),
+        count_row = active_conn.execute(
+            """
+            SELECT COUNT(*) AS like_count
+            FROM (
+              SELECT actor_key
+              FROM issue_likes
+              WHERE issue_id = ?
+                 OR issue_number = ?
+              GROUP BY actor_key
+            ) dedup
+            """,
+            (normalized_issue_id, github_issue_number),
         ).fetchone()
-        conn.commit()
+        if owns_conn:
+            active_conn.commit()
 
     return {
-        "issue_number": normalized_issue_number,
+        "issue_id": normalized_issue_id,
         "liked": bool(liked),
         "like_count": int(count_row["like_count"] if count_row is not None else 0),
     }
@@ -4441,6 +6307,7 @@ def cleanup_old_data(
         conn.execute("DELETE FROM route_search_history WHERE searched_at < ?", (route_cutoff,))
         conn.execute("DELETE FROM anonymous_place_search_history WHERE searched_at < ?", (place_cutoff,))
         conn.execute("DELETE FROM anonymous_route_search_history WHERE searched_at < ?", (route_cutoff,))
+        conn.execute("DELETE FROM route_shares WHERE expires_at <= ?", (now,))
         if prune_auth_states:
             conn.execute("DELETE FROM oauth_states WHERE expires_at <= ?", (now,))
             conn.execute(

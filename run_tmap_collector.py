@@ -58,6 +58,10 @@ DEFAULT_SEQ30_DAILY_LIMIT_PER_KEY = 100
 DEFAULT_ROUTE_DAILY_LIMIT_PER_KEY = 1000
 DEFAULT_CALL_WINDOW_START_HOUR_KST = 8
 DEFAULT_CALL_WINDOW_END_HOUR_KST = 17
+PAIR_STATUS_PENDING = "pending"
+PAIR_STATUS_EXHAUSTED = "exhausted_confirmed"
+PAIR_STATUS_BROKEN = "broken"
+PAIR_STATUS_SET = {PAIR_STATUS_PENDING, PAIR_STATUS_EXHAUSTED, PAIR_STATUS_BROKEN}
 
 
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -76,6 +80,15 @@ def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
     except (TypeError, ValueError):
         value = default
     return max(minimum, value)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.environ.get(name, "1" if default else "0") or "").strip().lower()
+    if raw in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    return bool(default)
 
 
 def _clamp_int(value: int, *, minimum: int, maximum: int) -> int:
@@ -557,6 +570,10 @@ class CollectorConfig:
     pacing_jitter_min: float
     pacing_jitter_max: float
     pacing_min_sleep_sec: int
+    drain_jitter_min_sec: int
+    drain_jitter_max_sec: int
+    require_all_pairs_exhausted: bool
+    drain_pair_failure_threshold: int
     run_once: bool
 
 
@@ -713,9 +730,13 @@ def _state_key_for_api(api_name: str) -> str:
     return f"collector.api_state.{api_name}"
 
 
-def _state_key_for_app_key(api_name: str, app_key: str) -> str:
+def _app_key_digest(app_key: str) -> str:
     token = str(app_key or "").strip()
-    digest = hashlib.sha1(token.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(token.encode("utf-8")).hexdigest()[:16]
+
+
+def _state_key_for_app_key(api_name: str, app_key: str) -> str:
+    digest = _app_key_digest(app_key)
     api_token = str(api_name or "").strip().lower() or "unknown"
     return f"collector.app_key_state.{api_token}.{digest}"
 
@@ -723,6 +744,10 @@ def _state_key_for_app_key(api_name: str, app_key: str) -> str:
 def _state_key_for_api_pacing(api_name: str, kst_day: date) -> str:
     api_token = str(api_name or "").strip().lower() or "unknown"
     return f"collector.api_pacing.{api_token}.{kst_day.strftime('%Y%m%d')}"
+
+
+def _state_key_for_quota_matrix(kst_day: date) -> str:
+    return f"collector.quota_matrix.{kst_day.strftime('%Y%m%d')}"
 
 
 def _load_state_json(conn: sqlite3.Connection, state_key: str) -> dict[str, Any]:
@@ -825,7 +850,9 @@ class TmapCollector:
         self.current_version_key = ""
         self._app_keys: list[str] = list(config.tmap_app_keys)
         self._app_key_labels: list[str] = [_mask_app_key(k) for k in self._app_keys]
+        self._app_key_digests: list[str] = [_app_key_digest(k) for k in self._app_keys]
         self._app_key_cursor = 0
+        self._quota_pair_cursor = 0
         self._rng = random.Random()
 
     def _app_key_state_key(self, *, api_name: str, key_idx: int) -> str:
@@ -915,15 +942,347 @@ class TmapCollector:
         remaining_calls = max(0, budget - used)
         remaining_window_sec = max(1, int((window_end - now_kst).total_seconds()))
         if remaining_calls <= 0:
-            next_start = self._window_bounds_for_kst_day(now_kst.date() + timedelta(days=1))[0]
-            sleep_sec = max(1, int((next_start - now_kst).total_seconds()))
-            return sleep_sec, "daily_budget_exhausted", 0, remaining_window_sec, budget
+            jitter = self._rng.uniform(self.config.pacing_jitter_min, self.config.pacing_jitter_max)
+            sleep_sec = max(
+                self.config.pacing_min_sleep_sec,
+                int(round(float(self.config.pacing_min_sleep_sec) * jitter)),
+            )
+            sleep_sec = min(max(1, sleep_sec), remaining_window_sec)
+            return sleep_sec, "daily_budget_exhausted_soft", 0, remaining_window_sec, budget
 
         base_interval = float(remaining_window_sec) / float(remaining_calls)
         jitter = self._rng.uniform(self.config.pacing_jitter_min, self.config.pacing_jitter_max)
         sleep_sec = max(self.config.pacing_min_sleep_sec, int(round(base_interval * jitter)))
         sleep_sec = min(max(1, sleep_sec), remaining_window_sec)
         return sleep_sec, "paced", remaining_calls, remaining_window_sec, budget
+
+    def _quota_matrix_state_key(self, kst_day: date) -> str:
+        return _state_key_for_quota_matrix(kst_day)
+
+    def _load_quota_matrix_state(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        kst_day: date,
+        now_utc: datetime | None = None,
+    ) -> dict[str, Any]:
+        now = (now_utc or datetime.now(timezone.utc)).replace(microsecond=0)
+        now_token = now.isoformat().replace("+00:00", "Z")
+        state_key = self._quota_matrix_state_key(kst_day)
+        state = _load_state_json(conn, state_key)
+        if not isinstance(state, dict):
+            state = {}
+        changed = False
+        day_token = kst_day.strftime("%Y%m%d")
+        if str(state.get("kst_day") or "") != day_token:
+            state = {"kst_day": day_token, "apis": {}}
+            changed = True
+
+        apis = state.get("apis")
+        if not isinstance(apis, dict):
+            apis = {}
+            state["apis"] = apis
+            changed = True
+
+        for api_name in (API_SEQ30, API_ROUTE):
+            api_state = apis.get(api_name)
+            if not isinstance(api_state, dict):
+                api_state = {}
+                apis[api_name] = api_state
+                changed = True
+            for idx, digest in enumerate(self._app_key_digests):
+                entry = api_state.get(digest)
+                if not isinstance(entry, dict):
+                    entry = {
+                        "status": PAIR_STATUS_PENDING,
+                        "attempts": 0,
+                        "consecutive_failures": 0,
+                        "key_label": self._app_key_labels[idx],
+                        "updated_at_utc": now_token,
+                    }
+                    api_state[digest] = entry
+                    changed = True
+                    continue
+                status = str(entry.get("status") or PAIR_STATUS_PENDING).strip().lower()
+                if status not in PAIR_STATUS_SET:
+                    entry["status"] = PAIR_STATUS_PENDING
+                    changed = True
+                if "attempts" not in entry:
+                    entry["attempts"] = 0
+                    changed = True
+                if "consecutive_failures" not in entry:
+                    entry["consecutive_failures"] = 0
+                    changed = True
+                if str(entry.get("key_label") or "") != self._app_key_labels[idx]:
+                    entry["key_label"] = self._app_key_labels[idx]
+                    changed = True
+                if "updated_at_utc" not in entry:
+                    entry["updated_at_utc"] = now_token
+                    changed = True
+
+        if self._sync_quota_matrix_from_blocks(conn, state=state, now_utc=now):
+            changed = True
+
+        if changed:
+            _save_state_json(conn, state_key, state)
+            conn.commit()
+        return state
+
+    def _save_quota_matrix_state(self, conn: sqlite3.Connection, *, kst_day: date, state: dict[str, Any]) -> None:
+        _save_state_json(conn, self._quota_matrix_state_key(kst_day), state)
+        conn.commit()
+
+    def _quota_pair_entry(
+        self,
+        *,
+        state: dict[str, Any],
+        api_name: str,
+        key_idx: int,
+    ) -> dict[str, Any]:
+        digest = self._app_key_digests[int(key_idx)]
+        apis = state.get("apis")
+        if not isinstance(apis, dict):
+            apis = {}
+            state["apis"] = apis
+        api_state = apis.get(api_name)
+        if not isinstance(api_state, dict):
+            api_state = {}
+            apis[api_name] = api_state
+        entry = api_state.get(digest)
+        if not isinstance(entry, dict):
+            entry = {
+                "status": PAIR_STATUS_PENDING,
+                "attempts": 0,
+                "consecutive_failures": 0,
+                "key_label": self._app_key_labels[int(key_idx)],
+                "updated_at_utc": utc_now_iso(),
+            }
+            api_state[digest] = entry
+        return entry
+
+    def _sync_quota_matrix_from_blocks(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        state: dict[str, Any],
+        now_utc: datetime,
+    ) -> bool:
+        changed = False
+        for api_name in (API_SEQ30, API_ROUTE):
+            for key_idx in range(len(self._app_keys)):
+                entry = self._quota_pair_entry(state=state, api_name=api_name, key_idx=key_idx)
+                status = str(entry.get("status") or PAIR_STATUS_PENDING).strip().lower()
+                if status != PAIR_STATUS_PENDING:
+                    continue
+                state_key = self._app_key_state_key(api_name=api_name, key_idx=key_idx)
+                blocked_until = _get_blocked_until(conn, state_key=state_key)
+                if blocked_until is None:
+                    continue
+                blocked_until_utc = blocked_until.astimezone(timezone.utc)
+                if blocked_until_utc <= now_utc:
+                    continue
+                app_state = _load_collector_state(conn, state_key)
+                if not _is_quota_block(app_state.get("last_http_code"), app_state.get("last_error_code")):
+                    continue
+                entry["status"] = PAIR_STATUS_EXHAUSTED
+                entry["confirmed_at_utc"] = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                entry["last_http_code"] = app_state.get("last_http_code")
+                entry["last_error_code"] = app_state.get("last_error_code")
+                entry["updated_at_utc"] = entry["confirmed_at_utc"]
+                entry["consecutive_failures"] = 0
+                changed = True
+        return changed
+
+    def _record_quota_pair_attempt(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        api_name: str,
+        key_idx: int,
+        http_code: int | None,
+        error_code: str | None,
+        error_message: str | None,
+        quota_confirmed: bool,
+        allow_broken: bool,
+        now_utc: datetime | None = None,
+    ) -> str:
+        now = (now_utc or datetime.now(timezone.utc)).replace(microsecond=0)
+        kst_day = now.astimezone(KST).date()
+        state = self._load_quota_matrix_state(conn, kst_day=kst_day, now_utc=now)
+        entry = self._quota_pair_entry(state=state, api_name=api_name, key_idx=key_idx)
+        attempts = 0
+        try:
+            attempts = int(entry.get("attempts") or 0)
+        except Exception:
+            attempts = 0
+        entry["attempts"] = max(0, attempts) + 1
+        entry["last_http_code"] = int(http_code) if http_code is not None else None
+        entry["last_error_code"] = str(error_code or "") or None
+        entry["last_error_message"] = str(error_message or "")[:1000] or None
+        now_token = now.isoformat().replace("+00:00", "Z")
+        entry["updated_at_utc"] = now_token
+
+        status = str(entry.get("status") or PAIR_STATUS_PENDING).strip().lower()
+        if quota_confirmed:
+            status = PAIR_STATUS_EXHAUSTED
+            entry["status"] = status
+            entry["confirmed_at_utc"] = now_token
+            entry["consecutive_failures"] = 0
+        else:
+            if http_code == 200 and not error_code:
+                entry["consecutive_failures"] = 0
+            else:
+                failures = 0
+                try:
+                    failures = int(entry.get("consecutive_failures") or 0)
+                except Exception:
+                    failures = 0
+                failures = max(0, failures) + 1
+                entry["consecutive_failures"] = failures
+                if (
+                    allow_broken
+                    and status == PAIR_STATUS_PENDING
+                    and failures >= max(1, int(self.config.drain_pair_failure_threshold))
+                ):
+                    status = PAIR_STATUS_BROKEN
+                    entry["status"] = status
+                    entry["broken_at_utc"] = now_token
+
+        self._save_quota_matrix_state(conn, kst_day=kst_day, state=state)
+        return str(entry.get("status") or PAIR_STATUS_PENDING).strip().lower()
+
+    def _pending_quota_pairs(
+        self,
+        *,
+        state: dict[str, Any],
+        include_broken: bool,
+    ) -> list[tuple[str, int]]:
+        apis = state.get("apis")
+        if not isinstance(apis, dict):
+            return []
+        pairs: list[tuple[str, int]] = []
+        for api_name in (API_SEQ30, API_ROUTE):
+            api_state = apis.get(api_name)
+            if not isinstance(api_state, dict):
+                continue
+            for key_idx, digest in enumerate(self._app_key_digests):
+                entry = api_state.get(digest)
+                if not isinstance(entry, dict):
+                    pairs.append((api_name, key_idx))
+                    continue
+                status = str(entry.get("status") or PAIR_STATUS_PENDING).strip().lower()
+                if status == PAIR_STATUS_PENDING:
+                    pairs.append((api_name, key_idx))
+                    continue
+                if include_broken and status == PAIR_STATUS_BROKEN:
+                    pairs.append((api_name, key_idx))
+        return pairs
+
+    def _quota_matrix_counts(self, *, state: dict[str, Any]) -> dict[str, int]:
+        apis = state.get("apis")
+        if not isinstance(apis, dict):
+            return {"total": 0, "pending": 0, "exhausted": 0, "broken": 0}
+        total = 0
+        pending = 0
+        exhausted = 0
+        broken = 0
+        for api_name in (API_SEQ30, API_ROUTE):
+            api_state = apis.get(api_name)
+            if not isinstance(api_state, dict):
+                continue
+            for digest in self._app_key_digests:
+                entry = api_state.get(digest)
+                if not isinstance(entry, dict):
+                    total += 1
+                    pending += 1
+                    continue
+                total += 1
+                status = str(entry.get("status") or PAIR_STATUS_PENDING).strip().lower()
+                if status == PAIR_STATUS_EXHAUSTED:
+                    exhausted += 1
+                elif status == PAIR_STATUS_BROKEN:
+                    broken += 1
+                else:
+                    pending += 1
+        return {"total": total, "pending": pending, "exhausted": exhausted, "broken": broken}
+
+    def _select_next_drain_pair(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        pending_pairs: list[tuple[str, int]],
+        now_utc: datetime,
+    ) -> tuple[tuple[str, int] | None, datetime | None]:
+        if not pending_pairs:
+            return None, None
+        wake_ts: datetime | None = None
+        for offset in range(len(pending_pairs)):
+            pair = pending_pairs[(self._quota_pair_cursor + offset) % len(pending_pairs)]
+            api_name, key_idx = pair
+            available, key_wake = self._available_app_key_indexes(
+                conn,
+                api_name=api_name,
+                now_utc=now_utc,
+                ordered_indexes=[int(key_idx)],
+            )
+            if available:
+                self._quota_pair_cursor = (self._quota_pair_cursor + offset + 1) % max(1, len(pending_pairs))
+                return pair, wake_ts
+            if key_wake is not None and (wake_ts is None or key_wake < wake_ts):
+                wake_ts = key_wake
+        self._quota_pair_cursor = (self._quota_pair_cursor + 1) % max(1, len(pending_pairs))
+        return None, wake_ts
+
+    def _compute_drain_sleep_sec(self) -> int:
+        low = max(1, int(self.config.drain_jitter_min_sec))
+        high = max(low, int(self.config.drain_jitter_max_sec))
+        return max(1, int(round(self._rng.uniform(float(low), float(high)))))
+
+    def _build_probe_request(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        api_name: str,
+        holiday_resolver: HolidayResolver,
+    ) -> tuple[str, dict[str, Any], TargetRow] | None:
+        target = fetch_next_target(conn)
+        if target is None:
+            return None
+        stops = fetch_target_stops(conn, target)
+        if len(stops) < 2:
+            return None
+        now_kst = datetime.now(timezone.utc).astimezone(KST)
+        weekday_usage = None
+        if str(target.day_type or "").strip().lower() == "weekday":
+            weekday_usage = _load_target_weekday_usage(conn, target_id=target.target_id)
+        start_dt = _resolve_start_datetime_kst(
+            day_type=target.day_type,
+            departure_time=target.departure_time,
+            now_kst=now_kst,
+            holiday_resolver=holiday_resolver,
+            weekday_usage=weekday_usage,
+        )
+        start_token = _to_kst_yyyymmddhhmm(start_dt)
+
+        if api_name == API_SEQ30:
+            chunks = _chunks_seq30(stops)
+            if not chunks:
+                return None
+            _, chunk_points = chunks[0]
+            payload = _build_seq30_payload(chunk_points, start_token)
+            return f"{self.config.seq30_url}?version=1&format=json", payload, target
+
+        chunks = _chunks_route(stops)
+        for _, chunk_points in chunks:
+            payload_plan = _prepare_route_payload_points(chunk_points)
+            points = payload_plan.points
+            if len(points) < 2:
+                continue
+            if len(points) == 2 and payload_plan.start_equals_end:
+                continue
+            payload = _build_route_payload(points, start_token)
+            return f"{self.config.route_url}?version=1&format=json", payload, target
+        return None
 
     def _open_conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.config.local_db_path))
@@ -1050,13 +1409,22 @@ class TmapCollector:
         api_name: str,
         url: str,
         payload: dict[str, Any],
+        forced_key_idx: int | None = None,
+        allow_fallback: bool = True,
+        skip_internal_pacing: bool = False,
+        allow_broken_pair: bool = False,
     ) -> tuple[int, Any | None, str | None, str | None, int]:
         now_utc = datetime.now(timezone.utc)
+        ordered_indexes = (
+            [int(forced_key_idx)]
+            if forced_key_idx is not None
+            else self._iter_app_key_indexes()
+        )
         candidate_indexes, wake_ts = self._available_app_key_indexes(
             conn,
             api_name=api_name,
             now_utc=now_utc,
-            ordered_indexes=self._iter_app_key_indexes(),
+            ordered_indexes=ordered_indexes,
         )
         if not candidate_indexes:
             wake_token = (
@@ -1074,22 +1442,23 @@ class TmapCollector:
                 "Content-Type": "application/json",
                 "appKey": app_key,
             }
-            pace_sleep_sec, pace_reason, remaining_calls, remaining_window_sec, budget = self._compute_pacing_sleep(
-                conn,
-                api_name=api_name,
-                now_utc=datetime.now(timezone.utc),
-            )
-            LOG.info(
-                "Pacing sleep api=%s key=%s sec=%s reason=%s remaining_calls=%s window_remaining_sec=%s budget=%s",
-                api_name,
-                self._app_key_labels[key_idx],
-                pace_sleep_sec,
-                pace_reason,
-                remaining_calls,
-                remaining_window_sec,
-                budget,
-            )
-            time.sleep(max(1, int(pace_sleep_sec)))
+            if not skip_internal_pacing:
+                pace_sleep_sec, pace_reason, remaining_calls, remaining_window_sec, budget = self._compute_pacing_sleep(
+                    conn,
+                    api_name=api_name,
+                    now_utc=datetime.now(timezone.utc),
+                )
+                LOG.info(
+                    "Pacing sleep api=%s key=%s sec=%s reason=%s remaining_calls=%s window_remaining_sec=%s budget=%s",
+                    api_name,
+                    self._app_key_labels[key_idx],
+                    pace_sleep_sec,
+                    pace_reason,
+                    remaining_calls,
+                    remaining_window_sec,
+                    budget,
+                )
+                time.sleep(max(1, int(pace_sleep_sec)))
             try:
                 resp = requests.post(
                     url,
@@ -1098,6 +1467,16 @@ class TmapCollector:
                     timeout=self.config.request_timeout_sec,
                 )
             except Exception as exc:
+                self._record_quota_pair_attempt(
+                    conn,
+                    api_name=api_name,
+                    key_idx=key_idx,
+                    http_code=None,
+                    error_code="request_error",
+                    error_message=str(exc),
+                    quota_confirmed=False,
+                    allow_broken=allow_broken_pair,
+                )
                 self._advance_app_key_cursor(key_idx)
                 return 0, None, "request_error", str(exc), attempts
             self._record_pacing_call(conn, api_name=api_name, now_utc=datetime.now(timezone.utc))
@@ -1117,7 +1496,26 @@ class TmapCollector:
                         err_message = json.dumps(parsed, ensure_ascii=True)[:1000]
                 except Exception:
                     pass
-                if _is_quota_block(resp.status_code, err_code):
+                quota_hit = _is_quota_block(resp.status_code, err_code)
+                status = self._record_quota_pair_attempt(
+                    conn,
+                    api_name=api_name,
+                    key_idx=key_idx,
+                    http_code=int(resp.status_code),
+                    error_code=err_code,
+                    error_message=err_message,
+                    quota_confirmed=quota_hit,
+                    allow_broken=allow_broken_pair,
+                )
+                if status == PAIR_STATUS_BROKEN:
+                    LOG.error(
+                        "Quota pair marked broken api=%s key=%s code=%s err=%s",
+                        api_name,
+                        self._app_key_labels[key_idx],
+                        resp.status_code,
+                        err_code,
+                    )
+                if quota_hit:
                     self._block_app_key_for_quota(
                         conn,
                         key_idx=key_idx,
@@ -1126,7 +1524,9 @@ class TmapCollector:
                         api_name=api_name,
                     )
                     self._advance_app_key_cursor(key_idx)
-                    continue
+                    if allow_fallback and forced_key_idx is None:
+                        continue
+                    return int(resp.status_code), None, err_code, err_message, attempts
                 self._advance_app_key_cursor(key_idx)
                 return int(resp.status_code), None, err_code, err_message, attempts
 
@@ -1134,8 +1534,28 @@ class TmapCollector:
                 parsed_ok = resp.json()
                 body = parsed_ok
             except Exception as exc:
+                self._record_quota_pair_attempt(
+                    conn,
+                    api_name=api_name,
+                    key_idx=key_idx,
+                    http_code=int(resp.status_code),
+                    error_code="invalid_json",
+                    error_message=f"invalid_json:{exc}",
+                    quota_confirmed=False,
+                    allow_broken=allow_broken_pair,
+                )
                 self._advance_app_key_cursor(key_idx)
                 return int(resp.status_code), None, "invalid_json", f"invalid_json:{exc}", attempts
+            self._record_quota_pair_attempt(
+                conn,
+                api_name=api_name,
+                key_idx=key_idx,
+                http_code=int(resp.status_code),
+                error_code=None,
+                error_message=None,
+                quota_confirmed=False,
+                allow_broken=False,
+            )
             self._advance_app_key_cursor(key_idx)
             return int(resp.status_code), body, None, None, attempts
 
@@ -1146,7 +1566,7 @@ class TmapCollector:
             conn,
             api_name=api_name,
             now_utc=now_utc,
-            ordered_indexes=list(range(len(self._app_keys))),
+            ordered_indexes=ordered_indexes if forced_key_idx is not None else list(range(len(self._app_keys))),
         )
         if wake_ts is not None:
             wake_ts_token = wake_ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -1587,6 +2007,13 @@ class TmapCollector:
                 self.config.pacing_jitter_max,
                 self.config.pacing_min_sleep_sec,
             )
+            LOG.info(
+                "TMAP drain config jitter_sec=[%s,%s] require_all_pairs_exhausted=%s pair_failure_threshold=%s",
+                self.config.drain_jitter_min_sec,
+                self.config.drain_jitter_max_sec,
+                self.config.require_all_pairs_exhausted,
+                self.config.drain_pair_failure_threshold,
+            )
 
             holiday_resolver = HolidayResolver(conn)
             total_calls = 0
@@ -1597,13 +2024,58 @@ class TmapCollector:
             while True:
                 now_utc = datetime.now(timezone.utc)
                 now_kst = now_utc.astimezone(KST)
-                if not self._is_within_call_window(now_kst):
+                window_start, window_end = self._window_bounds_for_kst_day(now_kst.date())
+                within_window = self._is_within_call_window(now_kst)
+                quota_state = self._load_quota_matrix_state(conn, kst_day=now_kst.date(), now_utc=now_utc)
+                counts = self._quota_matrix_counts(state=quota_state)
+                pending_pairs = self._pending_quota_pairs(
+                    state=quota_state,
+                    include_broken=False,
+                )
+                pending_exists = bool(pending_pairs)
+                mode = "normal" if within_window else ("drain" if pending_exists else "idle")
+                LOG.info(
+                    "Quota progress day=%s mode=%s pending=%s exhausted=%s broken=%s total=%s",
+                    now_kst.strftime("%Y%m%d"),
+                    mode,
+                    counts["pending"],
+                    counts["exhausted"],
+                    counts["broken"],
+                    counts["total"],
+                )
+
+                if now_kst < window_start:
                     if self.config.run_once:
                         LOG.warning(
-                            "Outside call window in run_once mode now_kst=%s window=%02d:00-%02d:00",
+                            "Before call window in run_once mode now_kst=%s window=%02d:00-%02d:00",
                             now_kst.replace(microsecond=0).isoformat(),
                             self.config.call_window_start_hour_kst,
                             self.config.call_window_end_hour_kst,
+                        )
+                        break
+                    sleep_sec = max(1, int((window_start - now_kst).total_seconds()))
+                    LOG.info(
+                        "Before call window now_kst=%s window=%02d:00-%02d:00 sleep_sec=%s",
+                        now_kst.replace(microsecond=0).isoformat(),
+                        self.config.call_window_start_hour_kst,
+                        self.config.call_window_end_hour_kst,
+                        sleep_sec,
+                    )
+                    time.sleep(sleep_sec)
+                    continue
+
+                if not within_window and not pending_exists:
+                    if self.config.require_all_pairs_exhausted and counts["broken"] > 0:
+                        LOG.error(
+                            "Drain incomplete: broken quota pairs remain day=%s broken=%s",
+                            now_kst.strftime("%Y%m%d"),
+                            counts["broken"],
+                        )
+                        return 1
+                    if self.config.run_once:
+                        LOG.info(
+                            "Outside call window and no pending quota pairs in run_once mode now_kst=%s",
+                            now_kst.replace(microsecond=0).isoformat(),
                         )
                         break
                     if changed and calls_since_publish > 0 and self.s3_store is not None:
@@ -1612,26 +2084,105 @@ class TmapCollector:
                     next_window_start = self._next_window_start_kst(now_kst)
                     sleep_sec = max(1, int((next_window_start - now_kst).total_seconds()))
                     LOG.info(
-                        "Outside call window now_kst=%s window=%02d:00-%02d:00 sleep_sec=%s",
+                        "Outside call window with no pending quota pairs now_kst=%s sleep_sec=%s",
                         now_kst.replace(microsecond=0).isoformat(),
-                        self.config.call_window_start_hour_kst,
-                        self.config.call_window_end_hour_kst,
                         sleep_sec,
                     )
                     time.sleep(sleep_sec)
                     continue
-                _clear_block_if_expired(conn, state_key=_state_key_for_api(API_SEQ30), now_utc=now_utc)
-                _clear_block_if_expired(conn, state_key=_state_key_for_api(API_ROUTE), now_utc=now_utc)
-                conn.commit()
 
-                seq30_blocked_until = _get_blocked_until(conn, state_key=_state_key_for_api(API_SEQ30))
-                route_blocked_until = _get_blocked_until(conn, state_key=_state_key_for_api(API_ROUTE))
-                seq30_blocked = bool(
-                    seq30_blocked_until is not None and now_utc < seq30_blocked_until.astimezone(timezone.utc)
-                )
-                route_blocked = bool(
-                    route_blocked_until is not None and now_utc < route_blocked_until.astimezone(timezone.utc)
-                )
+                if not within_window and pending_exists:
+                    pair, wake_ts = self._select_next_drain_pair(
+                        conn,
+                        pending_pairs=pending_pairs,
+                        now_utc=now_utc,
+                    )
+                    if pair is None:
+                        if self.config.require_all_pairs_exhausted and counts["broken"] > 0:
+                            LOG.error(
+                                "Unable to continue drain due to broken quota pairs day=%s broken=%s",
+                                now_kst.strftime("%Y%m%d"),
+                                counts["broken"],
+                            )
+                            return 1
+                        if self.config.run_once:
+                            LOG.warning("No available key for pending drain pair in run_once mode")
+                            break
+                        if changed and calls_since_publish > 0 and self.s3_store is not None:
+                            if self._publish_db(conn, reason="drain_wait"):
+                                calls_since_publish = 0
+                        sleep_sec = (
+                            max(1, int((wake_ts - now_utc).total_seconds()))
+                            if wake_ts is not None
+                            else max(1, self.config.idle_sleep_sec)
+                        )
+                        LOG.warning(
+                            "Drain pending but all selected keys unavailable pending=%s sleep_sec=%s",
+                            len(pending_pairs),
+                            sleep_sec,
+                        )
+                        time.sleep(sleep_sec)
+                        continue
+
+                    api_name, key_idx = pair
+                    probe = self._build_probe_request(conn, api_name=api_name, holiday_resolver=holiday_resolver)
+                    if probe is None:
+                        if self.config.run_once:
+                            LOG.warning("No probe target available in run_once mode")
+                            break
+                        upserted, inactive = refresh_targets(conn)
+                        conn.commit()
+                        sleep_sec = max(1, self.config.idle_sleep_sec)
+                        LOG.warning(
+                            "Drain pending but probe target unavailable. Refreshed targets upserted=%s inactive=%s sleep_sec=%s",
+                            upserted,
+                            inactive,
+                            sleep_sec,
+                        )
+                        time.sleep(sleep_sec)
+                        continue
+
+                    url, payload, probe_target = probe
+                    drain_sleep_sec = self._compute_drain_sleep_sec()
+                    LOG.info(
+                        "Drain pacing sleep api=%s key=%s sec=%s pending_pairs=%s target=%s",
+                        api_name,
+                        self._app_key_labels[key_idx],
+                        drain_sleep_sec,
+                        len(pending_pairs),
+                        probe_target.target_id,
+                    )
+                    time.sleep(drain_sleep_sec)
+                    code, _body, err_code, err, used_calls = self._call_tmap(
+                        conn,
+                        api_name=api_name,
+                        url=url,
+                        payload=payload,
+                        forced_key_idx=key_idx,
+                        allow_fallback=False,
+                        skip_internal_pacing=True,
+                        allow_broken_pair=True,
+                    )
+                    total_calls += used_calls
+                    calls_since_publish += used_calls
+                    changed = changed or used_calls > 0
+                    LOG.info(
+                        "Drain result api=%s key=%s target=%s code=%s err=%s detail=%s attempts=%s",
+                        api_name,
+                        self._app_key_labels[key_idx],
+                        probe_target.target_id,
+                        code,
+                        err_code,
+                        str(err or "")[:240],
+                        used_calls,
+                    )
+                    if changed and self.s3_store is not None and calls_since_publish >= self.config.publish_every_calls:
+                        published = self._publish_db(conn, reason="drain_periodic")
+                        if published:
+                            calls_since_publish = 0
+                    if self.config.run_once:
+                        break
+                    continue
 
                 seq30_keys, seq30_key_wake_ts = self._available_app_key_indexes(
                     conn,
@@ -1643,80 +2194,41 @@ class TmapCollector:
                     api_name=API_ROUTE,
                     now_utc=now_utc,
                 )
-                seq30_ready = (not seq30_blocked) and bool(seq30_keys)
-                route_ready = (not route_blocked) and bool(route_keys)
+                seq30_ready = bool(seq30_keys)
+                route_ready = bool(route_keys)
 
-                if phase == API_SEQ30 and not seq30_ready:
-                    if route_ready:
-                        phase = API_ROUTE
-                    else:
-                        if changed and calls_since_publish > 0 and self.s3_store is not None:
-                            if self._publish_db(conn, reason="all_blocked"):
-                                calls_since_publish = 0
-                        if self.config.run_once:
-                            LOG.warning("No available API/key combination in run_once mode")
-                            break
-                        wake_candidates: list[datetime] = []
-                        if seq30_blocked_until is not None and seq30_blocked:
-                            wake_candidates.append(seq30_blocked_until.astimezone(timezone.utc))
-                        if route_blocked_until is not None and route_blocked:
-                            wake_candidates.append(route_blocked_until.astimezone(timezone.utc))
-                        if seq30_key_wake_ts is not None:
-                            wake_candidates.append(seq30_key_wake_ts)
-                        if route_key_wake_ts is not None:
-                            wake_candidates.append(route_key_wake_ts)
-                        wake_ts = min(wake_candidates) if wake_candidates else None
-                        if wake_ts is None:
-                            sleep_sec = max(1, self.config.idle_sleep_sec)
-                        else:
-                            sleep_sec = max(1, int((wake_ts - now_utc).total_seconds()))
-                        LOG.warning(
-                            "No available API/key combination phase=%s seq30_blocked=%s route_blocked=%s seq30_keys=%s route_keys=%s sleep_sec=%s",
-                            phase,
-                            seq30_blocked,
-                            route_blocked,
-                            len(seq30_keys),
-                            len(route_keys),
-                            sleep_sec,
-                        )
-                        time.sleep(sleep_sec)
-                        continue
+                if phase == API_SEQ30 and not seq30_ready and route_ready:
+                    phase = API_ROUTE
+                elif phase == API_ROUTE and not route_ready and seq30_ready:
+                    phase = API_SEQ30
 
-                if phase == API_ROUTE and not route_ready:
-                    if seq30_ready:
-                        phase = API_SEQ30
-                    else:
-                        if changed and calls_since_publish > 0 and self.s3_store is not None:
-                            if self._publish_db(conn, reason="all_blocked"):
-                                calls_since_publish = 0
-                        if self.config.run_once:
-                            LOG.warning("No available API/key combination in run_once mode")
-                            break
-                        wake_candidates = []
-                        if seq30_blocked_until is not None and seq30_blocked:
-                            wake_candidates.append(seq30_blocked_until.astimezone(timezone.utc))
-                        if route_blocked_until is not None and route_blocked:
-                            wake_candidates.append(route_blocked_until.astimezone(timezone.utc))
-                        if seq30_key_wake_ts is not None:
-                            wake_candidates.append(seq30_key_wake_ts)
-                        if route_key_wake_ts is not None:
-                            wake_candidates.append(route_key_wake_ts)
-                        wake_ts = min(wake_candidates) if wake_candidates else None
-                        if wake_ts is None:
-                            sleep_sec = max(1, self.config.idle_sleep_sec)
-                        else:
-                            sleep_sec = max(1, int((wake_ts - now_utc).total_seconds()))
-                        LOG.warning(
-                            "No available API/key combination phase=%s seq30_blocked=%s route_blocked=%s seq30_keys=%s route_keys=%s sleep_sec=%s",
-                            phase,
-                            seq30_blocked,
-                            route_blocked,
-                            len(seq30_keys),
-                            len(route_keys),
-                            sleep_sec,
-                        )
-                        time.sleep(sleep_sec)
-                        continue
+                if (phase == API_SEQ30 and not seq30_ready) or (phase == API_ROUTE and not route_ready):
+                    if self.config.run_once:
+                        LOG.warning("No available API/key combination in run_once mode")
+                        break
+                    if changed and calls_since_publish > 0 and self.s3_store is not None:
+                        if self._publish_db(conn, reason="all_key_blocked"):
+                            calls_since_publish = 0
+                    wake_candidates: list[datetime] = []
+                    if seq30_key_wake_ts is not None:
+                        wake_candidates.append(seq30_key_wake_ts)
+                    if route_key_wake_ts is not None:
+                        wake_candidates.append(route_key_wake_ts)
+                    wake_ts = min(wake_candidates) if wake_candidates else None
+                    sleep_sec = (
+                        max(1, int((wake_ts - now_utc).total_seconds()))
+                        if wake_ts is not None
+                        else max(1, self.config.idle_sleep_sec)
+                    )
+                    LOG.warning(
+                        "No available key in normal mode phase=%s seq30_keys=%s route_keys=%s sleep_sec=%s",
+                        phase,
+                        len(seq30_keys),
+                        len(route_keys),
+                        sleep_sec,
+                    )
+                    time.sleep(sleep_sec)
+                    continue
 
                 target = fetch_next_target(conn)
                 if target is None:
@@ -1737,22 +2249,6 @@ class TmapCollector:
                     )
                     time.sleep(sleep_sec)
                     continue
-
-                if phase == API_ROUTE and not route_ready:
-                    if seq30_ready:
-                        phase = API_SEQ30
-                    else:
-                        sleep_sec = max(1, self.config.idle_sleep_sec)
-                        time.sleep(sleep_sec)
-                        continue
-
-                if phase == API_SEQ30 and not seq30_ready:
-                    if route_ready:
-                        phase = API_ROUTE
-                    else:
-                        sleep_sec = max(1, self.config.idle_sleep_sec)
-                        time.sleep(sleep_sec)
-                        continue
 
                 if phase == API_SEQ30:
                     calls, status, code, err_code = self._collect_target_seq30(conn, target, holiday_resolver)
@@ -1782,36 +2278,20 @@ class TmapCollector:
 
                 all_keys_blocked = str(err_code or "") == "all_keys_blocked"
                 if _is_quota_block(code, err_code) and not all_keys_blocked:
-                    blocked_until = datetime.now(timezone.utc) + timedelta(seconds=self.config.cooldown_sec)
-                    _set_blocked(
-                        conn,
-                        state_key=_state_key_for_api(phase),
-                        blocked_until_utc=blocked_until,
-                        http_code=code,
-                        error_code=err_code,
-                    )
-                    conn.commit()
-                    LOG.warning(
-                        "API blocked api=%s until=%s http_code=%s error_code=%s",
-                        phase,
-                        blocked_until.replace(microsecond=0).isoformat(),
-                        code,
-                        err_code,
-                    )
-                    if changed and calls_since_publish > 0 and self.s3_store is not None:
-                        published = self._publish_db(conn, reason=f"{phase}_blocked")
-                        if published:
-                            calls_since_publish = 0
+                    LOG.warning("Quota observed api=%s code=%s err=%s", phase, code, err_code)
                     if phase == API_SEQ30:
                         phase = API_ROUTE
                     else:
-                        # route cycle ended by block; switch back to seq30 next.
                         phase = API_SEQ30
                 elif all_keys_blocked:
                     if changed and calls_since_publish > 0 and self.s3_store is not None:
                         published = self._publish_db(conn, reason=f"{phase}_all_keys_blocked")
                         if published:
                             calls_since_publish = 0
+                    if phase == API_SEQ30 and route_ready:
+                        phase = API_ROUTE
+                    elif phase == API_ROUTE and seq30_ready:
+                        phase = API_SEQ30
 
                 if self.config.run_once:
                     break
@@ -1900,6 +2380,15 @@ def main() -> int:
             pacing_jitter_min,
         )
         pacing_jitter_max = pacing_jitter_min
+    drain_jitter_min_sec = _env_int("TMAP_DRAIN_JITTER_MIN_SEC", 2, minimum=1)
+    drain_jitter_max_sec = _env_int("TMAP_DRAIN_JITTER_MAX_SEC", 12, minimum=1)
+    if drain_jitter_max_sec < drain_jitter_min_sec:
+        LOG.warning(
+            "TMAP_DRAIN_JITTER_MAX_SEC(%s) < MIN_SEC(%s); using MIN for both",
+            drain_jitter_max_sec,
+            drain_jitter_min_sec,
+        )
+        drain_jitter_max_sec = drain_jitter_min_sec
 
     config = CollectorConfig(
         local_db_path=Path(str(args.db_path)).resolve(),
@@ -1926,6 +2415,10 @@ def main() -> int:
         pacing_jitter_min=pacing_jitter_min,
         pacing_jitter_max=pacing_jitter_max,
         pacing_min_sleep_sec=_env_int("TMAP_PACING_MIN_SLEEP_SEC", 1, minimum=1),
+        drain_jitter_min_sec=drain_jitter_min_sec,
+        drain_jitter_max_sec=drain_jitter_max_sec,
+        require_all_pairs_exhausted=_env_bool("TMAP_REQUIRE_ALL_PAIRS_EXHAUSTED", default=False),
+        drain_pair_failure_threshold=_env_int("TMAP_DRAIN_PAIR_FAILURE_THRESHOLD", 8, minimum=1),
         run_once=bool(args.once),
     )
 

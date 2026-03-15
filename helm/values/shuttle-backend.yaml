@@ -65,7 +65,7 @@ backend:
       manifestKey: db/dev/latest.json
       region: ap-northeast-2
   warmEndpointCacheOnStartup: true
-  enableBackgroundWorkers: false
+  enableBackgroundWorkers: true
   refreshAuthMetricsOnStartup: false
   historyWrite:
     enabled: true
@@ -129,4 +129,15 @@ tmapCollector:
   quotaCooldownSec: 3600
   publishEveryCalls: 50
   keepRunsPerTarget: 30
+  seq30DailyLimitPerKey: 100
+  routeDailyLimitPerKey: 1000
+  callWindowStartHourKst: 8
+  callWindowEndHourKst: 17
+  pacingJitterMin: 0.75
+  pacingJitterMax: 1.35
+  pacingMinSleepSec: 1
+  drainJitterMinSec: 2
+  drainJitterMaxSec: 12
+  requireAllPairsExhausted: false
+  drainPairFailureThreshold: 8
   resources: {}
