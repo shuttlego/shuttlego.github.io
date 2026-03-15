@@ -119,6 +119,12 @@ GITHUB_REPO_NAME = os.environ.get("GITHUB_REPO_NAME", "").strip()
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 GITHUB_ISSUE_CACHE_TTL_SEC = _env_int("GITHUB_ISSUE_CACHE_TTL_SEC", 300)
 NOTICE_HEAD_CACHE_TTL_SEC = max(60, _env_int("NOTICE_HEAD_CACHE_TTL_SEC", 900))
+ISSUE_SYNC_LOOP_INTERVAL_SEC = max(5, _env_int("ISSUE_SYNC_LOOP_INTERVAL_SEC", 15))
+ISSUE_RECONCILE_INTERVAL_SEC = max(30, _env_int("ISSUE_RECONCILE_INTERVAL_SEC", 180))
+ISSUE_RECONCILE_PAGES = max(1, _env_int("ISSUE_RECONCILE_PAGES", 3))
+ISSUE_COMMENT_RECONCILE_INTERVAL_SEC = max(30, _env_int("ISSUE_COMMENT_RECONCILE_INTERVAL_SEC", 180))
+ISSUE_COMMENT_RECONCILE_BATCH_SIZE = max(1, _env_int("ISSUE_COMMENT_RECONCILE_BATCH_SIZE", 50))
+ISSUE_COMMENT_SYNC_MAX_PAGES_PER_THREAD = max(1, _env_int("ISSUE_COMMENT_SYNC_MAX_PAGES_PER_THREAD", 20))
 ISSUE_SUBMIT_RATE_LIMIT_SEC = _env_int("ISSUE_SUBMIT_RATE_LIMIT_SEC", 10)
 ISSUE_SUBMIT_DEDUPE_WINDOW_SEC = _env_int("ISSUE_SUBMIT_DEDUPE_WINDOW_SEC", 300)
 
@@ -236,6 +242,13 @@ _notice_head_revalidate_lock = threading.Lock()
 _issue_submit_tracker_lock = threading.Lock()
 _issue_submit_recent_by_client: dict[str, float] = {}
 _issue_submit_recent_hash: dict[str, float] = {}
+_issue_sync_last_reconcile_at = 0.0
+_issue_sync_reconcile_lock = threading.Lock()
+_issue_comment_sync_last_reconcile_at = 0.0
+_issue_comment_sync_reconcile_lock = threading.Lock()
+_initial_issue_sync_done = threading.Event()
+_initial_issue_sync_ok: bool | None = None
+_initial_issue_sync_error = ""
 _auth_background_started = False
 _auth_background_lock = threading.Lock()
 _history_write_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=HISTORY_WRITE_QUEUE_MAX_ITEMS)
@@ -1015,6 +1028,44 @@ def metrics():
 def health():
     """Traefik 헬스체크용."""
     return jsonify({"status": "healthy"})
+
+
+@app.route("/ready")
+def ready():
+    """Kubernetes readiness probe endpoint."""
+    if not _initial_issue_sync_done.is_set():
+        return (
+            jsonify(
+                {
+                    "status": "starting",
+                    "ready": False,
+                    "initial_issue_sync_done": False,
+                }
+            ),
+            503,
+        )
+    if not bool(_initial_issue_sync_ok):
+        return (
+            jsonify(
+                {
+                    "status": "startup_sync_failed",
+                    "ready": False,
+                    "initial_issue_sync_done": True,
+                    "initial_issue_sync_ok": False,
+                    "initial_issue_sync_error": _initial_issue_sync_error,
+                }
+            ),
+            503,
+        )
+    return jsonify(
+        {
+            "status": "ready",
+            "ready": True,
+            "initial_issue_sync_done": True,
+            "initial_issue_sync_ok": bool(_initial_issue_sync_ok),
+            "initial_issue_sync_error": _initial_issue_sync_error,
+        }
+    )
 
 
 # ── 비즈니스 로직 ────────────────────────────────────────────
@@ -2403,7 +2454,7 @@ def _collect_issue_author_user_ids(raw_items: list[dict]) -> list[str]:
 def _normalize_issue(issue: dict, nickname_by_public_user_id: dict[str, str] | None = None) -> dict:
     user = issue.get("user") or {}
     login = str(user.get("login") or "")
-    body, _ = _split_issue_body_and_meta(str(issue.get("body") or ""))
+    body, meta = _split_issue_body_and_meta(str(issue.get("body") or ""))
     labels = _normalize_label_names(issue.get("labels"))
     owner = (GITHUB_REPO_OWNER or "").strip().lower()
     is_repo_owner = bool(owner and login.strip().lower() == owner)
@@ -2417,8 +2468,15 @@ def _normalize_issue(issue: dict, nickname_by_public_user_id: dict[str, str] | N
         display_name = author_nickname_label
     if not display_name and is_repo_owner:
         display_name = login
+    local_issue_id = ""
+    if isinstance(meta, dict):
+        local_issue_id = str(meta.get("local-issue-id") or "").strip()
     return {
+        "id": local_issue_id,
+        "local_issue_id": local_issue_id,
         "number": issue.get("number"),
+        "github_issue_number": issue.get("number"),
+        "github_node_id": issue.get("node_id") or "",
         "title": issue.get("title") or "",
         "body": body,
         "state": issue.get("state") or "open",
@@ -2436,19 +2494,72 @@ def _normalize_issue(issue: dict, nickname_by_public_user_id: dict[str, str] | N
     }
 
 
-def _with_issue_like_state(issues: list[dict], like_state_map: dict[int, dict] | None = None) -> list[dict]:
+def _with_issue_like_state(issues: list[dict], like_state_map: dict[str, dict] | None = None) -> list[dict]:
     like_state_map = like_state_map or {}
     enriched: list[dict] = []
     for issue in issues or []:
         item = dict(issue or {})
-        try:
-            issue_number = int(item.get("number") or 0)
-        except (TypeError, ValueError):
-            issue_number = 0
-        like_state = like_state_map.get(issue_number) or {}
+        issue_id = str(item.get("id") or "").strip()
+        like_state = like_state_map.get(issue_id) or {}
         item["like_count"] = int(like_state.get("like_count") or 0)
         item["liked_by_me"] = bool(like_state.get("liked_by_me"))
         enriched.append(item)
+    return enriched
+
+
+def _issue_delete_actor_identity(
+    auth_user: dict | None,
+    viewer_visitor_id: str | None,
+) -> tuple[str | None, str | None]:
+    if auth_user is not None:
+        public_user_id = str(auth_user.get("public_user_id") or "").strip()
+        if public_user_id:
+            return public_user_id, None
+    clean_visitor_id = str(viewer_visitor_id or "").strip()
+    return None, (clean_visitor_id or None)
+
+
+def _with_issue_delete_capability(
+    issues: list[dict],
+    *,
+    auth_user: dict | None,
+    viewer_visitor_id: str | None,
+    conn: Any | None = None,
+) -> list[dict]:
+    enriched: list[dict] = [dict(item or {}) for item in issues or []]
+    issue_ids = [str(item.get("id") or "").strip() for item in enriched if str(item.get("id") or "").strip()]
+    actor_public_user_id, actor_visitor_id = _issue_delete_actor_identity(auth_user, viewer_visitor_id)
+    capability_map = user_store.get_issue_thread_delete_capability(
+        issue_ids,
+        author_public_user_id=actor_public_user_id,
+        visitor_id=actor_visitor_id,
+        conn=conn,
+    )
+    for item in enriched:
+        issue_id = str(item.get("id") or "").strip()
+        item["can_delete"] = bool(capability_map.get(issue_id))
+    return enriched
+
+
+def _with_issue_comment_delete_capability(
+    comments: list[dict],
+    *,
+    auth_user: dict | None,
+    viewer_visitor_id: str | None,
+    conn: Any | None = None,
+) -> list[dict]:
+    enriched: list[dict] = [dict(item or {}) for item in comments or []]
+    comment_ids = [str(item.get("id") or "").strip() for item in enriched if str(item.get("id") or "").strip()]
+    actor_public_user_id, actor_visitor_id = _issue_delete_actor_identity(auth_user, viewer_visitor_id)
+    capability_map = user_store.get_issue_comment_delete_capability(
+        comment_ids,
+        author_public_user_id=actor_public_user_id,
+        visitor_id=actor_visitor_id,
+        conn=conn,
+    )
+    for item in enriched:
+        comment_id = str(item.get("id") or "").strip()
+        item["can_delete"] = bool(capability_map.get(comment_id))
     return enriched
 
 
@@ -2458,9 +2569,11 @@ def _normalize_comment(comment: dict) -> dict:
     body, meta = _split_issue_body_and_meta(str(comment.get("body") or ""))
     nickname = ""
     user_id = ""
+    local_comment_id = ""
     if isinstance(meta, dict):
         nickname = str(meta.get("nickname") or "").strip()[:40]
         user_id = str(meta.get("user-id") or "").strip()[:64]
+        local_comment_id = str(meta.get("local-comment-id") or "").strip()
     owner = (GITHUB_REPO_OWNER or "").strip().lower()
     is_repo_owner = bool(owner and login.strip().lower() == owner)
     user_type = str(user.get("type") or "").strip().lower()
@@ -2476,7 +2589,9 @@ def _normalize_comment(comment: dict) -> dict:
     else:
         display_name = login
     return {
-        "id": comment.get("id"),
+        "id": local_comment_id or comment.get("id"),
+        "local_comment_id": local_comment_id,
+        "github_comment_id": comment.get("id"),
         "body": body,
         "created_at": comment.get("created_at"),
         "updated_at": comment.get("updated_at"),
@@ -2669,8 +2784,8 @@ def _load_notice_head_cache(*, per_page: int = 100, stale_while_revalidate: bool
     return _extract_notice_rows(cached)
 
 
-def _resolve_notice_actor() -> tuple[dict | None, int | None, str | None]:
-    auth_user, _ = _get_current_user(with_touch=False)
+def _resolve_notice_actor(conn: Any | None = None) -> tuple[dict | None, int | None, str | None]:
+    auth_user, _ = _get_current_user(with_touch=False, conn=conn)
     if auth_user is not None:
         return auth_user, int(auth_user["id"]), None
     return None, None, _ensure_history_visitor_id()
@@ -2808,6 +2923,460 @@ def _attach_issue_cookie_if_needed(resp, cookie_id: str, should_set_cookie: bool
         secure=request.is_secure,
     )
     return resp
+
+
+def _get_issue_viewer_identity(conn: Any | None = None) -> tuple[dict | None, int | None, str | None]:
+    auth_user, _ = _get_current_user(with_touch=False, conn=conn)
+    if auth_user is not None:
+        return auth_user, int(auth_user["id"]), None
+    return None, None, _ensure_history_visitor_id()
+
+
+def _attach_issue_viewer_cookie_if_needed(resp, auth_user: dict | None):
+    if auth_user is None:
+        return _attach_history_visitor_cookie_if_needed(resp)
+    return resp
+
+
+def _normalize_issue_filters() -> tuple[str, str, list[str], str, int, int]:
+    state = request.args.get("state", default="all", type=str).strip().lower()
+    if state not in {"open", "closed", "all"}:
+        raise ValueError("state")
+
+    kind = request.args.get("kind", default="all", type=str).strip().lower()
+    if kind not in {"all", "issue", "notice"}:
+        raise ValueError("kind")
+
+    labels_raw = request.args.get("labels", default="", type=str)
+    labels = [s.strip() for s in labels_raw.split(",") if s.strip()]
+    q = request.args.get("q", default="", type=str).strip()
+    page = max(1, request.args.get("page", default=1, type=int) or 1)
+    per_page = request.args.get("per_page", default=10, type=int) or 10
+    per_page = max(1, min(per_page, 100))
+    return kind, state, labels, q, page, per_page
+
+
+def _normalize_github_issue_batch(raw_items: list[dict]) -> list[dict]:
+    raw_issues = [item for item in (raw_items or []) if isinstance(item, dict) and not item.get("pull_request")]
+    if not raw_issues:
+        return []
+    nickname_by_public_user_id: dict[str, str] = {}
+    try:
+        author_user_ids = _collect_issue_author_user_ids(raw_issues)
+        if author_user_ids:
+            nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
+    except Exception:
+        app.logger.exception("Failed to resolve issue author nicknames")
+    normalized: list[dict] = []
+    for item in raw_issues:
+        normalized.append(_normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id))
+    return normalized
+
+
+def _upsert_github_issue_batch(
+    raw_items: list[dict],
+    *,
+    conn: Any | None = None,
+    comments_loaded: bool | None = None,
+) -> list[dict]:
+    normalized_items = _normalize_github_issue_batch(raw_items)
+    synced_items: list[dict] = []
+    for normalized in normalized_items:
+        synced = user_store.upsert_issue_thread_from_github(
+            normalized,
+            conn=conn,
+            comments_loaded=comments_loaded,
+        )
+        if synced is not None:
+            synced_items.append(synced)
+    return synced_items
+
+
+def _issue_list_complete_cache_key(
+    *,
+    kind: str,
+    state: str,
+    labels: list[str],
+    q: str,
+) -> str:
+    return f"issues:v7:list-complete:{kind}:{state}:{','.join(labels)}:{q}"
+
+
+def _mark_issue_list_complete(
+    *,
+    kind: str,
+    state: str,
+    labels: list[str],
+    q: str,
+) -> None:
+    _issue_cache_set(
+        _issue_list_complete_cache_key(kind=kind, state=state, labels=labels, q=q),
+        {"complete": True},
+        ttl_sec=max(300, GITHUB_ISSUE_CACHE_TTL_SEC),
+    )
+
+
+def _is_issue_list_complete(
+    *,
+    kind: str,
+    state: str,
+    labels: list[str],
+    q: str,
+) -> bool:
+    cached = _issue_cache_get(
+        _issue_list_complete_cache_key(kind=kind, state=state, labels=labels, q=q)
+    )
+    return bool((cached or {}).get("complete"))
+
+
+def _sync_recent_github_issues(*, max_pages: int | None = None, force: bool = False) -> bool:
+    global _issue_sync_last_reconcile_at
+    requested_pages = max(1, int(max_pages or ISSUE_RECONCILE_PAGES))
+    if not force and (_time.time() - float(_issue_sync_last_reconcile_at or 0.0)) < ISSUE_RECONCILE_INTERVAL_SEC:
+        return False
+    if not _issue_sync_reconcile_lock.acquire(blocking=False):
+        return False
+    try:
+        now = _time.time()
+        if not force and (now - float(_issue_sync_last_reconcile_at or 0.0)) < ISSUE_RECONCILE_INTERVAL_SEC:
+            return False
+        try:
+            _ensure_github_issue_config()
+        except GitHubConfigError:
+            return False
+        page_size = 100
+        for page in range(1, requested_pages + 1):
+            raw_items = _github_api_request(
+                "GET",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                params={
+                    "state": "all",
+                    "page": page,
+                    "per_page": page_size,
+                    "sort": "created",
+                    "direction": "desc",
+                },
+            )
+            if not isinstance(raw_items, list):
+                raw_items = []
+            with user_store.connection_scope() as conn:
+                _upsert_github_issue_batch(raw_items, conn=conn)
+                conn.commit()
+            if len(raw_items) < page_size:
+                break
+        _issue_sync_last_reconcile_at = _time.time()
+        return True
+    finally:
+        _issue_sync_reconcile_lock.release()
+
+
+def _sync_issue_comments_for_thread(thread: dict) -> bool:
+    issue_id = str((thread or {}).get("id") or "").strip()
+    try:
+        github_issue_number = int((thread or {}).get("github_issue_number") or 0)
+    except (TypeError, ValueError):
+        github_issue_number = 0
+    if not issue_id or github_issue_number <= 0:
+        return False
+
+    page_size = 100
+    normalized_comments: list[dict] = []
+    exhausted = False
+    for page in range(1, ISSUE_COMMENT_SYNC_MAX_PAGES_PER_THREAD + 1):
+        raw_items = _github_api_request(
+            "GET",
+            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{github_issue_number}/comments",
+            params={
+                "page": page,
+                "per_page": page_size,
+                "sort": "created",
+                "direction": "asc",
+            },
+        )
+        if not isinstance(raw_items, list):
+            raw_items = []
+        for raw_comment in raw_items:
+            if isinstance(raw_comment, dict):
+                normalized_comments.append(_normalize_comment(raw_comment))
+        if len(raw_items) < page_size:
+            exhausted = True
+            break
+
+    with user_store.connection_scope() as conn:
+        for comment in normalized_comments:
+            user_store.upsert_issue_comment_from_github(issue_id, comment, conn=conn)
+        user_store.mark_issue_comments_loaded(issue_id, loaded=exhausted, conn=conn)
+        conn.commit()
+
+    if not exhausted:
+        app.logger.warning(
+            "Issue comment sync hit page cap issue_id=%s github_issue_number=%s max_pages=%s",
+            issue_id,
+            github_issue_number,
+            ISSUE_COMMENT_SYNC_MAX_PAGES_PER_THREAD,
+        )
+    return True
+
+
+def _sync_recent_github_issue_comments(
+    *,
+    force: bool = False,
+    exhaustive: bool = False,
+    max_threads: int | None = None,
+    strict: bool = False,
+) -> int:
+    global _issue_comment_sync_last_reconcile_at
+    if (
+        not force
+        and (_time.time() - float(_issue_comment_sync_last_reconcile_at or 0.0)) < ISSUE_COMMENT_RECONCILE_INTERVAL_SEC
+    ):
+        return 0
+    if not _issue_comment_sync_reconcile_lock.acquire(blocking=False):
+        return 0
+    try:
+        now = _time.time()
+        if (
+            not force
+            and (now - float(_issue_comment_sync_last_reconcile_at or 0.0)) < ISSUE_COMMENT_RECONCILE_INTERVAL_SEC
+        ):
+            return 0
+        try:
+            _ensure_github_issue_config()
+        except GitHubConfigError:
+            return 0
+
+        remaining = max(0, int(max_threads)) if max_threads is not None else None
+        synced_threads = 0
+        while True:
+            batch_limit = ISSUE_COMMENT_RECONCILE_BATCH_SIZE
+            if remaining is not None:
+                if remaining <= 0:
+                    break
+                batch_limit = max(1, min(batch_limit, remaining))
+            with user_store.connection_scope() as conn:
+                targets = user_store.list_issue_threads_requiring_comment_sync(
+                    limit=batch_limit,
+                    conn=conn,
+                )
+            if not targets:
+                break
+            batch_success = 0
+            for thread in targets:
+                try:
+                    if _sync_issue_comments_for_thread(thread):
+                        batch_success += 1
+                except Exception:
+                    if strict:
+                        raise
+                    app.logger.exception(
+                        "Issue comment sync failed issue_id=%s github_issue_number=%s",
+                        str((thread or {}).get("id") or "").strip(),
+                        str((thread or {}).get("github_issue_number") or "").strip(),
+                    )
+            synced_threads += batch_success
+            if remaining is not None:
+                remaining -= len(targets)
+            if not exhaustive:
+                break
+            if batch_success <= 0:
+                break
+            if len(targets) < batch_limit:
+                break
+
+        _issue_comment_sync_last_reconcile_at = _time.time()
+        return int(synced_threads)
+    finally:
+        _issue_comment_sync_reconcile_lock.release()
+
+
+def _load_issue_list_local_first(
+    *,
+    kind: str,
+    state: str,
+    labels: list[str],
+    q: str,
+    page: int,
+    per_page: int,
+    conn: Any | None = None,
+) -> dict:
+    return user_store.list_issue_threads(
+        kind=kind,
+        state=state,
+        labels=labels,
+        q=q,
+        page=page,
+        per_page=per_page,
+        conn=conn,
+    )
+
+
+def _load_issue_detail_local_first(issue_ref: str, *, conn: Any | None = None) -> dict | None:
+    normalized_ref = str(issue_ref or "").strip()
+    if not normalized_ref:
+        return None
+    return user_store.get_issue_detail(normalized_ref, conn=conn)
+
+
+def _load_notice_head_rows_local_first(limit: int = 100, *, conn: Any | None = None) -> list[dict]:
+    return user_store.list_notice_head_rows(limit=max(1, min(int(limit or 100), 500)), conn=conn)
+
+
+def _build_issue_list_labels(
+    labels: list[str] | None,
+    *,
+    author_public_user_id: str = "",
+    author_display_name: str = "",
+) -> list[str]:
+    merged_labels: list[str] = []
+    for label in labels or []:
+        normalized_label = str(label or "").strip()
+        if normalized_label and normalized_label not in merged_labels:
+            merged_labels.append(normalized_label)
+    if author_public_user_id:
+        uid_label = f"user-id:{_compact_meta_label_part(author_public_user_id)}"
+        if uid_label and uid_label not in merged_labels:
+            merged_labels.append(uid_label)
+    nickname_label = _build_issue_nickname_label(author_display_name)
+    if nickname_label and nickname_label not in merged_labels:
+        merged_labels.append(nickname_label)
+    return merged_labels
+
+
+def _process_issue_sync_task_once() -> bool:
+    task = user_store.claim_due_issue_sync_task()
+    if not task:
+        return False
+    try:
+        _ensure_github_issue_config()
+        if task.get("entity_type") == "issue_thread" and task.get("operation") == "create":
+            thread = user_store.get_issue_thread_by_id(str(task.get("entity_id") or ""))
+            if thread is None:
+                user_store.complete_issue_sync_task(int(task["id"]))
+                return True
+            if int(thread.get("github_issue_number") or 0) > 0:
+                user_store.complete_issue_sync_task(int(task["id"]))
+                return True
+            labels = _build_issue_list_labels(
+                thread.get("labels") or [],
+                author_public_user_id=str(thread.get("author_user_id") or ""),
+                author_display_name=str(thread.get("display_name") or ""),
+            )
+            github_body = _compose_issue_body(
+                str(thread.get("body") or ""),
+                {"local-issue-id": str(thread.get("id") or "")},
+            )
+            github_payload: dict[str, Any] = {
+                "title": str(thread.get("title") or ""),
+                "body": github_body,
+            }
+            if labels:
+                github_payload["labels"] = labels
+            created = _github_api_request(
+                "POST",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
+                json_payload=github_payload,
+            )
+            normalized = _normalize_github_issue_batch([created] if isinstance(created, dict) else [])
+            if normalized:
+                with user_store.connection_scope() as conn:
+                    user_store.upsert_issue_thread_from_github(normalized[0], conn=conn, comments_loaded=True)
+                    conn.commit()
+            user_store.complete_issue_sync_task(int(task["id"]))
+            return True
+
+        if task.get("entity_type") == "issue_comment" and task.get("operation") == "create":
+            comment = user_store.get_issue_comment_by_id(str(task.get("entity_id") or ""))
+            if comment is None:
+                user_store.complete_issue_sync_task(int(task["id"]))
+                return True
+            if int(comment.get("github_comment_id") or 0) > 0:
+                user_store.complete_issue_sync_task(int(task["id"]))
+                return True
+            issue_id = str(task.get("issue_id") or "") or str(task.get("payload", {}).get("issue_id") or "")
+            thread = user_store.get_issue_thread_by_id(issue_id)
+            if thread is None:
+                raise ValueError("comment_issue_not_found")
+            github_issue_number = int(thread.get("github_issue_number") or 0)
+            if github_issue_number <= 0:
+                raise ValueError("github_issue_not_ready")
+            comment_meta: dict[str, str] = {"local-comment-id": str(comment.get("id") or "")}
+            comment_user_id = str(comment.get("user_id") or "").strip()
+            comment_display_name = str(comment.get("display_name") or "").strip()
+            if comment_user_id:
+                comment_meta["user-id"] = comment_user_id
+            if comment_display_name and not comment.get("is_repo_owner"):
+                comment_meta["nickname"] = comment_display_name
+            created = _github_api_request(
+                "POST",
+                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{github_issue_number}/comments",
+                json_payload={"body": _compose_issue_body(str(comment.get("body") or ""), comment_meta)},
+            )
+            if isinstance(created, dict):
+                user_store.upsert_issue_comment_from_github(issue_id, _normalize_comment(created))
+            user_store.complete_issue_sync_task(int(task["id"]))
+            return True
+
+        user_store.complete_issue_sync_task(int(task["id"]))
+        return True
+    except ValueError as exc:
+        code = str(exc)
+        retry_after = 15 if code == "github_issue_not_ready" else 60
+        if task.get("entity_type") == "issue_thread":
+            user_store.mark_issue_thread_sync_failed(str(task.get("entity_id") or ""), code)
+        elif task.get("entity_type") == "issue_comment":
+            user_store.mark_issue_comment_sync_failed(str(task.get("entity_id") or ""), code)
+        user_store.fail_issue_sync_task(int(task["id"]), code, retry_after_sec=retry_after)
+        return True
+    except (GitHubConfigError, GitHubAPIError) as exc:
+        if task.get("entity_type") == "issue_thread":
+            user_store.mark_issue_thread_sync_failed(str(task.get("entity_id") or ""), str(exc))
+        elif task.get("entity_type") == "issue_comment":
+            user_store.mark_issue_comment_sync_failed(str(task.get("entity_id") or ""), str(exc))
+        attempts = max(1, int(task.get("attempts") or 1))
+        retry_after = min(60 * 30, max(15, attempts * 15))
+        user_store.fail_issue_sync_task(int(task["id"]), str(exc), retry_after_sec=retry_after)
+        return True
+    except Exception as exc:
+        if task.get("entity_type") == "issue_thread":
+            user_store.mark_issue_thread_sync_failed(str(task.get("entity_id") or ""), str(exc))
+        elif task.get("entity_type") == "issue_comment":
+            user_store.mark_issue_comment_sync_failed(str(task.get("entity_id") or ""), str(exc))
+        attempts = max(1, int(task.get("attempts") or 1))
+        retry_after = min(60 * 30, max(15, attempts * 15))
+        user_store.fail_issue_sync_task(int(task["id"]), str(exc), retry_after_sec=retry_after)
+        app.logger.exception("Issue sync task failed")
+        return True
+
+
+def _issue_sync_loop() -> None:
+    while True:
+        sleep_for = float(ISSUE_SYNC_LOOP_INTERVAL_SEC)
+        try:
+            processed = _run_exclusive_background_task(
+                "issue-sync",
+                _process_issue_sync_task_once,
+                stale_after_sec=max(30, ISSUE_SYNC_LOOP_INTERVAL_SEC * 4),
+            )
+            if processed:
+                sleep_for = 1.0
+            elif (_time.time() - float(_issue_sync_last_reconcile_at or 0.0)) >= ISSUE_RECONCILE_INTERVAL_SEC:
+                _run_exclusive_background_task(
+                    "issue-reconcile",
+                    lambda: _sync_recent_github_issues(max_pages=ISSUE_RECONCILE_PAGES, force=True),
+                    stale_after_sec=max(60, ISSUE_RECONCILE_INTERVAL_SEC * 2),
+                )
+            elif (
+                (_time.time() - float(_issue_comment_sync_last_reconcile_at or 0.0))
+                >= ISSUE_COMMENT_RECONCILE_INTERVAL_SEC
+            ):
+                _run_exclusive_background_task(
+                    "issue-comment-reconcile",
+                    lambda: _sync_recent_github_issue_comments(force=True, strict=False),
+                    stale_after_sec=max(60, ISSUE_COMMENT_RECONCILE_INTERVAL_SEC * 2),
+                )
+        except Exception:
+            app.logger.exception("Issue sync loop failed")
+        _time.sleep(sleep_for)
 
 
 def _verify_github_webhook_signature(payload: bytes, received_signature: str | None) -> bool:
@@ -3441,6 +4010,7 @@ def _start_auth_background_workers() -> None:
         threading.Thread(target=_auth_metrics_loop, daemon=True, name="auth-metrics-loop").start()
         threading.Thread(target=_auth_cleanup_loop, daemon=True, name="auth-cleanup-loop").start()
         threading.Thread(target=_github_cleanup_loop, daemon=True, name="github-cleanup-loop").start()
+        threading.Thread(target=_issue_sync_loop, daemon=True, name="issue-sync-loop").start()
 
 
 def _record_db_generation_metrics(generation: int) -> None:
@@ -3504,6 +4074,7 @@ def _start_runtime_db_sync_worker() -> RuntimeDbSyncWorker | None:
 
 
 def _run_startup_hooks() -> None:
+    global _initial_issue_sync_ok, _initial_issue_sync_error
     worker = _start_runtime_db_sync_worker()
     if worker is not None:
         worker.sync_once(on_updated=None)
@@ -3522,6 +4093,17 @@ def _run_startup_hooks() -> None:
         generation = init_db()
     _record_db_generation_metrics(generation)
     user_store.init_db()
+    try:
+        _sync_recent_github_issues(max_pages=ISSUE_RECONCILE_PAGES, force=True)
+        _sync_recent_github_issue_comments(force=True, exhaustive=True, strict=True)
+        _initial_issue_sync_ok = True
+        _initial_issue_sync_error = ""
+    except Exception as exc:
+        _initial_issue_sync_ok = False
+        _initial_issue_sync_error = str(exc)
+        app.logger.exception("Initial GitHub issue/comment sync on startup failed")
+    finally:
+        _initial_issue_sync_done.set()
     _start_history_writer()
     if APP_REFRESH_AUTH_METRICS_ON_STARTUP:
         try:
@@ -5046,32 +5628,12 @@ def api_shuttle_walk_path():
 @app.route("/api/issues", methods=["GET", "POST"])
 def api_issues():
     if request.method == "POST":
-        try:
-            _ensure_github_issue_config()
-        except GitHubConfigError as exc:
-            return jsonify({"error": str(exc)}), 503
-
         payload = request.get_json(silent=True) or {}
         title = str(payload.get("title", "")).strip()
         body = str(payload.get("body", "")).strip()
         labels = _parse_issue_labels_input(payload.get("labels"))
         meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
         meta = dict(meta or {})
-        auth_user, _ = _get_current_user(with_touch=False)
-        anon_nickname = ""
-
-        if auth_user is not None:
-            meta.pop("user-id", None)
-            meta["nickname"] = str(auth_user.get("nickname") or "")
-            meta["user-id"] = str(auth_user.get("public_user_id") or "")
-        else:
-            # 비로그인 사용자는 user-id 라벨을 임의 주입할 수 없다.
-            meta.pop("user-id", None)
-            anon_nickname = _normalize_issue_label_nickname(meta.get("nickname"))
-            if anon_nickname:
-                meta["nickname"] = anon_nickname
-            else:
-                meta.pop("nickname", None)
 
         if not title:
             return jsonify({"error": "title은 필수입니다."}), 400
@@ -5086,305 +5648,207 @@ def api_issues():
             response = make_response(jsonify({"error": limit_message}), status_code)
             return _attach_issue_cookie_if_needed(response, cookie_id, should_set_cookie)
 
-        label_meta = dict(meta or {})
-        label_meta.pop("nickname", None)
-        merged_labels = []
-        for label in labels + _labels_from_meta(label_meta):
-            if label not in merged_labels:
-                merged_labels.append(label)
-        if auth_user is not None:
-            uid_label = f"user-id:{_compact_meta_label_part(auth_user.get('public_user_id'))}"
-            if uid_label and uid_label not in merged_labels:
-                merged_labels.append(uid_label)
-        elif anon_nickname:
-            nickname_label = _build_issue_nickname_label(anon_nickname)
-            if nickname_label and nickname_label not in merged_labels:
-                merged_labels.append(nickname_label)
-
-        issue_payload = {
-            "title": title,
-            "body": body,
-        }
-        if merged_labels:
-            issue_payload["labels"] = merged_labels
-
-        try:
-            created = _github_api_request(
-                "POST",
-                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                json_payload=issue_payload,
+        anon_nickname = _normalize_issue_label_nickname(meta.get("nickname"))
+        with user_store.connection_scope() as conn:
+            auth_user, _ = _get_current_user(with_touch=False, conn=conn)
+            if auth_user is not None:
+                author_display_name = str(auth_user.get("nickname") or "").strip()
+                author_public_user_id = str(auth_user.get("public_user_id") or "").strip()
+                author_visitor_id = ""
+            else:
+                author_public_user_id = ""
+                author_display_name = anon_nickname
+                author_visitor_id = _ensure_history_visitor_id()
+            merged_labels = _build_issue_list_labels(
+                labels,
+                author_public_user_id=author_public_user_id,
+                author_display_name=author_display_name,
             )
-        except GitHubAPIError as exc:
-            response = make_response(jsonify({"error": str(exc)}), exc.status_code)
-            return _attach_issue_cookie_if_needed(response, cookie_id, should_set_cookie)
+            created = user_store.create_local_issue_thread(
+                title=title,
+                body=body,
+                labels=merged_labels,
+                author_login="",
+                author_public_user_id=author_public_user_id,
+                author_visitor_id=author_visitor_id,
+                author_display_name=author_display_name,
+                sync_status="pending_create",
+                conn=conn,
+            )
+            user_store.enqueue_issue_sync_task(
+                entity_type="issue_thread",
+                entity_id=str(created.get("id") or ""),
+                issue_id=str(created.get("id") or ""),
+                operation="create",
+                payload={},
+                conn=conn,
+            )
+            conn.commit()
 
-        _invalidate_issue_cache()
-        normalized = _normalize_issue(created)
-        normalized["like_count"] = 0
-        normalized["liked_by_me"] = False
+        created["like_count"] = 0
+        created["liked_by_me"] = False
         response = make_response(
             jsonify(
                 {
-                    "issue": normalized,
-                    "issueNumber": normalized.get("number"),
-                    "url": normalized.get("url"),
-                    "state": normalized.get("state"),
-                    "createdAt": normalized.get("created_at"),
+                    "issue": created,
+                    "issueId": created.get("id"),
+                    "issueNumber": created.get("github_issue_number"),
+                    "url": created.get("url"),
+                    "state": created.get("state"),
+                    "createdAt": created.get("created_at"),
                 }
             ),
             201,
         )
-        return _attach_issue_cookie_if_needed(response, cookie_id, should_set_cookie)
+        response = _attach_issue_cookie_if_needed(response, cookie_id, should_set_cookie)
+        return _attach_issue_viewer_cookie_if_needed(response, auth_user)
 
     try:
-        _ensure_github_issue_config()
-    except GitHubConfigError as exc:
-        return jsonify({"error": str(exc)}), 503
-
-    _sync_issue_cache_version()
-
-    state = request.args.get("state", default="all", type=str).strip().lower()
-    if state not in {"open", "closed", "all"}:
-        return jsonify({"error": "state는 open|closed|all만 허용됩니다."}), 400
-
-    kind = request.args.get("kind", default="all", type=str).strip().lower()
-    if kind not in {"all", "issue", "notice"}:
+        kind, state, labels, q, page, per_page = _normalize_issue_filters()
+    except ValueError as exc:
+        code = str(exc)
+        if code == "state":
+            return jsonify({"error": "state는 open|closed|all만 허용됩니다."}), 400
         return jsonify({"error": "kind는 all|issue|notice만 허용됩니다."}), 400
 
-    labels_raw = request.args.get("labels", default="", type=str)
-    labels = [s.strip() for s in labels_raw.split(",") if s.strip()]
-    q = request.args.get("q", default="", type=str).strip()
-    page = max(1, request.args.get("page", default=1, type=int) or 1)
-    per_page = request.args.get("per_page", default=10, type=int) or 10
-    per_page = max(1, min(per_page, 100))
+    with user_store.connection_scope() as conn:
+        auth_user, viewer_user_id, viewer_visitor_id = _get_issue_viewer_identity(conn=conn)
+        result = _load_issue_list_local_first(
+            kind=kind,
+            state=state,
+            labels=labels,
+            q=q,
+            page=page,
+            per_page=per_page,
+            conn=conn,
+        )
+        issue_ids = [str((issue or {}).get("id") or "").strip() for issue in result.get("issues") or []]
+        like_state_map = user_store.get_issue_like_state(
+            issue_ids,
+            user_id=viewer_user_id,
+            visitor_id=viewer_visitor_id,
+            conn=conn,
+        )
+        enriched_issues = _with_issue_delete_capability(
+            _with_issue_like_state(list(result.get("issues") or []), like_state_map=like_state_map),
+            auth_user=auth_user,
+            viewer_visitor_id=viewer_visitor_id,
+            conn=conn,
+        )
+    response = make_response(
+        jsonify(
+            {
+                "issues": enriched_issues,
+                "pagination": dict(result.get("pagination") or {}),
+            }
+        )
+    )
+    return _attach_issue_viewer_cookie_if_needed(response, auth_user)
 
-    cache_key = f"issues:v6:list:{kind}:{state}:{','.join(labels)}:{q}:{page}:{per_page}"
-    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
-    if not is_fresh_cache:
-        owner = (GITHUB_REPO_OWNER or "").strip()
-        q_lower = q.casefold()
-        list_page_size = min(100, max(1, per_page + 1))
-        try:
-            if kind == "notice" and not owner:
-                raw_items: list[dict] = []
-                has_next = False
-            else:
-                list_params: dict[str, object] = {
-                    "state": state,
-                    "page": page,
-                    "per_page": list_page_size,
-                    "sort": "created",
-                    "direction": "desc",
-                }
-                if labels:
-                    list_params["labels"] = ",".join(labels)
-                if kind == "notice" and owner:
-                    list_params["creator"] = owner
-                raw_items = _github_api_request(
-                    "GET",
-                    f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues",
-                    params=list_params,
+
+@app.route("/api/issues/<issue_ref>", methods=["GET", "DELETE"])
+def api_issue_detail(issue_ref: str):
+    if request.method == "DELETE":
+        with user_store.connection_scope() as conn:
+            auth_user, _, viewer_visitor_id = _get_issue_viewer_identity(conn=conn)
+            thread = user_store.resolve_issue_thread_ref(issue_ref, conn=conn)
+            if thread is None:
+                return jsonify({"error": "이슈를 찾을 수 없습니다."}), 404
+            issue_id = str(thread.get("id") or "").strip()
+            try:
+                user_store.soft_delete_issue_thread(
+                    issue_id,
+                    author_public_user_id=str((auth_user or {}).get("public_user_id") or "").strip(),
+                    visitor_id=viewer_visitor_id,
+                    conn=conn,
                 )
-                if not isinstance(raw_items, list):
-                    raw_items = []
-                has_next = len(raw_items) > per_page
-                if has_next:
-                    raw_items = raw_items[:per_page]
-        except GitHubAPIError as exc:
-            if cached is None:
-                return jsonify({"error": str(exc)}), exc.status_code
-            app.logger.warning("Falling back to stale issue cache for %s due to GitHub error: %s", cache_key, exc)
-        else:
-            nickname_by_public_user_id: dict[str, str] = {}
-            try:
-                author_user_ids = _collect_issue_author_user_ids(raw_items)
-                if author_user_ids:
-                    nickname_by_public_user_id = user_store.get_active_nickname_map_by_public_user_ids(author_user_ids)
-            except Exception:
-                app.logger.exception("Failed to resolve issue author nicknames")
+                conn.commit()
+            except ValueError as exc:
+                code = str(exc)
+                if code in {"invalid_issue_id", "issue_not_found"}:
+                    return jsonify({"error": "이슈를 찾을 수 없습니다."}), 404
+                if code == "delete_actor_required":
+                    return jsonify({"error": "삭제 사용자 식별에 실패했습니다."}), 400
+                if code == "notice_delete_forbidden":
+                    return jsonify({"error": "공지는 삭제할 수 없습니다."}), 403
+                if code == "delete_not_allowed":
+                    return jsonify({"error": "삭제 권한이 없습니다."}), 403
+                if code == "already_deleted":
+                    return jsonify({"error": "이미 삭제된 이슈입니다."}), 409
+                return jsonify({"error": "이슈 삭제에 실패했습니다."}), 400
 
-            normalized_issues: list[dict] = []
-            for item in raw_items:
-                if item.get("pull_request"):
-                    continue
-                normalized = _normalize_issue(item, nickname_by_public_user_id=nickname_by_public_user_id)
-                if kind == "issue" and normalized.get("is_notice"):
-                    continue
-                if kind == "notice" and not normalized.get("is_notice"):
-                    continue
-                if kind == "all" and state in {"open", "closed"} and normalized.get("is_notice"):
-                    # Backward compatibility: 기존 open/closed 조회에서는 공지를 제외했다.
-                    continue
-                if q_lower:
-                    haystack = (
-                        f"{normalized.get('title') or ''}\n"
-                        f"{normalized.get('body') or ''}\n"
-                        f"{normalized.get('display_name') or ''}\n"
-                        f"{normalized.get('user') or ''}"
-                    ).casefold()
-                    if q_lower not in haystack:
-                        continue
-                normalized_issues.append(normalized)
+        response = make_response(jsonify({"ok": True, "issue_id": issue_id}))
+        return _attach_issue_viewer_cookie_if_needed(response, auth_user)
 
-            cached = {
-                "issues": normalized_issues,
-                "pagination": {
-                    "page": page,
-                    "per_page": per_page,
-                    "has_prev": page > 1,
-                    "has_next": bool(has_next),
-                    "total_count": None,
-                },
+    with user_store.connection_scope() as conn:
+        auth_user, viewer_user_id, viewer_visitor_id = _get_issue_viewer_identity(conn=conn)
+        detail = _load_issue_detail_local_first(issue_ref, conn=conn)
+        if detail is None:
+            return jsonify({"error": "이슈를 찾을 수 없습니다."}), 404
+        issue = dict(detail.get("issue") or {})
+        like_state_map = user_store.get_issue_like_state(
+            [str(issue.get("id") or "").strip()],
+            user_id=viewer_user_id,
+            visitor_id=viewer_visitor_id,
+            conn=conn,
+        )
+        issue_with_like = _with_issue_like_state([issue], like_state_map=like_state_map)
+        issue_with_permission = _with_issue_delete_capability(
+            issue_with_like,
+            auth_user=auth_user,
+            viewer_visitor_id=viewer_visitor_id,
+            conn=conn,
+        )
+        comment_items = _with_issue_comment_delete_capability(
+            list(detail.get("comments") or []),
+            auth_user=auth_user,
+            viewer_visitor_id=viewer_visitor_id,
+            conn=conn,
+        )
+    response = make_response(
+        jsonify(
+            {
+                "issue": issue_with_permission[0] if issue_with_permission else issue,
+                "comments": comment_items,
             }
-            _issue_cache_set(cache_key, cached)
-
-    auth_user, _ = _get_current_user(with_touch=False)
-    if auth_user is not None:
-        viewer_user_id = int(auth_user["id"])
-        viewer_visitor_id = None
-    else:
-        viewer_user_id = None
-        viewer_visitor_id = _ensure_history_visitor_id()
-
-    cached_issues = list(cached.get("issues") or [])
-    issue_numbers: list[int] = []
-    for issue in cached_issues:
-        try:
-            issue_number = int((issue or {}).get("number") or 0)
-        except (TypeError, ValueError):
-            issue_number = 0
-        if issue_number > 0:
-            issue_numbers.append(issue_number)
-    like_state_map = user_store.get_issue_like_state(
-        issue_numbers,
-        user_id=viewer_user_id,
-        visitor_id=viewer_visitor_id,
+        )
     )
-
-    response_payload = {
-        "issues": _with_issue_like_state(cached_issues, like_state_map=like_state_map),
-        "pagination": dict(cached.get("pagination") or {}),
-    }
-    response = make_response(jsonify(response_payload))
-    if auth_user is None:
-        return _attach_history_visitor_cookie_if_needed(response)
-    return response
-
-
-@app.route("/api/issues/<int:issue_number>")
-def api_issue_detail(issue_number: int):
-    try:
-        _ensure_github_issue_config()
-    except GitHubConfigError as exc:
-        return jsonify({"error": str(exc)}), 503
-
-    _sync_issue_cache_version()
-
-    cache_key = f"issues:detail:{issue_number}"
-    cached, is_fresh_cache = _issue_cache_get_allow_stale(cache_key)
-    if not is_fresh_cache:
-        try:
-            issue = _github_api_request(
-                "GET",
-                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}",
-            )
-            comments = _github_api_request(
-                "GET",
-                f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
-                params={"page": 1, "per_page": 100, "sort": "created", "direction": "asc"},
-            )
-        except GitHubAPIError as exc:
-            if cached is None:
-                return jsonify({"error": str(exc)}), exc.status_code
-            app.logger.warning("Falling back to stale issue detail cache for %s due to GitHub error: %s", cache_key, exc)
-        else:
-            if not isinstance(comments, list):
-                comments = []
-
-            issue_nickname_map: dict[str, str] = {}
-            try:
-                issue_author_user_ids = _collect_issue_author_user_ids([issue])
-                if issue_author_user_ids:
-                    issue_nickname_map = user_store.get_active_nickname_map_by_public_user_ids(issue_author_user_ids)
-            except Exception:
-                app.logger.exception("Failed to resolve issue author nickname in detail")
-
-            cached = {
-                "issue": _normalize_issue(issue, nickname_by_public_user_id=issue_nickname_map),
-                "comments": [_normalize_comment(c) for c in comments],
-            }
-            _issue_cache_set(cache_key, cached)
-
-    auth_user, _ = _get_current_user(with_touch=False)
-    if auth_user is not None:
-        viewer_user_id = int(auth_user["id"])
-        viewer_visitor_id = None
-    else:
-        viewer_user_id = None
-        viewer_visitor_id = _ensure_history_visitor_id()
-
-    cached_issue = dict(cached.get("issue") or {})
-    try:
-        normalized_issue_number = int(cached_issue.get("number") or issue_number)
-    except (TypeError, ValueError):
-        normalized_issue_number = int(issue_number)
-    like_state_map = user_store.get_issue_like_state(
-        [normalized_issue_number],
-        user_id=viewer_user_id,
-        visitor_id=viewer_visitor_id,
-    )
-    issue_with_like = _with_issue_like_state([cached_issue], like_state_map=like_state_map)
-    response_payload = {
-        "issue": issue_with_like[0] if issue_with_like else cached_issue,
-        "comments": list(cached.get("comments") or []),
-    }
-    response = make_response(jsonify(response_payload))
-    if auth_user is None:
-        return _attach_history_visitor_cookie_if_needed(response)
-    return response
+    return _attach_issue_viewer_cookie_if_needed(response, auth_user)
 
 
 @app.route("/api/notices/hint")
 def api_notice_hint():
-    try:
-        _ensure_github_issue_config()
-    except GitHubConfigError as exc:
-        return jsonify({"error": str(exc)}), 503
-
-    try:
-        notices = _load_notice_head_cache(per_page=100, stale_while_revalidate=True)
-    except GitHubAPIError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
-
-    auth_user, user_id, visitor_id = _resolve_notice_actor()
-    try:
-        last_ack_notice_number = int(
-            user_store.get_notice_ack_number(user_id=user_id, visitor_id=visitor_id) or 0
-        )
-    except Exception:
-        app.logger.exception("Failed to read notice ack state")
-        last_ack_notice_number = 0
-
-    latest_notice_number = 0
-    latest_notice_title = ""
-    unseen_count = 0
-    latest_unseen_notice_number = 0
-    latest_unseen_notice_title = ""
-    for notice in notices:
+    with user_store.connection_scope() as conn:
+        notices = _load_notice_head_rows_local_first(limit=100, conn=conn)
+        auth_user, user_id, visitor_id = _resolve_notice_actor(conn=conn)
         try:
-            notice_number = int(notice.get("number") or 0)
-        except (TypeError, ValueError):
-            continue
-        if notice_number <= 0:
-            continue
-        if latest_notice_number <= 0:
-            latest_notice_number = notice_number
-            latest_notice_title = str(notice.get("title") or "").strip()
-        if notice_number > last_ack_notice_number:
-            unseen_count += 1
-            if latest_unseen_notice_number <= 0:
-                latest_unseen_notice_number = notice_number
-                latest_unseen_notice_title = str(notice.get("title") or "").strip()
+            last_ack_notice_number = int(
+                user_store.get_notice_ack_number(user_id=user_id, visitor_id=visitor_id, conn=conn) or 0
+            )
+        except Exception:
+            app.logger.exception("Failed to read notice ack state")
+            last_ack_notice_number = 0
+
+        latest_notice_number = 0
+        latest_notice_title = ""
+        unseen_count = 0
+        latest_unseen_notice_number = 0
+        latest_unseen_notice_title = ""
+        for notice in notices:
+            try:
+                notice_number = int(notice.get("number") or 0)
+            except (TypeError, ValueError):
+                continue
+            if notice_number <= 0:
+                continue
+            if latest_notice_number <= 0:
+                latest_notice_number = notice_number
+                latest_notice_title = str(notice.get("title") or "").strip()
+            if notice_number > last_ack_notice_number:
+                unseen_count += 1
+                if latest_unseen_notice_number <= 0:
+                    latest_unseen_notice_number = notice_number
+                    latest_unseen_notice_title = str(notice.get("title") or "").strip()
 
     response = make_response(
         jsonify(
@@ -5405,7 +5869,6 @@ def api_notice_hint():
 
 @app.route("/api/notices/ack", methods=["POST"])
 def api_notice_ack():
-    auth_user, user_id, visitor_id = _resolve_notice_actor()
     payload = request.get_json(silent=True) or {}
     raw_notice_number = payload.get("notice_number")
     ack_notice_number = None
@@ -5415,133 +5878,174 @@ def api_notice_ack():
         except (TypeError, ValueError):
             return jsonify({"error": "notice_number는 0 이상의 정수여야 합니다."}), 400
 
-    if ack_notice_number is None:
-        try:
-            _ensure_github_issue_config()
-            notices = _load_notice_head_cache(per_page=100)
-        except GitHubConfigError:
-            notices = []
-        except GitHubAPIError as exc:
-            return jsonify({"error": str(exc)}), exc.status_code
-        if notices:
-            try:
-                ack_notice_number = max(0, int(notices[0].get("number") or 0))
-            except (TypeError, ValueError):
+    with user_store.connection_scope() as conn:
+        auth_user, user_id, visitor_id = _resolve_notice_actor(conn=conn)
+        if ack_notice_number is None:
+            notices = _load_notice_head_rows_local_first(limit=100, conn=conn)
+            if notices:
+                try:
+                    ack_notice_number = max(0, int(notices[0].get("number") or 0))
+                except (TypeError, ValueError):
+                    ack_notice_number = 0
+            else:
                 ack_notice_number = 0
-        else:
-            ack_notice_number = 0
 
-    try:
-        saved_ack_number = int(
-            user_store.ack_notice_number(
-                int(ack_notice_number),
-                user_id=user_id,
-                visitor_id=visitor_id,
+        try:
+            saved_ack_number = int(
+                user_store.ack_notice_number(
+                    int(ack_notice_number),
+                    user_id=user_id,
+                    visitor_id=visitor_id,
+                    conn=conn,
+                )
             )
-        )
-    except ValueError as exc:
-        if str(exc) == "ack_actor_required":
-            return jsonify({"error": "공지 확인 사용자 식별에 실패했습니다."}), 400
-        return jsonify({"error": "공지 확인 상태 저장에 실패했습니다."}), 400
+            conn.commit()
+        except ValueError as exc:
+            if str(exc) == "ack_actor_required":
+                return jsonify({"error": "공지 확인 사용자 식별에 실패했습니다."}), 400
+            return jsonify({"error": "공지 확인 상태 저장에 실패했습니다."}), 400
 
-    response = make_response(
-        jsonify(
-            {
-                "ok": True,
-                "ack_notice_number": int(saved_ack_number),
-            }
-        )
-    )
+    response = make_response(jsonify({"ok": True, "ack_notice_number": int(saved_ack_number)}))
     if auth_user is None:
         return _attach_history_visitor_cookie_if_needed(response)
     return response
 
 
-@app.route("/api/issues/<int:issue_number>/comments", methods=["POST"])
-def api_issue_comment_create(issue_number: int):
-    try:
-        _ensure_github_issue_config()
-    except GitHubConfigError as exc:
-        return jsonify({"error": str(exc)}), 503
-
+@app.route("/api/issues/<issue_ref>/comments", methods=["POST"])
+def api_issue_comment_create(issue_ref: str):
     payload = request.get_json(silent=True) or {}
     body = str(payload.get("body", "")).strip()
     meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
     meta = dict(meta or {})
-    auth_user, _ = _get_current_user(with_touch=False)
-
-    if auth_user is not None:
-        meta["nickname"] = str(auth_user.get("nickname") or "").strip()
-        meta["user-id"] = str(auth_user.get("public_user_id") or "").strip()
-    else:
-        meta.pop("user-id", None)
-        meta_nickname = str(meta.get("nickname") or "").strip()
-        if meta_nickname:
-            meta["nickname"] = meta_nickname
-        else:
-            meta.pop("nickname", None)
-
-    nickname = str(meta.get("nickname") or "").strip()
-    if nickname:
-        meta["nickname"] = nickname[:40]
-    else:
-        meta.pop("nickname", None)
 
     if not body:
         return jsonify({"error": "댓글 내용(body)은 필수입니다."}), 400
 
-    comment_body = _compose_issue_body(body, meta if meta else None)
-
-    try:
-        comment = _github_api_request(
-            "POST",
-            f"/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/issues/{issue_number}/comments",
-            json_payload={"body": comment_body},
+    with user_store.connection_scope() as conn:
+        auth_user, _ = _get_current_user(with_touch=False, conn=conn)
+        if auth_user is not None:
+            author_display_name = str(auth_user.get("nickname") or "").strip()
+            author_public_user_id = str(auth_user.get("public_user_id") or "").strip()
+            author_visitor_id = ""
+        else:
+            author_display_name = _normalize_issue_label_nickname(meta.get("nickname"))
+            author_public_user_id = ""
+            author_visitor_id = _ensure_history_visitor_id()
+        detail = _load_issue_detail_local_first(issue_ref, conn=conn)
+        thread = dict((detail or {}).get("issue") or {})
+        issue_id = str(thread.get("id") or "").strip()
+        if not issue_id:
+            return jsonify({"error": "이슈를 찾을 수 없습니다."}), 404
+        comment = user_store.create_local_issue_comment(
+            issue_id,
+            body=body,
+            author_login="",
+            author_public_user_id=author_public_user_id,
+            author_visitor_id=author_visitor_id,
+            author_display_name=author_display_name,
+            is_repo_owner=False,
+            is_bot=False,
+            sync_status="pending_create",
+            conn=conn,
         )
-    except GitHubAPIError as exc:
-        return jsonify({"error": str(exc)}), exc.status_code
-
-    _invalidate_issue_cache()
-    return jsonify({"comment": _normalize_comment(comment)}), 201
-
-
-@app.route("/api/issues/<int:issue_number>/like", methods=["POST"])
-def api_issue_like_toggle(issue_number: int):
-    auth_user, _ = _get_current_user(with_touch=False)
-    if auth_user is not None:
-        user_id = int(auth_user["id"])
-        visitor_id = None
-    else:
-        user_id = None
-        visitor_id = _ensure_history_visitor_id()
-
-    try:
-        result = user_store.toggle_issue_like(
-            int(issue_number),
-            user_id=user_id,
-            visitor_id=visitor_id,
+        user_store.enqueue_issue_sync_task(
+            entity_type="issue_comment",
+            entity_id=str(comment.get("id") or ""),
+            issue_id=issue_id,
+            operation="create",
+            payload={"issue_id": issue_id},
+            conn=conn,
         )
-    except ValueError as exc:
-        code = str(exc)
-        if code == "invalid_issue_number":
-            return jsonify({"error": "유효하지 않은 이슈 번호입니다."}), 400
-        if code == "like_actor_required":
-            return jsonify({"error": "좋아요 사용자 식별에 실패했습니다."}), 400
-        return jsonify({"error": "좋아요를 처리하지 못했습니다."}), 400
+        conn.commit()
+    response = make_response(jsonify({"comment": comment}), 201)
+    return _attach_issue_viewer_cookie_if_needed(response, auth_user)
+
+
+@app.route("/api/issues/<issue_ref>/comments/<comment_id>", methods=["DELETE"])
+def api_issue_comment_delete(issue_ref: str, comment_id: str):
+    with user_store.connection_scope() as conn:
+        auth_user, _, viewer_visitor_id = _get_issue_viewer_identity(conn=conn)
+        thread = user_store.resolve_issue_thread_ref(issue_ref, conn=conn)
+        if thread is None:
+            return jsonify({"error": "이슈를 찾을 수 없습니다."}), 404
+        issue_id = str(thread.get("id") or "").strip()
+        if not issue_id:
+            return jsonify({"error": "이슈를 찾을 수 없습니다."}), 404
+        try:
+            user_store.soft_delete_issue_comment(
+                comment_id,
+                issue_id=issue_id,
+                author_public_user_id=str((auth_user or {}).get("public_user_id") or "").strip(),
+                visitor_id=viewer_visitor_id,
+                conn=conn,
+            )
+            conn.commit()
+        except ValueError as exc:
+            code = str(exc)
+            if code in {"invalid_comment_id"}:
+                return jsonify({"error": "유효하지 않은 댓글 ID입니다."}), 400
+            if code in {"comment_not_found", "issue_not_found"}:
+                return jsonify({"error": "댓글을 찾을 수 없습니다."}), 404
+            if code == "delete_actor_required":
+                return jsonify({"error": "삭제 사용자 식별에 실패했습니다."}), 400
+            if code == "delete_not_allowed":
+                return jsonify({"error": "삭제 권한이 없습니다."}), 403
+            if code == "already_deleted":
+                return jsonify({"error": "이미 삭제된 댓글입니다."}), 409
+            return jsonify({"error": "댓글 삭제에 실패했습니다."}), 400
 
     response = make_response(
         jsonify(
             {
                 "ok": True,
-                "issue_number": int(result["issue_number"]),
+                "issue_id": issue_id,
+                "comment_id": str(comment_id or "").strip(),
+            }
+        )
+    )
+    return _attach_issue_viewer_cookie_if_needed(response, auth_user)
+
+
+@app.route("/api/issues/<issue_ref>/like", methods=["POST"])
+def api_issue_like_toggle(issue_ref: str):
+    with user_store.connection_scope() as conn:
+        auth_user, user_id, visitor_id = _get_issue_viewer_identity(conn=conn)
+        thread = user_store.resolve_issue_thread_ref(issue_ref, conn=conn)
+        if thread is None and str(issue_ref or "").strip().isdigit():
+            detail = _load_issue_detail_local_first(issue_ref, conn=conn)
+            thread = dict((detail or {}).get("issue") or {})
+        issue_id = str((thread or {}).get("id") or "").strip()
+        if not issue_id:
+            return jsonify({"error": "유효하지 않은 이슈 ID입니다."}), 400
+
+        try:
+            result = user_store.toggle_issue_like(
+                issue_id,
+                user_id=user_id,
+                visitor_id=visitor_id,
+                conn=conn,
+            )
+            conn.commit()
+        except ValueError as exc:
+            code = str(exc)
+            if code == "invalid_issue_id":
+                return jsonify({"error": "유효하지 않은 이슈 ID입니다."}), 400
+            if code == "like_actor_required":
+                return jsonify({"error": "좋아요 사용자 식별에 실패했습니다."}), 400
+            return jsonify({"error": "좋아요를 처리하지 못했습니다."}), 400
+
+    response = make_response(
+        jsonify(
+            {
+                "ok": True,
+                "issue_id": issue_id,
+                "issue_number": int((thread or {}).get("github_issue_number") or 0),
                 "liked": bool(result["liked"]),
                 "like_count": int(result["like_count"]),
             }
         )
     )
-    if auth_user is None:
-        return _attach_history_visitor_cookie_if_needed(response)
-    return response
+    return _attach_issue_viewer_cookie_if_needed(response, auth_user)
 
 
 @app.route("/api/github/image-proxy")
@@ -5678,18 +6182,37 @@ def api_github_webhook():
     payload = request.get_json(silent=True) or {}
     action = payload.get("action")
 
-    if event in {"issues", "issue_comment"}:
-        if action in {
-            "opened",
-            "edited",
-            "closed",
-            "reopened",
-            "labeled",
-            "unlabeled",
-            "created",
-            "deleted",
-        }:
-            _invalidate_issue_cache()
+    if event == "issues" and action in {"opened", "edited", "closed", "reopened", "labeled", "unlabeled"}:
+        issue_payload = payload.get("issue")
+        if isinstance(issue_payload, dict) and not issue_payload.get("pull_request"):
+            with user_store.connection_scope() as conn:
+                _upsert_github_issue_batch([issue_payload], conn=conn)
+                conn.commit()
+    elif event == "issue_comment" and action in {"created", "edited", "deleted"}:
+        issue_payload = payload.get("issue")
+        comment_payload = payload.get("comment")
+        with user_store.connection_scope() as conn:
+            synced_thread = None
+            if isinstance(issue_payload, dict) and not issue_payload.get("pull_request"):
+                synced_rows = _upsert_github_issue_batch([issue_payload], conn=conn)
+                if synced_rows:
+                    synced_thread = synced_rows[0]
+            if synced_thread is not None:
+                synced_issue_id = str(synced_thread.get("id") or "").strip()
+                if action == "deleted" and isinstance(comment_payload, dict):
+                    try:
+                        github_comment_id = int(comment_payload.get("id") or 0)
+                    except (TypeError, ValueError):
+                        github_comment_id = 0
+                    if github_comment_id > 0:
+                        user_store.delete_issue_comment_by_github_comment_id(github_comment_id, conn=conn)
+                elif isinstance(comment_payload, dict):
+                    user_store.upsert_issue_comment_from_github(
+                        synced_issue_id,
+                        _normalize_comment(comment_payload),
+                        conn=conn,
+                    )
+            conn.commit()
 
     return jsonify({"ok": True})
 
