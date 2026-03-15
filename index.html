@@ -57,6 +57,27 @@
       min-width: 0;
       display: flex;
       align-items: center;
+      gap: 8px;
+      --site-tab-width: auto;
+      --departure-tab-width: auto;
+    }
+    .header-left .site-selector-wrap {
+      order: 0;
+      flex: 0 0 auto;
+      min-width: 0;
+      width: var(--site-tab-width, auto);
+      max-width: none;
+    }
+    .header-left .departure-trigger {
+      order: 1;
+      flex: 0 0 auto;
+      min-width: 0;
+      width: var(--departure-tab-width, auto);
+      max-width: none;
+    }
+    .header-left .site-selector-trigger {
+      width: 100%;
+      max-width: none;
     }
     /* 출발시간/요일 통합 트리거 */
     .departure-trigger {
@@ -276,20 +297,37 @@
       justify-content: center;
     }
     @media (min-width: 769px) {
-      .header:not(.route-mode) .header-left,
-      .header:not(.route-mode) .site-profile-wrap {
-        flex: 1 1 0;
-        min-width: 0;
+      .header:not(.route-mode) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 560px) minmax(0, 1fr);
+        grid-template-rows: auto;
+        align-items: center;
+        justify-content: stretch;
+        column-gap: 16px;
       }
       .header:not(.route-mode) .header-left {
+        grid-column: 1;
+        grid-row: 1;
+        justify-self: start;
+        align-self: center;
         justify-content: flex-start;
+        width: 100%;
+        min-width: 0;
       }
       .header:not(.route-mode) .header-center {
-        flex: 0 1 560px;
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: center;
+        width: 100%;
         max-width: 560px;
       }
       .header:not(.route-mode) .site-profile-wrap {
+        grid-column: 3;
+        grid-row: 1;
+        justify-self: end;
+        align-self: center;
         justify-content: flex-end;
+        min-width: 0;
       }
     }
     .search-bar {
@@ -540,10 +578,13 @@
       flex: 1 1 0;
       min-width: 0;
     }
-    .header.route-mode .site-selector-wrap {
-      order: 1;
+    .header.route-mode .header-left .site-selector-wrap {
+      order: 0;
       display: block;
       margin-left: 0;
+    }
+    .header.route-mode .header-left .departure-trigger {
+      order: 1;
     }
     .header.route-mode .notice-open-btn-desktop {
       order: 2;
@@ -780,7 +821,7 @@
     @media (min-width: 769px) {
       .header.route-mode {
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 642px) minmax(0, 1fr);
         grid-template-rows: auto;
         align-items: start;
         justify-content: stretch;
@@ -799,8 +840,9 @@
         grid-row: 1;
         justify-self: start;
         align-self: start;
-        flex: 0 0 auto;
-        width: auto;
+        flex: 1 1 0;
+        width: 100%;
+        min-width: 0;
       }
       .header.route-mode .site-profile-wrap {
         grid-column: 3;
@@ -809,6 +851,7 @@
         align-self: start;
         margin-left: 0;
         display: inline-flex;
+        min-width: 0;
       }
     }
 
@@ -843,13 +886,15 @@
       border-radius: 8px;
       background: #fff;
       font-size: 14px;
+      font-weight: 700;
       color: #333;
       cursor: pointer;
       text-align: left;
       font-family: inherit;
       white-space: nowrap;
       overflow: hidden;
-      max-width: 200px;
+      width: 100%;
+      max-width: none;
     }
     .site-selector-trigger:hover {
       border-color: #fee500;
@@ -3825,11 +3870,31 @@
       }
       .header-left {
         order: 2;
-        flex: 1 1 0;
+        flex: 1 1 100%;
         min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .header-left .site-selector-wrap {
+        flex: 1.06 1 0;
+        min-width: 0;
+        width: auto;
+        max-width: none;
+      }
+      .header-left .departure-trigger {
+        flex: 0.94 1 0;
+        min-width: 0;
+        width: auto;
+        max-width: none;
       }
       .departure-trigger {
         width: 100%;
+        max-width: none;
+      }
+      .header-left .site-selector-trigger {
+        width: 100%;
+        max-width: none;
       }
       .header-center {
         order: 1;
@@ -3852,14 +3917,14 @@
         display: none;
       }
       .search-bar .mobile-menu-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
+        display: grid;
+        place-items: center;
         width: 40px;
         min-width: 40px;
         height: 40px;
         padding: 0;
         font-size: 18px;
+        line-height: 1;
       }
       .search-bar .notice-open-btn-mobile {
         display: inline-flex;
@@ -3910,27 +3975,36 @@
       }
       .site-profile-wrap {
         order: 3;
-        flex: 1 1 0;
-        min-width: 0;
+        display: none;
       }
       .profile-menu-trigger {
         display: none;
       }
       .site-selector-wrap {
-        flex: 1 1 0;
+        flex: 1.06 1 0;
         min-width: 0;
+        width: auto;
+        max-width: none;
       }
       .header.route-mode .header-left {
         order: 2;
-        flex: 1 1 0;
+        flex: 1 1 100%;
       }
       .header.route-mode .site-profile-wrap {
         order: 2;
         flex: 0 0 auto;
       }
-      .header.route-mode .site-selector-wrap {
-        order: 2;
-        flex: 0 0 auto;
+      .header.route-mode .header-left .site-selector-wrap {
+        order: 0;
+        flex: 1.06 1 0;
+        width: auto;
+        max-width: none;
+      }
+      .header.route-mode .header-left .departure-trigger {
+        order: 1;
+        flex: 0.94 1 0;
+        width: auto;
+        max-width: none;
       }
       .header.route-mode .profile-menu-trigger {
         order: 3;
@@ -3945,9 +4019,9 @@
         width: 100%;
         max-width: none;
       }
-      .header.route-mode .site-selector-trigger {
-        width: auto;
-        max-width: 52vw;
+      .header.route-mode .header-left .site-selector-trigger {
+        width: 100%;
+        max-width: none;
       }
       .route-mode-left {
         grid-row: 1;
@@ -3980,13 +4054,13 @@
         font-size: 12px;
       }
       .route-mode-profile-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
+        display: grid;
+        place-items: center;
         width: 40px;
         min-width: 40px;
         height: 40px;
         font-size: 18px;
+        line-height: 1;
         order: 1;
       }
       .route-mode-swap-btn,
@@ -5943,6 +6017,15 @@
 <body>
   <header class="header">
     <div class="header-left">
+      <div class="site-selector-wrap">
+        <select id="siteSelect" title="사업장 선택" aria-hidden="true">
+          <option value="0000013">삼성전자(수원)</option>
+        </select>
+        <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
+          <span class="site-trigger-text">삼성전자(수원)</span>
+          <span class="site-trigger-arrow"></span>
+        </button>
+      </div>
       <button type="button" class="departure-trigger" id="departureTrigger" title="요일/출발시간 선택">
         <span class="trigger-text" id="departureTriggerText">평일 00:00 출발</span>
         <span class="trigger-arrow"></span>
@@ -5950,7 +6033,7 @@
     </div>
       <div class="header-center">
         <div class="search-bar">
-          <input type="text" id="searchInput" placeholder="장소 혹은 사업장 검색" autocomplete="off" enterkeyhint="done" />
+          <input type="text" id="searchInput" placeholder="장소 검색 (e.g., 강남역)" autocomplete="off" enterkeyhint="done" />
           <button type="button" class="notice-open-btn notice-open-btn-mobile" id="mobileNoticeOpenBtn" title="공지" aria-label="공지">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
@@ -5961,15 +6044,6 @@
         </div>
       </div>
     <div class="site-profile-wrap">
-      <div class="site-selector-wrap">
-        <select id="siteSelect" title="사업장 선택" aria-hidden="true">
-          <option value="0000013">삼성전자(수원)</option>
-        </select>
-        <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
-          <span class="site-trigger-text">삼성전자(수원)</span>
-          <span class="site-trigger-arrow"></span>
-        </button>
-      </div>
       <button type="button" class="notice-open-btn notice-open-btn-desktop" id="noticeOpenBtn" title="공지" aria-label="공지">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
@@ -9275,6 +9349,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'false');
           updateRouteModeHeader();
           updateRouteSwapButtonState();
+          requestAnimationFrame(syncHeaderTabWidth);
           return;
         }
         routeModeDirection = null;
@@ -9290,6 +9365,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (routeModeHeader) routeModeHeader.setAttribute('aria-hidden', 'true');
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
         updateRouteSwapButtonState();
+        requestAnimationFrame(syncHeaderTabWidth);
       }
 
       function getEndpointSiteDayKey(siteId, dayType) {
@@ -9407,52 +9483,128 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         departureTime.h = d.getHours();
         departureTime.m = d.getMinutes();
       }
+      function toNumberPx(value) {
+        var n = parseFloat(value);
+        return isFinite(n) ? n : 0;
+      }
+      function getHeaderTabContainer() {
+        if (siteSelectTrigger && siteSelectTrigger.closest) {
+          var container = siteSelectTrigger.closest('.header-left');
+          if (container) return container;
+        }
+        if (departureTrigger && departureTrigger.parentElement) return departureTrigger.parentElement;
+        return null;
+      }
+      function getHeaderTabGap(container) {
+        if (!container) return 8;
+        var style = window.getComputedStyle(container);
+        return toNumberPx(style.columnGap || style.gap) || toNumberPx(style.gap) || 8;
+      }
+      function measureNodeTextWidth(node, text) {
+        var value = String(text || '');
+        if (!value) return 0;
+        var canvas = measureNodeTextWidth._canvas || (measureNodeTextWidth._canvas = document.createElement('canvas'));
+        var ctx = canvas.getContext('2d');
+        var style = window.getComputedStyle(node);
+        ctx.font = style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily;
+        return ctx.measureText(value).width;
+      }
+      function getTriggerChromeWidth(triggerEl, arrowSpace) {
+        if (!triggerEl) return 0;
+        var style = window.getComputedStyle(triggerEl);
+        return toNumberPx(style.paddingLeft)
+          + toNumberPx(style.paddingRight)
+          + toNumberPx(style.borderLeftWidth)
+          + toNumberPx(style.borderRightWidth)
+          + (arrowSpace || 0);
+      }
+      function getTriggerDesiredWidth(triggerEl, textNode, arrowSpace) {
+        if (!triggerEl || !textNode) return 0;
+        var textWidth = measureNodeTextWidth(textNode, textNode.textContent || '');
+        return Math.ceil(getTriggerChromeWidth(triggerEl, arrowSpace) + textWidth);
+      }
+      function syncHeaderTabWidth() {
+        if (!siteSelectTrigger || !departureTrigger || !departureTriggerText) return;
+        var container = getHeaderTabContainer();
+        if (!container) return;
+        if (isMobile()) {
+          container.style.removeProperty('--site-tab-width');
+          container.style.removeProperty('--departure-tab-width');
+          fitDepartureTrigger();
+          return;
+        }
+        var gap = getHeaderTabGap(container);
+        var available = Math.max(0, container.clientWidth - gap);
+        if (available <= 0) return;
+        var siteTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
+        if (!siteTextEl) return;
+        var siteDesired = getTriggerDesiredWidth(siteSelectTrigger, siteTextEl, 16);
+        var minSite = 112;
+        var minDeparture = 124;
+        var minTotal = minSite + minDeparture;
+        var siteWidth;
+        if (available <= minTotal) {
+          siteWidth = Math.max(72, Math.floor(available * 0.5));
+        } else {
+          var siteMax = Math.max(minSite, available - minDeparture);
+          siteWidth = Math.max(minSite, Math.min(siteDesired, siteMax));
+        }
+        var departureMax = Math.max(72, available - siteWidth);
+        fitDepartureTrigger(departureMax);
+        var departureDesired = getTriggerDesiredWidth(departureTrigger, departureTriggerText, 16);
+        var departureWidth = Math.max(72, Math.min(departureDesired, departureMax));
+        if (siteWidth + departureWidth > available) {
+          departureWidth = Math.max(72, available - siteWidth);
+        }
+        container.style.setProperty('--site-tab-width', Math.round(siteWidth) + 'px');
+        container.style.setProperty('--departure-tab-width', Math.round(departureWidth) + 'px');
+      }
       function updateDepartureTriggerText() {
         if (!departureTriggerText) return;
         var timeStr = getDepartureTimeStr();
         var dayLabel = DAY_TYPE_LABEL_MAP[selectedDayType] || selectedDayType || '평일';
         var shortLabel = DAY_TYPE_SHORT_MAP[selectedDayType] || dayLabel;
-        // 공간에 따라 축약: 1) "요일 HH:MM 출발" 2) "요일 HH:MM" 3) "(축약) HH:MM"
-        // 컨테이너 너비로 판단하기 어려우므로 CSS text-overflow에 의존하되,
-        // data 속성에 단계별 텍스트를 넣어 ResizeObserver로 전환
-        departureTriggerText.setAttribute('data-full', dayLabel + ' ' + timeStr + '분 출발');
+        var fullLabel = selectedDayType === 'familyday' ? shortLabel : dayLabel;
+        departureTriggerText.setAttribute('data-full', fullLabel + ' ' + timeStr + '분 출발');
         departureTriggerText.setAttribute('data-mid', shortLabel + ' ' + timeStr + '분 출발');
         departureTriggerText.setAttribute('data-compact', shortLabel + ' ' + timeStr + '분');
         departureTriggerText.setAttribute('data-short', shortLabel + ' ' + timeStr);
-        fitDepartureTrigger();
+        syncHeaderTabWidth();
       }
-      function fitDepartureTrigger() {
+      function fitDepartureTrigger(maxButtonWidth) {
         if (!departureTriggerText || !departureTrigger) return;
+        var currentText = String(departureTriggerText.textContent || '').trim();
+        var fullText = departureTriggerText.getAttribute('data-full') || currentText;
+        var midText = departureTriggerText.getAttribute('data-mid') || fullText;
+        var compactText = departureTriggerText.getAttribute('data-compact') || midText;
+        var shortText = departureTriggerText.getAttribute('data-short') || compactText;
         var levels = [
-          departureTriggerText.getAttribute('data-full') || '',
-          departureTriggerText.getAttribute('data-mid') || '',
-          departureTriggerText.getAttribute('data-compact') || '',
-          departureTriggerText.getAttribute('data-short') || ''
+          fullText,
+          midText,
+          compactText,
+          shortText
         ];
-
-        // 데스크톱에서는 버튼이 컨텐츠에 맞게 줄어드므로 항상 full
-        if (!isMobile()) {
-          departureTriggerText.textContent = levels[0];
-          return;
+        if (!(isFinite(maxButtonWidth) && maxButtonWidth > 0)) {
+          if (isMobile()) {
+            var parent = departureTrigger.parentElement;
+            var gap = parent ? getHeaderTabGap(parent) : 8;
+            maxButtonWidth = parent ? Math.max(72, Math.floor((parent.clientWidth - gap) * 0.5)) : 180;
+          } else {
+            maxButtonWidth = 340;
+          }
         }
-
-        // 모바일: 부모(.header-left)의 너비를 기준으로 측정
-        var parent = departureTrigger.parentElement;
-        if (!parent) { departureTriggerText.textContent = levels[0]; return; }
-        var arrowWidth = 16; // arrow + gap
-        var padding = 24; // 좌우 패딩
-        var maxW = parent.clientWidth - arrowWidth - padding - 2; // border
-
-        var canvas = fitDepartureTrigger._canvas || (fitDepartureTrigger._canvas = document.createElement('canvas'));
-        var ctx = canvas.getContext('2d');
-        var style = window.getComputedStyle(departureTriggerText);
-        ctx.font = style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily;
-
-        var chosen = levels[levels.length - 1];
-        for (var i = 0; i < levels.length; i++) {
-          if (ctx.measureText(levels[i]).width <= maxW) {
-            chosen = levels[i];
-            break;
+        var maxTextWidth = null;
+        if (isFinite(maxButtonWidth) && maxButtonWidth > 0) {
+          maxTextWidth = Math.max(16, maxButtonWidth - getTriggerChromeWidth(departureTrigger, 16));
+        }
+        var chosen = levels[0] || levels[levels.length - 1] || '';
+        if (isFinite(maxTextWidth) && maxTextWidth > 0) {
+          chosen = levels[levels.length - 1] || chosen;
+          for (var i = 0; i < levels.length; i++) {
+            if (measureNodeTextWidth(departureTriggerText, levels[i]) <= maxTextWidth) {
+              chosen = levels[i];
+              break;
+            }
           }
         }
         departureTriggerText.textContent = chosen;
@@ -9765,6 +9917,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var opt = siteSelect.options[siteSelect.selectedIndex];
         var siteTriggerTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
         if (siteTriggerTextEl) siteTriggerTextEl.textContent = opt ? opt.text : '';
+        syncHeaderTabWidth();
       }
       function siteOptionExists(siteId) {
         var value = String(siteId || '').trim();
@@ -9838,24 +9991,37 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         siteSelectTrigger.disabled = !enabled;
         siteSelectTrigger.setAttribute('aria-disabled', enabled ? 'false' : 'true');
       }
-      function openSitePickerModal() {
-        if (!sitePickerBackdrop || !sitePickerModal || !sitePickerList) return;
-        if (siteSelectTrigger && siteSelectTrigger.disabled) return;
-        var trigger = siteSelectTrigger;
+      function positionSitePickerModal() {
+        if (!sitePickerModal) return;
         if (isMobile()) {
           sitePickerModal.style.top = '';
           sitePickerModal.style.left = '';
           sitePickerModal.style.right = '';
           sitePickerModal.style.bottom = '0';
-        } else {
-          if (trigger) {
-            var rect = trigger.getBoundingClientRect();
-            sitePickerModal.style.top = (rect.bottom + 4) + 'px';
-            sitePickerModal.style.right = (window.innerWidth - rect.right) + 'px';
-            sitePickerModal.style.left = 'auto';
-            sitePickerModal.style.bottom = 'auto';
-          }
+          return;
         }
+        if (!siteSelectTrigger) return;
+        var rect = siteSelectTrigger.getBoundingClientRect();
+        var viewportGap = 12;
+        sitePickerModal.style.right = 'auto';
+        sitePickerModal.style.bottom = 'auto';
+        sitePickerModal.style.left = '0px';
+        sitePickerModal.style.top = '0px';
+
+        var modalWidth = sitePickerModal.offsetWidth || 0;
+        var modalHeight = sitePickerModal.offsetHeight || 0;
+        var maxLeft = window.innerWidth - viewportGap - modalWidth;
+        var maxTop = window.innerHeight - viewportGap - modalHeight;
+        var left = Math.min(Math.max(rect.left, viewportGap), Math.max(viewportGap, maxLeft));
+        var top = Math.min(Math.max(rect.bottom + 4, viewportGap), Math.max(viewportGap, maxTop));
+
+        sitePickerModal.style.left = Math.round(left) + 'px';
+        sitePickerModal.style.top = Math.round(top) + 'px';
+      }
+      function openSitePickerModal() {
+        if (!sitePickerBackdrop || !sitePickerModal || !sitePickerList) return;
+        if (siteSelectTrigger && siteSelectTrigger.disabled) return;
+        var trigger = siteSelectTrigger;
         sitePickerList.innerHTML = '';
         var options = siteSelect ? siteSelect.options : [];
         var selectedValue = siteSelect ? siteSelect.value : '';
@@ -9881,6 +10047,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         }
         sitePickerBackdrop.classList.add('show');
         sitePickerModal.classList.add('show');
+        positionSitePickerModal();
+        requestAnimationFrame(positionSitePickerModal);
         if (trigger) trigger.setAttribute('aria-expanded', 'true');
       }
       function closeSitePickerModal() {
@@ -15803,8 +15971,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (dayTypeList) dayTypeList.addEventListener('scroll', updateDayTypeSelectedClasses);
         if (timePickerHourList) timePickerHourList.addEventListener('scroll', requestTimePickerSelectedClassesUpdate);
         if (timePickerMinuteList) timePickerMinuteList.addEventListener('scroll', requestTimePickerSelectedClassesUpdate);
-        // 리사이즈 시 trigger 텍스트 재측정
-        window.addEventListener('resize', function() { fitDepartureTrigger(); });
+        // 리사이즈 시 탭 폭/텍스트를 함께 재측정
+        window.addEventListener('resize', function() {
+          syncHeaderTabWidth();
+          if (sitePickerModal && sitePickerModal.classList.contains('show')) {
+            positionSitePickerModal();
+          }
+        });
       })();
 
       (function initBottomSheet() {
@@ -19431,8 +19604,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         updateMapControlsPosition();
         updateArrivalReportButtonVisibility();
         updateDevDebugUi();
+        syncHeaderTabWidth();
         positionHistoryPopover();
         positionNoticeSpotlightBubble();
+        if (sitePickerModal && sitePickerModal.classList.contains('show')) {
+          positionSitePickerModal();
+        }
         if (arrivalReportModal && arrivalReportModal.classList.contains('show') && arrivalReportState.step === 'stops') {
           requestAnimationFrame(updateArrivalReportStopStepSizing);
         }
