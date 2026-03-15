@@ -65,7 +65,7 @@ backend:
       manifestKey: db/dev/latest.json
       region: ap-northeast-2
   warmEndpointCacheOnStartup: true
-  enableBackgroundWorkers: false
+  enableBackgroundWorkers: true
   refreshAuthMetricsOnStartup: false
   historyWrite:
     enabled: true

@@ -187,6 +187,14 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
+          startupProbe:
+            httpGet:
+              path: {{ default (default $.Values.health.path $.Values.health.readinessPath) $.Values.health.startupPath }}
+              port: http
+            initialDelaySeconds: {{ default 0 $.Values.health.startupInitialDelaySeconds }}
+            periodSeconds: {{ default $.Values.health.periodSeconds $.Values.health.startupPeriodSeconds }}
+            timeoutSeconds: {{ default $.Values.health.timeoutSeconds $.Values.health.startupTimeoutSeconds }}
+            failureThreshold: {{ default 120 $.Values.health.startupFailureThreshold }}
           livenessProbe:
             httpGet:
               path: {{ $.Values.health.path }}
@@ -197,7 +205,7 @@ spec:
             failureThreshold: {{ $.Values.health.failureThreshold }}
           readinessProbe:
             httpGet:
-              path: {{ $.Values.health.path }}
+              path: {{ default $.Values.health.path $.Values.health.readinessPath }}
               port: http
             initialDelaySeconds: {{ $.Values.health.initialDelaySeconds }}
             periodSeconds: {{ $.Values.health.periodSeconds }}
