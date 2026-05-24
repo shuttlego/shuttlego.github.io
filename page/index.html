@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>셔틀Go - 출퇴근 통근버스・회사 셔틀 노선 검색</title>
+  <meta name="description" content="셔틀Go에서 삼성 셔틀버스 노선을 손쉽게 찾고 정류장, 경로, 예상 도착 시간, 노선 공유까지 한 번에 확인하세요." />
+  <meta name="keywords" content="셔틀고, 셔틀Go, 셔틀버스, 통근버스, 출근버스, 퇴근버스, 회사 셔틀, 셔틀 노선 검색" />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://shuttle-go.com/page/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="셔틀Go" />
+  <meta property="og:title" content="셔틀Go - 출퇴근 통근버스・회사 셔틀 노선 검색" />
+  <meta property="og:description" content="삼성 셔틀버스 중 나에게 맞는 노선을 손쉽게 찾고 예상 도착 시간까지 한 번에 확인하세요." />
+  <meta property="og:url" content="https://shuttle-go.com/page/" />
+  <meta property="og:image" content="https://shuttle-go.com/stop_icon.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="셔틀Go - 출퇴근 통근버스・회사 셔틀 노선 검색" />
+  <meta name="twitter:description" content="삼성 셔틀버스 노선과 예상 도착 시간을 셔틀Go에서 빠르게 확인하세요." />
+  <meta name="twitter:image" content="https://shuttle-go.com/stop_icon.png" />
+  <link rel="icon" type="image/png" href="../stop_icon.png" />
+  <link rel="apple-touch-icon" href="../stop_icon.png" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://shuttle-go.com/#organization",
+        "name": "셔틀Go",
+        "url": "https://shuttle-go.com/",
+        "logo": "https://shuttle-go.com/stop_icon.png"
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://shuttle-go.com/#website",
+        "name": "셔틀Go",
+        "url": "https://shuttle-go.com/",
+        "publisher": {
+          "@id": "https://shuttle-go.com/#organization"
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://shuttle-go.com/page/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "셔틀Go에서 어떤 셔틀을 검색할 수 있나요?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "회사, 지역, 정류장, 출발지, 도착지 기준으로 출근・퇴근 셔틀버스와 사업장 간 이동 셔틀을 검색할 수 있습니다."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "예상 도착 시간은 어떻게 계산되나요?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "정류장별 예상 도착 시간과 전체 경로 예상 시간은 사용자 제보와 티맵 기준 정보를 바탕으로 제공되며, 실제 교통 상황에 따라 달라질 수 있습니다."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "모바일에서도 사용할 수 있나요?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "네. 셔틀Go는 데스크톱과 모바일 모두에서 사용할 수 있어 출근 전, 이동 중, 퇴근 직전에도 빠르게 확인할 수 있습니다."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "검색한 셔틀 정보를 다른 사람에게 공유할 수 있나요?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "네. 회식, 행사, 사업장 이동처럼 여러 사람이 같은 셔틀을 확인해야 할 때 노선 정보를 공유할 수 있습니다."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="셔틀Go 홈으로 이동">
+      <img src="../stop_icon.png" alt="셔틀Go 아이콘" />
+      <span>셔틀Go</span>
+    </a>
+    <nav class="top-nav" aria-label="주요 섹션">
+      <a href="#problems">문제</a>
+      <a href="#solution">솔루션</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="header-cta" href="/">셔틀 검색하기</a>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">출근・퇴근・사업장 이동 셔틀 검색</p>
+        <h1 id="hero-title">
+          <span>삼성 셔틀버스,</span>
+          <span>이제 셔틀Go에서 손쉽게 검색해보세요</span>
+        </h1>
+        <p class="hero-lead">
+          나에게 맞는 셔틀 노선을 손쉽게 찾고 예상 도착 시간까지 한 번에 확인하세요.
+        </p>
+
+        <div class="hero-actions" aria-label="주요 이동">
+          <a class="primary-action" href="/">지금 검색하기</a>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-label="셔틀Go 서비스 미리보기">
+        <div class="browser-bar">
+          <span></span>
+          <span></span>
+          <span></span>
+          <strong>shuttle-go.com</strong>
+        </div>
+        <div class="product-preview route-map-preview">
+          <section class="preview-route-card" aria-label="노선 및 도착 예상 시간">
+            <div class="preview-route-top">
+              <span>추천 노선</span>
+              <button type="button">공유</button>
+            </div>
+            <div class="preview-time">
+              <strong>59</strong>
+              <span>분</span>
+            </div>
+            <p class="preview-window">오후 6:33 - 오후 7:32</p>
+            <h2>강남/교대_H1-H2</h2>
+            <p class="preview-sub">134m · 18:25 퇴근 노선</p>
+            <div class="preview-progress"><span>56분</span></div>
+            <ol class="preview-stops">
+              <li>
+                <time>18:33</time>
+                <div>
+                  <strong>화성캠퍼스H2</strong>
+                  <span>탑승</span>
+                </div>
+              </li>
+              <li>
+                <time>19:29</time>
+                <div>
+                  <strong>강남역 정류장</strong>
+                  <span>하차</span>
+                </div>
+              </li>
+              <li>
+                <time>19:32</time>
+                <div>
+                  <strong>강남역 2호선</strong>
+                  <span>도보 3분</span>
+                </div>
+              </li>
+            </ol>
+          </section>
+          <section class="preview-map" aria-label="지도 경로 미리보기">
+            <span class="map-road road-a">경부고속도로</span>
+            <span class="map-road road-b">강남대로</span>
+            <span class="map-road road-c">분당내곡로</span>
+            <span class="map-label start">화성캠퍼스H2<br><strong>18:33분 탑승</strong></span>
+            <span class="map-label end">강남역 정류장<br><strong>19:29분 하차</strong></span>
+            <img class="map-pin-img start-pin" src="../stop_icon.png" alt="" aria-hidden="true" />
+            <img class="map-pin-img end-pin" src="../stop_icon.png" alt="" aria-hidden="true" />
+            <svg class="map-route" viewBox="0 0 300 360" aria-hidden="true">
+              <path d="M210 324 C214 270 202 230 182 196 C156 154 158 114 190 72" />
+              <path d="M210 324 C214 270 202 230 182 196 C156 154 158 114 190 72" class="route-inner" />
+            </svg>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="problems" class="section problem-section" aria-labelledby="problems-title">
+      <div class="section-heading">
+        <p class="eyebrow">Problem</p>
+        <h2 id="problems-title">삼성 셔틀버스, 검색하기 어려우셨나요?</h2>
+      </div>
+      <div class="problem-grid">
+        <article>
+          <span>01</span>
+          <h3>퇴근 후 약속 장소로 이동</h3>
+          <p>"목적지까지 가기 위해 어떤 셔틀을 타야할지 매번 확인하는게 힘들어요."</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>이직 후 첫 출근 준비</h3>
+          <p>"제가 사는 곳에서 회사까지 가는 통근 셔틀을 못찾겠어요."</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>사업장 간 이동</h3>
+          <p>"다른 캠퍼스나 사업장으로 가는 셔틀을 몇 시에 어디서 타야 하는지 헷갈립니다."</p>
+        </article>
+        <article>
+          <span>04</span>
+          <h3>단체 이동 공유</h3>
+          <p>"회식 장소나 행사 장소로 가는 셔틀 정보를 부서원들에게 쉽게 공유하고 싶습니다."</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="solution" class="section solution-section" aria-labelledby="solution-title">
+      <div class="section-heading solution-copy">
+        <p class="eyebrow">Solution</p>
+        <h2 id="solution-title">셔틀Go에서 셔틀을 손쉽게 검색해보세요</h2>
+        <p>출근길부터 퇴근길, 사업장 이동, 단체 이동까지 상황에 맞는 셔틀을 더 빠르게 검색할 수 있습니다.</p>
+      </div>
+      <div class="solution-grid" aria-label="셔틀Go 사용 흐름">
+        <article>
+          <h3>다양한 삼성그룹 계열사 지원</h3>
+          <p>삼성전자, 삼성 디스플레이, 삼성 SDI 등 다양한 계열사와 사업장별 셔틀 정보를 한곳에서 확인할 수 있도록 확장합니다.</p>
+          <div class="company-logo-list" aria-label="지원 예정 삼성그룹 계열사">
+            <img class="company-logo company-logo-samsung" src="./assets/samsung-wordmark.svg" alt="Samsung" />
+            <img class="company-logo company-logo-display" src="./assets/samsung-display-wordmark.png" alt="Samsung Display" />
+            <img class="company-logo company-logo-sdi" src="./assets/samsung-sdi-thumb.png" alt="Samsung SDI" />
+          </div>
+        </article>
+        <article class="solution-route-card">
+          <h3>출퇴근 셔틀 경로 및 소요시간</h3>
+          <p>탑승 정류장, 하차 정류장, 이동 경로, 예상 도착 시간을 지도와 함께 이해하기 쉽게 보여줍니다.</p>
+          <img class="solution-original-image" src="./assets/route-card-original.png" alt="출퇴근 셔틀 경로와 예상 소요시간 예시" onerror="this.hidden=true" />
+        </article>
+        <article class="solution-share-card">
+          <h3>노선 공유</h3>
+          <p>회식, 행사, 사업장 이동에 필요한 셔틀 정보를 팀원에게 쉽게 전달합니다.</p>
+          <img class="solution-original-image" src="./assets/share-modal-original.png" alt="셔틀 노선 공유 문구와 링크 복사 예시" onerror="this.hidden=true" />
+        </article>
+      </div>
+    </section>
+
+    <section class="section use-case-section" aria-labelledby="usecase-title">
+      <div class="section-heading">
+        <p class="eyebrow">Use cases</p>
+        <h2 id="usecase-title">이런 상황에 셔틀Go를 사용해보세요</h2>
+      </div>
+      <div class="use-case-list">
+        <article>
+          <span>퇴근 후 이동</span>
+          <p>회사에서 약속 장소 근처로 가는 셔틀을 빠르게 비교합니다.</p>
+        </article>
+        <article>
+          <span>새 회사 출근</span>
+          <p>첫 출근 전 집 근처 정류장과 가장 알맞은 통근 노선을 확인합니다.</p>
+        </article>
+        <article>
+          <span>사업장 방문</span>
+          <p>캠퍼스, 연구소, 공장 등 사업장 간 이동 셔틀의 탑승 위치와 시간을 찾습니다.</p>
+        </article>
+        <article>
+          <span>단체 일정 공유</span>
+          <p>회식, 워크숍, 행사 장소로 이동하는 셔틀 정보를 부서원에게 공유합니다.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section popular-routes-section" aria-labelledby="popular-routes-title">
+      <div class="section-heading">
+        <p class="eyebrow">Popular routes</p>
+        <h2 id="popular-routes-title">많이 찾는 셔틀 노선</h2>
+        <p>주요 사업장의 출근・퇴근 셔틀 노선을 바로 확인해보세요.</p>
+      </div>
+      <div class="popular-route-links">
+        <a href="./dongtan-station-samsung-electronics-giheung-morning-shuttle/">동탄역에서 삼성전자 기흥 사업장으로 출근하는 버스</a>
+        <a href="./samsung-electronics-hwaseong-dongtan-station-evening-shuttle/">삼성전자 화성 반도체 사업장에서 동탄역으로 퇴근하는 버스</a>
+        <a href="./gangnam-station-samsung-electronics-suwon-morning-shuttle/">강남역 2호선에서 삼성전자 수원 사업장으로 출근하는 버스</a>
+        <a href="./samsung-electronics-pyeongtaek-dongtan-station-evening-shuttle/">삼성전자 평택 반도체 사업장에서 동탄역으로 퇴근하는 버스</a>
+        <a href="./cheonan-asan-station-samsung-electronics-cheonan-morning-shuttle/">천안아산역에서 삼성전자 천안 사업장으로 출근하는 버스</a>
+        <a href="./samsung-electronics-onyang-cheonan-asan-station-evening-shuttle/">삼성전자 온양 사업장에서 천안아산역으로 퇴근하는 버스</a>
+      </div>
+    </section>
+
+    <section id="faq" class="section faq-section" aria-labelledby="faq-title">
+      <div class="section-heading">
+        <p class="eyebrow">FAQ</p>
+        <h2 id="faq-title">자주 묻는 질문</h2>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>셔틀Go에서 어떤 셔틀을 검색할 수 있나요?</summary>
+          <p>출근・퇴근 셔틀, 회사 셔틀, 사업장 간 이동 셔틀처럼 회사와 정류장 정보를 기반으로 찾을 수 있는 셔틀 노선을 검색할 수 있습니다.</p>
+        </details>
+        <details>
+          <summary>예상 도착 시간은 어떻게 계산되나요?</summary>
+          <p>사용자 제보와 티맵 기준 정보를 바탕으로 정류장별 예상 도착 시간과 전체 경로 예상 시간을 제공합니다. 실제 교통 상황에 따라 결과는 달라질 수 있습니다.</p>
+        </details>
+        <details>
+          <summary>모바일에서도 사용할 수 있나요?</summary>
+          <p>네. 셔틀Go는 데스크톱과 모바일 모두에서 사용할 수 있어 출근 전, 이동 중, 퇴근 직전에도 빠르게 확인할 수 있습니다.</p>
+        </details>
+        <details>
+          <summary>검색한 셔틀 정보를 다른 사람에게 공유할 수 있나요?</summary>
+          <p>네. 회식, 행사, 사업장 이동처럼 여러 사람이 같은 셔틀을 확인해야 할 때 노선 정보를 공유할 수 있습니다.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="final-cta" aria-labelledby="final-cta-title">
+      <img src="../stop_icon.png" alt="" aria-hidden="true" />
+      <p class="eyebrow">ShuttleGo</p>
+      <h2 id="final-cta-title">셔틀 찾는 시간을 줄이고, 이동 계획은 더 선명하게</h2>
+      <a class="primary-action" href="/">셔틀 검색 시작하기</a>
+    </section>
+  </main>
+
+</body>
+</html>

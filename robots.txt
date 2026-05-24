@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /metrics
+Disallow: /health
+Disallow: /ready
+
+Sitemap: https://shuttle-go.com/sitemap.xml

@@ -1,6 +1,20 @@
 name: Deploy GitHub Pages
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "index.html"
+      - "auth-callback.html"
+      - "dev.config.js"
+      - "page/**"
+      - "robots.txt"
+      - "sitemap.xml"
+      - "*.png"
+      - "*.svg"
+      - "CNAME"
+      - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -31,6 +45,9 @@ jobs:
           cp index.html _site/index.html
           cp auth-callback.html _site/auth-callback.html
           cp dev.config.js _site/dev.config.js
+          cp robots.txt _site/robots.txt
+          cp sitemap.xml _site/sitemap.xml
+          cp -R page _site/page
           find . -maxdepth 1 -type f \( -name '*.png' -o -name '*.svg' \) -exec cp {} _site/ \;
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
           touch _site/.nojekyll

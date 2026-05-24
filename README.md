@@ -7,13 +7,16 @@ ShuttleGo frontend static site for GitHub Pages.
 - `index.html`
 - `auth-callback.html`
 - `dev.config.js`
+- `page/`
+- `robots.txt`
+- `sitemap.xml`
 - Root image assets (`*.png`, `*.svg`)
 - `CNAME`
 - `.github/workflows/deploy-pages.yml`
 
 ## Deployment
 
-Push to `main` or run the `Deploy GitHub Pages` workflow manually.
+Push SEO/site files to `main` or run the `Deploy GitHub Pages` workflow manually.
 
 This site is configured for a root-hosted deployment and includes `CNAME=shuttle-go.com`.
 
