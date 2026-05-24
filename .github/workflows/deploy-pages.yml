@@ -1,20 +1,6 @@
 name: Deploy GitHub Pages
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "index.html"
-      - "auth-callback.html"
-      - "dev.config.js"
-      - "page/**"
-      - "robots.txt"
-      - "sitemap.xml"
-      - "*.png"
-      - "*.svg"
-      - "CNAME"
-      - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
 permissions:
