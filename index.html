@@ -4,19 +4,51 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <base href="/" />
-  <title>셔틀Go: 셔틀 검색</title>
+  <title>셔틀Go: 삼성 셔틀 검색</title>
+  <meta name="description" content="삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요." />
+  <meta name="robots" content="index,follow" />
+  <meta name="application-name" content="셔틀Go" />
+  <meta name="apple-mobile-web-app-title" content="셔틀Go" />
+  <link rel="canonical" href="https://shuttle-go.com/" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="셔틀Go: 셔틀 검색" />
-  <meta property="og:description" content="셔틀 출근/퇴근 노선을 빠르게 찾고 공유하세요." />
-  <meta property="og:image" content="/stop_icon.png" />
+  <meta property="og:site_name" content="셔틀Go" />
+  <meta property="og:title" content="셔틀Go: 삼성 셔틀 검색" />
+  <meta property="og:description" content="삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요." />
+  <meta property="og:url" content="https://shuttle-go.com/" />
+  <meta property="og:image" content="https://shuttle-go.com/stop_icon.png" />
   <meta property="og:image:type" content="image/png" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="셔틀Go: 셔틀 검색" />
-  <meta name="twitter:description" content="셔틀 출근/퇴근 노선을 빠르게 찾고 공유하세요." />
-  <meta name="twitter:image" content="/stop_icon.png" />
+  <meta name="twitter:title" content="셔틀Go: 삼성 셔틀 검색" />
+  <meta name="twitter:description" content="삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요." />
+  <meta name="twitter:image" content="https://shuttle-go.com/stop_icon.png" />
   <link rel="icon" type="image/png" href="/stop_icon.png" />
   <link rel="shortcut icon" href="/stop_icon.png" />
   <link rel="apple-touch-icon" href="/stop_icon.png" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://shuttle-go.com/#organization",
+          "name": "셔틀Go",
+          "url": "https://shuttle-go.com/",
+          "logo": "https://shuttle-go.com/stop_icon.png"
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://shuttle-go.com/#website",
+          "name": "셔틀Go",
+          "alternateName": "shuttle-go.com",
+          "url": "https://shuttle-go.com/",
+          "description": "삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요.",
+          "publisher": {
+            "@id": "https://shuttle-go.com/#organization"
+          }
+        }
+      ]
+    }
+  </script>
   <script>
     (function() {
       if (location.hostname !== 'shuttle-go.com') return;
@@ -3486,6 +3518,16 @@
     .shuttle-point-label .shuttle-point-name {
       white-space: nowrap;
     }
+    .shuttle-point-label .shuttle-point-eta {
+      display: block;
+      margin-top: 3px;
+      color: #c62828;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
     .shuttle-point-label.mobile-wrapped {
       white-space: normal;
     }
@@ -3503,7 +3545,8 @@
       white-space: nowrap;
     }
     .shuttle-point-label.mobile-wrapped .time-tag,
-    .shuttle-point-label.mobile-wrapped .getoff-tag {
+    .shuttle-point-label.mobile-wrapped .getoff-tag,
+    .shuttle-point-label.mobile-wrapped .shuttle-point-eta {
       display: block;
       margin-top: 4px;
       margin-left: 0;
@@ -4921,12 +4964,16 @@
       padding-left: 0.75em;
       text-indent: -0.75em;
     }
+    .route-option-card .route-timeline-notes {
+      margin-top: 12px;
+      text-align: center;
+    }
     .route-option-card .route-timeline-note {
       margin-top: 2px;
       font-size: 12px;
       line-height: 1.45;
       color: #888;
-      text-align: right;
+      text-align: center;
     }
     .route-option-card .btn-route-detail {
       flex-shrink: 0;
@@ -4957,6 +5004,24 @@
       cursor: pointer;
       white-space: nowrap;
       order: 2;
+    }
+    .route-option-card .btn-route-share.is-loading {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: wait;
+    }
+    .route-option-card .btn-route-share-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      box-sizing: border-box;
+      display: inline-flex;
+      flex: 0 0 auto;
+      animation: routeModeBtnSpin 0.8s linear infinite;
     }
     .route-option-card .btn-route-favorite {
       flex-shrink: 0;
@@ -5003,6 +5068,23 @@
     .route-option-card .btn-route-favorite:disabled {
       opacity: 0.6;
       cursor: wait;
+    }
+    @media (hover: none), (pointer: coarse) {
+      .route-option-card:not(.expanded) .btn-route-detail:hover {
+        color: #64748b;
+        background: #fff;
+        border-color: #d5dbe3;
+      }
+      .route-option-card .btn-route-favorite:not(.active):hover {
+        color: #64748b;
+        background: #fff;
+        border-color: #d5dbe3;
+      }
+      .route-option-card .btn-route-share:hover {
+        color: #222;
+        background: #fff;
+        border-color: #d5d5d5;
+      }
     }
     .route-shared-banner {
       display: flex;
@@ -17257,6 +17339,56 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return cloneJsonValue(routeVariantDetailCache.get(key));
       }
 
+      function normalizeSharedVariantDetailForTime(detail, departureTime) {
+        if (!detail || typeof detail !== 'object') return null;
+        var timeText = String(detail.selected_departure_time || departureTime || '').trim();
+        var routeStops = Array.isArray(detail.route_stops) ? detail.route_stops : [];
+        if (!timeText || routeStops.length === 0 || !routeStopsHaveVariantDetail(routeStops)) return null;
+        return {
+          selected_departure_time: timeText,
+          route_stops: cloneJsonValue(routeStops) || [],
+          selected_operator: String(detail.selected_operator || '').trim()
+        };
+      }
+
+      function getSharedVariantDetailsByDepartureTime(sharedVariantDetail) {
+        var output = {};
+        if (!sharedVariantDetail || typeof sharedVariantDetail !== 'object') return output;
+        var variants = sharedVariantDetail.variants_by_departure_time;
+        if (variants && typeof variants === 'object') {
+          Object.keys(variants).forEach(function(rawTime) {
+            var detail = normalizeSharedVariantDetailForTime(variants[rawTime], rawTime);
+            if (detail) output[detail.selected_departure_time] = detail;
+          });
+        }
+        var selectedDetail = normalizeSharedVariantDetailForTime(sharedVariantDetail);
+        if (selectedDetail && !output[selectedDetail.selected_departure_time]) {
+          output[selectedDetail.selected_departure_time] = selectedDetail;
+        }
+        return output;
+      }
+
+      function getSharedVariantDetailForDepartureTime(option, departureTime) {
+        if (!option || !option.__sharedVariantDetail) return null;
+        var timeText = String(departureTime || '').trim();
+        if (!timeText) return null;
+        var variants = getSharedVariantDetailsByDepartureTime(option.__sharedVariantDetail);
+        return variants[timeText] ? cloneJsonValue(variants[timeText]) : null;
+      }
+
+      function applySharedVariantDetailsSnapshotToOption(option, sharedVariantDetail) {
+        if (!option || !sharedVariantDetail || typeof sharedVariantDetail !== 'object') return;
+        var routeId = Number(option.route_id || 0);
+        var variants = getSharedVariantDetailsByDepartureTime(sharedVariantDetail);
+        Object.keys(variants).forEach(function(timeText) {
+          var detail = variants[timeText];
+          setRouteDepartureVariantDetail(option, timeText, detail);
+          if (isFinite(routeId) && routeId > 0) {
+            setRouteVariantDetailCache(buildRouteVariantDetailCacheKey(routeId, selectedDayType, timeText), detail);
+          }
+        });
+      }
+
       function fetchRouteVariantDetailData(routeId, departureTime) {
         var timeText = String(departureTime || '').trim() || getDepartureTimeStr();
         var cacheKey = buildRouteVariantDetailCacheKey(routeId, selectedDayType, timeText);
@@ -17302,6 +17434,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         ) {
           return cloneJsonValue(runtimeDetail);
         }
+        var sharedDetail = getSharedVariantDetailForDepartureTime(option, timeText);
+        if (sharedDetail) return sharedDetail;
         if (option.__sharedVariantDetail && option.__sharedVariantHydrated) {
           var sharedTime = String(option.__sharedVariantDetail.selected_departure_time || '').trim();
           if (!sharedTime || sharedTime === timeText) {
@@ -18889,7 +19023,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               '</div>';
           }
         });
-        html += '</div><div class="route-timeline-note">* 도착 예상 시간과 경로는 실제와 다를 수 있습니다.</div>';
+        html += '</div>' +
+          '<div class="route-timeline-notes">' +
+            '<div class="route-timeline-note">노란 부분을 클릭하면 노선 시간표를 볼 수 있습니다.</div>' +
+            '<div class="route-timeline-note">도착 예상 시간과 경로는 실제와 다를 수 있습니다.</div>' +
+          '</div>';
         return html;
       }
 
@@ -18979,9 +19117,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function refreshSelectedRouteOptionMap(option, placeName, isDepart) {
         if (!routeOptionsWrap || !option) return;
-        var renderToken = String(option.__renderCardToken || '').trim();
-        if (!renderToken) return;
-        var selectedCard = routeOptionsWrap.querySelector('.route-option-card.selected[data-route-card-token="' + renderToken + '"]');
+        var selectedCard = getLiveRouteCardForOption(option);
+        if (!isRouteOptionCurrentlySelected(option)) return;
         if (!selectedCard || selectedCard.classList.contains('expanded')) return;
         drawOptionOnMap(option, placeName, isDepart, selectedCard, { preserveViewport: true });
       }
@@ -20893,8 +21030,14 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           if (!isHighlightedStop && highlightName) isHighlightedStop = (currentName === highlightName);
           var labelAnchor = document.createElement('div');
           labelAnchor.className = 'shuttle-label-anchor';
+          var etaText = getRouteStopMapEtaText(s);
+          var etaHtml = etaText
+            ? '<span class="shuttle-point-eta">' + escapeHtml(etaText) + '</span>'
+            : '';
           labelAnchor.innerHTML = '<div class="shuttle-point-label shuttle-point-' + i + (isHighlightedStop ? ' is-highlight' : '') + '">' +
-            '<span class="shuttle-point-name">' + escapeHtml(s.sequence + '. ' + s.stop_name) + '</span></div>';
+            '<span class="shuttle-point-name">' + escapeHtml(s.sequence + '. ' + s.stop_name) + '</span>' +
+            etaHtml +
+          '</div>';
           var labelZIndex = totalStops - i + totalStops + (isHighlightedStop ? (totalStops + 20) : 0);
           var labelOverlay = new kakao.maps.CustomOverlay({
             position: pos,
@@ -21069,6 +21212,17 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function normalizeStopName(value) {
         return String(value == null ? '' : value).trim();
+      }
+
+      function getRouteStopMapEtaText(stop) {
+        if (!stop || typeof stop !== 'object') return '';
+        var raw = String(stop.eta_time || stop.eta_display || '').trim();
+        if (!raw) return '';
+        var match = raw.match(/(\d{1,2}):([0-5]\d)/);
+        if (!match) return '';
+        var minutes = parseHHMMToMinutes(match[1] + ':' + match[2]);
+        if (minutes == null) return '';
+        return '(' + formatMinutesToHHMM(minutes) + ')';
       }
 
       function getOptionLabelHighlightTarget(option, isDepart, pointIndex) {
@@ -21343,11 +21497,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (opts.forceFitViewport) {
           forceRouteViewportFitOnNextRender = true;
         }
+        var shouldKeepExpanded = !!opts.keepExpanded;
+        if (shouldKeepExpanded && activeOption && !isRouteOptionCurrentlyExpanded(activeOption)) {
+          shouldKeepExpanded = false;
+        }
         var displayed = refreshCurrentRouteDisplayedOptions();
         displayed._lastBatchSize = getCurrentRouteCanonicalOptions()._lastBatchSize;
         displayed._searchMode = getCurrentRouteCanonicalOptions()._searchMode;
         renderRouteCards(displayed, resolvedPlaceName, resolvedIsDepart);
-        if (!opts.keepExpanded || !activeOption) return;
+        if (!shouldKeepExpanded || !activeOption) return;
         var routeId = Number(activeOption && activeOption.route_id || currentPinnedRouteId || 0);
         if (!isFinite(routeId) || routeId <= 0) return;
         var nextOption = findCurrentRouteOptionById(routeId);
@@ -22195,6 +22353,32 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return null;
       }
 
+      function getLiveRouteCardForOption(option) {
+        var card = getCurrentRouteCardForOption(option);
+        return (card && card.isConnected) ? card : null;
+      }
+
+      function isCurrentPinnedRouteOption(option) {
+        var routeId = Number(option && option.route_id);
+        if (!isFinite(routeId) || routeId <= 0) return false;
+        return Number(currentPinnedRouteId || 0) === routeId;
+      }
+
+      function isRouteOptionCurrentlySelected(option) {
+        var card = getLiveRouteCardForOption(option);
+        return !!(card && isCurrentPinnedRouteOption(option) && card.classList.contains('selected'));
+      }
+
+      function isRouteOptionCurrentlyExpanded(option) {
+        var card = getLiveRouteCardForOption(option);
+        return !!(
+          card &&
+          isCurrentPinnedRouteOption(option) &&
+          card.classList.contains('selected') &&
+          card.classList.contains('expanded')
+        );
+      }
+
       function setCurrentPinnedRoute(option) {
         var routeId = Number(option && option.route_id);
         currentPinnedRouteId = (isFinite(routeId) && routeId > 0) ? routeId : 0;
@@ -22902,7 +23086,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           syncRouteModeButtonsForOption(option, placeName, isDepart, currentRouteOptions || []);
           syncRenderedRouteCardsForOption(option, placeName, isDepart);
           refreshSelectedRouteOptionMap(option, placeName, isDepart);
-          if (card && card.classList.contains('expanded') && card.classList.contains('selected')) {
+          if (isRouteOptionCurrentlyExpanded(option)) {
             drawRouteDetailOnMap(option, placeName, isDepart, option.__detailHighlightTarget || null, false);
           }
           return option;
@@ -25040,6 +25224,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         routeOptionsWrap.classList.add('show');
         routeSortBar.classList.remove('show');
         if (panelTitle) panelTitle.textContent = '대중교통 선택';
+        var btnBack = document.getElementById('btnBackFromRoutes');
+        if (btnBack) btnBack.style.display = '';
 
         var actionsHtml = (state.status === 'error' || state.status === 'empty')
           ? '<button type="button" class="route-transit-picker-btn" data-transit-picker-retry="1">다시 시도</button>'
@@ -25140,8 +25326,15 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         // the full currently active route (walk/transit + shuttle) to be
         // visible again rather than preserving the picker viewport.
         routeOptionsWrap.classList.add('show');
-        routeSortBar.classList.add('show');
-        if (panelTitle) panelTitle.textContent = '노선 선택';
+        if (sharedRouteState.active) {
+          routeSortBar.classList.remove('show');
+          closeMaxDistancePopover();
+        } else {
+          routeSortBar.classList.add('show');
+        }
+        if (panelTitle) panelTitle.textContent = sharedRouteState.active ? '노선 정보' : '노선 선택';
+        var btnBack = document.getElementById('btnBackFromRoutes');
+        if (btnBack) btnBack.style.display = sharedRouteState.active ? 'none' : '';
         var activeOption = findCurrentRouteOptionById(currentPinnedRouteId) ||
           getCurrentRouteCanonicalOptions()[0] ||
           (Array.isArray(currentRouteOptions) ? currentRouteOptions[0] : null) ||
@@ -25819,6 +26012,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           typeof snapshot.shared_variant_detail === 'object'
         ) ? cloneJsonValue(snapshot.shared_variant_detail) : null;
         routeOption.__sharedVariantDetail = sharedVariantDetail;
+        applySharedVariantDetailsSnapshotToOption(routeOption, sharedVariantDetail);
         routeOption.__sharedVariantHydrated = !!(
           sharedVariantDetail &&
           Array.isArray(sharedVariantDetail.route_stops) &&
@@ -26050,9 +26244,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function updateMaxDistanceTriggerVisibility() {
         // The arriveBy search auto-expands its radius (5km → 30km), so the
         // user-controlled max-distance selector is meaningless in that mode.
-        // Hide it when the current results were prepared with arrive_by.
+        // Shared links also show a fixed snapshot rather than an adjustable search.
         if (!maxDistanceTrigger) return;
-        var hide = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed);
+        var hide = sharedRouteState.active || isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed);
         maxDistanceTrigger.style.display = hide ? 'none' : '';
         if (hide) closeMaxDistancePopover();
       }
@@ -26393,7 +26587,16 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function resetRouteShareButtonLabel(button, originalText) {
         if (!button) return;
         button.disabled = false;
+        button.classList.remove('is-loading');
         button.textContent = originalText;
+      }
+
+      function setRouteShareButtonLoading(button, label) {
+        if (!button) return;
+        button.classList.add('is-loading');
+        button.innerHTML =
+          '<span class="btn-route-share-loading-text">' + escapeHtml(label || '링크 생성 중') + '</span>' +
+          '<span class="btn-route-share-spinner" aria-hidden="true"></span>';
       }
 
       function trackRouteResultAction(option, actionType) {
@@ -26442,7 +26645,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               throw new Error('공유 링크를 만들 수 없습니다.');
             }
             var shareCacheKey = getRouteShareCacheKey(snapshot);
-            button.textContent = '링크 생성 중...';
+            setRouteShareButtonLoading(button, '링크 생성 중');
             return Promise.resolve().then(function() {
               if (sharedRouteState.active && sharedRouteState.token) {
                 return String(sharedRouteState.token || '').trim();
@@ -26657,7 +26860,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           card.innerHTML =
             '<div class="route-card-actions">' +
               buildRouteFavoriteButtonHtml(opt) +
-              '<button type="button" class="btn-route-detail" data-idx="' + idx + '">상세</button>' +
+              '<button type="button" class="btn-route-detail" data-idx="' + idx + '">시간표</button>' +
               (showShareButton
                 ? '<button type="button" class="btn-route-share" data-idx="' + idx + '" data-default-label="↗ 공유">↗ 공유</button>'
                 : '') +
@@ -26711,9 +26914,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             toggleRouteDetail();
           });
           btnDetail.addEventListener('click', function(e) {
+            e.preventDefault();
             e.stopPropagation();
             disableArrivalByFirstCardAutoActivationForManualCard(card);
             toggleRouteDetail();
+            if (typeof btnDetail.blur === 'function') btnDetail.blur();
           });
           if (btnFavorite) {
             btnFavorite.addEventListener('click', function(e) {
@@ -26834,9 +27039,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           activeArrivalByLoadingBannerConfig = null;
         }
         updateMaxDistanceTriggerVisibility();
-        panelTitle.textContent = '노선 선택';
+        var isSharedRouteView = !!sharedRouteState.active;
+        panelTitle.textContent = isSharedRouteView ? '노선 정보' : '노선 선택';
         var btnBack = document.getElementById('btnBackFromRoutes');
-        if (btnBack) btnBack.style.display = '';
+        if (btnBack) btnBack.style.display = isSharedRouteView ? 'none' : '';
         resultsPlaceholder.style.display = 'none';
         resultsList.style.display = 'none';
         routeOptionsWrap.innerHTML = '';
@@ -26844,7 +27050,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         currentPlaceName = placeName;
         currentIsDepart = isDepart;
         expandedOptionIndex = -1;
-        routeSortBar.classList.add('show');
+        if (isSharedRouteView) {
+          routeSortBar.classList.remove('show');
+          closeMaxDistancePopover();
+        } else {
+          routeSortBar.classList.add('show');
+        }
         updateRouteSearchModeIndicator();
         updateSortButtons();
         hideShuttleErrorOverlay();
@@ -30986,11 +31197,18 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           departureTimesEl.querySelectorAll('.time-item').forEach(function(node) {
             var timeText = String(node.textContent || '').trim();
             if (!timeText) return;
+            var sharedDetail = isSharedSnapshotOnly ? getOptionExistingVariantDetail(option, timeText) : null;
+            var hasSharedDetail = !!(
+              sharedDetail &&
+              Array.isArray(sharedDetail.route_stops) &&
+              sharedDetail.route_stops.length > 0 &&
+              routeStopsHaveVariantDetail(sharedDetail.route_stops)
+            );
             node.setAttribute('data-time', timeText);
             node.classList.toggle('origin', timeText === String(option.__originBoardTime || option.board_time || getDepartureTimeStr()));
-            node.classList.toggle('disabled', isSharedSnapshotOnly || isFavoriteSnapshotOnly);
+            node.classList.toggle('disabled', (isSharedSnapshotOnly && !hasSharedDetail) || isFavoriteSnapshotOnly);
             node.style.cursor = isSharedSnapshotOnly ? 'pointer' : ((isFavoriteSnapshotOnly) ? 'default' : '');
-            if (isSharedSnapshotOnly) {
+            if (isSharedSnapshotOnly && !hasSharedDetail) {
               node.title = '다른 출발시간은 최신 정보로 다시 검색해야 볼 수 있습니다.';
             } else if (isFavoriteSnapshotOnly) {
               node.title = '저장된 스냅샷에는 이 출발시간 상세 정보가 없습니다.';
@@ -31003,6 +31221,16 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               if (isSharedSnapshotOnly) {
                 evt.preventDefault();
                 evt.stopPropagation();
+                var nextSharedDetail = getOptionExistingVariantDetail(option, timeText);
+                if (
+                  nextSharedDetail &&
+                  Array.isArray(nextSharedDetail.route_stops) &&
+                  nextSharedDetail.route_stops.length > 0 &&
+                  routeStopsHaveVariantDetail(nextSharedDetail.route_stops)
+                ) {
+                  applyRouteVariantDetailToCard(card, option, placeName, isDepart, nextSharedDetail);
+                  return;
+                }
                 promptLatestSearchFromSharedRouteForDepartureTime(timeText);
                 return;
               }
@@ -31089,10 +31317,12 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
 
       function applyRouteVariantDetailToCard(card, option, placeName, isDepart, detail) {
         if (!card || !option || !detail) return;
+        var liveCard = getLiveRouteCardForOption(option);
+        if (liveCard) card = liveCard;
         var previousDepartureTime = getOptionDisplayDepartureTime(option);
         var previousSelectedTransit = getSelectedTransitOption(option, previousDepartureTime);
         var previousRouteMode = getRouteModeSelection(option, previousDepartureTime);
-        var keepExpanded = !!card.classList.contains('expanded');
+        var keepExpanded = isRouteOptionCurrentlyExpanded(option);
         var nextSelectedTime = String(
           (detail && detail.selected_departure_time) ||
           option.__activeDetailTime ||
@@ -31121,7 +31351,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           option.__activeDetailTime || option.board_time || ''
         ) || {};
         var selectedTime = String(normalizedDetail.selected_departure_time || nextSelectedTime || '').trim();
-        var panel = card.querySelector('.route-detail-panel');
+        var panel = (card && card.isConnected) ? card.querySelector('.route-detail-panel') : null;
         if (!panel) return;
         syncRouteDetailPanelWithDetail(card, option, isDepart, normalizedDetail);
         var arrivalRefreshPromise = maybeRefreshArrivalByRouteVariant(
@@ -31141,6 +31371,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           departureTime: selectedTime,
           detail: normalizedDetail
         });
+        if (!isRouteOptionCurrentlySelected(option)) return;
         rerenderCurrentRouteOptions(option, placeName, isDepart, rerenderOpts);
         if (
           normalizeRouteTimeBasis(currentRouteTimeBasisUsed) === 'arrive_by' &&
@@ -31151,7 +31382,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           arrivalRefreshPromise.then(function(updatedOption) {
             var nextOption = updatedOption && typeof updatedOption === 'object' ? updatedOption : option;
             if (String(nextOption.__activeDetailTime || '').trim() !== selectedTime) return;
-            rerenderCurrentRouteOptions(nextOption, placeName, isDepart, rerenderOpts);
+            if (!isRouteOptionCurrentlySelected(nextOption)) return;
+            rerenderCurrentRouteOptions(nextOption, placeName, isDepart, {
+              keepExpanded: isRouteOptionCurrentlyExpanded(nextOption),
+              highlightTarget: rerenderOpts.highlightTarget,
+              fromMapLabel: rerenderOpts.fromMapLabel,
+              markInteractiveOrderingChanged: rerenderOpts.markInteractiveOrderingChanged
+            });
           });
         }
       }
