@@ -9121,9 +9121,16 @@
         targetBtn: null
       };
       var ONBOARDING_GUIDE_STORAGE_KEY = 'shuttle_go_onboarding_v1_done';
+      var ROUTE_ONBOARDING_GUIDE_STORAGE_KEY = 'shuttle_go_route_onboarding_v1_done';
+      var ROUTE_ONBOARDING_ELIGIBLE_STORAGE_KEY = 'shuttle_go_route_onboarding_v1_eligible';
       var onboardingGuideState = {
         active: false,
         stepIndex: 0
+      };
+      var routeOnboardingGuideState = {
+        active: false,
+        stepIndex: 0,
+        timer: null
       };
       var routeModeDirection = null;
       var routeModePlaceName = '';
@@ -15388,6 +15395,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (noticeSpotlightState.visible) {
           if (noticeSpotlightState.mode === 'onboarding') {
             hideOnboardingGuide(true);
+          } else if (noticeSpotlightState.mode === 'route-onboarding') {
+            hideRouteOnboardingGuide(true);
           } else {
             dismissNoticeSpotlight({ ack: true });
           }
@@ -15486,6 +15495,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         noticeSpotlightState.visible = false;
         noticeSpotlightState.mode = '';
         onboardingGuideState.active = false;
+        routeOnboardingGuideState.active = false;
         clearNoticeSpotlightTarget();
       }
 
@@ -15495,7 +15505,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!isVisibleSpotlightTarget(targetBtn)) {
           targetBtn = noticeSpotlightState.mode === 'onboarding'
             ? getOnboardingGuideTarget(onboardingGuideState.stepIndex)
-            : getActiveNoticeSpotlightButton();
+            : (noticeSpotlightState.mode === 'route-onboarding'
+              ? getRouteOnboardingGuideTarget(routeOnboardingGuideState.stepIndex)
+              : getActiveNoticeSpotlightButton());
           if (!targetBtn) {
             hideNoticeSpotlight();
             return;
@@ -15714,6 +15726,44 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         } catch (e) {}
       }
 
+      function isRouteOnboardingGuideDone() {
+        try {
+          return window.localStorage && window.localStorage.getItem(ROUTE_ONBOARDING_GUIDE_STORAGE_KEY) === '1';
+        } catch (e) {
+          return true;
+        }
+      }
+
+      function markRouteOnboardingGuideDone() {
+        if (routeOnboardingGuideState.timer) {
+          clearTimeout(routeOnboardingGuideState.timer);
+          routeOnboardingGuideState.timer = null;
+        }
+        try {
+          if (window.localStorage) window.localStorage.setItem(ROUTE_ONBOARDING_GUIDE_STORAGE_KEY, '1');
+        } catch (e) {}
+      }
+
+      function markRouteOnboardingGuideEligible() {
+        try {
+          if (window.localStorage && window.localStorage.getItem(ROUTE_ONBOARDING_GUIDE_STORAGE_KEY) !== '1') {
+            window.localStorage.setItem(ROUTE_ONBOARDING_ELIGIBLE_STORAGE_KEY, '1');
+          }
+        } catch (e) {}
+      }
+
+      function isRouteOnboardingGuideEligible() {
+        try {
+          return !!(
+            window.localStorage &&
+            window.localStorage.getItem(ROUTE_ONBOARDING_ELIGIBLE_STORAGE_KEY) === '1' &&
+            window.localStorage.getItem(ROUTE_ONBOARDING_GUIDE_STORAGE_KEY) !== '1'
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+
       function getOnboardingGuideSteps() {
         return [
           {
@@ -15765,6 +15815,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var step = steps[index];
         var target = step && step.target;
         if (!isVisibleSpotlightTarget(target)) return;
+        markRouteOnboardingGuideEligible();
         onboardingGuideState.active = true;
         onboardingGuideState.stepIndex = index;
         noticeSpotlightState.mode = 'onboarding';
@@ -15795,6 +15846,99 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         window.setTimeout(function() {
           if (shouldShowOnboardingGuide()) showOnboardingGuideStep(0);
         }, 450);
+      }
+
+      function getFirstRouteDetailGuideTarget() {
+        if (!routeOptionsWrap) return null;
+        var card = routeOptionsWrap.querySelector('.route-option-card.selected') ||
+          routeOptionsWrap.querySelector('.route-option-card');
+        return card ? card.querySelector('.btn-route-detail') : null;
+      }
+
+      function getRouteEndpointGuideTarget() {
+        return (typeof getActiveEndpointTriggerElement === 'function')
+          ? getActiveEndpointTriggerElement()
+          : null;
+      }
+
+      function getRouteOnboardingGuideSteps() {
+        return [
+          {
+            target: getFirstRouteDetailGuideTarget(),
+            title: '시간표를 확인하세요',
+            body: '시간표 버튼을 누르면 이 노선의 다른 출발시각과 정류장별 도착 예상시간을 볼 수 있어요.'
+          },
+          {
+            target: getRouteEndpointGuideTarget(),
+            title: '정류장을 필터링하세요',
+            body: '출발/종착 정류장 필터로 원하는 사업장 정류장만 골라 노선을 좁힐 수 있어요.'
+          }
+        ];
+      }
+
+      function getRouteOnboardingGuideTarget(stepIndex) {
+        var steps = getRouteOnboardingGuideSteps();
+        var step = steps[Math.max(0, Number(stepIndex || 0))];
+        return step && isVisibleSpotlightTarget(step.target) ? step.target : null;
+      }
+
+      function shouldShowRouteOnboardingGuide() {
+        if (!isRouteOnboardingGuideEligible() || isRouteOnboardingGuideDone()) return false;
+        if (noticeSpotlightState.visible && noticeSpotlightState.mode !== 'route-onboarding') return false;
+        if (pendingSharedRouteToken || sharedRouteState.active || favoriteRouteState.active) return false;
+        if (noticeModal && noticeModal.classList.contains('show')) return false;
+        if (issueModal && issueModal.classList.contains('show')) return false;
+        if (!routeOptionsWrap || !routeOptionsWrap.classList.contains('show')) return false;
+        if (!routeOptionsWrap.querySelector('.route-option-card')) return false;
+        if (!getFirstRouteDetailGuideTarget()) return false;
+        if (!getRouteEndpointGuideTarget()) return false;
+        return true;
+      }
+
+      function hideRouteOnboardingGuide(markDone) {
+        if (markDone) markRouteOnboardingGuideDone();
+        hideNoticeSpotlight();
+      }
+
+      function showRouteOnboardingGuideStep(stepIndex) {
+        if (!noticeSpotlightRoot || !noticeSpotlightBubble || !shouldShowRouteOnboardingGuide()) return;
+        var steps = getRouteOnboardingGuideSteps();
+        var index = Math.max(0, Math.min(steps.length - 1, Number(stepIndex || 0)));
+        var step = steps[index];
+        var target = step && step.target;
+        if (!isVisibleSpotlightTarget(target)) return;
+        routeOnboardingGuideState.active = true;
+        routeOnboardingGuideState.stepIndex = index;
+        noticeSpotlightState.mode = 'route-onboarding';
+        noticeSpotlightState.visible = true;
+        setGuideSpotlightMessage(step, index, steps.length);
+        noticeSpotlightBubble.setAttribute('aria-label', '노선 검색 사용 안내');
+        clearNoticeSpotlightTarget();
+        target.classList.add('notice-spotlight-target');
+        noticeSpotlightState.targetBtn = target;
+        noticeSpotlightRoot.classList.add('show');
+        noticeSpotlightRoot.setAttribute('aria-hidden', 'false');
+        positionNoticeSpotlightBubble();
+        requestAnimationFrame(positionNoticeSpotlightBubble);
+      }
+
+      function advanceRouteOnboardingGuide() {
+        if (noticeSpotlightState.mode !== 'route-onboarding') return;
+        var nextIndex = routeOnboardingGuideState.stepIndex + 1;
+        if (nextIndex >= getRouteOnboardingGuideSteps().length) {
+          hideRouteOnboardingGuide(true);
+          return;
+        }
+        showRouteOnboardingGuideStep(nextIndex);
+      }
+
+      function maybeShowRouteOnboardingGuide() {
+        if (!shouldShowRouteOnboardingGuide()) return;
+        if (routeOnboardingGuideState.timer) clearTimeout(routeOnboardingGuideState.timer);
+        routeOnboardingGuideState.timer = window.setTimeout(function() {
+          routeOnboardingGuideState.timer = null;
+          if (shouldShowRouteOnboardingGuide()) showRouteOnboardingGuideStep(0);
+        }, 550);
       }
 
       function submitIssueForm(e) {
@@ -16238,6 +16382,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           e.preventDefault();
           if (noticeSpotlightState.mode === 'onboarding') {
             hideOnboardingGuide(true);
+          } else if (noticeSpotlightState.mode === 'route-onboarding') {
+            hideRouteOnboardingGuide(true);
           } else {
             dismissNoticeSpotlight({ ack: true });
           }
@@ -16248,6 +16394,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           e.preventDefault();
           if (noticeSpotlightState.mode === 'onboarding') {
             hideOnboardingGuide(true);
+          } else if (noticeSpotlightState.mode === 'route-onboarding') {
+            hideRouteOnboardingGuide(true);
           } else {
             dismissNoticeSpotlight({ ack: true });
           }
@@ -16258,6 +16406,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           e.preventDefault();
           if (noticeSpotlightState.mode === 'onboarding') {
             advanceOnboardingGuide();
+          } else if (noticeSpotlightState.mode === 'route-onboarding') {
+            advanceRouteOnboardingGuide();
           } else {
             openNoticeModal();
           }
@@ -16268,6 +16418,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           e.preventDefault();
           if (noticeSpotlightState.mode === 'onboarding') {
             hideOnboardingGuide(true);
+          } else if (noticeSpotlightState.mode === 'route-onboarding') {
+            hideRouteOnboardingGuide(true);
           } else {
             dismissNoticeSpotlight({ ack: true });
           }
@@ -16389,6 +16541,8 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (noticeSpotlightState.visible) {
           if (noticeSpotlightState.mode === 'onboarding') {
             hideOnboardingGuide(true);
+          } else if (noticeSpotlightState.mode === 'route-onboarding') {
+            hideRouteOnboardingGuide(true);
           } else {
             dismissNoticeSpotlight({ ack: true });
           }
@@ -26495,11 +26649,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               return true;
             }
             if (result.status === 410) {
-              showSharedRouteStateCard('공유 링크 만료', '만료된 공유 링크입니다.', { showHomeButton: true });
+              showSharedRouteStateCard('공유 링크 없음', '존재하지 않거나 만료된 링크입니다.', { showHomeButton: true });
               return false;
             }
             if (result.status === 404) {
-              showSharedRouteStateCard('공유 링크 없음', '존재하지 않는 공유 링크입니다.', { showHomeButton: true });
+              showSharedRouteStateCard('공유 링크 없음', '존재하지 않거나 만료된 링크입니다.', { showHomeButton: true });
               return false;
             }
             throw new Error(result.data && result.data.error || '공유 링크를 불러오지 못했습니다.');
@@ -31859,6 +32013,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           syncRouteCardTimeSummary(card, option, placeName, isDepart);
         });
         refreshVisibleRouteFavoriteStatuses(options || []);
+        maybeShowRouteOnboardingGuide();
       };
 
       if (btnArrivalReport) {
@@ -32020,7 +32175,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         Promise.allSettled([authReadyPromise, sitesReadyPromise, sharedRouteReadyPromise])
           .finally(function() {
             updateMapControlsPosition();
-            if (!sharedRouteState.active && isMobile()) {
+            if (!pendingSharedRouteToken && !sharedRouteState.active && isMobile()) {
               setSheetState('sheet-peek');
             }
             maybeShowOnboardingGuide();
