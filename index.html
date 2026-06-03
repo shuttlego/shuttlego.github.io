@@ -1352,6 +1352,37 @@
       font-size: 14px;
       line-height: 1.6;
     }
+    .loading-state-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .loading-state-spinner {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      border: 2px solid rgba(15, 23, 42, 0.14);
+      border-top-color: #111827;
+      border-radius: 50%;
+      animation: routeSearchSpinner 0.8s linear infinite;
+    }
+    .loading-state-body {
+      min-width: 0;
+      flex: 1;
+    }
+    .loading-state-title {
+      color: #0f172a;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+    .loading-state-message {
+      margin-top: 4px;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.45;
+    }
     .home-favorites-login strong {
       display: block;
       margin-bottom: 6px;
@@ -3986,6 +4017,15 @@
       display: flex;
       flex-direction: column;
       padding: 8px 0;
+    }
+    .place-search-loading-card {
+      margin: 8px 14px 0;
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+      color: #475569;
     }
     .result-card {
       flex-shrink: 0;
@@ -9195,6 +9235,7 @@
       var endpointOptionsPayloadBySiteDay = {};
       var endpointOptionsPayloadPendingBySiteDay = {};
       var endpointContextKey = '';
+      var placeSearchRequestSerial = 0;
       var routeRequestSerial = 0;
       var dayTypeRequestSerial = 0;
       var currentPinnedRouteId = 0;
@@ -11090,6 +11131,37 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return 'ca_' + Date.now() + '_' + Math.random().toString(16).slice(2, 12);
       }
 
+      function createLoadingStateCard(className, titleText, messageText) {
+        var card = document.createElement('div');
+        card.className = [String(className || '').trim(), 'loading-state-card'].filter(Boolean).join(' ');
+        card.setAttribute('role', 'status');
+        card.setAttribute('aria-live', 'polite');
+
+        var spinner = document.createElement('div');
+        spinner.className = 'loading-state-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        card.appendChild(spinner);
+
+        var body = document.createElement('div');
+        body.className = 'loading-state-body';
+
+        var title = document.createElement('div');
+        title.className = 'loading-state-title';
+        title.textContent = String(titleText || '불러오는 중입니다.');
+        body.appendChild(title);
+
+        var message = String(messageText || '').trim();
+        if (message) {
+          var messageEl = document.createElement('div');
+          messageEl.className = 'loading-state-message';
+          messageEl.textContent = message;
+          body.appendChild(messageEl);
+        }
+
+        card.appendChild(body);
+        return card;
+      }
+
       function appendHomeSectionHeading(container, titleText, captionText, options) {
         if (!container) return;
         options = options || {};
@@ -11201,9 +11273,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         resultsList.innerHTML = '';
 
         if (homePanelLoading || recentFavoritesLoading) {
-          var loadingCard = document.createElement('div');
-          loadingCard.className = 'home-favorites-empty';
-          loadingCard.textContent = '홈 정보를 불러오는 중입니다...';
+          var loadingCard = createLoadingStateCard(
+            'home-favorites-empty',
+            '홈 정보를 불러오는 중입니다.',
+            '최근 검색과 즐겨찾기를 준비하고 있습니다.'
+          );
           resultsList.appendChild(loadingCard);
           return;
         }
@@ -26380,7 +26454,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         showSharedRouteStateCard('공유 링크', '공유된 노선 정보를 불러오는 중입니다...', {
           loading: true,
           loadingBadge: '공유',
-          mobileSheetState: 'sheet-peek'
+          mobileSheetState: 'sheet-half'
         });
       }
 
@@ -27870,6 +27944,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         });
         if (!normalizedPlace) return;
         place = normalizedPlace;
+        placeSearchRequestSerial += 1;
         if (sharedRouteState.active) {
           deactivateSharedRouteView();
         } else {
@@ -27993,6 +28068,25 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         resultsList.innerHTML = '';
       }
 
+      function renderPlaceSearchLoadingState(keyword) {
+        showPlaceResultsView();
+        resultsPanelState = 'place-search-loading';
+        closeBubble();
+        deselectPlace();
+        clearSearchOverlays();
+        clearCurrentLocationOverlay();
+        resultsPlaceholder.style.display = 'none';
+        resultsList.style.display = 'flex';
+        resultsList.innerHTML = '';
+        resultsList.appendChild(createLoadingStateCard(
+          'place-search-loading-card',
+          '장소 검색 결과를 불러오는 중입니다.',
+          String(keyword || '').trim()
+            ? '"' + String(keyword || '').trim() + '" 주변의 장소 후보를 확인하고 있습니다.'
+            : '입력한 검색어와 가까운 장소 후보를 확인하고 있습니다.'
+        ));
+      }
+
       function doSearch() {
         if (sharedRouteState.active) {
           deactivateSharedRouteView();
@@ -28002,6 +28096,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var routeInput = getActiveRouteModePlaceInput();
         var q = routeInput ? String(routeInput.value || '').trim() : searchInput.value.trim();
         if (!q) return;
+        var requestId = ++placeSearchRequestSerial;
         if (isMobile()) setSheetState('sheet-half');
         if (routeInput) {
           clearCurrentLocationOverlay();
@@ -28010,9 +28105,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         shuttleMessage.classList.remove('show');
         clearShuttleOverlays();
         currentSearchSource = 'manual_search';
+        renderPlaceSearchLoadingState(q);
         fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q))
           .then(function(r) { return r.json(); })
           .then(function(data) {
+            if (requestId !== placeSearchRequestSerial) return;
             markPlaceHistorySearched(q);
             places = (data.documents || []).map(function(doc) {
               var copied = Object.assign({}, doc || {});
@@ -28036,6 +28133,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             renderResults(places);
           })
           .catch(function() {
+            if (requestId !== placeSearchRequestSerial) return;
             showPlaceResultsView();
             showEmptyResults();
           });
