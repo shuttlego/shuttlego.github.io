@@ -34,7 +34,7 @@ jobs:
           cp robots.txt _site/robots.txt
           cp sitemap.xml _site/sitemap.xml
           cp -R page _site/page
-          find . -maxdepth 1 -type f \( -name '*.png' -o -name '*.svg' \) -exec cp {} _site/ \;
+          cp -R images _site/images
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
           touch _site/.nojekyll
 
