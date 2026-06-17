@@ -1,8 +1,11 @@
 :root {
   color-scheme: light;
-  --yellow: #ffd400;
-  --yellow-soft: #fff4b8;
-  --yellow-pale: #fff9dc;
+  --brand-blue: #1428A0;
+  --brand-blue-hover: #10217F;
+  --brand-blue-soft: #dfe7ff;
+  --brand-blue-pale: #e8edff;
+  --brand-blue-line: #9aa8ff;
+  --brand-blue-light: #b9c4ff;
   --ink: #111319;
   --ink-soft: #2a2f3a;
   --muted: #687386;
@@ -106,9 +109,9 @@ img {
 .header-cta,
 .primary-action,
 .hero-search button {
-  color: var(--ink);
-  background: var(--yellow);
-  box-shadow: 0 12px 26px rgba(255, 212, 0, 0.28);
+  color: var(--paper);
+  background: var(--brand-blue);
+  box-shadow: 0 12px 26px rgba(20, 40, 160, 0.24);
 }
 
 .header-cta {
@@ -122,7 +125,7 @@ img {
   overflow: hidden;
   min-height: 620px;
   padding: 76px 28px 64px;
-  background: var(--yellow-pale);
+  background: var(--brand-blue-pale);
 }
 
 .hero-copy,
@@ -276,8 +279,8 @@ h1 span {
 .popular-links a:hover,
 .popular-route-links a:hover {
   color: var(--ink);
-  border-color: var(--yellow);
-  background: var(--yellow-pale);
+  border-color: var(--brand-blue);
+  background: var(--brand-blue-pale);
 }
 
 .hero-actions {
@@ -353,7 +356,7 @@ h1 span {
   position: relative;
   z-index: 2;
   padding: 18px 16px;
-  background: #fffced;
+  background: var(--brand-blue-pale);
   border-right: 1px solid #dfe7f1;
 }
 
@@ -476,7 +479,7 @@ h1 span {
   top: 8px;
   width: 7px;
   height: 7px;
-  background: var(--yellow);
+  background: var(--brand-blue);
   border: 2px solid var(--ink);
   border-radius: 50%;
 }
@@ -677,9 +680,9 @@ h1 span {
   align-items: center;
   min-height: 32px;
   padding: 0 10px;
-  color: var(--ink);
-  background: var(--yellow-soft);
-  border: 1px solid #f2d66b;
+  color: var(--brand-blue);
+  background: var(--brand-blue-soft);
+  border: 1px solid var(--brand-blue-line);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 900;
@@ -747,7 +750,7 @@ h1 span {
   z-index: 1;
   width: 24px;
   height: 24px;
-  border: 5px solid var(--yellow);
+  border: 5px solid var(--brand-blue);
   border-radius: 50%;
   background: var(--ink);
 }
@@ -784,8 +787,8 @@ h1 span {
 .share-strip a {
   min-height: 34px;
   padding: 0 12px;
-  color: var(--ink);
-  background: var(--yellow);
+  color: var(--paper);
+  background: var(--brand-blue);
   font-size: 13px;
 }
 
@@ -851,8 +854,8 @@ h1 span {
   justify-content: center;
   width: 42px;
   height: 32px;
-  color: var(--ink);
-  background: var(--yellow);
+  color: var(--paper);
+  background: var(--brand-blue);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 950;
@@ -880,7 +883,7 @@ h1 span {
 }
 
 .solution-grid article {
-  border-top: 5px solid var(--yellow);
+  border-top: 5px solid var(--brand-blue);
 }
 
 .company-logo-list {
@@ -942,7 +945,7 @@ h1 span {
 }
 
 .solution-band .eyebrow {
-  color: var(--yellow);
+  color: var(--brand-blue-light);
 }
 
 .solution-copy p:not(.eyebrow) {
@@ -971,8 +974,8 @@ h1 span {
   align-items: center;
   justify-content: center;
   min-height: 40px;
-  color: var(--ink);
-  background: var(--yellow);
+  color: var(--paper);
+  background: var(--brand-blue);
   border-radius: 8px;
   font-size: 16px;
 }
@@ -988,7 +991,7 @@ h1 span {
 
 .feature-grid article {
   min-height: 188px;
-  border-top: 5px solid var(--yellow);
+  border-top: 5px solid var(--brand-blue);
 }
 
 .use-case-section {
@@ -1028,8 +1031,8 @@ h1 span {
   gap: 48px;
   align-items: start;
   padding: 64px;
-  background: var(--yellow-pale);
-  border: 1px solid #f6e6a5;
+  background: var(--brand-blue-pale);
+  border: 1px solid var(--brand-blue-line);
   border-radius: 8px;
 }
 
@@ -1042,7 +1045,7 @@ h1 span {
 .data-list div {
   padding: 18px;
   background: var(--paper);
-  border: 1px solid #f2d66b;
+  border: 1px solid var(--brand-blue-line);
   border-radius: 8px;
 }
 
@@ -1119,8 +1122,8 @@ h1 span {
 .final-cta {
   text-align: center;
   padding: 72px 28px;
-  color: var(--paper);
-  background: #111319;
+  color: var(--ink);
+  background: linear-gradient(180deg, #f8faff 0%, #e8edff 100%);
   border-radius: 8px 8px 0 0;
 }
 
@@ -1137,7 +1140,7 @@ h1 span {
 }
 
 .final-cta .eyebrow {
-  color: var(--yellow);
+  color: var(--brand-blue);
 }
 
 .site-footer {

@@ -13,8 +13,7 @@
 }
 
 .landing-hero-wrap {
-  background: var(--yellow-pale);
-  border-bottom: 1px solid #f1df95;
+  background: var(--brand-blue-pale);
 }
 
 .landing-kicker {
@@ -22,8 +21,8 @@
   align-items: center;
   min-height: 34px;
   padding: 0 12px;
-  color: var(--ink);
-  background: var(--yellow);
+  color: var(--paper);
+  background: var(--brand-blue);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 950;
@@ -60,7 +59,7 @@
   padding: 0 12px;
   color: #404958;
   background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #f1df95;
+  border: 1px solid var(--brand-blue-line);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 850;
@@ -149,7 +148,7 @@
 }
 
 .example-card {
-  border-top: 5px solid var(--yellow);
+  border-top: 5px solid var(--brand-blue);
 }
 
 .route-badge {
@@ -157,8 +156,8 @@
   align-items: center;
   min-height: 30px;
   padding: 0 10px;
-  color: var(--ink);
-  background: var(--yellow);
+  color: var(--paper);
+  background: var(--brand-blue);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 950;
@@ -213,7 +212,7 @@
   padding: 22px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-top: 5px solid var(--yellow);
+  border-top: 5px solid var(--brand-blue);
   border-radius: 8px;
 }
 
@@ -272,7 +271,7 @@
   text-align: left;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-top: 5px solid var(--yellow);
+  border-top: 5px solid var(--brand-blue);
   border-radius: 8px;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
 }
@@ -300,7 +299,7 @@
 }
 
 .related-route-card:hover {
-  border-color: #f0c800;
+  border-color: var(--brand-blue);
   transform: translateY(-2px);
 }
 
@@ -316,7 +315,7 @@
 }
 
 .hwaseong-landing .landing-hero-wrap {
-  background: #ffffff;
+  background: var(--brand-blue-pale);
 }
 
 .hwaseong-landing .landing-hero {

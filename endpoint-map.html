@@ -1,0 +1,1045 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Endpoint Map Debug</title>
+  <style>
+    :root {
+      --bg: #f3efe7;
+      --panel: rgba(255, 252, 245, 0.96);
+      --panel-strong: #fffaf0;
+      --line: rgba(55, 46, 34, 0.12);
+      --text: #261d14;
+      --muted: #6d6257;
+      --accent: #185c45;
+      --danger: #b1452f;
+      --shadow: 0 18px 40px rgba(48, 35, 20, 0.14);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --marker-ring: rgba(255, 255, 255, 0.94);
+      --marker-shadow: 0 12px 24px rgba(26, 24, 20, 0.28);
+      --font: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(24, 92, 69, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(177, 69, 47, 0.10), transparent 24%),
+        linear-gradient(180deg, #f8f2e9 0%, #efe6d8 100%);
+    }
+
+    .shell {
+      min-height: 100%;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+    }
+
+    .hero, .filters, .sidebar-card, .map-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      border-radius: var(--radius-lg);
+      padding: 20px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+    }
+
+    .hero p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .hero-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .hero-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.76);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .filters {
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field label,
+    .field .field-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    select,
+    .slider-wrap,
+    .checkbox-card {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: var(--radius-md);
+    }
+
+    select {
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      min-height: 48px;
+    }
+
+    .checkbox-card {
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      min-height: 48px;
+      align-items: center;
+    }
+
+    .check-pill {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(55, 46, 34, 0.08);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .check-pill input {
+      margin: 0;
+    }
+
+    .slider-wrap {
+      padding: 12px 14px;
+    }
+
+    .slider-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .slider-value {
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .content {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) 360px;
+      gap: 16px;
+    }
+
+    .map-card {
+      position: relative;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      min-height: 620px;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 620px;
+    }
+
+    .map-status {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 12;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(38, 29, 20, 0.82);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      max-width: calc(100% - 28px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sidebar {
+      min-height: 0;
+      display: grid;
+      gap: 12px;
+      grid-template-rows: auto auto 1fr;
+    }
+
+    .sidebar-card {
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .summary-box {
+      border-radius: var(--radius-md);
+      padding: 14px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+    }
+
+    .summary-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .summary-value {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+
+    .legend-list,
+    .detail-list,
+    .group-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .legend-item,
+    .detail-item,
+    .group-item {
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      padding: 12px 13px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend-marker,
+    .marker-shape {
+      width: 18px;
+      height: 18px;
+      flex: none;
+      background: #3a7a63;
+      border: 2px solid var(--marker-ring);
+      box-shadow: 0 4px 8px rgba(26, 24, 20, 0.12);
+    }
+
+    .shape-circle { border-radius: 999px; }
+    .shape-square { border-radius: 5px; }
+    .shape-diamond { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      margin: 0 0 12px;
+    }
+
+    .detail-empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    .detail-key {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 800;
+    }
+
+    .detail-value {
+      font-size: 14px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .group-list {
+      max-height: 100%;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .group-item {
+      display: grid;
+      gap: 7px;
+    }
+
+    .group-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .group-chip {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid var(--marker-ring);
+      flex: none;
+    }
+
+    .group-name {
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    .group-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .endpoint-marker {
+      position: relative;
+      transform: translate(var(--dx, 0px), var(--dy, 0px));
+      border: 0;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .endpoint-marker-badge {
+      width: 52px;
+      min-height: 52px;
+      padding: 6px 6px 7px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 3px;
+      background: var(--marker-color, #3a7a63);
+      color: #fff;
+      border: 2px solid var(--marker-ring);
+      box-shadow: var(--marker-shadow);
+      transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+    }
+
+    .endpoint-marker:hover .endpoint-marker-badge,
+    .endpoint-marker.is-selected .endpoint-marker-badge {
+      transform: translateY(-3px) scale(1.05);
+      box-shadow: 0 16px 30px rgba(20, 18, 16, 0.34);
+      filter: saturate(1.08);
+    }
+
+    .endpoint-marker.is-selected .endpoint-marker-badge {
+      outline: 3px solid rgba(255, 245, 179, 0.95);
+      outline-offset: 1px;
+    }
+
+    .endpoint-marker.shape-circle .endpoint-marker-badge {
+      border-radius: 999px;
+    }
+
+    .endpoint-marker.shape-square .endpoint-marker-badge {
+      border-radius: 14px;
+    }
+
+    .endpoint-marker.shape-diamond .endpoint-marker-badge {
+      clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      border-radius: 14px;
+    }
+
+    .marker-symbol {
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .marker-count {
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .loading-cover {
+      position: absolute;
+      inset: auto 14px 14px auto;
+      z-index: 12;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 250, 240, 0.94);
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      display: none;
+    }
+
+    .loading-cover.show { display: block; }
+
+    .error-text {
+      color: var(--danger);
+      font-weight: 800;
+    }
+
+    @media (max-width: 1100px) {
+      .filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .content {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        grid-template-rows: auto auto auto;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .shell {
+        padding: 14px;
+      }
+      .hero {
+        padding: 18px;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .filters {
+        grid-template-columns: 1fr;
+      }
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+      #map,
+      .map-card {
+        min-height: 460px;
+      }
+      .endpoint-marker-badge {
+        width: 48px;
+        min-height: 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <h1>Endpoint Map Debug</h1>
+        <p>노선 endpoint만 지도에 올리고, grouping 거리와 route type 조합을 즉시 검증합니다.</p>
+      </div>
+      <div class="hero-links">
+        <a class="hero-link" href="/">메인 화면</a>
+        <a class="hero-link" href="https://developers.kakao.com/" target="_blank" rel="noreferrer">Kakao Docs</a>
+      </div>
+    </section>
+
+    <section class="filters">
+      <div class="field">
+        <label for="siteSelect">사업장</label>
+        <select id="siteSelect"></select>
+      </div>
+      <div class="field">
+        <label for="dayTypeSelect">요일 타입</label>
+        <select id="dayTypeSelect"></select>
+      </div>
+      <div class="field">
+        <div class="field-title">노선 타입</div>
+        <div class="checkbox-card">
+          <label class="check-pill"><input type="checkbox" value="commute_in" checked /> 출근</label>
+          <label class="check-pill"><input type="checkbox" value="commute_out" checked /> 퇴근</label>
+          <label class="check-pill"><input type="checkbox" value="shuttle" checked /> 셔틀</label>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-title">Grouping 거리</div>
+        <div class="slider-wrap">
+          <div class="slider-head">
+            <span>50m ~ 300m</span>
+            <span class="slider-value" id="distanceValue">100m</span>
+          </div>
+          <input id="distanceSlider" type="range" min="50" max="300" step="10" value="100" />
+        </div>
+      </div>
+    </section>
+
+    <section class="content">
+      <div class="map-card">
+        <div id="map"></div>
+        <div class="map-status" id="mapStatus">초기화 중...</div>
+        <div class="loading-cover" id="loadingCover">데이터를 불러오는 중...</div>
+      </div>
+
+      <div class="sidebar">
+        <section class="sidebar-card">
+          <h2 class="panel-title">요약</h2>
+          <div class="summary-grid">
+            <div class="summary-box">
+              <div class="summary-label">Raw Endpoint</div>
+              <div class="summary-value" id="rawCount">-</div>
+            </div>
+            <div class="summary-box">
+              <div class="summary-label">Markers</div>
+              <div class="summary-value" id="markerCount">-</div>
+            </div>
+            <div class="summary-box">
+              <div class="summary-label">Groups</div>
+              <div class="summary-value" id="groupCount">-</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-card">
+          <h2 class="panel-title">선택한 마커</h2>
+          <div class="detail-list" id="detailList">
+            <p class="detail-empty">마커를 클릭하면 stop 이름, route 목록, group 정보를 여기서 확인할 수 있습니다.</p>
+          </div>
+          <h2 class="panel-title" style="margin-top: 18px;">범례</h2>
+          <div class="legend-list">
+            <div class="legend-item"><span class="legend-marker shape-circle"></span> 출근 endpoint</div>
+            <div class="legend-item"><span class="legend-marker shape-square"></span> 퇴근 endpoint</div>
+            <div class="legend-item"><span class="legend-marker shape-diamond"></span> 셔틀 endpoint</div>
+            <div class="legend-item"><span class="group-chip" style="background:#3a7a63;"></span> 같은 색은 같은 grouping 결과</div>
+          </div>
+        </section>
+
+        <section class="sidebar-card" style="min-height: 0;">
+          <h2 class="panel-title">Group 목록</h2>
+          <div class="group-list" id="groupList"></div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script src="dev.config.js"></script>
+  <script>
+    (function() {
+      var host = location.hostname;
+      var isDev = (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host.indexOf('192.168.') === 0
+      );
+      var devConfig = window.__SHUTTLE_DEV_CONFIG || {};
+      var apiBaseOverride = (typeof devConfig.API_BASE_OVERRIDE === 'string')
+        ? devConfig.API_BASE_OVERRIDE.trim()
+        : '';
+      function resolveDevApiBase() {
+        var useHttps = (location.protocol === 'https:');
+        var scheme = useHttps ? 'https' : 'http';
+        var defaultPort = useHttps ? 443 : 80;
+        var port = Number(useHttps ? devConfig.API_HTTPS_PORT : devConfig.API_HTTP_PORT);
+        if (!port) port = defaultPort;
+        if (!isFinite(port) || port < 1 || port > 65535) port = defaultPort;
+        return (port === defaultPort) ? (scheme + '://' + host) : (scheme + '://' + host + ':' + port);
+      }
+      window.__ENDPOINT_DEBUG_ENV = {
+        KAKAO_JS_KEY: isDev
+          ? '22400d4577672b2419e494c2e292d9c0'
+          : '39fb0eced397ffdd52bc40427d8a1d91',
+        API_BASE: isDev
+          ? (apiBaseOverride || resolveDevApiBase())
+          : 'https://cloud-api.shuttle-go.com'
+      };
+
+      var script = document.createElement('script');
+      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + window.__ENDPOINT_DEBUG_ENV.KAKAO_JS_KEY + '&autoload=false';
+      script.onload = function() {
+        kakao.maps.load(function() {
+          window.__initEndpointDebugPage();
+        });
+      };
+      document.head.appendChild(script);
+    })();
+  </script>
+  <script>
+    window.__initEndpointDebugPage = function() {
+      var ENV = window.__ENDPOINT_DEBUG_ENV || {};
+      var API_BASE = ENV.API_BASE || '';
+      var mapEl = document.getElementById('map');
+      var mapStatus = document.getElementById('mapStatus');
+      var loadingCover = document.getElementById('loadingCover');
+      var siteSelect = document.getElementById('siteSelect');
+      var dayTypeSelect = document.getElementById('dayTypeSelect');
+      var distanceSlider = document.getElementById('distanceSlider');
+      var distanceValue = document.getElementById('distanceValue');
+      var rawCount = document.getElementById('rawCount');
+      var markerCount = document.getElementById('markerCount');
+      var groupCount = document.getElementById('groupCount');
+      var detailList = document.getElementById('detailList');
+      var groupList = document.getElementById('groupList');
+      var routeTypeCheckboxes = Array.prototype.slice.call(document.querySelectorAll('.checkbox-card input[type="checkbox"]'));
+
+      var map = new kakao.maps.Map(mapEl, {
+        center: new kakao.maps.LatLng(37.2263, 127.0746),
+        level: 6
+      });
+
+      var state = {
+        sites: [],
+        dayTypes: [],
+        selectedSiteId: '',
+        selectedDayType: 'weekday',
+        selectedRouteTypes: new Set(['commute_in', 'commute_out', 'shuttle']),
+        groupDistanceM: 100,
+        overlays: [],
+        data: null,
+        selectedMarkerId: '',
+        markerById: Object.create(null),
+        loadSeq: 0,
+        sliderTimer: 0
+      };
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function hashString(value) {
+        var hash = 0;
+        var text = String(value || '');
+        for (var i = 0; i < text.length; i += 1) {
+          hash = ((hash << 5) - hash) + text.charCodeAt(i);
+          hash |= 0;
+        }
+        return Math.abs(hash);
+      }
+
+      function colorForGroup(groupId) {
+        var hash = hashString(groupId);
+        var hue = hash % 360;
+        return 'hsl(' + hue + 'deg 62% 46%)';
+      }
+
+      function routeTypeLabel(routeType) {
+        if (routeType === 'commute_in') return '출근';
+        if (routeType === 'commute_out') return '퇴근';
+        if (routeType === 'shuttle') return '셔틀';
+        return routeType || '-';
+      }
+
+      function endpointRoleLabel(role, routeType) {
+        if (routeType === 'commute_in') return '종착';
+        if (routeType === 'commute_out') return '출발';
+        return role === 'terminus' ? '종점' : '기점';
+      }
+
+      function routeTypeShape(routeType) {
+        if (routeType === 'commute_in') return 'shape-circle';
+        if (routeType === 'commute_out') return 'shape-square';
+        return 'shape-diamond';
+      }
+
+      function routeTypeSymbol(routeType) {
+        if (routeType === 'commute_in') return '출';
+        if (routeType === 'commute_out') return '퇴';
+        return '셔';
+      }
+
+      function dayTypeLabel(dayType) {
+        var labels = {
+          weekday: '평일',
+          monday: '월요일',
+          saturday: '토요일',
+          holiday: '휴일',
+          familyday: '가정의날'
+        };
+        return labels[dayType] || dayType || '-';
+      }
+
+      function setStatus(message, isError) {
+        mapStatus.textContent = message;
+        mapStatus.className = isError ? 'map-status error-text' : 'map-status';
+      }
+
+      function setLoading(loading) {
+        loadingCover.classList.toggle('show', !!loading);
+      }
+
+      function getSelectedRouteTypes() {
+        var selected = [];
+        routeTypeCheckboxes.forEach(function(input) {
+          if (input.checked) selected.push(input.value);
+        });
+        return selected;
+      }
+
+      function setDistanceLabel() {
+        distanceValue.textContent = String(state.groupDistanceM) + 'm';
+      }
+
+      function syncQueryString() {
+        var params = new URLSearchParams();
+        if (state.selectedSiteId) params.set('site_id', state.selectedSiteId);
+        if (state.selectedDayType) params.set('day_type', state.selectedDayType);
+        if (state.groupDistanceM) params.set('group_distance_m', String(state.groupDistanceM));
+        params.set('route_types', Array.from(state.selectedRouteTypes).join(','));
+        history.replaceState(null, '', location.pathname + '?' + params.toString());
+      }
+
+      function applyQueryString() {
+        var params = new URLSearchParams(location.search);
+        var siteId = params.get('site_id');
+        var dayType = params.get('day_type');
+        var distance = parseInt(params.get('group_distance_m') || '', 10);
+        var routeTypes = (params.get('route_types') || '').split(',').map(function(item) {
+          return String(item || '').trim();
+        }).filter(Boolean);
+        if (siteId) state.selectedSiteId = siteId;
+        if (dayType) state.selectedDayType = dayType;
+        if (distance >= 50 && distance <= 300 && distance % 10 === 0) state.groupDistanceM = distance;
+        if (routeTypes.length > 0) {
+          state.selectedRouteTypes = new Set(routeTypes);
+        }
+      }
+
+      function fetchJson(path) {
+        return fetch(API_BASE + path, { credentials: 'include' })
+          .then(function(response) {
+            return response.json().catch(function() { return {}; }).then(function(payload) {
+              if (!response.ok) {
+                throw new Error(payload.error || ('HTTP ' + response.status));
+              }
+              return payload || {};
+            });
+          });
+      }
+
+      function loadSites() {
+        return fetchJson('/api/sites').then(function(payload) {
+          state.sites = Array.isArray(payload.sites) ? payload.sites : [];
+          siteSelect.innerHTML = state.sites.map(function(site) {
+            var siteId = String(site.site_id || '');
+            var siteName = String(site.site_name || siteId);
+            return '<option value="' + escapeHtml(siteId) + '">' + escapeHtml(siteName) + '</option>';
+          }).join('');
+          if (!state.selectedSiteId && state.sites.length > 0) {
+            state.selectedSiteId = String(state.sites[0].site_id || '');
+          }
+          siteSelect.value = state.selectedSiteId;
+        });
+      }
+
+      function loadDayTypes() {
+        if (!state.selectedSiteId) return Promise.resolve();
+        return fetchJson('/api/shuttle/day-types?site_id=' + encodeURIComponent(state.selectedSiteId))
+          .then(function(payload) {
+            state.dayTypes = Array.isArray(payload.day_types) ? payload.day_types : [];
+            dayTypeSelect.innerHTML = state.dayTypes.map(function(dayType) {
+              return '<option value="' + escapeHtml(dayType) + '">' + escapeHtml(dayTypeLabel(dayType)) + '</option>';
+            }).join('');
+            if (state.dayTypes.indexOf(state.selectedDayType) === -1) {
+              state.selectedDayType = state.dayTypes[0] || 'weekday';
+            }
+            dayTypeSelect.value = state.selectedDayType;
+          });
+      }
+
+      function clearOverlays() {
+        state.overlays.forEach(function(overlay) {
+          if (overlay && typeof overlay.setMap === 'function') overlay.setMap(null);
+        });
+        state.overlays = [];
+        state.markerById = Object.create(null);
+      }
+
+      function fitBounds(markers) {
+        if (!markers || markers.length === 0) return;
+        var bounds = new kakao.maps.LatLngBounds();
+        markers.forEach(function(marker) {
+          bounds.extend(new kakao.maps.LatLng(marker.lat, marker.lng));
+        });
+        map.setBounds(bounds, 36, 36, 36, 36);
+      }
+
+      function renderDetails(marker) {
+        if (!marker) {
+          detailList.innerHTML = '<p class="detail-empty">마커를 클릭하면 stop 이름, route 목록, group 정보를 여기서 확인할 수 있습니다.</p>';
+          return;
+        }
+        detailList.innerHTML = [
+          '<div class="detail-item"><div class="detail-key">Stop</div><div class="detail-value">' + escapeHtml(marker.stop_names.join(', ')) + '</div></div>',
+          '<div class="detail-item"><div class="detail-key">정규화 이름</div><div class="detail-value">' + escapeHtml(marker.normalized_names.join(' / ')) + '</div></div>',
+          '<div class="detail-item"><div class="detail-key">노선 타입</div><div class="detail-value">' + escapeHtml(routeTypeLabel(marker.route_type)) + ' / ' + escapeHtml(endpointRoleLabel(marker.endpoint_role, marker.route_type)) + '</div></div>',
+          '<div class="detail-item"><div class="detail-key">Group</div><div class="detail-value">' + escapeHtml(marker.group_name) + '</div></div>',
+          '<div class="detail-item"><div class="detail-key">좌표</div><div class="detail-value">' + escapeHtml(String(marker.lat)) + ', ' + escapeHtml(String(marker.lng)) + '</div></div>',
+          '<div class="detail-item"><div class="detail-key">Route (' + escapeHtml(String(marker.route_count)) + ')</div><div class="detail-value">' + escapeHtml(marker.route_names.join('\n')).replace(/\n/g, '<br/>') + '</div></div>'
+        ].join('');
+      }
+
+      function renderGroups(groups) {
+        if (!groups || groups.length === 0) {
+          groupList.innerHTML = '<p class="detail-empty">조건에 맞는 group이 없습니다.</p>';
+          return;
+        }
+        var sorted = groups.slice().sort(function(a, b) {
+          if (b.route_count !== a.route_count) return b.route_count - a.route_count;
+          return String(a.group_name).localeCompare(String(b.group_name), 'ko');
+        });
+        groupList.innerHTML = sorted.map(function(group) {
+          return [
+            '<div class="group-item">',
+            '  <div class="group-top">',
+            '    <span class="group-chip" style="background:' + escapeHtml(colorForGroup(group.group_id)) + ';"></span>',
+            '    <div class="group-name">' + escapeHtml(group.group_name) + '</div>',
+            '  </div>',
+            '  <div class="group-meta">',
+                 escapeHtml((group.pool_key === 'depart' ? 'depart-side' : 'arrive-side') + ' / ' + endpointRoleLabel(group.endpoint_role, group.pool_key === 'depart' ? 'commute_in' : 'commute_out')) + '<br/>',
+                 'route ' + escapeHtml(String(group.route_count)) + ' / stop ' + escapeHtml(String((group.endpoint_stop_ids || []).length)),
+            '  </div>',
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+
+      function renderSummary(summary) {
+        rawCount.textContent = String(summary && summary.raw_endpoint_count || 0);
+        markerCount.textContent = String(summary && summary.marker_count || 0);
+        groupCount.textContent = String(summary && summary.group_count || 0);
+      }
+
+      function createMarkerContent(marker, dx, dy) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'endpoint-marker ' + routeTypeShape(marker.route_type) + (state.selectedMarkerId === marker.marker_id ? ' is-selected' : '');
+        button.style.setProperty('--marker-color', colorForGroup(marker.group_id));
+        button.style.setProperty('--dx', dx + 'px');
+        button.style.setProperty('--dy', dy + 'px');
+        button.innerHTML = (
+          '<span class="endpoint-marker-badge">' +
+            '<span class="marker-symbol">' + escapeHtml(routeTypeSymbol(marker.route_type)) + '</span>' +
+            '<span class="marker-count">' + escapeHtml(marker.route_count > 99 ? '99+' : String(marker.route_count)) + '</span>' +
+          '</span>'
+        );
+        button.title = marker.stop_names.join(', ') + ' | ' + routeTypeLabel(marker.route_type);
+        button.addEventListener('click', function(event) {
+          event.preventDefault();
+          event.stopPropagation();
+          state.selectedMarkerId = marker.marker_id;
+          renderDetails(marker);
+          renderMarkers(false);
+        });
+        return button;
+      }
+
+      function renderMarkers(shouldFitBounds) {
+        clearOverlays();
+        var markers = (state.data && Array.isArray(state.data.markers)) ? state.data.markers : [];
+        if (markers.length === 0) {
+          renderDetails(null);
+          return;
+        }
+
+        var byPoint = Object.create(null);
+        markers.forEach(function(marker) {
+          state.markerById[marker.marker_id] = marker;
+          var key = Number(marker.lat).toFixed(7) + '|' + Number(marker.lng).toFixed(7);
+          if (!byPoint[key]) byPoint[key] = [];
+          byPoint[key].push(marker);
+        });
+
+        markers.forEach(function(marker) {
+          var key = Number(marker.lat).toFixed(7) + '|' + Number(marker.lng).toFixed(7);
+          var siblings = byPoint[key] || [];
+          var index = siblings.findIndex(function(item) { return item.marker_id === marker.marker_id; });
+          var count = siblings.length;
+          var dx = 0;
+          var dy = 0;
+          if (count > 1 && index >= 0) {
+            var radius = Math.min(22, 10 + (count * 2));
+            var angle = (Math.PI * 2 * index) / count;
+            dx = Math.cos(angle) * radius;
+            dy = Math.sin(angle) * radius;
+          }
+
+          var overlay = new kakao.maps.CustomOverlay({
+            position: new kakao.maps.LatLng(marker.lat, marker.lng),
+            content: createMarkerContent(marker, dx, dy),
+            xAnchor: 0.5,
+            yAnchor: 1
+          });
+          overlay.setMap(map);
+          state.overlays.push(overlay);
+        });
+
+        if (state.selectedMarkerId && state.markerById[state.selectedMarkerId]) {
+          renderDetails(state.markerById[state.selectedMarkerId]);
+        } else {
+          renderDetails(null);
+        }
+        if (shouldFitBounds) fitBounds(markers);
+      }
+
+      function loadMapData() {
+        if (!state.selectedSiteId || !state.selectedDayType) return Promise.resolve();
+        if (state.selectedRouteTypes.size === 0) {
+          setStatus('노선 타입을 하나 이상 선택해주세요.', true);
+          clearOverlays();
+          renderSummary({ raw_endpoint_count: 0, marker_count: 0, group_count: 0 });
+          renderGroups([]);
+          renderDetails(null);
+          return Promise.resolve();
+        }
+
+        var seq = ++state.loadSeq;
+        setLoading(true);
+        setStatus('Endpoint 데이터를 불러오는 중...', false);
+        syncQueryString();
+
+        var params = new URLSearchParams();
+        params.set('site_id', state.selectedSiteId);
+        params.set('day_type', state.selectedDayType);
+        params.set('group_distance_m', String(state.groupDistanceM));
+        params.set('route_types', Array.from(state.selectedRouteTypes).join(','));
+
+        return fetchJson('/api/debug/shuttle/endpoint-map?' + params.toString())
+          .then(function(payload) {
+            if (seq !== state.loadSeq) return;
+            state.data = payload || {};
+            renderSummary(payload.summary || {});
+            renderGroups(Array.isArray(payload.groups) ? payload.groups : []);
+            if (!state.markerById[state.selectedMarkerId]) state.selectedMarkerId = '';
+            renderMarkers(true);
+            setStatus(
+              [
+                siteSelect.options[siteSelect.selectedIndex] ? siteSelect.options[siteSelect.selectedIndex].text : state.selectedSiteId,
+                dayTypeLabel(state.selectedDayType),
+                'route type ' + Array.from(state.selectedRouteTypes).map(routeTypeLabel).join(', '),
+                'grouping ' + state.groupDistanceM + 'm'
+              ].join(' · '),
+              false
+            );
+          })
+          .catch(function(error) {
+            if (seq !== state.loadSeq) return;
+            state.data = null;
+            clearOverlays();
+            renderSummary({ raw_endpoint_count: 0, marker_count: 0, group_count: 0 });
+            renderGroups([]);
+            renderDetails(null);
+            setStatus(error && error.message ? error.message : '데이터를 불러오지 못했습니다.', true);
+          })
+          .finally(function() {
+            if (seq === state.loadSeq) setLoading(false);
+          });
+      }
+
+      function onFilterChanged() {
+        state.selectedSiteId = siteSelect.value;
+        state.selectedDayType = dayTypeSelect.value;
+        state.selectedRouteTypes = new Set(getSelectedRouteTypes());
+        loadMapData();
+      }
+
+      applyQueryString();
+      setDistanceLabel();
+      distanceSlider.value = String(state.groupDistanceM);
+      routeTypeCheckboxes.forEach(function(input) {
+        input.checked = state.selectedRouteTypes.has(input.value);
+      });
+
+      siteSelect.addEventListener('change', function() {
+        state.selectedSiteId = siteSelect.value;
+        loadDayTypes().then(loadMapData);
+      });
+      dayTypeSelect.addEventListener('change', onFilterChanged);
+      routeTypeCheckboxes.forEach(function(input) {
+        input.addEventListener('change', onFilterChanged);
+      });
+      distanceSlider.addEventListener('input', function() {
+        state.groupDistanceM = parseInt(distanceSlider.value, 10) || 100;
+        setDistanceLabel();
+        if (state.sliderTimer) window.clearTimeout(state.sliderTimer);
+        state.sliderTimer = window.setTimeout(loadMapData, 180);
+      });
+      kakao.maps.event.addListener(map, 'click', function() {
+        state.selectedMarkerId = '';
+        renderDetails(null);
+        renderMarkers(false);
+      });
+
+      loadSites()
+        .then(loadDayTypes)
+        .then(loadMapData)
+        .catch(function(error) {
+          setStatus(error && error.message ? error.message : '초기화에 실패했습니다.', true);
+          setLoading(false);
+        });
+    };
+  </script>
+</body>
+</html>

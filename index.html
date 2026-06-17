@@ -16,15 +16,15 @@
   <meta property="og:title" content="셔틀Go | 삼성계열사 셔틀 검색" />
   <meta property="og:description" content="삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요." />
   <meta property="og:url" content="https://shuttle-go.com/" />
-  <meta property="og:image" content="https://shuttle-go.com/images/stop_icon.png" />
+  <meta property="og:image" content="https://shuttle-go.com/images/app_main_icon.png" />
   <meta property="og:image:type" content="image/png" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="셔틀Go | 삼성계열사 셔틀 검색" />
   <meta name="twitter:description" content="삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요." />
-  <meta name="twitter:image" content="https://shuttle-go.com/images/stop_icon.png" />
-  <link rel="icon" type="image/png" href="/images/stop_icon.png" />
-  <link rel="shortcut icon" href="/images/stop_icon.png" />
-  <link rel="apple-touch-icon" href="/images/stop_icon.png" />
+  <meta name="twitter:image" content="https://shuttle-go.com/images/app_main_icon.png" />
+  <link rel="icon" type="image/png" href="/images/app_main_icon.png" />
+  <link rel="shortcut icon" href="/images/app_main_icon.png" />
+  <link rel="apple-touch-icon" href="/images/app_main_icon.png" />
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -33,14 +33,16 @@
           "@type": "Organization",
           "@id": "https://shuttle-go.com/#organization",
           "name": "셔틀Go",
+          "alternateName": ["ShuttleGo", "셔틀고"],
           "url": "https://shuttle-go.com/",
-          "logo": "https://shuttle-go.com/images/stop_icon.png",
+          "logo": "https://shuttle-go.com/images/app_main_icon.png",
           "inLanguage": "ko-KR"
         },
         {
           "@type": "WebSite",
           "@id": "https://shuttle-go.com/#website",
           "name": "셔틀Go",
+          "alternateName": ["ShuttleGo", "셔틀고"],
           "url": "https://shuttle-go.com/",
           "inLanguage": "ko-KR",
           "description": "삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요.",
@@ -134,8 +136,8 @@
       min-width: 0;
     }
     .departure-trigger:hover {
-      border-color: #fee500;
-      background: #fffde7;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .departure-trigger .trigger-text {
       overflow: hidden;
@@ -222,10 +224,10 @@
       font-family: inherit;
     }
     .time-basis-btn.active {
-      border-color: #f2d66b;
-      background: #fff4cc;
+      border-color: #1428A0;
+      background: #e8edff;
       color: #0f172a;
-      box-shadow: 0 10px 24px rgba(242, 201, 76, 0.18);
+      box-shadow: 0 10px 24px rgba(20, 40, 160, 0.16);
     }
     .time-basis-btn-title {
       display: inline-flex;
@@ -271,7 +273,7 @@
       top: 50%;
       margin-top: -20px;
       height: 40px;
-      background: rgba(254, 229, 0, 0.22);
+      background: rgba(20, 40, 160, 0.16);
       border-radius: 6px;
       pointer-events: none;
       z-index: 0;
@@ -341,14 +343,15 @@
     .time-picker-confirm {
       width: 100%;
       padding: 12px;
-      background: #fee500;
+      background: #1428A0;
       border: none;
       border-radius: 8px;
       font-size: 15px;
       font-weight: 600;
+      color: #fff;
       cursor: pointer;
     }
-    .time-picker-confirm:hover { background: #f5d800; }
+    .time-picker-confirm:hover { background: #10217F; }
     .time-picker-modal.show { display: block; }
 
     /* PC: 모달을 출발 시계 바로 아래에, 더 넓게 */
@@ -455,12 +458,12 @@
       outline: none;
     }
     .search-bar input:focus {
-      border-color: #fee500;
-      box-shadow: 0 0 0 2px rgba(254,229,0,.25);
+      border-color: #1428A0;
+      box-shadow: 0 0 0 2px rgba(20,40,160,.22);
     }
     .search-bar button {
       padding: 12px 20px;
-      background: #fee500;
+      background: #1428A0;
       border: none;
       border-radius: 8px;
       font-weight: 600;
@@ -468,7 +471,7 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
-    .search-bar button:hover { background: #f5d800; }
+    .search-bar button:hover { background: #10217F; }
     .search-bar .issue-open-btn {
       min-width: 44px;
       width: 44px;
@@ -481,8 +484,8 @@
       letter-spacing: -0.2px;
     }
     .search-bar .issue-open-btn:hover {
-      border-color: #fee500;
-      background: #fffde7;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .search-bar .mobile-menu-btn {
       display: none;
@@ -748,7 +751,7 @@
       top: 16px;
     }
     .route-mode-swap-btn:hover {
-      background: #fffde7;
+      background: #e8edff;
     }
     .route-mode-swap-btn:disabled {
       opacity: 0.55;
@@ -801,8 +804,8 @@
       font-family: inherit;
     }
     .route-mode-issue-btn:hover {
-      border-color: #fee500;
-      background: #fffde7;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .route-mode-profile-btn {
       display: none;
@@ -857,13 +860,13 @@
       box-sizing: border-box;
     }
     .route-mode-place-label:focus {
-      border-color: #fee500;
-      background-color: #fffde7;
+      border-color: #1428A0;
+      background-color: #e8edff;
     }
     @media (hover: hover) and (pointer: fine) {
       .route-mode-place-label:hover {
-        border-color: #fee500;
-        background-color: #fffde7;
+        border-color: #1428A0;
+        background-color: #e8edff;
       }
     }
     .route-mode-place-label::placeholder {
@@ -890,8 +893,8 @@
       font-family: inherit;
     }
     .route-endpoint-trigger:hover {
-      border-color: #fee500;
-      background-color: #fffde7;
+      border-color: #1428A0;
+      background-color: #e8edff;
     }
     .route-endpoint-trigger:disabled {
       opacity: 0.55;
@@ -1034,7 +1037,8 @@
       max-width: none;
     }
     .site-selector-trigger:hover {
-      border-color: #fee500;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .site-selector-trigger:disabled {
       opacity: 0.55;
@@ -1135,10 +1139,10 @@
       font-family: inherit;
     }
     .site-picker-item:hover {
-      background: #fffde7;
+      background: #e8edff;
     }
     .site-picker-item.selected {
-      background: #fff9c4;
+      background: #dfe7ff;
       font-weight: 600;
       color: #1a1a1a;
     }
@@ -1193,12 +1197,12 @@
       padding: 8px 10px;
       font-size: 12px;
       line-height: 1.45;
-      color: #92400e;
-      background: #fef3c7;
-      border: 1px solid #fde68a;
+      color: #1428A0;
+      background: #e8edff;
+      border: 1px solid #9aa8ff;
       border-radius: 6px;
     }
-    .samsung-internet-hint b { color: #78350f; }
+    .samsung-internet-hint b { color: #1428A0; }
     .account-menu-status-row {
       min-height: 46px;
       display: flex;
@@ -1490,8 +1494,8 @@
       width: 34px;
       height: 34px;
       border-radius: 50%;
-      background: #fff0e2;
-      color: #f97316;
+      background: #e8edff;
+      color: #1428A0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1514,11 +1518,11 @@
       flex: 0 0 auto;
       width: 24px;
       height: 24px;
-      border: 1px solid #f2c94c;
+      border: 1px solid #9aa8ff;
       padding: 0;
       border-radius: 7px;
-      background: #fff4cc;
-      color: #a16207;
+      background: #e8edff;
+      color: #1428A0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1530,8 +1534,8 @@
       display: block;
     }
     .home-section-action:hover {
-      background: #fff9db;
-      border-color: #e8c74e;
+      background: #edf1ff;
+      border-color: #6f81e8;
     }
     .home-section-caption {
       margin: 0 14px 2px;
@@ -1573,7 +1577,7 @@
       color: #64748b;
     }
     .home-favorite-note.unavailable {
-      color: #b45309;
+      color: #1428A0;
       font-weight: 700;
     }
     .home-favorite-badge {
@@ -1608,9 +1612,9 @@
       width: 28px;
       height: 28px;
       border-radius: 9px;
-      border: 1px solid #f2c94c;
-      background: #fff4cc;
-      color: #a16207;
+      border: 1px solid #9aa8ff;
+      background: #e8edff;
+      color: #1428A0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1620,9 +1624,9 @@
       margin-left: -2px;
     }
     .home-favorite-toggle:hover {
-      background: #fff9db;
-      border-color: #e8c74e;
-      color: #9a6700;
+      background: #edf1ff;
+      border-color: #6f81e8;
+      color: #1428A0;
     }
     .home-favorite-toggle:disabled {
       opacity: 0.6;
@@ -1750,6 +1754,9 @@
       flex-direction: column;
       overflow: hidden;
     }
+    .route-favorites-modal.modal-pull-dragging {
+      transition: none;
+    }
     .route-favorites-header {
       display: flex;
       align-items: center;
@@ -1855,7 +1862,7 @@
       margin-top: 6px;
       font-size: 12px;
       line-height: 1.5;
-      color: #b45309;
+      color: #1428A0;
       font-weight: 700;
     }
     .route-favorite-toggle {
@@ -1863,9 +1870,9 @@
       width: 34px;
       height: 34px;
       border-radius: 10px;
-      border: 1px solid #f2c94c;
-      background: #fff4cc;
-      color: #a16207;
+      border: 1px solid #9aa8ff;
+      background: #e8edff;
+      color: #1428A0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1874,9 +1881,9 @@
       box-sizing: border-box;
     }
     .route-favorite-toggle:hover {
-      background: #fff9db;
-      border-color: #e8c74e;
-      color: #9a6700;
+      background: #edf1ff;
+      border-color: #6f81e8;
+      color: #1428A0;
     }
     .route-favorite-toggle:disabled {
       opacity: 0.6;
@@ -2334,8 +2341,8 @@
       outline: none;
     }
     .profile-modal-field input:focus {
-      border-color: #facc15;
-      box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.22);
+      border-color: #1428A0;
+      box-shadow: 0 0 0 2px rgba(20, 40, 160, 0.22);
     }
     .profile-modal-help {
       margin: 6px 0 0;
@@ -2525,8 +2532,8 @@
       font-family: inherit;
     }
     .endpoint-picker-confirm-btn:hover {
-      border-color: #fee500;
-      background: #fffde7;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .endpoint-picker-search-wrap {
       flex-shrink: 0;
@@ -2547,8 +2554,8 @@
       outline: none;
     }
     .endpoint-picker-search-input:focus {
-      border-color: #fee500;
-      box-shadow: 0 0 0 2px rgba(254, 229, 0, 0.2);
+      border-color: #1428A0;
+      box-shadow: 0 0 0 2px rgba(20, 40, 160, 0.18);
     }
     .endpoint-picker-list {
       flex: 1;
@@ -2581,12 +2588,12 @@
       font-family: inherit;
     }
     .endpoint-picker-all-toggle:hover {
-      border-color: #fee500;
-      background: #fffde7;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .endpoint-picker-all-toggle.selected {
-      border-color: #e0c500;
-      background: #fff9c4;
+      border-color: #1428A0;
+      background: #dfe7ff;
       color: #1a1a1a;
     }
     .endpoint-picker-list-count-label {
@@ -2652,10 +2659,10 @@
       visibility: visible;
     }
     .endpoint-picker-item:hover {
-      background: #fffde7;
+      background: #e8edff;
     }
     .endpoint-picker-item.selected {
-      background: #fff9c4;
+      background: #dfe7ff;
       color: #1a1a1a;
     }
     .endpoint-picker-item .endpoint-item-label {
@@ -2685,7 +2692,7 @@
       margin-top: 0.16em;
     }
     .endpoint-picker-item .endpoint-item-label .endpoint-keyword-highlight {
-      background: #ffe082;
+      background: #dfe7ff;
       color: #111;
       padding: 0 1px;
       border-radius: 2px;
@@ -2872,9 +2879,9 @@
       flex-shrink: 0;
     }
     .issue-compose-btn {
-      border: 1px solid #fee500;
-      background: #fffde7;
-      color: #4b3f00;
+      border: 1px solid #1428A0;
+      background: #e8edff;
+      color: #1428A0;
       border-radius: 8px;
       padding: 8px 12px;
       font-size: 13px;
@@ -2884,7 +2891,7 @@
       white-space: nowrap;
     }
     .issue-compose-btn:hover {
-      background: #fff9c4;
+      background: #dfe7ff;
     }
     .issue-close-btn {
       width: 32px;
@@ -2977,6 +2984,37 @@
       color: #888;
       text-align: center;
       font-size: 14px;
+    }
+    .sg-loading-row {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 0;
+      max-width: 100%;
+      vertical-align: middle;
+    }
+    .sg-loading-text {
+      min-width: 0;
+    }
+    .sg-loading-spinner {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(100, 116, 139, 0.24);
+      border-top-color: #071f4e;
+      flex: 0 0 auto;
+      animation: sg-loading-spin 0.72s linear infinite;
+    }
+    .issue-feedback .sg-loading-row {
+      justify-content: flex-start;
+    }
+    .issue-feedback .sg-loading-spinner {
+      width: 14px;
+      height: 14px;
+    }
+    @keyframes sg-loading-spin {
+      to { transform: rotate(360deg); }
     }
     .issue-card {
       border: 1px solid #ebebeb;
@@ -3559,9 +3597,15 @@
       font-family: inherit;
     }
     .issue-form-btn.primary {
-      background: #fee500;
-      border-color: #fee500;
+      background: #1428A0;
+      border-color: #1428A0;
       color: #2d2d2d;
+    }
+    .issue-comment-compose .issue-form-btn.primary,
+    #issueFormSubmitBtn.issue-form-btn.primary {
+      background: #1428A0;
+      border-color: #1428A0;
+      color: #fff;
     }
     .issue-form-btn:disabled {
       opacity: .55;
@@ -3577,6 +3621,10 @@
         transform: none;
         max-height: 82vh;
         border-radius: 16px 16px 0 0;
+        transition: transform .18s ease;
+      }
+      .issue-modal.modal-pull-dragging {
+        transition: none;
       }
     }
 
@@ -3640,10 +3688,12 @@
       box-sizing: border-box;
     }
     .shuttle-message .msg-pill-stop {
-      background: #ffe066;
+      background: #e8edff;
+      color: #1428A0;
     }
     .shuttle-message .msg-pill-start {
       background: #8ddc65;
+      color: #111827;
     }
     .shuttle-message .msg-pill-arrive {
       background: #ff8a80;
@@ -3803,15 +3853,15 @@
       transform-origin: 50% 100%;
     }
     .shuttle-point-label.is-highlight {
-      background: #fff8c9;
-      border-color: #d7b44b;
-      box-shadow: 0 2px 10px rgba(165, 133, 34, 0.28);
+      background: #e8edff;
+      border-color: #9aa8ff;
+      box-shadow: 0 2px 10px rgba(20, 40, 160, 0.20);
     }
     .shuttle-point-label.is-highlight::before {
-      border-top-color: #d7b44b;
+      border-top-color: #9aa8ff;
     }
     .shuttle-point-label.is-highlight::after {
-      border-top-color: #fff8c9;
+      border-top-color: #e8edff;
     }
     .shuttle-point-label::before {
       content: '';
@@ -4149,15 +4199,15 @@
       border-left: 3px solid transparent;
     }
     .result-card:hover {
-      background: #fffde7;
+      background: #e8edff;
     }
     .result-card.highlight {
-      background: #fffde7;
-      border-left-color: #fee500;
+      background: #e8edff;
+      border-left-color: #1428A0;
     }
     .result-card.selected {
-      background: #fff9c4;
-      border-left-color: #fbc02d;
+      background: #dfe7ff;
+      border-left-color: #1428A0;
     }
     .result-card .name {
       font-weight: 600;
@@ -4501,11 +4551,11 @@
     }
     .route-option-card:hover {
       background: #f5f5f5;
-      border-color: #fee500;
+      border-color: #1428A0;
     }
     .route-option-card.selected {
-      border-color: #fee500;
-      background: #fffde7;
+      border-color: #1428A0;
+      background: #e8edff;
     }
     .route-option-card .route-name {
       display: flex;
@@ -4543,7 +4593,7 @@
       border-radius: 999px;
       background: #fff4d6;
       color: #8a5a00;
-      border: 1px solid #f1c45a;
+      border: 1px solid #9aa8ff;
       font-size: 11px;
       font-weight: 800;
       line-height: 1;
@@ -4566,9 +4616,9 @@
       letter-spacing: -0.01em;
     }
     .route-option-card .route-extra-info.route-extra-info-estimated {
-      background: #fff8e3;
-      color: #7a4f00;
-      border: 1px solid #f1c45a;
+      background: #e8edff;
+      color: #1428A0;
+      border: 1px solid #9aa8ff;
       border-radius: 8px;
       padding: 8px 10px;
       margin-top: 8px;
@@ -5118,7 +5168,7 @@
       font-weight: 700;
     }
     .route-option-card .route-timeline-connector-text.is-transit {
-      color: #d9730d;
+      color: #1428A0;
       font-weight: 700;
     }
     .route-option-card .route-timeline-connector-text.is-walk {
@@ -5238,9 +5288,9 @@
     }
     .route-option-card .btn-route-detail:hover,
     .route-option-card .btn-route-favorite:hover {
-      background: #fff9db;
-      border-color: #e8c74e;
-      color: #9a6700;
+      background: #edf1ff;
+      border-color: #6f81e8;
+      color: #1428A0;
     }
     .route-option-card .btn-route-share:hover {
       background: #f5f5f5;
@@ -5248,9 +5298,9 @@
     }
     .route-option-card.expanded .btn-route-detail,
     .route-option-card .btn-route-favorite.active {
-      color: #a16207;
-      background: #fff4cc;
-      border-color: #f2c94c;
+      color: #1428A0;
+      background: #e8edff;
+      border-color: #9aa8ff;
     }
     .route-option-card .btn-route-favorite:disabled {
       opacity: 0.6;
@@ -5415,18 +5465,18 @@
       box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
     }
     .route-transit-picker-btn:hover {
-      background: #fff8ed;
-      border-color: #d7ad74;
-      color: #8c4f00;
+      background: #e8edff;
+      border-color: #9aa8ff;
+      color: #1428A0;
     }
     .route-transit-picker-btn.primary {
-      border-color: #d9730d;
-      background: #d9730d;
+      border-color: #1428A0;
+      background: #1428A0;
       color: #fff;
     }
     .route-transit-picker-btn.primary:hover {
-      background: #be6509;
-      border-color: #be6509;
+      background: #10217F;
+      border-color: #10217F;
     }
     .route-transit-picker-loading,
     .route-transit-picker-empty {
@@ -5452,10 +5502,10 @@
       height: 42px;
       border-radius: 50%;
       border: 5px solid #d7dde7;
-      border-top-color: #4b5563;
-      border-right-color: #111827;
-      border-bottom-color: #c3cad6;
-      border-left-color: #8f99aa;
+      border-top-color: #1428A0;
+      border-right-color: #10217F;
+      border-bottom-color: #c7d2fe;
+      border-left-color: #9aa8ff;
       animation: route-transit-picker-spin 0.95s linear infinite;
       box-sizing: border-box;
     }
@@ -5467,17 +5517,17 @@
       width: 100%;
       text-align: left;
       font-family: inherit;
-      border-color: #f0d7b5;
-      background: linear-gradient(180deg, #fffdf5 0%, #fff7e8 100%);
-      box-shadow: 0 12px 24px rgba(148, 87, 0, 0.08);
+      border-color: #9aa8ff;
+      background: linear-gradient(180deg, #f8faff 0%, #e8edff 100%);
+      box-shadow: 0 12px 24px rgba(20, 40, 160, 0.10);
     }
     .route-transit-option-card:hover {
-      background: linear-gradient(180deg, #fffdf6 0%, #fff5e3 100%);
-      border-color: #e9c36a;
+      background: linear-gradient(180deg, #eef3ff 0%, #dfe7ff 100%);
+      border-color: #1428A0;
     }
     .route-transit-option-card.is-active {
-      border-color: #e9c36a;
-      background: linear-gradient(180deg, #fffdf5 0%, #fff7e8 100%);
+      border-color: #1428A0;
+      background: linear-gradient(180deg, #eef3ff 0%, #dfe7ff 100%);
     }
     .route-transit-option-card .route-time-summary-head {
       display: block;
@@ -5520,7 +5570,7 @@
     }
     .route-transit-option-preview:focus-visible {
       border-radius: 10px;
-      box-shadow: 0 0 0 3px rgba(217, 115, 13, 0.18);
+      box-shadow: 0 0 0 3px rgba(20, 40, 160, 0.20);
     }
     .route-transit-option-total {
       display: flex;
@@ -5573,7 +5623,7 @@
       color: #e84c9b;
     }
     .route-transit-option-title-segment.fallback {
-      color: #8b5e24;
+      color: #1428A0;
       font-weight: 500;
     }
     .route-transit-option-title-arrow {
@@ -5744,7 +5794,7 @@
     .route-transit-option-expanded {
       margin-top: 12px;
       padding-top: 12px;
-      border-top: 1px solid rgba(233, 195, 106, 0.55);
+      border-top: 1px solid rgba(154, 168, 255, 0.65);
     }
     .route-transit-option-range {
       margin-bottom: 10px;
@@ -5757,19 +5807,19 @@
     .route-transit-option-apply {
       min-height: 34px;
       padding: 7px 16px;
-      border: 1px solid #d9730d;
+      border: 1px solid #1428A0;
       border-radius: 12px;
-      background: #d9730d;
+      background: #1428A0;
       color: #fff;
       font-size: 14px;
       font-weight: 800;
       cursor: pointer;
       font-family: inherit;
-      box-shadow: 0 6px 14px rgba(190, 101, 9, 0.18);
+      box-shadow: 0 6px 14px rgba(20, 40, 160, 0.18);
     }
     .route-transit-option-apply:hover {
-      background: #be6509;
-      border-color: #be6509;
+      background: #10217F;
+      border-color: #10217F;
     }
     .route-transit-option-apply.is-current {
       border-color: #d7dce5;
@@ -5794,8 +5844,8 @@
       line-height: 1;
     }
     .route-transit-leg-chip.transit {
-      background: #fff1df;
-      color: #b45309;
+      background: #e8edff;
+      color: #1428A0;
     }
     .route-transit-leg-chip.walk {
       background: #eef2f6;
@@ -6180,8 +6230,8 @@
       gap: 4px;
       padding: 3px 8px;
       border-radius: 999px;
-      background: #fff4cc;
-      color: #8a5b00;
+      background: #e8edff;
+      color: #1428A0;
       font-size: 11px;
       font-weight: 800;
       white-space: nowrap;
@@ -6191,8 +6241,8 @@
       color: #075985;
     }
     .route-search-status.fallback .route-search-status-pill {
-      background: #ffedd5;
-      color: #9a3412;
+      background: #eef2ff;
+      color: #1428A0;
     }
     @keyframes routeSearchSpinner {
       from { transform: rotate(0deg); }
@@ -6567,12 +6617,12 @@
       padding: 0 14px;
       border: none;
       border-radius: 18px;
-      background: #071f4e;
+      background: #1428A0;
       color: #fff;
       font-size: 13px;
       font-weight: 800;
       letter-spacing: -0.01em;
-      box-shadow: 0 8px 18px rgba(7, 31, 78, 0.18);
+      box-shadow: 0 8px 18px rgba(20, 40, 160, 0.22);
       cursor: pointer;
       white-space: nowrap;
     }
@@ -6919,6 +6969,10 @@
       font-size: 14px;
       line-height: 1.5;
     }
+    .report-empty-state .sg-loading-row {
+      color: #64748b;
+      font-weight: 700;
+    }
     .report-candidate-card {
       border: 1px solid #dce4f2;
       border-radius: 20px;
@@ -6989,7 +7043,7 @@
       word-break: keep-all;
     }
     .report-route-highlight {
-      background: #fff1a8;
+      background: #e8edff;
       color: inherit;
       padding: 0 2px;
       border-radius: 4px;
@@ -7065,7 +7119,7 @@
       max-width: 100%;
       padding: 6px 10px;
       border-radius: 999px;
-      background: #fff7c8;
+      background: #e8edff;
       color: #111827;
       font-size: 13px;
       font-weight: 700;
@@ -8165,8 +8219,8 @@
       font-weight: 800;
     }
     .shuttle-message .msg-pill-stop {
-      background: #ffe066;
-      color: #111827;
+      background: #e8edff;
+      color: #1428A0;
       border: none;
     }
     .shuttle-message .msg-pill-start {
@@ -8312,6 +8366,10 @@
         top: auto;
         transform: none;
         border-radius: 22px 22px 0 0;
+        transition: transform .18s ease;
+      }
+      .report-data-modal.modal-pull-dragging {
+        transition: none;
       }
       .report-modal.stop-step {
         top: auto;
@@ -8468,10 +8526,10 @@
     <div class="header-left">
       <div class="site-selector-wrap">
         <select id="siteSelect" title="사업장 선택" aria-hidden="true">
-          <option value="0000013">삼성전자(수원)</option>
+          <option value="0000011">삼성전자(기흥/화성)</option>
         </select>
         <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
-          <span class="site-trigger-text">삼성전자(수원)</span>
+          <span class="site-trigger-text">삼성전자(기흥/화성)</span>
           <span class="site-trigger-arrow"></span>
         </button>
       </div>
@@ -8985,7 +9043,7 @@
 
       // 카카오 지도 SDK 동적 로드
       var script = document.createElement('script');
-      script.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=' + ENV.KAKAO_JS_KEY + '&autoload=false';
+      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + ENV.KAKAO_JS_KEY + '&autoload=false';
       script.onload = function() {
         if (typeof kakao === 'undefined' || !kakao.maps || typeof kakao.maps.load !== 'function') {
           showMapSdkLoadError();
@@ -9190,7 +9248,7 @@
       var PLACE_PIN_TIP_Y_ANCHOR = 0.854;
       var places = [];
       var resultsPanelState = 'idle';
-      var selectedSiteId = '0000013';
+      var selectedSiteId = '0000011';
       var selectedDayType = 'weekday';
       var selectedRouteTimeBasis = 'depart_at';
       var currentRouteTimeBasisUsed = 'depart_at';
@@ -9410,12 +9468,19 @@
       var ROUTE_ARROW_REFRESH_DEBOUNCE_MS = 120;
       var routeArrowRefreshTimer = null;
       var currentLocationOverlayRefreshRaf = 0;
+      var startupCurrentLocationRequested = false;
       var arrivalReportStopMapInstance = null;
       var arrivalReportStopMapOverlays = [];
       var arrivalReportStopMapCurrentOverlay = null;
       var mobilePageZoomGuardInstalled = false;
       var activeOptionDrawToken = 0;
       var routeLabelTriggeredDetailState = null;
+      var KAKAO_MAP_LOCATION_BOUNDS = {
+        minLat: 32.0,
+        maxLat: 39.8,
+        minLng: 123.0,
+        maxLng: 132.8
+      };
       var authState = { logged_in: false, user: null, preferences: {} };
       var leaderboardAllItemsCache = null;
       var devOverrides = {
@@ -9830,6 +9895,32 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function isDevHost() {
         var host = String(location.hostname || '').toLowerCase();
         return host === 'localhost' || host === '127.0.0.1' || host.indexOf('192.168.') === 0;
+      }
+
+      function getQueryParam(name) {
+        try {
+          if (window.URLSearchParams) {
+            return new URLSearchParams(location.search || '').get(name);
+          }
+        } catch (e) {}
+        try {
+          var pattern = new RegExp('[?&]' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^&]*)');
+          var match = pattern.exec(location.search || '');
+          return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : null;
+        } catch (e2) {
+          return null;
+        }
+      }
+
+      function isAndroidWebViewClient() {
+        try {
+          if (window.__SHUTTLE_ANDROID_WEBVIEW) return true;
+        } catch (e) {}
+        var platform = String(getQueryParam('client_platform') || '').toLowerCase();
+        if (platform === 'android_webview') return true;
+        var appClient = String(getQueryParam('app_client') || '').toLowerCase();
+        if (appClient.indexOf('android-webview') === 0) return true;
+        return /ShuttleGoAndroidWebView/i.test(String(navigator.userAgent || ''));
       }
 
       function isReportCapableClient() {
@@ -10608,8 +10699,13 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       }
 
       function getDevDebugInputPosition() {
-        var lat = Number(devPendingPosition.lat);
-        var lng = Number(devPendingPosition.lng);
+        var rawLat = devPendingPosition.lat;
+        var rawLng = devPendingPosition.lng;
+        if (rawLat == null || rawLng == null) return null;
+        if (typeof rawLat === 'string' && rawLat.trim() === '') return null;
+        if (typeof rawLng === 'string' && rawLng.trim() === '') return null;
+        var lat = Number(rawLat);
+        var lng = Number(rawLng);
         if (!isFinite(lat) || !isFinite(lng)) return null;
         return { lat: lat, lng: lng };
       }
@@ -10837,7 +10933,141 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         return '<p class="samsung-internet-hint">' + SAMSUNG_INTERNET_HINT_HTML + '</p>';
       }
 
+      var nativeGoogleLoginInFlight = false;
+      var nativeLocationRequests = {};
+
+      function isAndroidNativeLoginAvailable() {
+        try {
+          return !!(
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid.loginWithGoogle === 'function' &&
+            (
+              typeof window.ShuttleGoAndroid.isNativeGoogleLoginAvailable !== 'function' ||
+              window.ShuttleGoAndroid.isNativeGoogleLoginAvailable()
+            )
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function isAndroidNativeLocationAvailable() {
+        try {
+          return !!(
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid.requestCurrentLocation === 'function'
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function isAndroidNativeShareAvailable() {
+        try {
+          return !!(
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid.share === 'function'
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function shareWithAndroidNativeSheet(text, url) {
+        if (!isAndroidNativeShareAvailable()) return false;
+        try {
+          window.ShuttleGoAndroid.share(String(text || ''), String(url || ''));
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function requestAndroidNativeLocation() {
+        return new Promise(function(resolve, reject) {
+          if (!isAndroidNativeLocationAvailable()) {
+            reject({ code: 'unavailable', message: '네이티브 위치 기능을 사용할 수 없습니다.' });
+            return;
+          }
+          var requestId = 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+          var timeout = setTimeout(function() {
+            if (!nativeLocationRequests[requestId]) return;
+            delete nativeLocationRequests[requestId];
+            reject({ code: 'timeout', message: '시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.' });
+          }, 16000);
+          nativeLocationRequests[requestId] = {
+            resolve: resolve,
+            reject: reject,
+            timeout: timeout
+          };
+          try {
+            window.ShuttleGoAndroid.requestCurrentLocation(requestId);
+          } catch (e) {
+            clearTimeout(timeout);
+            delete nativeLocationRequests[requestId];
+            reject({ code: 'unavailable', message: '네이티브 위치 요청을 시작하지 못했습니다.' });
+          }
+        });
+      }
+
+      window.__shuttleGoNativeLocationResult = function(requestId, payload) {
+        var key = String(requestId || '');
+        var request = nativeLocationRequests[key];
+        if (!request) return;
+        clearTimeout(request.timeout);
+        delete nativeLocationRequests[key];
+        if (payload && payload.ok) {
+          request.resolve({
+            lat: Number(payload.lat),
+            lng: Number(payload.lng),
+            accuracy: Number(payload.accuracy),
+            provider: payload.provider || '',
+            timestamp: payload.timestamp || 0
+          });
+        } else {
+          request.reject({
+            code: payload && payload.code || 'unavailable',
+            message: payload && payload.message || '현재 위치를 가져오지 못했습니다.'
+          });
+        }
+      };
+
+      window.ShuttleGoAndroidAuth = {
+        onNativeAuthEvent: function(detail) {
+          var type = detail && detail.type ? String(detail.type) : '';
+          nativeGoogleLoginInFlight = type === 'started';
+        },
+        onLoginStarted: function() {
+          nativeGoogleLoginInFlight = true;
+        },
+        onLoginSuccess: function() {
+          nativeGoogleLoginInFlight = false;
+          refreshAuthState();
+        },
+        onLoginCancelled: function() {
+          nativeGoogleLoginInFlight = false;
+        },
+        onLoginError: function(message) {
+          nativeGoogleLoginInFlight = false;
+          alert(message || 'Google 로그인에 실패했습니다.');
+        }
+      };
+
       function startGoogleLogin() {
+        if (nativeGoogleLoginInFlight) return;
+        if (isAndroidNativeLoginAvailable()) {
+          try {
+            window.ShuttleGoAndroid.loginWithGoogle(JSON.stringify({
+              apiBase: API_BASE,
+              source: 'web_login_button',
+              origin: location.origin
+            }));
+            return;
+          } catch (e) {
+            alert((e && e.message) ? e.message : 'Android Google 로그인을 시작하지 못했습니다.');
+            return;
+          }
+        }
         var callbackUrl = location.origin + '/auth-callback.html';
         var loginUrl = API_BASE + '/api/auth/google/start?next=' + encodeURIComponent(callbackUrl);
         location.href = loginUrl;
@@ -11880,6 +12110,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (routeFavoritesModal.closeButton) {
           routeFavoritesModal.closeButton.addEventListener('click', closeRouteFavoritesModal);
         }
+        bindMobilePullDownDismissModal({
+          modal: modal,
+          scrollEl: routeFavoritesModal.body,
+          closeFn: closeRouteFavoritesModal
+        });
         document.addEventListener('keydown', function(evt) {
           if (!routeFavoritesModal || !routeFavoritesModal.backdrop) return;
           if (!routeFavoritesModal.backdrop.classList.contains('show')) return;
@@ -11997,6 +12232,10 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function closeRouteFavoritesModal() {
         if (!routeFavoritesModal || !routeFavoritesModal.backdrop) return;
         routeFavoritesModal.backdrop.classList.remove('show');
+        if (routeFavoritesModal.modal) {
+          routeFavoritesModal.modal.classList.remove('show', 'modal-pull-dragging');
+          routeFavoritesModal.modal.style.transform = '';
+        }
         routeFavoritesModal.backdrop.setAttribute('aria-hidden', 'true');
       }
 
@@ -12032,6 +12271,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var modalRef = ensureRouteFavoritesModal();
         if (!modalRef || !modalRef.backdrop) return;
         modalRef.backdrop.classList.add('show');
+        if (modalRef.modal) modalRef.modal.classList.add('show');
         modalRef.backdrop.setAttribute('aria-hidden', 'false');
         renderRouteFavoritesModalBody();
         if (authState.logged_in) {
@@ -14692,7 +14932,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         var preferredSiteId = getPreferredSiteIdFromAuthState();
         if (siteOptionExists(preferredSiteId)) return preferredSiteId;
         if (siteOptionExists(selectedSiteId)) return selectedSiteId;
-        if (siteOptionExists('0000013')) return '0000013';
+        if (siteOptionExists('0000011')) return '0000011';
         if (siteSelect && siteSelect.options && siteSelect.options.length > 0) {
           return String(siteSelect.options[0].value || '').trim() || '0000011';
         }
@@ -14819,26 +15059,38 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (siteSelectTrigger) siteSelectTrigger.setAttribute('aria-expanded', 'false');
       }
 
-      function setIssueFeedback(type, message) {
-        if (!issueFeedback) return;
+      function buildLoadingHtml(message) {
+        return '<span class="sg-loading-row" role="status" aria-live="polite">' +
+          '<span class="sg-loading-spinner" aria-hidden="true"></span>' +
+          '<span class="sg-loading-text">' + escapeHtml(message || '불러오는 중...') + '</span>' +
+        '</span>';
+      }
+
+      function buildLoadingStateHtml(className, message) {
+        return '<div class="' + escapeAttr(className || '') + '">' + buildLoadingHtml(message) + '</div>';
+      }
+
+      function setModalFeedback(el, baseClassName, type, message) {
+        if (!el) return;
         if (!message) {
-          issueFeedback.className = 'issue-feedback';
-          issueFeedback.textContent = '';
+          el.className = baseClassName;
+          el.textContent = '';
           return;
         }
-        issueFeedback.className = 'issue-feedback show ' + (type || 'info');
-        issueFeedback.textContent = message;
+        el.className = baseClassName + ' show ' + (type || 'info');
+        if ((type || 'info') === 'info') {
+          el.innerHTML = buildLoadingHtml(message);
+        } else {
+          el.textContent = message;
+        }
+      }
+
+      function setIssueFeedback(type, message) {
+        setModalFeedback(issueFeedback, 'issue-feedback', type, message);
       }
 
       function setNoticeFeedback(type, message) {
-        if (!noticeFeedback) return;
-        if (!message) {
-          noticeFeedback.className = 'issue-feedback';
-          noticeFeedback.textContent = '';
-          return;
-        }
-        noticeFeedback.className = 'issue-feedback show ' + (type || 'info');
-        noticeFeedback.textContent = message;
+        setModalFeedback(noticeFeedback, 'issue-feedback', type, message);
       }
 
       function formatIssueDate(iso) {
@@ -15434,7 +15686,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!issueListEl) return;
         var targetPage = page || 1;
         if (!preserveFeedback) setIssueFeedback('info', '이슈 목록을 불러오는 중입니다...');
-        issueListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
+        issueListEl.innerHTML = buildLoadingStateHtml('issue-empty', '불러오는 중...');
 
         var url = API_BASE + '/api/issues?kind=issue&state=' + encodeURIComponent(issueCurrentState) +
           '&page=' + targetPage +
@@ -15463,7 +15715,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (!noticeListEl) return;
         var targetPage = page || 1;
         if (!preserveFeedback) setNoticeFeedback('info', '공지 목록을 불러오는 중입니다...');
-        noticeListEl.innerHTML = '<div class="issue-empty">불러오는 중...</div>';
+        noticeListEl.innerHTML = buildLoadingStateHtml('issue-empty', '불러오는 중...');
 
         var url = API_BASE + '/api/issues?kind=notice&state=all' +
           '&page=' + targetPage +
@@ -15650,7 +15902,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function openIssueDetail(issueId) {
         if (!issueDetailContent || !issueId) return;
         setIssueView('detail');
-        issueDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
+        issueDetailContent.innerHTML = buildLoadingStateHtml('issue-empty', '상세 정보를 불러오는 중...');
 
         fetchJson(API_BASE + '/api/issues/' + encodeURIComponent(issueId))
           .then(function(result) {
@@ -15744,7 +15996,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       function openNoticeDetail(issueId) {
         if (!noticeDetailContent || !issueId) return;
         setNoticeView('detail');
-        noticeDetailContent.innerHTML = '<div class="issue-empty">상세 정보를 불러오는 중...</div>';
+        noticeDetailContent.innerHTML = buildLoadingStateHtml('issue-empty', '상세 정보를 불러오는 중...');
 
         fetchJson(API_BASE + '/api/issues/' + encodeURIComponent(issueId))
           .then(function(result) {
@@ -16737,7 +16989,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
             applyRouteCollectorUpdatedAt(data);
             siteSelect.innerHTML = '';
             if (list.length === 0) {
-              siteSelect.appendChild(new Option('삼성전자(수원)', '0000013'));
+              siteSelect.appendChild(new Option('삼성전자(기흥/화성)', '0000011'));
             } else {
               list.forEach(function(site) {
                 siteSelect.appendChild(new Option(site.site_name, String(site.site_id)));
@@ -16944,6 +17196,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         accountMenuLogoutBtn.addEventListener('click', function() {
           fetch(API_BASE + '/api/auth/logout', { method: 'POST' })
             .finally(function() {
+              try {
+                if (window.ShuttleGoAndroid && typeof window.ShuttleGoAndroid.logout === 'function') {
+                  window.ShuttleGoAndroid.logout();
+                }
+              } catch (e) {}
               closeAccountMenu();
               refreshAuthState();
             });
@@ -16972,6 +17229,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       if (issueModalCloseBtn) issueModalCloseBtn.addEventListener('click', closeIssueModal);
       if (issueModalBackdrop) issueModalBackdrop.addEventListener('click', closeIssueModal);
       if (issueModal) issueModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      bindMobilePullDownDismissModal({
+        modal: issueModal,
+        scrollEl: issueModal ? issueModal.querySelector('.issue-modal-body') : null,
+        closeFn: closeIssueModal
+      });
       if (issueComposeBtn) issueComposeBtn.addEventListener('click', openIssueCreateView);
       if (issueDetailBackBtn) issueDetailBackBtn.addEventListener('click', backToIssueList);
       if (issueFormCancelBtn) issueFormCancelBtn.addEventListener('click', function() {
@@ -17001,6 +17263,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       if (noticeModalCloseBtn) noticeModalCloseBtn.addEventListener('click', closeNoticeModal);
       if (noticeModalBackdrop) noticeModalBackdrop.addEventListener('click', closeNoticeModal);
       if (noticeModal) noticeModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      bindMobilePullDownDismissModal({
+        modal: noticeModal,
+        scrollEl: noticeModal ? noticeModal.querySelector('.issue-modal-body') : null,
+        closeFn: closeNoticeModal
+      });
       if (noticeDetailBackBtn) noticeDetailBackBtn.addEventListener('click', backToNoticeList);
       if (noticePrevPageBtn) {
         noticePrevPageBtn.addEventListener('click', function() {
@@ -19980,7 +20247,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         });
         html += '</div>' +
           '<div class="route-timeline-notes">' +
-            '<div class="route-timeline-note">노란 부분을 클릭하면 노선 시간표를 볼 수 있습니다.</div>' +
+            '<div class="route-timeline-note">강조된 부분을 클릭하면 노선 시간표를 볼 수 있습니다.</div>' +
             '<div class="route-timeline-note">도착 예상 시간과 경로는 실제와 다를 수 있습니다.</div>' +
           '</div>';
         return html;
@@ -27693,6 +27960,9 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               openRouteSharePreviewDialog(shareCopyText, option.route_name || '노선');
               return 'previewed';
             }
+            if (isAndroidWebViewClient() && shareWithAndroidNativeSheet(shareCopyText, '')) {
+              return 'shared';
+            }
             var canUseNativeShare = (
               navigator.share &&
               typeof navigator.share === 'function' &&
@@ -28679,16 +28949,84 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         if (locationPermissionBackdrop) locationPermissionBackdrop.classList.remove('show');
         if (locationPermissionModal) locationPermissionModal.classList.remove('show');
       }
+      function normalizeLocationPoint(lat, lng) {
+        var numericLat = Number(lat);
+        var numericLng = Number(lng);
+        if (!isFinite(numericLat) || !isFinite(numericLng)) return null;
+        if (Math.abs(numericLat) > 90 || Math.abs(numericLng) > 180) return null;
+        return { lat: numericLat, lng: numericLng };
+      }
+      function isInKakaoMapLocationBounds(point) {
+        if (!point) return false;
+        return (
+          point.lat >= KAKAO_MAP_LOCATION_BOUNDS.minLat &&
+          point.lat <= KAKAO_MAP_LOCATION_BOUNDS.maxLat &&
+          point.lng >= KAKAO_MAP_LOCATION_BOUNDS.minLng &&
+          point.lng <= KAKAO_MAP_LOCATION_BOUNDS.maxLng
+        );
+      }
+      function forceMainMapRelayout() {
+        if (!map) return;
+        if (typeof map.relayout === 'function') {
+          try { map.relayout(); } catch (e) {}
+        }
+        refreshBubbleOverlayPosition();
+        refreshCurrentLocationOverlayPosition();
+      }
+      function scheduleMainMapRelayout() {
+        requestAnimationFrame(function() {
+          forceMainMapRelayout();
+        });
+        setTimeout(forceMainMapRelayout, 80);
+        setTimeout(forceMainMapRelayout, 260);
+      }
+      function applyCurrentLocationToMap(lat, lng, opts) {
+        opts = opts || {};
+        if (!map || typeof kakao === 'undefined' || !kakao.maps) return false;
+        var point = normalizeLocationPoint(lat, lng);
+        if (!point) {
+          openLocationPermissionModal('현재 위치 좌표가 올바르지 않습니다. 위치 서비스를 다시 켠 뒤 시도해 주세요.');
+          return false;
+        }
+        if (!isInKakaoMapLocationBounds(point)) {
+          openLocationPermissionModal(
+            '가져온 현재 위치가 셔틀Go 지도 지원 범위 밖에 있습니다. 위치 서비스 또는 모의 위치 설정을 확인해 주세요.'
+          );
+          return false;
+        }
+        clearCurrentLocationOverlay();
+        var position = new kakao.maps.LatLng(point.lat, point.lng);
+        forceMainMapRelayout();
+        map.setLevel(3, { animate: false });
+        map.setCenter(position);
+        showCurrentLocationOverlay(point.lat, point.lng, !!opts.forceRender);
+        scheduleMainMapRelayout();
+        return true;
+      }
       function requestLocationThenMove() {
+        if (isAndroidWebViewClient() && isAndroidNativeLocationAvailable()) {
+          requestAndroidNativeLocation()
+            .then(function(pos) {
+              applyCurrentLocationToMap(pos.lat, pos.lng, { source: 'android-native-location' });
+            })
+            .catch(function(err) {
+              var code = err && err.code ? String(err.code) : '';
+              if (code === 'permission_denied') {
+                openLocationPermissionModal('위치 권한이 거부되었습니다. Android 설정에서 셔틀Go 앱의 위치 권한을 허용해 주세요.');
+              } else if (code === 'timeout') {
+                openLocationPermissionModal('시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.');
+              } else {
+                openLocationPermissionModal((err && err.message) || '현재 위치를 가져오지 못했습니다. 위치 서비스 또는 네트워크 상태를 확인해 주세요.');
+              }
+            });
+          return;
+        }
         var opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
         navigator.geolocation.getCurrentPosition(
           function(pos) {
             var lat = pos.coords.latitude;
             var lng = pos.coords.longitude;
-            clearCurrentLocationOverlay();
-            map.setCenter(new kakao.maps.LatLng(lat, lng));
-            map.setLevel(3);
-            showCurrentLocationOverlay(lat, lng);
+            applyCurrentLocationToMap(lat, lng);
           },
           function(err) {
             var msg;
@@ -28708,20 +29046,22 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           opts
         );
       }
-      function moveToCurrentLocation() {
-        if (isDevHost()) {
+      function moveToCurrentLocation(options) {
+        options = options || {};
+        if (isDevHost() && !options.skipDevDebugPanel) {
           reopenDevDebugPanel();
         }
         var devPosition = getPreferredDebugPosition();
         if (devPosition && isFinite(Number(devPosition.lat)) && isFinite(Number(devPosition.lng))) {
-          clearCurrentLocationOverlay();
-          map.setCenter(new kakao.maps.LatLng(Number(devPosition.lat), Number(devPosition.lng)));
-          map.setLevel(3);
-          showCurrentLocationOverlay(Number(devPosition.lat), Number(devPosition.lng), true);
+          applyCurrentLocationToMap(Number(devPosition.lat), Number(devPosition.lng), { forceRender: true });
           return;
         }
         if (!navigator.geolocation) {
           alert('이 브라우저는 위치 기능을 지원하지 않습니다.');
+          return;
+        }
+        if (isAndroidWebViewClient()) {
+          requestLocationThenMove();
           return;
         }
         // 이미 권한이 부여됐으면 모달 없이 바로 위치 요청
@@ -28746,6 +29086,23 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
           // permissions API 미지원 시 바로 위치 요청
           requestLocationThenMove();
         }
+      }
+      function shouldAutoMoveToCurrentLocationOnStartup() {
+        if (startupCurrentLocationRequested) return false;
+        if (!isAndroidWebViewClient()) return false;
+        if (!isMobile()) return false;
+        if (pendingSharedRouteToken || (sharedRouteState && sharedRouteState.active)) return false;
+        if (favoriteRouteState && favoriteRouteState.active) return false;
+        if (!map || !btnLocation) return false;
+        return true;
+      }
+      function scheduleStartupCurrentLocation() {
+        if (!shouldAutoMoveToCurrentLocationOnStartup()) return;
+        startupCurrentLocationRequested = true;
+        setTimeout(function() {
+          if (!map || (sharedRouteState && sharedRouteState.active) || (favoriteRouteState && favoriteRouteState.active)) return;
+          moveToCurrentLocation({ skipDevDebugPanel: true, startup: true });
+        }, 550);
       }
 
       function zoomIn() {
@@ -29182,6 +29539,167 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         }
       }
 
+      function bindMobilePullDownDismissModal(config) {
+        config = config || {};
+        var modal = config.modal;
+        var scrollEl = config.scrollEl || null;
+        var closeFn = config.closeFn;
+        if (!modal || typeof closeFn !== 'function') return;
+
+        var MOVE_THRESHOLD = 8;
+        var DISMISS_THRESHOLD = 86;
+        var MAX_TRANSLATE = 180;
+        var startY = 0;
+        var startX = 0;
+        var startScrollTop = 0;
+        var translateY = 0;
+        var tracking = false;
+        var dragging = false;
+        var forwardingScroll = false;
+        var suppressClickUntil = 0;
+        var source = '';
+
+        function resetDrag() {
+          tracking = false;
+          dragging = false;
+          forwardingScroll = false;
+          source = '';
+          translateY = 0;
+          modal.classList.remove('modal-pull-dragging');
+          modal.style.transform = '';
+        }
+
+        function markGestureConsumed() {
+          suppressClickUntil = Date.now() + 450;
+        }
+
+        function beginDrag() {
+          if (dragging) return;
+          dragging = true;
+          modal.classList.add('modal-pull-dragging');
+        }
+
+        function getMaxScrollTop() {
+          if (!scrollEl) return 0;
+          return Math.max(0, Number(scrollEl.scrollHeight || 0) - Number(scrollEl.clientHeight || 0));
+        }
+
+        function clampScrollTop(value) {
+          return Math.min(getMaxScrollTop(), Math.max(0, Number(value || 0)));
+        }
+
+        function canDragFromBody() {
+          if (!scrollEl) return true;
+          return Number(scrollEl.scrollTop || 0) <= 0;
+        }
+
+        modal.addEventListener('touchstart', function(e) {
+          if (!isMobile() || !modal.classList.contains('show') || !e.touches.length) return;
+          var target = e.target;
+          var header = target && target.closest ? target.closest('.issue-modal-header, .report-modal-header') : null;
+          var inBody = !!(scrollEl && (target === scrollEl || scrollEl.contains(target)));
+          var inModal = target && (target === modal || modal.contains(target));
+          if (!header && !inBody && !inModal) return;
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          startScrollTop = scrollEl ? Number(scrollEl.scrollTop || 0) : 0;
+          translateY = 0;
+          tracking = true;
+          dragging = false;
+          forwardingScroll = false;
+          source = inBody ? 'body' : 'chrome';
+        }, { passive: true });
+
+        modal.addEventListener('touchmove', function(e) {
+          if (!tracking || !e.touches.length) return;
+          var currentX = e.touches[0].clientX;
+          var currentY = e.touches[0].clientY;
+          var deltaX = currentX - startX;
+          var deltaY = currentY - startY;
+          if (!dragging && !forwardingScroll) {
+            if (Math.abs(deltaX) > Math.abs(deltaY) + MOVE_THRESHOLD && Math.abs(deltaX) > MOVE_THRESHOLD) {
+              tracking = false;
+              return;
+            }
+            if (Math.abs(deltaY) <= MOVE_THRESHOLD) return;
+            if (source === 'chrome' && scrollEl) {
+              if (deltaY < -MOVE_THRESHOLD || startScrollTop > 0) {
+                forwardingScroll = true;
+              } else if (deltaY > MOVE_THRESHOLD) {
+                beginDrag();
+              } else {
+                return;
+              }
+            } else if (source === 'chrome') {
+              if (deltaY > MOVE_THRESHOLD) beginDrag();
+              else if (Math.abs(deltaY) > MOVE_THRESHOLD) tracking = false;
+            } else {
+              if (deltaY < -MOVE_THRESHOLD) {
+                tracking = false;
+                return;
+              }
+              if (startScrollTop > 0 || !canDragFromBody()) {
+                tracking = false;
+                return;
+              }
+              beginDrag();
+            }
+          }
+          if (forwardingScroll && !dragging) {
+            var nextScrollTop = clampScrollTop(startScrollTop - deltaY);
+            var overshootY = deltaY - startScrollTop;
+            if (nextScrollTop <= 0 && overshootY > MOVE_THRESHOLD) {
+              scrollEl.scrollTop = 0;
+              forwardingScroll = false;
+              beginDrag();
+              deltaY = overshootY;
+            } else {
+              e.preventDefault();
+              scrollEl.scrollTop = nextScrollTop;
+              return;
+            }
+          }
+          if (!dragging) {
+            if (deltaY < -MOVE_THRESHOLD) {
+              tracking = false;
+              return;
+            }
+            if (deltaY <= MOVE_THRESHOLD) return;
+            if (source === 'body' && (startScrollTop > 0 || !canDragFromBody())) {
+              tracking = false;
+              return;
+            }
+            beginDrag();
+          }
+          if (!dragging) return;
+          e.preventDefault();
+          translateY = Math.min(MAX_TRANSLATE, Math.max(0, deltaY) * 0.86);
+          modal.style.transform = 'translateY(' + translateY + 'px)';
+        }, { passive: false });
+
+        modal.addEventListener('touchend', function() {
+          if (!tracking) return;
+          if (dragging && translateY >= DISMISS_THRESHOLD) {
+            markGestureConsumed();
+            resetDrag();
+            closeFn();
+            return;
+          }
+          if (dragging || forwardingScroll) {
+            markGestureConsumed();
+          }
+          resetDrag();
+        }, { passive: true });
+
+        modal.addEventListener('touchcancel', resetDrag, { passive: true });
+
+        modal.addEventListener('click', function(e) {
+          if (Date.now() > suppressClickUntil) return;
+          e.preventDefault();
+          e.stopPropagation();
+        }, true);
+      }
+
       function fetchJson(url, init) {
         return fetch(url, init)
           .then(function(r) {
@@ -29545,7 +30063,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
         opts = opts || {};
         if (!reportDataModal || !reportDataBackdrop || !reportDataBody || !reportDataTitle) return;
         hideEtaFloatingTooltip();
-        reportDataBody.innerHTML = '<div class="report-empty-state">불러오는 중...</div>';
+        reportDataBody.innerHTML = buildLoadingStateHtml('report-empty-state', '불러오는 중...');
         if (opts.htmlTitle) {
           reportDataTitle.innerHTML = String(title || '');
           reportDataTitle.classList.add('report-modal-title-html');
@@ -32655,6 +33173,11 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
       if (arrivalReportConfirmPrimaryBtn) arrivalReportConfirmPrimaryBtn.addEventListener('click', handleArrivalReportConfirmPrimaryAction);
       if (reportDataCloseBtn) reportDataCloseBtn.addEventListener('click', closeReportDataModal);
       if (reportDataBackdrop) reportDataBackdrop.addEventListener('click', closeReportDataModal);
+      bindMobilePullDownDismissModal({
+        modal: reportDataModal,
+        scrollEl: reportDataBody,
+        closeFn: closeReportDataModal
+      });
       if (reportDataBody) {
         reportDataBody.addEventListener('scroll', function() {
           hideEtaFloatingTooltip();
@@ -32775,6 +33298,7 @@ Shuttle Go(이하 “서비스”)는 이용자의 개인정보를 중요하게 
               setSheetState('sheet-peek');
             }
             maybeShowOnboardingGuide();
+            scheduleStartupCurrentLocation();
           });
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
