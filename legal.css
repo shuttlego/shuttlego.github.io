@@ -1,0 +1,147 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #ffffff;
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+  line-height: 1.68;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: #ffffff;
+}
+
+.legal-page {
+  width: min(100%, 780px);
+  margin: 0 auto;
+  padding: 28px 24px 56px;
+}
+
+.legal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.legal-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.legal-title {
+  margin: 0;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.legal-meta {
+  margin: 20px 0 28px;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.legal-meta p {
+  margin: 2px 0;
+}
+
+.legal-content {
+  font-size: 15px;
+}
+
+.legal-content h2 {
+  margin: 34px 0 12px;
+  color: #111827;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.legal-content h3 {
+  margin: 22px 0 8px;
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.legal-content p {
+  margin: 0 0 12px;
+}
+
+.legal-content ul,
+.legal-content ol {
+  margin: 8px 0 18px;
+  padding-left: 22px;
+}
+
+.legal-content li {
+  margin: 4px 0;
+}
+
+.legal-content a {
+  color: #1428A0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-footer {
+  margin-top: 44px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.legal-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 10px;
+}
+
+.legal-footer a {
+  color: #1428A0;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.legal-footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 520px) {
+  .legal-page {
+    padding: 20px 18px 44px;
+  }
+
+  .legal-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .legal-title {
+    font-size: 20px;
+  }
+
+  .legal-content {
+    font-size: 14px;
+  }
+
+  .legal-content h2 {
+    font-size: 17px;
+  }
+}

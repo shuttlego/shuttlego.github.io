@@ -31,10 +31,13 @@ jobs:
           cp index.html _site/index.html
           cp auth-callback.html _site/auth-callback.html
           cp dev.config.js _site/dev.config.js
+          cp legal.css _site/legal.css
           cp robots.txt _site/robots.txt
           cp sitemap.xml _site/sitemap.xml
           cp -R page _site/page
           cp -R images _site/images
+          cp -R privacy _site/privacy
+          cp -R terms _site/terms
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
           touch _site/.nojekyll
 
