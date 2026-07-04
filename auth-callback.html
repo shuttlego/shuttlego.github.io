@@ -104,6 +104,11 @@
       line-height: 1.4;
       text-align: left;
     }
+    .signup-terms-note a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
     button {
       height: 40px;
       border-radius: 8px;
@@ -138,7 +143,7 @@
         <input type="text" id="nicknameInput" maxlength="20" autocomplete="nickname" />
       </div>
       <div class="consent" id="emailConsentBox">
-        <label><input type="checkbox" id="emailConsent" /> 이메일 수집 및 이용 동의</label>
+        <label id="emailConsentLabel"><input type="checkbox" id="emailConsent" /> 이메일 수집 (선택)</label>
         <div id="emailConsentHint" style="margin-top:6px; color:#64748b;"></div>
       </div>
       <div class="actions signup-actions">
@@ -147,7 +152,7 @@
           <button type="button" class="primary" id="signupBtn">가입 완료</button>
         </div>
       </div>
-      <p class="signup-terms-note">로그인 시 이용약관 및 개인정보처리방침에 동의합니다.</p>
+      <p class="signup-terms-note">로그인 시 <a href="/terms">이용약관</a> 및 <a href="/privacy">개인정보 처리방침</a>에 동의합니다.</p>
     </div>
   </div>
 
@@ -195,7 +200,9 @@
       var signupBtn = document.getElementById('signupBtn');
       var cancelBtn = document.getElementById('cancelBtn');
       var emailConsent = document.getElementById('emailConsent');
+      var emailConsentLabel = document.getElementById('emailConsentLabel');
       var emailConsentHint = document.getElementById('emailConsentHint');
+      var hasProviderEmail = emailAvailable && !!emailMasked;
 
       function redirectHome(delayMs) {
         setTimeout(function() {
@@ -218,9 +225,12 @@
         signupFormWrap.classList.remove('hidden');
         nicknameInput.value = nicknameHint || '';
         emailConsent.checked = false;
-        if (emailAvailable && emailMasked) {
+        emailConsent.disabled = !hasProviderEmail;
+        if (hasProviderEmail) {
+          if (emailConsentLabel) emailConsentLabel.classList.remove('hidden');
           emailConsentHint.textContent = '수집 가능 이메일: ' + emailMasked;
         } else {
+          if (emailConsentLabel) emailConsentLabel.classList.add('hidden');
           emailConsentHint.textContent = '소셜 계정에서 이메일을 제공하지 않아도 가입은 가능합니다.';
         }
 
@@ -243,7 +253,7 @@
             body: JSON.stringify({
               signup_token: signupToken,
               nickname: nickname,
-              email_consent: !!emailConsent.checked
+              email_consent: hasProviderEmail && !!emailConsent.checked
             })
           })
             .then(function(r) {
@@ -263,7 +273,11 @@
             })
             .catch(function(err) {
               signupBtn.disabled = false;
-              message.textContent = err && err.message ? err.message : '가입 처리 중 오류가 발생했습니다.';
+              var errorMessage = err && err.message ? err.message : '가입 처리 중 오류가 발생했습니다.';
+              if (/failed to fetch/i.test(errorMessage)) {
+                errorMessage = '가입 요청을 완료하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.';
+              }
+              message.textContent = errorMessage;
             });
         });
         return;

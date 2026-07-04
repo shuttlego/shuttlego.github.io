@@ -2020,6 +2020,147 @@
       background: #f4dc00;
       border-color: #f4dc00;
     }
+    .login-progress-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 228;
+      background: rgba(7, 12, 25, 0.64);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .login-progress-backdrop.show {
+      display: flex;
+    }
+    .login-progress-modal {
+      width: min(280px, calc(100vw - 48px));
+      min-height: 132px;
+      border-radius: 14px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      box-shadow: 0 24px 44px rgba(15, 23, 42, 0.24);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 24px 20px;
+      text-align: center;
+    }
+    .login-progress-spinner {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 3px solid #e5e7eb;
+      border-top-color: #1428A0;
+      animation: login-progress-spin 0.72s linear infinite;
+    }
+    .login-progress-text {
+      color: #111827;
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.4;
+    }
+    @keyframes login-progress-spin {
+      to { transform: rotate(360deg); }
+    }
+    .app-dialog-backdrop,
+    .review-login-code-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 226;
+      background: rgba(15, 23, 42, 0.35);
+    }
+    .app-dialog-backdrop.show,
+    .review-login-code-backdrop.show {
+      display: block;
+    }
+    .app-dialog-modal,
+    .review-login-code-modal {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(360px, calc(100vw - 24px));
+      padding: 22px 20px 18px;
+      border-radius: 18px;
+      border: 1px solid #dbe3ef;
+      background: #fff;
+      box-shadow: 0 24px 44px rgba(15, 23, 42, 0.22);
+    }
+    .app-dialog-title,
+    .review-login-code-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .app-dialog-body,
+    .review-login-code-body {
+      margin-top: 10px;
+      color: #475569;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+    .review-login-code-input {
+      width: 100%;
+      height: 44px;
+      margin-top: 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 0 12px;
+      color: #111827;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-align: center;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .review-login-code-input:focus {
+      outline: none;
+      border-color: #1428A0;
+      box-shadow: 0 0 0 3px rgba(20, 40, 160, 0.12);
+    }
+    .review-login-code-error {
+      min-height: 18px;
+      margin-top: 8px;
+      color: #dc2626;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .app-dialog-actions,
+    .review-login-code-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .app-dialog-actions button,
+    .review-login-code-actions button {
+      flex: 1;
+      min-height: 42px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #111827;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .app-dialog-actions button:hover,
+    .review-login-code-actions button:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .app-dialog-actions button:disabled,
+    .review-login-code-actions button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
     .route-refresh-confirm-backdrop {
       display: none;
       position: fixed;
@@ -2107,6 +2248,16 @@
         border-radius: 18px 18px 0 0;
       }
       .route-refresh-confirm-modal {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        transform: none;
+        border-radius: 18px 18px 0 0;
+      }
+      .app-dialog-modal,
+      .review-login-code-modal {
         top: auto;
         left: 0;
         right: 0;
@@ -2800,6 +2951,72 @@
     }
     .location-permission-modal .location-permission-confirm:hover {
       background: #1565c0;
+    }
+
+    /* 앱 업데이트 안내 모달 */
+    .app-update-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 130;
+    }
+    .app-update-backdrop.show { display: block; }
+    .app-update-modal {
+      display: none;
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      max-width: 360px;
+      margin: 0 auto;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 16px 48px rgba(15, 23, 42, .24);
+      z-index: 131;
+      padding: 24px 22px 20px;
+    }
+    .app-update-modal.show { display: block; }
+    .app-update-title {
+      margin: 0 0 10px;
+      font-size: 22px;
+      line-height: 1.3;
+      color: #111827;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .app-update-message {
+      margin: 0 0 20px;
+      font-size: 15px;
+      line-height: 1.55;
+      color: #4b5563;
+      word-break: keep-all;
+    }
+    .app-update-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .app-update-btn {
+      min-width: 104px;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      background: #fff;
+      color: #1f2937;
+      padding: 12px 14px;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .app-update-btn.primary {
+      border-color: #1428A0;
+      background: #1428A0;
+      color: #fff;
+    }
+    .app-update-btn.secondary.is-hidden {
+      display: none;
     }
 
     /* 이슈/건의 모달 */
@@ -8726,6 +8943,16 @@
     <button type="button" class="location-permission-confirm" id="locationPermissionConfirm">확인</button>
   </div>
 
+  <div class="app-update-backdrop" id="appUpdateBackdrop" aria-hidden="true"></div>
+  <div class="app-update-modal" id="appUpdateModal" role="dialog" aria-modal="true" aria-labelledby="appUpdateTitle">
+    <h2 class="app-update-title" id="appUpdateTitle">앱 업데이트 안내</h2>
+    <p class="app-update-message" id="appUpdateMessage"></p>
+    <div class="app-update-actions">
+      <button type="button" class="app-update-btn secondary" id="appUpdateLaterBtn">나중에</button>
+      <button type="button" class="app-update-btn primary" id="appUpdateStoreBtn">업데이트하기</button>
+    </div>
+  </div>
+
   <div class="issue-modal-backdrop" id="issueModalBackdrop" aria-hidden="true"></div>
   <div class="issue-modal" id="issueModal" role="dialog" aria-label="이슈/건의">
     <div class="issue-modal-header">
@@ -8977,6 +9204,9 @@
       var apiBaseOverride = (typeof devConfig.API_BASE_OVERRIDE === 'string')
         ? devConfig.API_BASE_OVERRIDE.trim()
         : '';
+      var kakaoJsKeyOverride = (typeof devConfig.KAKAO_JS_KEY === 'string')
+        ? devConfig.KAKAO_JS_KEY.trim()
+        : '';
       function resolveDevApiBase() {
         var useHttps = (location.protocol === 'https:');
         var scheme = useHttps ? 'https' : 'http';
@@ -8989,8 +9219,8 @@
       var ENV = {
         // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
         KAKAO_JS_KEY: isDev
-          ? '22400d4577672b2419e494c2e292d9c0'   // dev: localhost 허용
-          : "cfa20e46978a7a1762df9cbff461025c",  // prd: shuttlego.github.io 허용
+          ? kakaoJsKeyOverride   // dev: run_dev.py가 dev.config.js에 주입
+          : '39fb0eced397ffdd52bc40427d8a1d91',  // prd: shuttlego.github.io 허용
         // 백엔드 API base URL
         API_BASE: isDev
           ? (apiBaseOverride || resolveDevApiBase()) // dev: override or Traefik
@@ -9350,6 +9580,10 @@
       var routeFavoritesModalLoading = false;
       var routeFavoritesModalItems = [];
       var favoriteLoginPromptModal = null;
+      var reviewLoginCodeModal = null;
+      var reviewLoginTitleTapCount = 0;
+      var reviewLoginTitleLastTapAt = 0;
+      var appDialogModal = null;
       var routeRefreshConfirmModal = null;
       var favoriteResolveRequestSeq = 0;
       var routeShareTokenCache = new Map();
@@ -9703,15 +9937,206 @@
         }
       }
 
-      function isAndroidWebViewClient() {
+      function parseAppBuild(value) {
+        var parsed = parseInt(String(value == null ? '' : value).trim(), 10);
+        return isFinite(parsed) && parsed > 0 ? parsed : 0;
+      }
+
+      function normalizeAppContext(raw) {
+        raw = raw && typeof raw === 'object' ? raw : {};
+        var platform = String(raw.platform || '').trim().toLowerCase();
+        if (platform !== 'android' && platform !== 'ios') platform = 'web';
+        var appBuild = parseAppBuild(raw.appBuild);
+        var appVersion = String(raw.appVersion || '').trim();
+        var appClient = String(raw.appClient || '').trim();
+        var isAppWebView = platform === 'android' || platform === 'ios';
+        return {
+          platform: platform,
+          appBuild: appBuild,
+          appVersion: appVersion,
+          appClient: appClient,
+          isAppWebView: isAppWebView
+        };
+      }
+
+      function parseAppContextJson(raw) {
         try {
-          if (window.__SHUTTLE_ANDROID_WEBVIEW) return true;
+          if (!raw) return null;
+          if (typeof raw === 'object') return raw;
+          return JSON.parse(String(raw || ''));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function readBridgeAppContext() {
+        try {
+          if (
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid.getAppInfo === 'function'
+          ) {
+            return parseAppContextJson(window.ShuttleGoAndroid.getAppInfo());
+          }
         } catch (e) {}
-        var platform = String(getQueryParam('client_platform') || '').toLowerCase();
-        if (platform === 'android_webview') return true;
-        var appClient = String(getQueryParam('app_client') || '').toLowerCase();
-        if (appClient.indexOf('android-webview') === 0) return true;
-        return /ShuttleGoAndroidWebView/i.test(String(navigator.userAgent || ''));
+        return null;
+      }
+
+      function readInjectedAppContext() {
+        try {
+          if (window.__SHUTTLE_APP_CONTEXT && typeof window.__SHUTTLE_APP_CONTEXT === 'object') {
+            return window.__SHUTTLE_APP_CONTEXT;
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      function readQueryAppContext() {
+        var platform = String(getQueryParam('platform') || '').trim();
+        var appBuild = getQueryParam('appBuild');
+        var appVersion = String(getQueryParam('appVersion') || '').trim();
+        var appClient = String(getQueryParam('appClient') || '').trim();
+        if (!platform && !appBuild && !appVersion && !appClient) return null;
+        return {
+          platform: platform,
+          appBuild: appBuild,
+          appVersion: appVersion,
+          appClient: appClient
+        };
+      }
+
+      function readSessionAppContext() {
+        try {
+          var platform = sessionStorage.getItem('shuttlego_platform') || '';
+          var appBuild = sessionStorage.getItem('shuttlego_appBuild') || '';
+          var appVersion = sessionStorage.getItem('shuttlego_appVersion') || '';
+          var appClient = sessionStorage.getItem('shuttlego_appClient') || '';
+          if (!platform && !appBuild && !appVersion && !appClient) return null;
+          return {
+            platform: platform,
+            appBuild: appBuild,
+            appVersion: appVersion,
+            appClient: appClient
+          };
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function readUserAgentAppContext() {
+        var ua = String(navigator.userAgent || '');
+        var match = ua.match(/ShuttleGoAndroidWebView\/([^\s]+)\s+\(([^)]+)\)/i);
+        if (!match) return null;
+        return {
+          platform: 'android',
+          appBuild: 0,
+          appVersion: String(match[1] || '').trim(),
+          appClient: String(match[2] || '').trim()
+        };
+      }
+
+      function persistAppContext(context) {
+        try {
+          sessionStorage.setItem('shuttlego_platform', context.platform || 'web');
+          sessionStorage.setItem('shuttlego_appBuild', String(context.appBuild || 0));
+          sessionStorage.setItem('shuttlego_appVersion', context.appVersion || '');
+          sessionStorage.setItem('shuttlego_appClient', context.appClient || '');
+        } catch (e) {}
+      }
+
+      function initAppContext() {
+        var sources = [
+          readBridgeAppContext,
+          readInjectedAppContext,
+          readQueryAppContext,
+          readSessionAppContext,
+          readUserAgentAppContext
+        ];
+        for (var i = 0; i < sources.length; i += 1) {
+          var raw = sources[i]();
+          if (!raw) continue;
+          var normalized = normalizeAppContext(raw);
+          if (normalized.platform !== 'web' || normalized.appBuild > 0 || normalized.appVersion || normalized.appClient) {
+            persistAppContext(normalized);
+            window.__SHUTTLE_APP_CONTEXT = normalized;
+            return normalized;
+          }
+        }
+        var fallback = normalizeAppContext({});
+        window.__SHUTTLE_APP_CONTEXT = fallback;
+        return fallback;
+      }
+
+      var appContext = initAppContext();
+
+      function getAppContext() {
+        return appContext;
+      }
+
+      function hasAndroidBridgeMethod(methodName) {
+        try {
+          return !!(
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid[methodName] === 'function'
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function hasAvailableAndroidProviderLogin(provider) {
+        var normalizedProvider = String(provider || 'google').toLowerCase();
+        var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
+        var availabilityName = normalizedProvider === 'kakao' ? 'isNativeKakaoLoginAvailable' : 'isNativeGoogleLoginAvailable';
+        if (!hasAndroidBridgeMethod(methodName)) return false;
+        try {
+          return !hasAndroidBridgeMethod(availabilityName) || window.ShuttleGoAndroid[availabilityName]();
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function createAppCapabilities(context) {
+        var isAndroid = context.platform === 'android';
+        var appBuild = Number(context.appBuild || 0);
+        return {
+          nativeShare: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('share'),
+          nativeGoogleLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('google'),
+          nativeKakaoLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('kakao'),
+          nativeLocationSnapshot: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('getCurrentLocationSnapshot'),
+          nativeLocationUpdates: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('startLocationUpdates'),
+          nativeLocationRequest: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('requestCurrentLocation'),
+          nativeReviewLogin: isAndroid && appBuild >= 3
+        };
+      }
+
+      function getAppCapabilities() {
+        var capabilities = createAppCapabilities(getAppContext());
+        window.__SHUTTLE_APP_CAPABILITIES = capabilities;
+        return capabilities;
+      }
+
+      function isAndroidWebViewClient() {
+        return getAppContext().platform === 'android';
+      }
+
+      function getAndroidWebViewAppClient() {
+        return String(getAppContext().appClient || '').trim();
+      }
+
+      function getAndroidWebViewClientVersion() {
+        return String(getAppContext().appVersion || '').trim();
+      }
+
+      function getAndroidWebViewClientBuild() {
+        return Number(getAppContext().appBuild || 0);
+      }
+
+      function isReviewTestLoginClient() {
+        if (getAppContext().platform !== 'android') return false;
+        var appClient = getAndroidWebViewAppClient().toLowerCase();
+        return appClient === 'android-webview' ||
+          appClient === 'android-webview-dev' ||
+          appClient.indexOf('android-webview') === 0;
       }
 
       function isReportCapableClient() {
@@ -10743,38 +11168,83 @@
       }
 
       var nativeLoginInFlight = false;
+      var nativeLoginInFlightResetTimer = null;
+      var providerLoginProgressModal = null;
       var nativeLocationRequests = {};
 
-      function isAndroidNativeLoginAvailable(provider) {
-        var normalizedProvider = String(provider || 'google').toLowerCase();
-        var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
-        var availabilityName = normalizedProvider === 'kakao' ? 'isNativeKakaoLoginAvailable' : 'isNativeGoogleLoginAvailable';
-        try {
-          return !!(
-            window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid[methodName] === 'function' &&
-            (
-              typeof window.ShuttleGoAndroid[availabilityName] !== 'function' ||
-              window.ShuttleGoAndroid[availabilityName]()
-            )
-          );
-        } catch (e) {
-          return false;
+      function setNativeLoginInFlight(isInFlight) {
+        nativeLoginInFlight = !!isInFlight;
+        if (nativeLoginInFlightResetTimer) {
+          clearTimeout(nativeLoginInFlightResetTimer);
+          nativeLoginInFlightResetTimer = null;
+        }
+        if (nativeLoginInFlight) {
+          nativeLoginInFlightResetTimer = setTimeout(function() {
+            nativeLoginInFlight = false;
+            hideProviderLoginProgress();
+          }, 90000);
         }
       }
 
-      function isAndroidNativeLocationAvailable() {
-        try {
-          return !!(
-            window.ShuttleGoAndroid &&
-            (
-              typeof window.ShuttleGoAndroid.requestCurrentLocation === 'function' ||
-              typeof window.ShuttleGoAndroid.getCurrentLocationSnapshot === 'function'
-            )
-          );
-        } catch (e) {
-          return false;
+      function ensureProviderLoginProgressModal() {
+        if (
+          providerLoginProgressModal &&
+          providerLoginProgressModal.backdrop &&
+          document.body.contains(providerLoginProgressModal.backdrop)
+        ) {
+          return providerLoginProgressModal;
         }
+
+        var backdrop = document.createElement('div');
+        backdrop.className = 'login-progress-backdrop';
+        backdrop.setAttribute('aria-hidden', 'true');
+
+        var modal = document.createElement('div');
+        modal.className = 'login-progress-modal';
+        modal.setAttribute('role', 'status');
+        modal.setAttribute('aria-live', 'polite');
+        modal.innerHTML =
+          '<div class="login-progress-spinner" aria-hidden="true"></div>' +
+          '<div class="login-progress-text">로그인 중입니다...</div>';
+
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+        providerLoginProgressModal = {
+          backdrop: backdrop,
+          text: modal.querySelector('.login-progress-text')
+        };
+        return providerLoginProgressModal;
+      }
+
+      function showProviderLoginProgress(message) {
+        var modalRef = ensureProviderLoginProgressModal();
+        if (!modalRef || !modalRef.backdrop) return;
+        if (modalRef.text) modalRef.text.textContent = message || '로그인 중입니다...';
+        modalRef.backdrop.classList.add('show');
+        modalRef.backdrop.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideProviderLoginProgress() {
+        if (!providerLoginProgressModal || !providerLoginProgressModal.backdrop) return;
+        providerLoginProgressModal.backdrop.classList.remove('show');
+        providerLoginProgressModal.backdrop.setAttribute('aria-hidden', 'true');
+      }
+
+      function isAndroidNativeLoginAvailable(provider) {
+        var normalizedProvider = String(provider || 'google').toLowerCase();
+        var capabilities = getAppCapabilities();
+        return normalizedProvider === 'kakao'
+          ? !!capabilities.nativeKakaoLogin
+          : !!capabilities.nativeGoogleLogin;
+      }
+
+      function isAndroidNativeLocationAvailable() {
+        var capabilities = getAppCapabilities();
+        return !!(
+          capabilities.nativeLocationSnapshot ||
+          capabilities.nativeLocationRequest ||
+          capabilities.nativeLocationUpdates
+        );
       }
 
       function normalizeNativeLocationPayload(payload) {
@@ -10824,14 +11294,7 @@
       }
 
       function isAndroidNativeShareAvailable() {
-        try {
-          return !!(
-            window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid.share === 'function'
-          );
-        } catch (e) {
-          return false;
-        }
+        return !!getAppCapabilities().nativeShare;
       }
 
       function shareWithAndroidNativeSheet(text, url) {
@@ -10915,20 +11378,30 @@
       window.ShuttleGoAndroidAuth = {
         onNativeAuthEvent: function(detail) {
           var type = detail && detail.type ? String(detail.type) : '';
-          nativeLoginInFlight = type === 'started';
+          if (type === 'started') {
+            setNativeLoginInFlight(true);
+            showProviderLoginProgress();
+          } else if (type === 'success' || type === 'cancelled' || type === 'error' || type === 'signup_required') {
+            setNativeLoginInFlight(false);
+            hideProviderLoginProgress();
+          }
         },
         onLoginStarted: function() {
-          nativeLoginInFlight = true;
+          setNativeLoginInFlight(true);
+          showProviderLoginProgress();
         },
         onLoginSuccess: function() {
-          nativeLoginInFlight = false;
+          setNativeLoginInFlight(false);
+          hideProviderLoginProgress();
           refreshAuthState();
         },
         onLoginCancelled: function() {
-          nativeLoginInFlight = false;
+          setNativeLoginInFlight(false);
+          hideProviderLoginProgress();
         },
         onLoginError: function(message) {
-          nativeLoginInFlight = false;
+          setNativeLoginInFlight(false);
+          hideProviderLoginProgress();
           alert(message || '로그인에 실패했습니다.');
         }
       };
@@ -10938,6 +11411,8 @@
         if (normalizedProvider !== 'kakao') normalizedProvider = 'google';
         if (nativeLoginInFlight) return;
         if (isAndroidNativeLoginAvailable(normalizedProvider)) {
+          setNativeLoginInFlight(true);
+          showProviderLoginProgress();
           try {
             var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
             window.ShuttleGoAndroid[methodName](JSON.stringify({
@@ -10948,10 +11423,13 @@
             }));
             return;
           } catch (e) {
+            setNativeLoginInFlight(false);
+            hideProviderLoginProgress();
             alert((e && e.message) ? e.message : 'Android 로그인을 시작하지 못했습니다.');
             return;
           }
         }
+        showProviderLoginProgress();
         var callbackUrl = location.origin + '/auth-callback.html';
         var loginUrl = API_BASE + '/api/auth/' + normalizedProvider + '/start?next=' + encodeURIComponent(callbackUrl);
         location.href = loginUrl;
@@ -10963,6 +11441,307 @@
 
       function startKakaoLogin() {
         startProviderLogin('kakao');
+      }
+
+      function ensureAppDialogModal() {
+        if (
+          appDialogModal &&
+          appDialogModal.backdrop &&
+          document.body.contains(appDialogModal.backdrop)
+        ) {
+          return appDialogModal;
+        }
+
+        var backdrop = document.createElement('div');
+        backdrop.className = 'app-dialog-backdrop';
+        backdrop.setAttribute('aria-hidden', 'true');
+
+        var modal = document.createElement('div');
+        modal.className = 'app-dialog-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-label', '확인');
+        modal.innerHTML =
+          '<div class="app-dialog-title"></div>' +
+          '<div class="app-dialog-body"></div>' +
+          '<div class="app-dialog-actions">' +
+            '<button type="button" data-app-dialog-cancel="1">취소</button>' +
+            '<button type="button" data-app-dialog-confirm="1">확인</button>' +
+          '</div>';
+
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+
+        appDialogModal = {
+          backdrop: backdrop,
+          modal: modal,
+          title: modal.querySelector('.app-dialog-title'),
+          body: modal.querySelector('.app-dialog-body'),
+          cancelButton: modal.querySelector('[data-app-dialog-cancel="1"]'),
+          confirmButton: modal.querySelector('[data-app-dialog-confirm="1"]'),
+          resolve: null
+        };
+
+        function settle(value) {
+          if (!appDialogModal || !appDialogModal.backdrop) return;
+          var resolver = appDialogModal.resolve;
+          appDialogModal.resolve = null;
+          appDialogModal.backdrop.classList.remove('show');
+          appDialogModal.backdrop.setAttribute('aria-hidden', 'true');
+          if (typeof resolver === 'function') resolver(value);
+        }
+
+        backdrop.addEventListener('click', function(evt) {
+          if (evt.target === backdrop) settle(false);
+        });
+        if (appDialogModal.cancelButton) {
+          appDialogModal.cancelButton.addEventListener('click', function() {
+            settle(false);
+          });
+        }
+        if (appDialogModal.confirmButton) {
+          appDialogModal.confirmButton.addEventListener('click', function() {
+            settle(true);
+          });
+        }
+        document.addEventListener('keydown', function(evt) {
+          if (!appDialogModal || !appDialogModal.backdrop) return;
+          if (!appDialogModal.backdrop.classList.contains('show')) return;
+          if (evt.key === 'Escape') {
+            evt.preventDefault();
+            settle(false);
+          }
+        });
+        return appDialogModal;
+      }
+
+      function openAppDialog(options) {
+        var config = options || {};
+        var modalRef = ensureAppDialogModal();
+        if (!modalRef || !modalRef.backdrop) return Promise.resolve(false);
+        return new Promise(function(resolve) {
+          modalRef.resolve = resolve;
+          var title = String(config.title || '').trim();
+          if (modalRef.title) {
+            modalRef.title.textContent = title;
+            modalRef.title.style.display = title ? '' : 'none';
+          }
+          if (modalRef.body) {
+            modalRef.body.textContent = String(config.message || '');
+          }
+          if (modalRef.cancelButton) {
+            modalRef.cancelButton.textContent = String(config.cancelText || '취소');
+            modalRef.cancelButton.style.display = config.showCancel === false ? 'none' : '';
+          }
+          if (modalRef.confirmButton) {
+            modalRef.confirmButton.textContent = String(config.confirmText || '확인');
+          }
+          modalRef.backdrop.classList.add('show');
+          modalRef.backdrop.setAttribute('aria-hidden', 'false');
+          setTimeout(function() {
+            if (modalRef.confirmButton) modalRef.confirmButton.focus();
+          }, 0);
+        });
+      }
+
+      function appConfirm(message) {
+        return openAppDialog({
+          message: message,
+          cancelText: '취소',
+          confirmText: '확인'
+        });
+      }
+
+      function appAlert(message) {
+        return openAppDialog({
+          message: message,
+          showCancel: false,
+          confirmText: '확인'
+        });
+      }
+
+      function ensureReviewLoginCodeModal() {
+        if (
+          reviewLoginCodeModal &&
+          reviewLoginCodeModal.backdrop &&
+          document.body.contains(reviewLoginCodeModal.backdrop)
+        ) {
+          return reviewLoginCodeModal;
+        }
+
+        var backdrop = document.createElement('div');
+        backdrop.className = 'review-login-code-backdrop';
+        backdrop.setAttribute('aria-hidden', 'true');
+
+        var modal = document.createElement('div');
+        modal.className = 'review-login-code-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-label', '테스트 로그인');
+        modal.innerHTML =
+          '<div class="review-login-code-title">테스트 로그인</div>' +
+          '<div class="review-login-code-body">6자리 코드를 입력해 주세요.</div>' +
+          '<input class="review-login-code-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" data-review-login-code="1" />' +
+          '<div class="review-login-code-error" aria-live="polite"></div>' +
+          '<div class="review-login-code-actions">' +
+            '<button type="button" data-review-login-cancel="1">취소</button>' +
+            '<button type="button" data-review-login-submit="1">확인</button>' +
+          '</div>';
+
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+
+        reviewLoginCodeModal = {
+          backdrop: backdrop,
+          modal: modal,
+          input: modal.querySelector('[data-review-login-code="1"]'),
+          error: modal.querySelector('.review-login-code-error'),
+          cancelButton: modal.querySelector('[data-review-login-cancel="1"]'),
+          submitButton: modal.querySelector('[data-review-login-submit="1"]'),
+          loading: false
+        };
+
+        backdrop.addEventListener('click', function(evt) {
+          if (evt.target === backdrop) closeReviewLoginCodeModal();
+        });
+        if (reviewLoginCodeModal.cancelButton) {
+          reviewLoginCodeModal.cancelButton.addEventListener('click', closeReviewLoginCodeModal);
+        }
+        if (reviewLoginCodeModal.submitButton) {
+          reviewLoginCodeModal.submitButton.addEventListener('click', submitReviewLoginCode);
+        }
+        if (reviewLoginCodeModal.input) {
+          reviewLoginCodeModal.input.addEventListener('input', function() {
+            reviewLoginCodeModal.input.value = String(reviewLoginCodeModal.input.value || '')
+              .replace(/\D/g, '')
+              .slice(0, 6);
+            setReviewLoginCodeError('');
+          });
+          reviewLoginCodeModal.input.addEventListener('keydown', function(evt) {
+            if (evt.key === 'Enter') {
+              evt.preventDefault();
+              submitReviewLoginCode();
+            }
+          });
+        }
+        document.addEventListener('keydown', function(evt) {
+          if (!reviewLoginCodeModal || !reviewLoginCodeModal.backdrop) return;
+          if (!reviewLoginCodeModal.backdrop.classList.contains('show')) return;
+          if (evt.key === 'Escape') {
+            evt.preventDefault();
+            closeReviewLoginCodeModal();
+          }
+        });
+        return reviewLoginCodeModal;
+      }
+
+      function setReviewLoginCodeError(message) {
+        if (!reviewLoginCodeModal || !reviewLoginCodeModal.error) return;
+        reviewLoginCodeModal.error.textContent = String(message || '');
+      }
+
+      function setReviewLoginCodeLoading(isLoading) {
+        if (!reviewLoginCodeModal) return;
+        reviewLoginCodeModal.loading = !!isLoading;
+        if (reviewLoginCodeModal.input) reviewLoginCodeModal.input.disabled = !!isLoading;
+        if (reviewLoginCodeModal.cancelButton) reviewLoginCodeModal.cancelButton.disabled = !!isLoading;
+        if (reviewLoginCodeModal.submitButton) {
+          reviewLoginCodeModal.submitButton.disabled = !!isLoading;
+          reviewLoginCodeModal.submitButton.textContent = isLoading ? '확인 중' : '확인';
+        }
+      }
+
+      function openReviewLoginCodeModal() {
+        if (!isReviewTestLoginClient()) return;
+        var modalRef = ensureReviewLoginCodeModal();
+        if (!modalRef || !modalRef.backdrop) return;
+        setReviewLoginCodeLoading(false);
+        setReviewLoginCodeError('');
+        if (modalRef.input) modalRef.input.value = '';
+        modalRef.backdrop.classList.add('show');
+        modalRef.backdrop.setAttribute('aria-hidden', 'false');
+        setTimeout(function() {
+          if (modalRef.input) modalRef.input.focus();
+        }, 0);
+      }
+
+      function closeReviewLoginCodeModal() {
+        if (!reviewLoginCodeModal || !reviewLoginCodeModal.backdrop || reviewLoginCodeModal.loading) return;
+        reviewLoginCodeModal.backdrop.classList.remove('show');
+        reviewLoginCodeModal.backdrop.setAttribute('aria-hidden', 'true');
+        setReviewLoginCodeError('');
+      }
+
+      function submitReviewLoginCode() {
+        var modalRef = ensureReviewLoginCodeModal();
+        if (!modalRef || modalRef.loading || !modalRef.input) return;
+        var code = String(modalRef.input.value || '').trim();
+        if (!/^\d{6}$/.test(code)) {
+          setReviewLoginCodeError('6자리 코드를 입력해 주세요.');
+          modalRef.input.focus();
+          return;
+        }
+
+        var context = getAppContext();
+        var appClient = String(context.appClient || '').trim();
+        var headers = { 'Content-Type': 'application/json' };
+        if (appClient) headers['X-ShuttleGo-Client'] = appClient;
+        var appVersion = String(context.appVersion || '').trim();
+        if (appVersion) headers['X-ShuttleGo-Client-Version'] = appVersion;
+        var appBuild = Number(context.appBuild || 0);
+        if (appBuild > 0) headers['X-ShuttleGo-Client-Build'] = String(appBuild);
+
+        setReviewLoginCodeLoading(true);
+        setReviewLoginCodeError('');
+        fetch(API_BASE + '/api/auth/review-test/native', {
+          method: 'POST',
+          credentials: 'include',
+          headers: headers,
+          body: JSON.stringify({
+            code: code,
+            platform: context.platform,
+            appClient: appClient,
+            appVersion: appVersion,
+            appBuild: appBuild
+          })
+        })
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              return { ok: r.ok, data: data || {} };
+            });
+          })
+          .then(function(result) {
+            if (!result.ok) throw new Error(result.data.error || '테스트 로그인에 실패했습니다.');
+            return refreshAuthState();
+          })
+          .then(function() {
+            setReviewLoginCodeLoading(false);
+            closeReviewLoginCodeModal();
+            closeFavoriteLoginPromptModal();
+          })
+          .catch(function(err) {
+            setReviewLoginCodeLoading(false);
+            setReviewLoginCodeError(err && err.message ? err.message : '테스트 로그인에 실패했습니다.');
+          });
+      }
+
+      function handleReviewLoginTitleTap(evt) {
+        if (!isReviewTestLoginClient()) return;
+        var now = Date.now();
+        if (!reviewLoginTitleLastTapAt || now - reviewLoginTitleLastTapAt > 2500) {
+          reviewLoginTitleTapCount = 0;
+        }
+        reviewLoginTitleLastTapAt = now;
+        reviewLoginTitleTapCount += 1;
+        if (reviewLoginTitleTapCount >= 7) {
+          reviewLoginTitleTapCount = 0;
+          reviewLoginTitleLastTapAt = 0;
+          if (evt) {
+            evt.preventDefault();
+            evt.stopPropagation();
+          }
+          openReviewLoginCodeModal();
+        }
       }
 
       function normalizeRouteFavoriteId(value) {
@@ -11040,6 +11819,7 @@
         favoriteLoginPromptModal = {
           backdrop: backdrop,
           modal: modal,
+          title: modal.querySelector('.favorite-login-title'),
           closeButton: modal.querySelector('[data-favorite-login-close="1"]'),
           providerButtons: Array.prototype.slice.call(modal.querySelectorAll('[data-login-provider]'))
         };
@@ -11049,6 +11829,9 @@
         });
         if (favoriteLoginPromptModal.closeButton) {
           favoriteLoginPromptModal.closeButton.addEventListener('click', closeFavoriteLoginPromptModal);
+        }
+        if (favoriteLoginPromptModal.title) {
+          favoriteLoginPromptModal.title.addEventListener('click', handleReviewLoginTitleTap);
         }
         favoriteLoginPromptModal.providerButtons.forEach(function(btn) {
           btn.addEventListener('click', function() {
@@ -12700,22 +13483,27 @@
 
       function deleteMyAccount() {
         if (!authState.logged_in) return;
-        if (!confirm('탈퇴하면 저장된 정보가 삭제됩니다. 진행할까요?')) return;
-        fetch(API_BASE + '/api/me', { method: 'DELETE' })
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
+        appConfirm('탈퇴하면 저장된 정보가 삭제됩니다. 진행할까요?')
+          .then(function(confirmed) {
+            if (!confirmed) return null;
+            return fetch(API_BASE + '/api/me', { method: 'DELETE' })
+              .then(function(r) {
+                return r.json().catch(function() { return {}; }).then(function(data) {
+                  return { ok: r.ok, data: data };
+                });
+              });
           })
           .then(function(result) {
+            if (!result) return null;
             if (!result.ok) throw new Error(result.data.error || '탈퇴 처리에 실패했습니다.');
             closeProfileModal();
             closeAccountMenu();
-            refreshAuthState();
-            alert('탈퇴가 완료되었습니다.');
+            return refreshAuthState().then(function() {
+              return appAlert('탈퇴가 완료되었습니다.');
+            });
           })
           .catch(function(err) {
-            alert(err && err.message ? err.message : '탈퇴 처리에 실패했습니다.');
+            appAlert(err && err.message ? err.message : '탈퇴 처리에 실패했습니다.');
           });
       }
 
@@ -14228,6 +15016,12 @@
       var locationPermissionModal = document.getElementById('locationPermissionModal');
       var locationPermissionMessage = document.getElementById('locationPermissionMessage');
       var locationPermissionConfirm = document.getElementById('locationPermissionConfirm');
+      var appUpdateBackdrop = document.getElementById('appUpdateBackdrop');
+      var appUpdateModal = document.getElementById('appUpdateModal');
+      var appUpdateTitle = document.getElementById('appUpdateTitle');
+      var appUpdateMessage = document.getElementById('appUpdateMessage');
+      var appUpdateLaterBtn = document.getElementById('appUpdateLaterBtn');
+      var appUpdateStoreBtn = document.getElementById('appUpdateStoreBtn');
       var ITEM_HEIGHT = 40;
       var DAY_TYPE_ITEM_HEIGHT = 56;
       var PAD_HEIGHT = 60;
@@ -28727,6 +29521,66 @@
       }
 
       var locationPermissionOnConfirm = null;
+      var currentAppUpdatePolicy = null;
+      function openAppStoreUrl(storeUrl) {
+        var url = String(storeUrl || '').trim();
+        if (!url) return;
+        try {
+          window.location.href = url;
+        } catch (e) {}
+      }
+      function closeAppUpdateModal() {
+        if (currentAppUpdatePolicy && currentAppUpdatePolicy.force) return;
+        if (appUpdateBackdrop) {
+          appUpdateBackdrop.classList.remove('show');
+          appUpdateBackdrop.setAttribute('aria-hidden', 'true');
+        }
+        if (appUpdateModal) appUpdateModal.classList.remove('show');
+      }
+      function openAppUpdateModal(policy) {
+        if (!policy || !appUpdateBackdrop || !appUpdateModal) return;
+        currentAppUpdatePolicy = policy;
+        var force = !!policy.force;
+        if (appUpdateTitle) {
+          appUpdateTitle.textContent = force ? '앱 업데이트가 필요합니다' : '새 버전이 있습니다';
+        }
+        if (appUpdateMessage) {
+          appUpdateMessage.textContent = force
+            ? '현재 앱 버전에서는 셔틀Go를 계속 사용할 수 없습니다. 최신 버전으로 업데이트해 주세요.'
+            : '더 안정적인 셔틀Go 이용을 위해 최신 버전으로 업데이트해 주세요.';
+        }
+        if (appUpdateLaterBtn) {
+          appUpdateLaterBtn.classList.toggle('is-hidden', force);
+        }
+        appUpdateBackdrop.classList.add('show');
+        appUpdateBackdrop.setAttribute('aria-hidden', 'false');
+        appUpdateModal.classList.add('show');
+      }
+      function checkAppUpdatePolicy() {
+        var context = getAppContext();
+        if (!context || !context.isAppWebView || !context.platform || context.platform === 'web') return Promise.resolve();
+        var appBuild = Number(context.appBuild || 0);
+        if (!isFinite(appBuild) || appBuild <= 0) return Promise.resolve();
+        return fetchJson(API_BASE + '/api/app-config')
+          .then(function(result) {
+            if (!result.ok || !result.data) return;
+            var platformConfig = result.data[context.platform];
+            if (!platformConfig || typeof platformConfig !== 'object') return;
+            var latestBuild = Number(platformConfig.latestBuild || 0);
+            var minSupportedBuild = Number(platformConfig.minSupportedBuild || 0);
+            var storeUrl = String(platformConfig.storeUrl || '').trim();
+            if (!isFinite(latestBuild) || latestBuild <= 0) latestBuild = appBuild;
+            if (!isFinite(minSupportedBuild) || minSupportedBuild <= 0) minSupportedBuild = 1;
+            if (appBuild < minSupportedBuild) {
+              openAppUpdateModal({ force: true, storeUrl: storeUrl });
+            } else if (appBuild < latestBuild) {
+              openAppUpdateModal({ force: false, storeUrl: storeUrl });
+            }
+          })
+          .catch(function() {
+            // 업데이트 정책 로드 실패는 앱 사용을 막지 않는다.
+          });
+      }
       function openLocationPermissionModal(message, onConfirm) {
         if (!locationPermissionMessage || !locationPermissionBackdrop || !locationPermissionModal) return;
         locationPermissionMessage.textContent = message;
@@ -28967,6 +29821,17 @@
       }
       if (locationPermissionBackdrop) {
         locationPermissionBackdrop.addEventListener('click', closeLocationPermissionModal);
+      }
+      if (appUpdateLaterBtn) {
+        appUpdateLaterBtn.addEventListener('click', closeAppUpdateModal);
+      }
+      if (appUpdateBackdrop) {
+        appUpdateBackdrop.addEventListener('click', closeAppUpdateModal);
+      }
+      if (appUpdateStoreBtn) {
+        appUpdateStoreBtn.addEventListener('click', function() {
+          openAppStoreUrl(currentAppUpdatePolicy && currentAppUpdatePolicy.storeUrl);
+        });
       }
       if (routeTopPlaceLabel) {
         routeTopPlaceLabel.addEventListener('focus', onRouteModePlaceInputFocus);
@@ -33090,6 +33955,7 @@
       updateMapActionButtonVisibility();
       updateDevDebugUi();
       installMobilePageZoomGuard();
+      checkAppUpdatePolicy();
 
       updateAccountMenuUi();
       pendingSharedRouteToken = parseShareTokenFromLocation();
