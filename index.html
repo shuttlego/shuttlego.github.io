@@ -1192,6 +1192,22 @@
       height: 20px;
       flex-shrink: 0;
     }
+    .account-menu-kakao-logo {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .account-menu-login-label {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .account-menu-login-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
     .samsung-internet-hint {
       margin: 8px 0 0;
       padding: 8px 10px;
@@ -1948,6 +1964,18 @@
       background: #f8fafc;
       border-color: #cbd5e1;
     }
+    .favorite-login-privacy-note {
+      margin: 10px 0 0;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .favorite-login-privacy-note a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
     .favorite-login-confirm {
       background: #111827;
       border-color: #111827;
@@ -1956,6 +1984,41 @@
     .favorite-login-confirm:hover {
       background: #0f172a;
       border-color: #0f172a;
+    }
+    .login-provider-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .login-provider-btn {
+      width: 100%;
+      min-height: 46px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #111827;
+      font-size: 14px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .login-provider-btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .login-provider-btn.kakao {
+      background: #fee500;
+      border-color: #fee500;
+      color: #191600;
+    }
+    .login-provider-btn.kakao:hover {
+      background: #f4dc00;
+      border-color: #f4dc00;
     }
     .route-refresh-confirm-backdrop {
       display: none;
@@ -8574,8 +8637,11 @@
   <div class="account-menu-backdrop" id="accountMenuBackdrop" aria-hidden="true"></div>
   <div class="account-menu" id="accountMenu" role="dialog" aria-label="계정 메뉴">
     <button type="button" class="account-menu-login-btn" id="accountMenuLoginBtn">
-      <img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />
-      <span>Google 계정으로 로그인</span>
+      <span class="account-menu-login-label">로그인하기</span>
+      <span class="account-menu-login-icons" aria-hidden="true">
+        <img class="account-menu-kakao-logo" src="/images/logo_kakao_20.svg" alt="" />
+        <img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />
+      </span>
     </button>
     <p class="samsung-internet-hint" id="accountMenuSamsungHint" hidden>
       ⚠ 삼성 인터넷에서는 계정 선택 시 <b>이메일이 아닌 이름 부분</b>을 탭해 주세요. 이메일 텍스트를 탭하면 로그인 대신 메일 앱이 열릴 수 있습니다.
@@ -8924,7 +8990,7 @@
         // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
         KAKAO_JS_KEY: isDev
           ? '22400d4577672b2419e494c2e292d9c0'   // dev: localhost 허용
-          : '39fb0eced397ffdd52bc40427d8a1d91',  // prd: shuttlego.github.io 허용
+          : "cfa20e46978a7a1762df9cbff461025c",  // prd: shuttlego.github.io 허용
         // 백엔드 API base URL
         API_BASE: isDev
           ? (apiBaseOverride || resolveDevApiBase()) // dev: override or Traefik
@@ -9365,6 +9431,10 @@
       var ROUTE_ARROW_REFRESH_DEBOUNCE_MS = 120;
       var routeArrowRefreshTimer = null;
       var currentLocationOverlayRefreshRaf = 0;
+      var latestNativeLocation = null;
+      var nativeLocationRequestPromise = null;
+      var nativeLocationFollowActive = false;
+      var nativeLocationFollowUntilMs = 0;
       var startupCurrentLocationRequested = false;
       var arrivalReportStopMapInstance = null;
       var arrivalReportStopMapOverlays = [];
@@ -10451,33 +10521,51 @@
           return Promise.resolve(preferredDebugPosition);
         }
         var debugInputPosition = isDevHost() ? getDevDebugInputPosition() : null;
-        return new Promise(function(resolve, reject) {
-          if (!navigator.geolocation) {
-            if (debugInputPosition) {
-              resolve(debugInputPosition);
-              return;
-            }
-            reject(new Error('이 브라우저는 위치 기능을 지원하지 않습니다.'));
-            return;
-          }
-          navigator.geolocation.getCurrentPosition(
-            function(pos) {
-              resolve({
-                lat: Number(pos.coords.latitude),
-                lng: Number(pos.coords.longitude)
-              });
-            },
-            function(err) {
+        function requestBrowserCurrentPosition() {
+          return new Promise(function(resolve, reject) {
+            if (!navigator.geolocation) {
               if (debugInputPosition) {
                 resolve(debugInputPosition);
                 return;
               }
-              if (err && err.code === 1) reject(new Error('위치 권한이 필요합니다.'));
-              else reject(new Error('현재 위치를 가져오지 못했습니다.'));
-            },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-          );
-        });
+              reject(new Error('이 브라우저는 위치 기능을 지원하지 않습니다.'));
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              function(pos) {
+                resolve({
+                  lat: Number(pos.coords.latitude),
+                  lng: Number(pos.coords.longitude)
+                });
+              },
+              function(err) {
+                if (debugInputPosition) {
+                  resolve(debugInputPosition);
+                  return;
+                }
+                if (err && err.code === 1) reject(new Error('위치 권한이 필요합니다.'));
+                else reject(new Error('현재 위치를 가져오지 못했습니다.'));
+              },
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+          });
+        }
+        if (isAndroidWebViewClient() && isAndroidNativeLocationAvailable()) {
+          var snapshot = readAndroidNativeLocationSnapshot();
+          if (snapshot) {
+            return Promise.resolve(snapshot);
+          }
+          return requestAndroidNativeLocation().then(function(pos) {
+            if (pos) return pos;
+            return requestBrowserCurrentPosition();
+          }).catch(function(err) {
+            if (err && err.code === 'permission_denied') {
+              throw new Error('위치 권한이 필요합니다.');
+            }
+            return requestBrowserCurrentPosition();
+          });
+        }
+        return requestBrowserCurrentPosition();
       }
 
       function updateIssueNicknameUi() {
@@ -10654,17 +10742,20 @@
         return '<p class="samsung-internet-hint">' + SAMSUNG_INTERNET_HINT_HTML + '</p>';
       }
 
-      var nativeGoogleLoginInFlight = false;
+      var nativeLoginInFlight = false;
       var nativeLocationRequests = {};
 
-      function isAndroidNativeLoginAvailable() {
+      function isAndroidNativeLoginAvailable(provider) {
+        var normalizedProvider = String(provider || 'google').toLowerCase();
+        var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
+        var availabilityName = normalizedProvider === 'kakao' ? 'isNativeKakaoLoginAvailable' : 'isNativeGoogleLoginAvailable';
         try {
           return !!(
             window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid.loginWithGoogle === 'function' &&
+            typeof window.ShuttleGoAndroid[methodName] === 'function' &&
             (
-              typeof window.ShuttleGoAndroid.isNativeGoogleLoginAvailable !== 'function' ||
-              window.ShuttleGoAndroid.isNativeGoogleLoginAvailable()
+              typeof window.ShuttleGoAndroid[availabilityName] !== 'function' ||
+              window.ShuttleGoAndroid[availabilityName]()
             )
           );
         } catch (e) {
@@ -10676,11 +10767,60 @@
         try {
           return !!(
             window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid.requestCurrentLocation === 'function'
+            (
+              typeof window.ShuttleGoAndroid.requestCurrentLocation === 'function' ||
+              typeof window.ShuttleGoAndroid.getCurrentLocationSnapshot === 'function'
+            )
           );
         } catch (e) {
           return false;
         }
+      }
+
+      function normalizeNativeLocationPayload(payload) {
+        if (!payload || !payload.ok) return null;
+        var lat = Number(payload.lat);
+        var lng = Number(payload.lng);
+        if (!isFinite(lat) || !isFinite(lng)) return null;
+        return {
+          lat: lat,
+          lng: lng,
+          accuracy: isFinite(Number(payload.accuracy)) ? Number(payload.accuracy) : null,
+          provider: payload.provider || '',
+          timestamp: Number(payload.timestamp) || Date.now(),
+          age_ms: isFinite(Number(payload.age_ms)) ? Number(payload.age_ms) : null
+        };
+      }
+
+      function storeNativeLocation(payload) {
+        var location = normalizeNativeLocationPayload(payload);
+        if (!location) return null;
+        latestNativeLocation = location;
+        return location;
+      }
+
+      function readAndroidNativeLocationSnapshot() {
+        if (!isAndroidNativeLocationAvailable()) return null;
+        try {
+          if (
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid.startLocationUpdates === 'function'
+          ) {
+            window.ShuttleGoAndroid.startLocationUpdates();
+          }
+        } catch (e) {}
+        try {
+          if (
+            window.ShuttleGoAndroid &&
+            typeof window.ShuttleGoAndroid.getCurrentLocationSnapshot === 'function'
+          ) {
+            var raw = window.ShuttleGoAndroid.getCurrentLocationSnapshot();
+            var payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            var snapshot = storeNativeLocation(payload);
+            if (snapshot) return snapshot;
+          }
+        } catch (e) {}
+        return latestNativeLocation;
       }
 
       function isAndroidNativeShareAvailable() {
@@ -10705,17 +10845,21 @@
       }
 
       function requestAndroidNativeLocation() {
-        return new Promise(function(resolve, reject) {
+        var snapshot = readAndroidNativeLocationSnapshot();
+        if (snapshot) return Promise.resolve(snapshot);
+        if (nativeLocationRequestPromise) return nativeLocationRequestPromise;
+        nativeLocationRequestPromise = new Promise(function(resolve, reject) {
           if (!isAndroidNativeLocationAvailable()) {
             reject({ code: 'unavailable', message: '네이티브 위치 기능을 사용할 수 없습니다.' });
             return;
           }
           var requestId = 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2);
           var timeout = setTimeout(function() {
-            if (!nativeLocationRequests[requestId]) return;
+            var request = nativeLocationRequests[requestId];
+            if (!request) return;
             delete nativeLocationRequests[requestId];
-            reject({ code: 'timeout', message: '시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.' });
-          }, 16000);
+            request.resolve(null);
+          }, 30000);
           nativeLocationRequests[requestId] = {
             resolve: resolve,
             reject: reject,
@@ -10728,7 +10872,10 @@
             delete nativeLocationRequests[requestId];
             reject({ code: 'unavailable', message: '네이티브 위치 요청을 시작하지 못했습니다.' });
           }
+        }).finally(function() {
+          nativeLocationRequestPromise = null;
         });
+        return nativeLocationRequestPromise;
       }
 
       window.__shuttleGoNativeLocationResult = function(requestId, payload) {
@@ -10737,61 +10884,85 @@
         if (!request) return;
         clearTimeout(request.timeout);
         delete nativeLocationRequests[key];
-        if (payload && payload.ok) {
-          request.resolve({
-            lat: Number(payload.lat),
-            lng: Number(payload.lng),
-            accuracy: Number(payload.accuracy),
-            provider: payload.provider || '',
-            timestamp: payload.timestamp || 0
+        var location = storeNativeLocation(payload);
+        if (location) {
+          request.resolve(location);
+        } else if (payload && payload.code === 'permission_denied') {
+          request.reject({
+            code: 'permission_denied',
+            message: payload.message || '위치 권한이 필요합니다.'
           });
         } else {
-          request.reject({
-            code: payload && payload.code || 'unavailable',
-            message: payload && payload.message || '현재 위치를 가져오지 못했습니다.'
+          request.resolve(null);
+        }
+      };
+
+      window.__shuttleGoNativeLocationChanged = function(payload) {
+        var location = storeNativeLocation(payload);
+        if (!location) return;
+        if (nativeLocationFollowActive && Date.now() <= nativeLocationFollowUntilMs) {
+          applyCurrentLocationToMap(location.lat, location.lng, {
+            source: 'android-native-location-update',
+            forceRender: true
           });
+          return;
+        }
+        if (currentLocationOverlay) {
+          showCurrentLocationOverlay(location.lat, location.lng, true);
         }
       };
 
       window.ShuttleGoAndroidAuth = {
         onNativeAuthEvent: function(detail) {
           var type = detail && detail.type ? String(detail.type) : '';
-          nativeGoogleLoginInFlight = type === 'started';
+          nativeLoginInFlight = type === 'started';
         },
         onLoginStarted: function() {
-          nativeGoogleLoginInFlight = true;
+          nativeLoginInFlight = true;
         },
         onLoginSuccess: function() {
-          nativeGoogleLoginInFlight = false;
+          nativeLoginInFlight = false;
           refreshAuthState();
         },
         onLoginCancelled: function() {
-          nativeGoogleLoginInFlight = false;
+          nativeLoginInFlight = false;
         },
         onLoginError: function(message) {
-          nativeGoogleLoginInFlight = false;
-          alert(message || 'Google 로그인에 실패했습니다.');
+          nativeLoginInFlight = false;
+          alert(message || '로그인에 실패했습니다.');
         }
       };
 
-      function startGoogleLogin() {
-        if (nativeGoogleLoginInFlight) return;
-        if (isAndroidNativeLoginAvailable()) {
+      function startProviderLogin(provider) {
+        var normalizedProvider = String(provider || 'google').toLowerCase();
+        if (normalizedProvider !== 'kakao') normalizedProvider = 'google';
+        if (nativeLoginInFlight) return;
+        if (isAndroidNativeLoginAvailable(normalizedProvider)) {
           try {
-            window.ShuttleGoAndroid.loginWithGoogle(JSON.stringify({
+            var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
+            window.ShuttleGoAndroid[methodName](JSON.stringify({
               apiBase: API_BASE,
               source: 'web_login_button',
+              provider: normalizedProvider,
               origin: location.origin
             }));
             return;
           } catch (e) {
-            alert((e && e.message) ? e.message : 'Android Google 로그인을 시작하지 못했습니다.');
+            alert((e && e.message) ? e.message : 'Android 로그인을 시작하지 못했습니다.');
             return;
           }
         }
         var callbackUrl = location.origin + '/auth-callback.html';
-        var loginUrl = API_BASE + '/api/auth/google/start?next=' + encodeURIComponent(callbackUrl);
+        var loginUrl = API_BASE + '/api/auth/' + normalizedProvider + '/start?next=' + encodeURIComponent(callbackUrl);
         location.href = loginUrl;
+      }
+
+      function startGoogleLogin() {
+        startProviderLogin('google');
+      }
+
+      function startKakaoLogin() {
+        startProviderLogin('kakao');
       }
 
       function normalizeRouteFavoriteId(value) {
@@ -10841,15 +11012,27 @@
         var modal = document.createElement('div');
         modal.className = 'favorite-login-modal';
         modal.setAttribute('role', 'dialog');
-        modal.setAttribute('aria-label', '즐겨찾기 로그인 안내');
+        modal.setAttribute('aria-label', '로그인 안내');
         modal.innerHTML =
-          '<div class="favorite-login-title">로그인이 필요합니다</div>' +
-          '<div class="favorite-login-body">즐겨찾기는 Google 계정으로 로그인한 뒤 사용할 수 있습니다.</div>' +
+          '<div class="favorite-login-title">로그인하기</div>' +
+          '<div class="favorite-login-body">로그인하고 더 많은 기능을 만나보세요!</div>' +
           samsungInternetHintHtmlSnippet() +
+          '<div class="login-provider-list">' +
+            '<button type="button" class="login-provider-btn kakao" data-login-provider="kakao">' +
+              '<img class="account-menu-kakao-logo" src="/images/logo_kakao_20.svg" alt="" />' +
+              '<span>카카오로 시작하기</span>' +
+            '</button>' +
+            '<button type="button" class="login-provider-btn google" data-login-provider="google">' +
+              '<img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />' +
+              '<span>구글로 시작하기</span>' +
+            '</button>' +
+          '</div>' +
           '<div class="favorite-login-actions">' +
             '<button type="button" class="favorite-login-cancel" data-favorite-login-close="1">닫기</button>' +
-            '<button type="button" class="favorite-login-confirm" data-favorite-login-start="1">Google 로그인</button>' +
-          '</div>';
+          '</div>' +
+          '<p class="favorite-login-privacy-note">' +
+            '개인정보 처리 사항은 <a href="/privacy">개인정보 처리방침</a>에서 확인하세요.' +
+          '</p>';
 
         backdrop.appendChild(modal);
         document.body.appendChild(backdrop);
@@ -10858,7 +11041,7 @@
           backdrop: backdrop,
           modal: modal,
           closeButton: modal.querySelector('[data-favorite-login-close="1"]'),
-          startButton: modal.querySelector('[data-favorite-login-start="1"]')
+          providerButtons: Array.prototype.slice.call(modal.querySelectorAll('[data-login-provider]'))
         };
 
         backdrop.addEventListener('click', function(evt) {
@@ -10867,12 +11050,13 @@
         if (favoriteLoginPromptModal.closeButton) {
           favoriteLoginPromptModal.closeButton.addEventListener('click', closeFavoriteLoginPromptModal);
         }
-        if (favoriteLoginPromptModal.startButton) {
-          favoriteLoginPromptModal.startButton.addEventListener('click', function() {
+        favoriteLoginPromptModal.providerButtons.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var provider = btn.getAttribute('data-login-provider') || 'google';
             closeFavoriteLoginPromptModal();
-            startGoogleLogin();
+            startProviderLogin(provider);
           });
-        }
+        });
         document.addEventListener('keydown', function(evt) {
           if (!favoriteLoginPromptModal || !favoriteLoginPromptModal.backdrop) return;
           if (!favoriteLoginPromptModal.backdrop.classList.contains('show')) return;
@@ -11258,10 +11442,9 @@
         btn.type = 'button';
         btn.className = 'home-favorites-login-btn';
         btn.innerHTML =
-          '<img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />' +
-          '<span>Google 계정으로 로그인</span>';
+          '<span>로그인하기</span>';
         btn.addEventListener('click', function() {
-          startGoogleLogin();
+          openFavoriteLoginPromptModal();
         });
         return btn;
       }
@@ -11858,7 +12041,7 @@
           loginCard.className = 'route-favorites-login';
           loginCard.innerHTML =
             '<strong>즐겨찾기는 로그인 후 사용할 수 있습니다.</strong>' +
-            '<div>Google 계정으로 로그인하면 저장한 노선을 이곳에서 확인할 수 있습니다.</div>';
+            '<div>로그인하면 저장한 노선을 이곳에서 확인할 수 있습니다.</div>';
           loginCard.appendChild(createGoogleLoginButton());
           var samsungHint2 = createSamsungInternetLoginHint();
           if (samsungHint2) loginCard.appendChild(samsungHint2);
@@ -16411,6 +16594,7 @@
         updatePinScale();
         kakao.maps.event.addListener(map, 'dragstart', function() {
           mapDragStartedAt = Date.now();
+          nativeLocationFollowActive = false;
         });
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
           updatePinScale();
@@ -16775,7 +16959,7 @@
       if (accountMenuLoginBtn) {
         accountMenuLoginBtn.addEventListener('click', function() {
           closeAccountMenu();
-          startGoogleLogin();
+          openFavoriteLoginPromptModal();
         });
       }
       if (accountMenuIssueBtn) {
@@ -28603,25 +28787,42 @@
         clearCurrentLocationOverlay();
         var position = new kakao.maps.LatLng(point.lat, point.lng);
         forceMainMapRelayout();
-        map.setLevel(3, { animate: false });
+        if (opts.setLevel != null && isFinite(Number(opts.setLevel))) {
+          map.setLevel(Number(opts.setLevel), { animate: false });
+        }
         map.setCenter(position);
         showCurrentLocationOverlay(point.lat, point.lng, !!opts.forceRender);
         scheduleMainMapRelayout();
         return true;
       }
-      function requestLocationThenMove() {
+      function requestLocationThenMove(moveOptions) {
+        moveOptions = moveOptions || {};
         if (isAndroidWebViewClient() && isAndroidNativeLocationAvailable()) {
+          nativeLocationFollowActive = true;
+          nativeLocationFollowUntilMs = Date.now() + 10000;
+          var snapshot = readAndroidNativeLocationSnapshot();
+          if (snapshot) {
+            applyCurrentLocationToMap(snapshot.lat, snapshot.lng, {
+              source: 'android-native-location-snapshot',
+              setLevel: moveOptions.setLevel,
+              forceRender: true
+            });
+            return;
+          }
           requestAndroidNativeLocation()
             .then(function(pos) {
-              applyCurrentLocationToMap(pos.lat, pos.lng, { source: 'android-native-location' });
+              if (!pos) return;
+              applyCurrentLocationToMap(pos.lat, pos.lng, {
+                source: 'android-native-location',
+                setLevel: moveOptions.setLevel,
+                forceRender: true
+              });
             })
             .catch(function(err) {
               var code = err && err.code ? String(err.code) : '';
               if (code === 'permission_denied') {
                 openLocationPermissionModal('위치 권한이 거부되었습니다. Android 설정에서 셔틀Go 앱의 위치 권한을 허용해 주세요.');
-              } else if (code === 'timeout') {
-                openLocationPermissionModal('시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.');
-              } else {
+              } else if (code !== 'timeout') {
                 openLocationPermissionModal((err && err.message) || '현재 위치를 가져오지 못했습니다. 위치 서비스 또는 네트워크 상태를 확인해 주세요.');
               }
             });
@@ -28632,7 +28833,9 @@
           function(pos) {
             var lat = pos.coords.latitude;
             var lng = pos.coords.longitude;
-            applyCurrentLocationToMap(lat, lng);
+            applyCurrentLocationToMap(lat, lng, {
+              setLevel: moveOptions.setLevel
+            });
           },
           function(err) {
             var msg;
@@ -28643,8 +28846,7 @@
               msg = '위치 정보를 사용할 수 없습니다. 네트워크나 GPS를 확인해 주세요.';
               openLocationPermissionModal(msg);
             } else if (err.code === 3) {
-              msg = '시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
-              openLocationPermissionModal(msg);
+              // 지도 앱처럼 timeout은 비침습적으로 무시한다. 사용자가 다시 누르면 최신 위치 상태를 재사용한다.
             } else {
               openLocationPermissionModal('위치를 가져올 수 없습니다. 위치 권한을 확인해 주세요.');
             }
@@ -28653,44 +28855,50 @@
         );
       }
       function moveToCurrentLocation(options) {
+        if (!options || options.preventDefault) {
+          options = {};
+        }
         options = options || {};
         if (isDevHost() && !options.skipDevDebugPanel) {
           reopenDevDebugPanel();
         }
-        var devPosition = getPreferredDebugPosition();
+        var devPosition = options.useDebugPosition ? getPreferredDebugPosition() : null;
         if (devPosition && isFinite(Number(devPosition.lat)) && isFinite(Number(devPosition.lng))) {
-          applyCurrentLocationToMap(Number(devPosition.lat), Number(devPosition.lng), { forceRender: true });
+          applyCurrentLocationToMap(Number(devPosition.lat), Number(devPosition.lng), {
+            forceRender: true,
+            setLevel: options.setLevel
+          });
+          return;
+        }
+        if (isAndroidWebViewClient()) {
+          requestLocationThenMove(options);
           return;
         }
         if (!navigator.geolocation) {
           alert('이 브라우저는 위치 기능을 지원하지 않습니다.');
           return;
         }
-        if (isAndroidWebViewClient()) {
-          requestLocationThenMove();
-          return;
-        }
         // 이미 권한이 부여됐으면 모달 없이 바로 위치 요청
         if (navigator.permissions && navigator.permissions.query) {
           navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
             if (result.state === 'granted') {
-              requestLocationThenMove();
+              requestLocationThenMove(options);
             } else {
               openLocationPermissionModal(
                 '현재 위치를 표시하려면 위치 권한이 필요합니다. 확인을 누르면 브라우저에서 권한 요청이 표시됩니다.',
                 function() {
                   closeLocationPermissionModal();
-                  requestLocationThenMove();
+                  requestLocationThenMove(options);
                 }
               );
             }
           }).catch(function() {
             // permissions API 미지원 시 바로 위치 요청
-            requestLocationThenMove();
+            requestLocationThenMove(options);
           });
         } else {
           // permissions API 미지원 시 바로 위치 요청
-          requestLocationThenMove();
+          requestLocationThenMove(options);
         }
       }
       function shouldAutoMoveToCurrentLocationOnStartup() {
@@ -28707,7 +28915,7 @@
         startupCurrentLocationRequested = true;
         setTimeout(function() {
           if (!map || (sharedRouteState && sharedRouteState.active) || (favoriteRouteState && favoriteRouteState.active)) return;
-          moveToCurrentLocation({ skipDevDebugPanel: true, startup: true });
+          moveToCurrentLocation({ skipDevDebugPanel: true, startup: true, setLevel: 3 });
         }, 0);
       }
 
@@ -30742,7 +30950,7 @@
         arrivalReportState.loading = true;
         if (arrivalReportCandidateList) {
           arrivalReportCandidateList.innerHTML =
-            '<div class="report-empty-state">현재 위치를 가져오는 중입니다.<br>약 10초 정도 걸릴 수 있습니다.</div>';
+            '<div class="report-empty-state">현재 위치를 확인하는 중입니다.</div>';
         }
         arrivalReportBackdrop.classList.add('show');
         arrivalReportModal.classList.add('show');
