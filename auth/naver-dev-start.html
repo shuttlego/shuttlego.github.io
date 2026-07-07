@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>네이버 로그인 연결 중 - 셔틀Go</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --brand: #1428a0;
+      --text: #16181d;
+      --muted: #6a7280;
+      --line: #e7eaf0;
+      --surface: #ffffff;
+      --page: #f6f8fb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: var(--page);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(360px, calc(100vw - 32px));
+      padding: 28px 24px 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(20, 40, 160, 0.08);
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 18px;
+      border-radius: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .spinner {
+      width: 30px;
+      height: 30px;
+      margin: 22px auto 2px;
+      border: 3px solid #dfe5f2;
+      border-top-color: var(--brand);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .error {
+      display: none;
+      margin-top: 18px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff2f2;
+      color: #a32121;
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: left;
+    }
+
+    button {
+      display: none;
+      width: 100%;
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--brand);
+      color: #ffffff;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="/images/app_main_icon.png" alt="">
+    <h1>네이버 로그인 연결 중</h1>
+    <p>개발 환경으로 안전하게 연결하고 있습니다.</p>
+    <div class="spinner" aria-hidden="true"></div>
+    <div id="error" class="error" role="alert"></div>
+    <button id="retryBtn" type="button">다시 시도</button>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var DEV_API_BASE = "https://dev-cloud-api.shuttle-go.com/api";
+      var START_URL_ENDPOINT = DEV_API_BASE + "/auth/naver/start-url";
+      var CALLBACK_PATH = "/auth-callback.html";
+      var allowedNextOrigins = {
+        "http://localhost:8080": true,
+        "http://127.0.0.1:8080": true,
+        "http://192.168.219.193:8080": true
+      };
+
+      var errorEl = document.getElementById("error");
+      var retryBtn = document.getElementById("retryBtn");
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.style.display = "block";
+        retryBtn.style.display = "block";
+      }
+
+      function isAllowedNextUrl(value) {
+        var parsed;
+        try {
+          parsed = new URL(value);
+        } catch (error) {
+          return false;
+        }
+
+        return Boolean(allowedNextOrigins[parsed.origin])
+          && parsed.pathname === CALLBACK_PATH
+          && parsed.username === ""
+          && parsed.password === "";
+      }
+
+      function resolveNextUrl() {
+        var params = new URLSearchParams(window.location.search);
+        var next = params.get("next");
+        var referrerUrl;
+
+        if (next && isAllowedNextUrl(next)) {
+          return next;
+        }
+
+        if (document.referrer) {
+          try {
+            referrerUrl = new URL(document.referrer);
+            next = referrerUrl.origin + CALLBACK_PATH;
+            if (isAllowedNextUrl(next)) {
+              return next;
+            }
+          } catch (error) {
+            return null;
+          }
+        }
+
+        return null;
+      }
+
+      function readAuthorizeUrl(payload) {
+        if (!payload || typeof payload !== "object") {
+          return null;
+        }
+        return payload.authorization_url || payload.authorize_url || payload.url || null;
+      }
+
+      function start() {
+        var nextUrl = resolveNextUrl();
+        var endpoint;
+
+        errorEl.style.display = "none";
+        retryBtn.style.display = "none";
+
+        if (!nextUrl) {
+          showError("허용된 개발 환경 callback URL이 필요합니다. localhost 또는 등록된 개발 기기 주소에서 다시 시도해주세요.");
+          return;
+        }
+
+        endpoint = START_URL_ENDPOINT + "?next=" + encodeURIComponent(nextUrl);
+
+        fetch(endpoint, {
+          method: "GET",
+          credentials: "omit",
+          headers: {
+            "Accept": "application/json"
+          }
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("네이버 로그인 시작 URL을 가져오지 못했습니다.");
+            }
+            return response.json();
+          })
+          .then(function (payload) {
+            var authorizeUrl = readAuthorizeUrl(payload);
+            if (!authorizeUrl) {
+              throw new Error("네이버 로그인 시작 URL이 응답에 없습니다.");
+            }
+            window.location.assign(authorizeUrl);
+          })
+          .catch(function (error) {
+            showError(error.message || "네이버 로그인 연결 중 문제가 발생했습니다.");
+          });
+      }
+
+      retryBtn.addEventListener("click", start);
+      start();
+    }());
+  </script>
+</body>
+</html>

@@ -34,6 +34,7 @@ jobs:
           cp legal.css _site/legal.css
           cp robots.txt _site/robots.txt
           cp sitemap.xml _site/sitemap.xml
+          cp -R auth _site/auth
           cp -R page _site/page
           cp -R images _site/images
           cp -R privacy _site/privacy
