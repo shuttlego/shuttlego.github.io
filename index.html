@@ -1192,7 +1192,8 @@
       height: 20px;
       flex-shrink: 0;
     }
-    .account-menu-kakao-logo {
+    .account-menu-kakao-logo,
+    .account-menu-naver-logo {
       width: 20px;
       height: 20px;
       flex-shrink: 0;
@@ -2019,6 +2020,15 @@
     .login-provider-btn.kakao:hover {
       background: #f4dc00;
       border-color: #f4dc00;
+    }
+    .login-provider-btn.naver {
+      background: #03C75A;
+      border-color: #03C75A;
+      color: #fff;
+    }
+    .login-provider-btn.naver:hover {
+      background: #02b350;
+      border-color: #02b350;
     }
     .login-progress-backdrop {
       display: none;
@@ -8857,6 +8867,7 @@
       <span class="account-menu-login-label">로그인하기</span>
       <span class="account-menu-login-icons" aria-hidden="true">
         <img class="account-menu-kakao-logo" src="/images/logo_kakao_20.svg" alt="" />
+        <img class="account-menu-naver-logo" src="/images/logo_naver_20.svg" alt="" />
         <img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />
       </span>
     </button>
@@ -10085,8 +10096,15 @@
 
       function hasAvailableAndroidProviderLogin(provider) {
         var normalizedProvider = String(provider || 'google').toLowerCase();
-        var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
-        var availabilityName = normalizedProvider === 'kakao' ? 'isNativeKakaoLoginAvailable' : 'isNativeGoogleLoginAvailable';
+        var methodName = 'loginWithGoogle';
+        var availabilityName = 'isNativeGoogleLoginAvailable';
+        if (normalizedProvider === 'kakao') {
+          methodName = 'loginWithKakao';
+          availabilityName = 'isNativeKakaoLoginAvailable';
+        } else if (normalizedProvider === 'naver') {
+          methodName = 'loginWithNaver';
+          availabilityName = 'isNativeNaverLoginAvailable';
+        }
         if (!hasAndroidBridgeMethod(methodName)) return false;
         try {
           return !hasAndroidBridgeMethod(availabilityName) || window.ShuttleGoAndroid[availabilityName]();
@@ -10102,6 +10120,7 @@
           nativeShare: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('share'),
           nativeGoogleLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('google'),
           nativeKakaoLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('kakao'),
+          nativeNaverLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('naver'),
           nativeLocationSnapshot: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('getCurrentLocationSnapshot'),
           nativeLocationUpdates: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('startLocationUpdates'),
           nativeLocationRequest: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('requestCurrentLocation'),
@@ -11233,9 +11252,9 @@
       function isAndroidNativeLoginAvailable(provider) {
         var normalizedProvider = String(provider || 'google').toLowerCase();
         var capabilities = getAppCapabilities();
-        return normalizedProvider === 'kakao'
-          ? !!capabilities.nativeKakaoLogin
-          : !!capabilities.nativeGoogleLogin;
+        if (normalizedProvider === 'kakao') return !!capabilities.nativeKakaoLogin;
+        if (normalizedProvider === 'naver') return !!capabilities.nativeNaverLogin;
+        return !!capabilities.nativeGoogleLogin;
       }
 
       function isAndroidNativeLocationAvailable() {
@@ -11408,13 +11427,15 @@
 
       function startProviderLogin(provider) {
         var normalizedProvider = String(provider || 'google').toLowerCase();
-        if (normalizedProvider !== 'kakao') normalizedProvider = 'google';
+        if (['google', 'kakao', 'naver'].indexOf(normalizedProvider) === -1) normalizedProvider = 'google';
         if (nativeLoginInFlight) return;
         if (isAndroidNativeLoginAvailable(normalizedProvider)) {
           setNativeLoginInFlight(true);
           showProviderLoginProgress();
           try {
-            var methodName = normalizedProvider === 'kakao' ? 'loginWithKakao' : 'loginWithGoogle';
+            var methodName = 'loginWithGoogle';
+            if (normalizedProvider === 'kakao') methodName = 'loginWithKakao';
+            if (normalizedProvider === 'naver') methodName = 'loginWithNaver';
             window.ShuttleGoAndroid[methodName](JSON.stringify({
               apiBase: API_BASE,
               source: 'web_login_button',
@@ -11432,6 +11453,13 @@
         showProviderLoginProgress();
         var callbackUrl = location.origin + '/auth-callback.html';
         var loginUrl = API_BASE + '/api/auth/' + normalizedProvider + '/start?next=' + encodeURIComponent(callbackUrl);
+        if (
+          normalizedProvider === 'naver' &&
+          location.origin !== 'https://shuttle-go.com' &&
+          location.origin !== 'https://www.shuttle-go.com'
+        ) {
+          loginUrl = 'https://shuttle-go.com/auth/naver-dev-start.html?next=' + encodeURIComponent(callbackUrl);
+        }
         location.href = loginUrl;
       }
 
@@ -11441,6 +11469,10 @@
 
       function startKakaoLogin() {
         startProviderLogin('kakao');
+      }
+
+      function startNaverLogin() {
+        startProviderLogin('naver');
       }
 
       function ensureAppDialogModal() {
@@ -11800,6 +11832,10 @@
             '<button type="button" class="login-provider-btn kakao" data-login-provider="kakao">' +
               '<img class="account-menu-kakao-logo" src="/images/logo_kakao_20.svg" alt="" />' +
               '<span>카카오로 시작하기</span>' +
+            '</button>' +
+            '<button type="button" class="login-provider-btn naver" data-login-provider="naver">' +
+              '<img class="account-menu-naver-logo" src="/images/logo_naver_20.svg" alt="" />' +
+              '<span>네이버로 시작하기</span>' +
             '</button>' +
             '<button type="button" class="login-provider-btn google" data-login-provider="google">' +
               '<img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />' +
