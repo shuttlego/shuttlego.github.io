@@ -97,6 +97,48 @@ body {
   text-underline-offset: 3px;
 }
 
+.legal-table-wrap {
+  width: 100%;
+  margin: 12px 0 20px;
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.legal-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  background: #ffffff;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.legal-table th,
+.legal-table td {
+  padding: 11px 12px;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+}
+
+.legal-table th {
+  background: #f8fafc;
+  color: #1f2937;
+  font-weight: 800;
+}
+
+.legal-table tr:last-child th,
+.legal-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.legal-table th:last-child,
+.legal-table td:last-child {
+  border-right: 0;
+}
+
 .legal-footer {
   margin-top: 44px;
   padding-top: 20px;

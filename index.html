@@ -55,18 +55,85 @@
   </script>
   <script>
     (function() {
-      if (location.hostname !== 'shuttle-go.com') return;
-      var gaScript = document.createElement('script');
-      gaScript.async = true;
-      gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-RG3HTCFH4K';
-      document.head.appendChild(gaScript);
+      var measurementId = 'G-RG3HTCFH4K';
+      var consentKey = 'shuttlego_analytics_consent_v1';
+      var productionHost = location.hostname === 'shuttle-go.com';
+      var loaded = false;
 
-      window.dataLayer = window.dataLayer || [];
-      function gtag() { window.dataLayer.push(arguments); }
-      window.gtag = gtag;
+      function readConsent() {
+        try {
+          var value = localStorage.getItem(consentKey);
+          return value === 'denied' ? 'denied' : 'granted';
+        } catch (e) {
+          return 'granted';
+        }
+      }
 
-      gtag('js', new Date());
-      gtag('config', 'G-RG3HTCFH4K');
+      function deleteAnalyticsCookies() {
+        try {
+          document.cookie.split(';').forEach(function(rawCookie) {
+            var name = String(rawCookie || '').split('=')[0].trim();
+            if (name !== '_ga' && name.indexOf('_ga_') !== 0) return;
+            document.cookie = name + '=; Max-Age=0; path=/; SameSite=Lax';
+            document.cookie = name + '=; Max-Age=0; path=/; domain=.shuttle-go.com; SameSite=Lax';
+          });
+        } catch (e) {}
+      }
+
+      function configureAnalytics() {
+        if (typeof window.gtag !== 'function') return;
+        window.gtag('config', measurementId, {
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false,
+          cookie_expires: 60 * 60 * 24 * 180,
+          cookie_update: false
+        });
+      }
+
+      function loadAnalytics() {
+        if (!productionHost || readConsent() !== 'granted') return;
+        window['ga-disable-' + measurementId] = false;
+        if (loaded) {
+          configureAnalytics();
+          return;
+        }
+        loaded = true;
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = window.gtag || function() { window.dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+        configureAnalytics();
+
+        var gaScript = document.createElement('script');
+        gaScript.async = true;
+        gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(measurementId);
+        document.head.appendChild(gaScript);
+      }
+
+      function setConsent(value) {
+        var normalized = value === 'granted' ? 'granted' : 'denied';
+        try {
+          localStorage.setItem(consentKey, normalized);
+        } catch (e) {}
+        if (normalized === 'granted') {
+          loadAnalytics();
+        } else {
+          window['ga-disable-' + measurementId] = true;
+          deleteAnalyticsCookies();
+        }
+        window.dispatchEvent(new CustomEvent('shuttlego:analytics-consent', {
+          detail: { value: normalized }
+        }));
+        return normalized;
+      }
+
+      window.ShuttleGoAnalytics = {
+        isAvailable: function() { return true; },
+        getConsent: readConsent,
+        isGranted: function() { return readConsent() === 'granted'; },
+        setConsent: setConsent
+      };
+
+      if (readConsent() === 'granted') loadAnalytics();
     })();
   </script>
   <style>
@@ -892,9 +959,15 @@
       text-align: left;
       font-family: inherit;
     }
-    .route-endpoint-trigger:hover {
+    .route-endpoint-trigger:focus-visible {
       border-color: #1428A0;
       background-color: #e8edff;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .route-endpoint-trigger:hover {
+        border-color: #1428A0;
+        background-color: #e8edff;
+      }
     }
     .route-endpoint-trigger:disabled {
       opacity: 0.55;
@@ -924,12 +997,26 @@
       flex: 0 0 auto;
       white-space: nowrap;
     }
+    .route-endpoint-trigger .endpoint-trigger-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex: 0 0 auto;
+      color: #1428A0;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .route-endpoint-trigger .endpoint-trigger-change {
+      display: inline-block;
+    }
     .route-endpoint-trigger .endpoint-trigger-arrow {
       width: 0;
       height: 0;
       border-left: 4px solid transparent;
       border-right: 4px solid transparent;
-      border-top: 4px solid #666;
+      border-top: 4px solid #1428A0;
       flex-shrink: 0;
     }
     #routeTopPlaceLabel,
@@ -1193,7 +1280,8 @@
       flex-shrink: 0;
     }
     .account-menu-kakao-logo,
-    .account-menu-naver-logo {
+    .account-menu-naver-logo,
+    .account-menu-apple-logo {
       width: 20px;
       height: 20px;
       flex-shrink: 0;
@@ -1314,6 +1402,9 @@
       display: flex;
       align-items: center;
       gap: 10px;
+    }
+    .account-menu-item[hidden] {
+      display: none !important;
     }
     .account-menu-item-icon {
       width: 24px;
@@ -2008,6 +2099,10 @@
       cursor: pointer;
       font-family: inherit;
     }
+    [data-login-provider][hidden],
+    [data-auth-provider-icon][hidden] {
+      display: none !important;
+    }
     .login-provider-btn:hover {
       background: #f8fafc;
       border-color: #cbd5e1;
@@ -2029,6 +2124,18 @@
     .login-provider-btn.naver:hover {
       background: #02b350;
       border-color: #02b350;
+    }
+    .login-provider-btn.apple {
+      background: #111827;
+      border-color: #111827;
+      color: #fff;
+    }
+    .login-provider-btn.apple:hover {
+      background: #000;
+      border-color: #000;
+    }
+    .login-provider-btn.apple .account-menu-apple-logo {
+      filter: invert(1);
     }
     .login-progress-backdrop {
       display: none;
@@ -2385,6 +2492,66 @@
       line-height: 1.5;
       color: #64748b;
     }
+    .settings-mode-help a {
+      color: #1428A0;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .settings-consent-entry {
+      width: 100%;
+      margin-top: 20px;
+      padding: 8px 0;
+      border: 0;
+      border-top: 1px solid #eef2f7;
+      background: transparent;
+      color: #64748b;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      text-align: left;
+    }
+    .settings-consent-chevron {
+      color: #94a3b8;
+      font-size: 16px;
+      line-height: 1;
+      transform: translateY(-1px);
+    }
+    .settings-consent-detail {
+      display: none;
+      padding: 6px 0 2px;
+    }
+    .settings-consent-detail.show {
+      display: block;
+    }
+    .settings-consent-check-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: #334155;
+      font-size: 13px;
+      line-height: 1.45;
+      cursor: pointer;
+    }
+    .settings-consent-check-label input {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      margin: 1px 0 0;
+      accent-color: #1428A0;
+    }
+    .settings-consent-check-label label {
+      cursor: pointer;
+    }
+    .settings-consent-check-label a {
+      color: #1428A0;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
     .settings-range-row {
       display: flex;
       align-items: center;
@@ -2632,6 +2799,9 @@
       overflow: hidden;
     }
     .endpoint-picker-modal.show { display: flex; }
+    .endpoint-picker-modal.modal-pull-dragging {
+      transition: none;
+    }
     .endpoint-picker-title-row {
       flex-shrink: 0;
       display: flex;
@@ -2857,7 +3027,7 @@
         max-width: none;
         bottom: 0;
         top: auto;
-        max-height: 56vh;
+        max-height: min(88vh, 100%);
         border-radius: 16px 16px 0 0;
       }
       .endpoint-picker-title-row {
@@ -8767,7 +8937,10 @@
           <input type="text" class="route-mode-place-label" id="routeTopPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
           <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeTopEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
             <span class="endpoint-trigger-text" id="routeTopEndpointTriggerText">선택</span>
-            <span class="endpoint-trigger-arrow"></span>
+            <span class="endpoint-trigger-action" aria-hidden="true">
+              <span class="endpoint-trigger-change">변경</span>
+              <span class="endpoint-trigger-arrow"></span>
+            </span>
           </button>
         </div>
         <div class="route-mode-actions">
@@ -8780,7 +8953,10 @@
         <input type="text" class="route-mode-place-label route-mode-hidden" id="routeBottomPlaceLabel" placeholder="장소 검색" autocomplete="off" enterkeyhint="done" />
         <button type="button" class="route-endpoint-trigger route-mode-hidden" id="routeBottomEndpointTrigger" aria-haspopup="dialog" aria-expanded="false">
           <span class="endpoint-trigger-text" id="routeBottomEndpointTriggerText">선택</span>
-          <span class="endpoint-trigger-arrow"></span>
+          <span class="endpoint-trigger-action" aria-hidden="true">
+            <span class="endpoint-trigger-change">변경</span>
+            <span class="endpoint-trigger-arrow"></span>
+          </span>
         </button>
       </div>
     </div>
@@ -8869,6 +9045,7 @@
         <img class="account-menu-kakao-logo" src="/images/logo_kakao_20.svg" alt="" />
         <img class="account-menu-naver-logo" src="/images/logo_naver_20.svg" alt="" />
         <img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />
+        <img class="account-menu-apple-logo" src="/images/logo_apple_20.svg" alt="" data-auth-provider-icon="apple" hidden />
       </span>
     </button>
     <p class="samsung-internet-hint" id="accountMenuSamsungHint" hidden>
@@ -8938,6 +9115,16 @@
           <span class="settings-range-value">반경 <span id="settingsMaxDistanceValue">3</span> km</span>
         </div>
         <input type="range" class="settings-range-slider" id="settingsMaxDistanceSlider" min="0" max="30" step="0.5" value="3" />
+      </div>
+      <button type="button" class="settings-consent-entry" id="settingsConsentEntryBtn" aria-expanded="false" aria-controls="settingsConsentDetail">
+        <span>개인정보 수집 및 이용 동의</span>
+        <span class="settings-consent-chevron" aria-hidden="true">&gt;</span>
+      </button>
+      <div class="settings-consent-detail" id="settingsConsentDetail">
+        <div class="settings-consent-check-label">
+          <input type="checkbox" id="settingsAnalyticsConsentCheckbox" checked />
+          <span><a href="/privacy">개인정보 수집 및 이용</a> <label for="settingsAnalyticsConsentCheckbox">동의 (선택)</label></span>
+        </div>
       </div>
       <div class="settings-modal-actions">
         <button type="button" class="settings-modal-btn" id="settingsModalCancelBtn">닫기</button>
@@ -9406,6 +9593,9 @@
       var settingsSearchModeHelp = document.getElementById('settingsSearchModeHelp');
       var settingsMaxDistanceSlider = document.getElementById('settingsMaxDistanceSlider');
       var settingsMaxDistanceValue = document.getElementById('settingsMaxDistanceValue');
+      var settingsConsentEntryBtn = document.getElementById('settingsConsentEntryBtn');
+      var settingsConsentDetail = document.getElementById('settingsConsentDetail');
+      var settingsAnalyticsConsentCheckbox = document.getElementById('settingsAnalyticsConsentCheckbox');
       var btnArrivalReport = document.getElementById('btnArrivalReport');
       var arrivalReportBackdrop = document.getElementById('arrivalReportBackdrop');
       var arrivalReportModal = document.getElementById('arrivalReportModal');
@@ -9510,6 +9700,8 @@
       var maxDistanceConfirm = document.getElementById('maxDistanceConfirm');
       var defaultMaxDistanceKm = 3;
       var settingsDraftMaxDistanceKm = 3;
+      var settingsDraftAnalyticsConsent = 'granted';
+      var settingsConsentDetailExpanded = false;
       var maxDistanceKm = 3;
       var maxDistancePendingKm = 3;
       var routeMaxDistanceSessionDirty = false;
@@ -10104,6 +10296,9 @@
         } else if (normalizedProvider === 'naver') {
           methodName = 'loginWithNaver';
           availabilityName = 'isNativeNaverLoginAvailable';
+        } else if (normalizedProvider === 'apple') {
+          methodName = 'loginWithApple';
+          availabilityName = 'isNativeAppleLoginAvailable';
         }
         if (!hasAndroidBridgeMethod(methodName)) return false;
         try {
@@ -10121,6 +10316,7 @@
           nativeGoogleLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('google'),
           nativeKakaoLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('kakao'),
           nativeNaverLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('naver'),
+          nativeAppleLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('apple'),
           nativeLocationSnapshot: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('getCurrentLocationSnapshot'),
           nativeLocationUpdates: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('startLocationUpdates'),
           nativeLocationRequest: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('requestCurrentLocation'),
@@ -11254,6 +11450,7 @@
         var capabilities = getAppCapabilities();
         if (normalizedProvider === 'kakao') return !!capabilities.nativeKakaoLogin;
         if (normalizedProvider === 'naver') return !!capabilities.nativeNaverLogin;
+        if (normalizedProvider === 'apple') return !!capabilities.nativeAppleLogin;
         return !!capabilities.nativeGoogleLogin;
       }
 
@@ -11427,7 +11624,7 @@
 
       function startProviderLogin(provider) {
         var normalizedProvider = String(provider || 'google').toLowerCase();
-        if (['google', 'kakao', 'naver'].indexOf(normalizedProvider) === -1) normalizedProvider = 'google';
+        if (['google', 'kakao', 'naver', 'apple'].indexOf(normalizedProvider) === -1) normalizedProvider = 'google';
         if (nativeLoginInFlight) return;
         if (isAndroidNativeLoginAvailable(normalizedProvider)) {
           setNativeLoginInFlight(true);
@@ -11436,6 +11633,7 @@
             var methodName = 'loginWithGoogle';
             if (normalizedProvider === 'kakao') methodName = 'loginWithKakao';
             if (normalizedProvider === 'naver') methodName = 'loginWithNaver';
+            if (normalizedProvider === 'apple') methodName = 'loginWithApple';
             window.ShuttleGoAndroid[methodName](JSON.stringify({
               apiBase: API_BASE,
               source: 'web_login_button',
@@ -11474,6 +11672,54 @@
       function startNaverLogin() {
         startProviderLogin('naver');
       }
+
+      function startAppleLogin() {
+        startProviderLogin('apple');
+      }
+
+      var authProviderAvailability = { apple: false };
+      var authProviderAvailabilityPromise = null;
+
+      function applyAuthProviderAvailability() {
+        var nodes = Array.prototype.slice.call(
+          document.querySelectorAll('[data-login-provider], [data-auth-provider-icon]')
+        );
+        nodes.forEach(function(node) {
+          var provider = String(
+            node.getAttribute('data-login-provider') ||
+            node.getAttribute('data-auth-provider-icon') ||
+            ''
+          ).toLowerCase();
+          if (!provider || !(provider in authProviderAvailability)) return;
+          node.hidden = authProviderAvailability[provider] === false;
+        });
+      }
+
+      function ensureAuthProviderAvailability() {
+        if (authProviderAvailabilityPromise) return authProviderAvailabilityPromise;
+        authProviderAvailabilityPromise = fetchJson(API_BASE + '/api/auth/providers')
+          .then(function(result) {
+            if (!result || !result.ok || !result.data || !Array.isArray(result.data.providers)) {
+              applyAuthProviderAvailability();
+              return authProviderAvailability;
+            }
+            result.data.providers.forEach(function(item) {
+              var provider = String(item && item.provider || '').toLowerCase();
+              if (!provider) return;
+              authProviderAvailability[provider] = !!item.enabled;
+            });
+            applyAuthProviderAvailability();
+            return authProviderAvailability;
+          })
+          .catch(function() {
+            applyAuthProviderAvailability();
+            return authProviderAvailability;
+          });
+        return authProviderAvailabilityPromise;
+      }
+
+      applyAuthProviderAvailability();
+      ensureAuthProviderAvailability();
 
       function ensureAppDialogModal() {
         if (
@@ -11590,6 +11836,26 @@
           showCancel: false,
           confirmText: '확인'
         });
+      }
+
+      function getAnalyticsConsentManager() {
+        var manager = window.ShuttleGoAnalytics;
+        return manager && typeof manager.getConsent === 'function' ? manager : null;
+      }
+
+      function syncAnalyticsConsentUi() {
+        var manager = getAnalyticsConsentManager();
+        settingsDraftAnalyticsConsent = manager && manager.getConsent
+          ? manager.getConsent()
+          : 'granted';
+        syncSettingsModalUi();
+      }
+
+      function chooseAnalyticsConsent(value) {
+        var manager = getAnalyticsConsentManager();
+        if (!manager || typeof manager.setConsent !== 'function') return;
+        manager.setConsent(value);
+        syncAnalyticsConsentUi();
       }
 
       function ensureReviewLoginCodeModal() {
@@ -11841,6 +12107,10 @@
               '<img class="account-menu-google-logo" src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="" />' +
               '<span>구글로 시작하기</span>' +
             '</button>' +
+            '<button type="button" class="login-provider-btn apple" data-login-provider="apple" hidden>' +
+              '<img class="account-menu-apple-logo" src="/images/logo_apple_20.svg" alt="" />' +
+              '<span>Apple로 시작하기</span>' +
+            '</button>' +
           '</div>' +
           '<div class="favorite-login-actions">' +
             '<button type="button" class="favorite-login-cancel" data-favorite-login-close="1">닫기</button>' +
@@ -11859,6 +12129,8 @@
           closeButton: modal.querySelector('[data-favorite-login-close="1"]'),
           providerButtons: Array.prototype.slice.call(modal.querySelectorAll('[data-login-provider]'))
         };
+        applyAuthProviderAvailability();
+        ensureAuthProviderAvailability();
 
         backdrop.addEventListener('click', function(evt) {
           if (evt.target === backdrop) closeFavoriteLoginPromptModal();
@@ -12186,6 +12458,7 @@
 
       function trackAnalyticsEvent(eventName, params) {
         if (!ANALYTICS_EVENT_NAMES[eventName]) return;
+        if (!window.ShuttleGoAnalytics || !window.ShuttleGoAnalytics.isGranted()) return;
         if (typeof window.gtag !== 'function') return;
         try {
           window.gtag('event', eventName, cleanAnalyticsParams(params));
@@ -14568,9 +14841,14 @@
         }
 
         if (endpointPickerBackdrop) endpointPickerBackdrop.classList.remove('show');
-        if (endpointPickerModal) endpointPickerModal.classList.remove('show');
+        if (endpointPickerModal) {
+          endpointPickerModal.classList.remove('show', 'modal-pull-dragging');
+          endpointPickerModal.style.transform = '';
+        }
         if (routeTopEndpointTrigger) routeTopEndpointTrigger.setAttribute('aria-expanded', 'false');
         if (routeBottomEndpointTrigger) routeBottomEndpointTrigger.setAttribute('aria-expanded', 'false');
+        if (routeTopEndpointTrigger && document.activeElement === routeTopEndpointTrigger) routeTopEndpointTrigger.blur();
+        if (routeBottomEndpointTrigger && document.activeElement === routeBottomEndpointTrigger) routeBottomEndpointTrigger.blur();
         if (changed && shouldRefreshOnApply) refreshForEndpointSelectionChange();
       }
 
@@ -17672,6 +17950,11 @@
       }
       if (endpointPickerBackdrop) endpointPickerBackdrop.addEventListener('click', closeEndpointPickerModal);
       if (endpointPickerModal) endpointPickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      bindMobilePullDownDismissModal({
+        modal: endpointPickerModal,
+        scrollEl: endpointPickerList,
+        closeFn: closeEndpointPickerModal
+      });
       if (endpointPickerConfirmBtn) {
         endpointPickerConfirmBtn.addEventListener('click', function(e) {
           e.preventDefault();
@@ -17804,6 +18087,8 @@
           openProfileModal();
         });
       }
+      window.addEventListener('shuttlego:analytics-consent', syncAnalyticsConsentUi);
+      syncAnalyticsConsentUi();
       if (accountMenuTermsBtn) {
         accountMenuTermsBtn.addEventListener('click', function() {
           closeAccountMenu();
@@ -28125,6 +28410,15 @@
         if (settingsSearchModeHelp) settingsSearchModeHelp.textContent = getRouteSearchModeHelpText(mode);
         if (settingsMaxDistanceSlider) settingsMaxDistanceSlider.value = String(settingsDraftMaxDistanceKm);
         if (settingsMaxDistanceValue) settingsMaxDistanceValue.textContent = formatMaxDistanceKm(settingsDraftMaxDistanceKm);
+        if (settingsAnalyticsConsentCheckbox) {
+          settingsAnalyticsConsentCheckbox.checked = settingsDraftAnalyticsConsent !== 'denied';
+        }
+        if (settingsConsentEntryBtn) {
+          settingsConsentEntryBtn.setAttribute('aria-expanded', settingsConsentDetailExpanded ? 'true' : 'false');
+        }
+        if (settingsConsentDetail) {
+          settingsConsentDetail.classList.toggle('show', settingsConsentDetailExpanded);
+        }
       }
 
       function applyRouteSearchPreferences(preferences) {
@@ -28164,6 +28458,11 @@
         if (!authState.logged_in || !settingsModal || !settingsModalBackdrop) return;
         settingsDraftRouteSearchMode = normalizeRouteSearchMode(defaultRouteSearchMode);
         settingsDraftMaxDistanceKm = normalizeRouteMaxDistanceKm(defaultMaxDistanceKm);
+        var analyticsManager = getAnalyticsConsentManager();
+        settingsDraftAnalyticsConsent = analyticsManager && analyticsManager.getConsent
+          ? analyticsManager.getConsent()
+          : 'granted';
+        settingsConsentDetailExpanded = false;
         syncSettingsModalUi();
         settingsModalBackdrop.classList.add('show');
         settingsModal.classList.add('show');
@@ -28197,6 +28496,7 @@
             authState.preferences.route_search_mode = result.data.route_search_mode;
             authState.preferences.route_max_distance_km = result.data.route_max_distance_km;
             applyRouteSearchPreferences(authState.preferences);
+            chooseAnalyticsConsent(settingsDraftAnalyticsConsent);
             closeSettingsModal();
           })
           .catch(function(err) {
@@ -30115,9 +30415,9 @@
           var deltaY = startY - clientY;
           var nextIndex = dragStartStateIndex;
           if (deltaY > DRAG_THRESHOLD) {
-            nextIndex = Math.min(2, dragStartStateIndex + 1);
+            nextIndex = 2;
           } else if (deltaY < -DRAG_THRESHOLD) {
-            nextIndex = Math.max(0, dragStartStateIndex - 1);
+            nextIndex = 0;
           }
           resultsPanel.classList.remove('sheet-dragging');
           setStateIndex(nextIndex);
@@ -30311,7 +30611,7 @@
         modal.addEventListener('touchstart', function(e) {
           if (!isMobile() || !modal.classList.contains('show') || !e.touches.length) return;
           var target = e.target;
-          var header = target && target.closest ? target.closest('.issue-modal-header, .report-modal-header') : null;
+          var header = target && target.closest ? target.closest('.issue-modal-header, .report-modal-header, .endpoint-picker-title-row') : null;
           var inBody = !!(scrollEl && (target === scrollEl || scrollEl.contains(target)));
           var inModal = target && (target === modal || modal.contains(target));
           if (!header && !inBody && !inModal) return;
@@ -33965,6 +34265,18 @@
         };
         settingsMaxDistanceSlider.addEventListener('input', handleSettingsMaxDistanceInput);
         settingsMaxDistanceSlider.addEventListener('change', handleSettingsMaxDistanceInput);
+      }
+      if (settingsConsentEntryBtn) {
+        settingsConsentEntryBtn.addEventListener('click', function() {
+          settingsConsentDetailExpanded = !settingsConsentDetailExpanded;
+          syncSettingsModalUi();
+        });
+      }
+      if (settingsAnalyticsConsentCheckbox) {
+        settingsAnalyticsConsentCheckbox.addEventListener('change', function() {
+          settingsDraftAnalyticsConsent = settingsAnalyticsConsentCheckbox.checked ? 'granted' : 'denied';
+          syncSettingsModalUi();
+        });
       }
       if (devTimeInput) {
         devTimeInput.addEventListener('input', applyDevDebugTimeInput);
