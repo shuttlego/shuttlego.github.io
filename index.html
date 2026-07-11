@@ -4674,6 +4674,70 @@
     .pin-marker.hover, .pin-marker.selected {
       transform: scale(var(--pin-scale, 1)) scale(1.4);
     }
+    .place-label-anchor {
+      position: relative;
+      width: 0;
+      height: 0;
+      overflow: visible;
+      pointer-events: none;
+    }
+    .place-label {
+      position: absolute;
+      left: 0;
+      top: 0;
+      box-sizing: border-box;
+      width: max-content;
+      margin: 0;
+      padding: 0;
+      appearance: none;
+      -webkit-appearance: none;
+      overflow: visible;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: #000;
+      font: inherit;
+      font-size: 12.96px;
+      font-weight: 700;
+      line-height: 1.12;
+      letter-spacing: 0;
+      text-align: center;
+      text-shadow:
+        -1px -1px 0 #fff,
+        0 -1px 0 #fff,
+        1px -1px 0 #fff,
+        -1px 0 0 #fff,
+        1px 0 0 #fff,
+        -1px 1px 0 #fff,
+        0 1px 0 #fff,
+        1px 1px 0 #fff,
+        0 0 2px #fff;
+      white-space: normal;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      cursor: pointer;
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+    .place-label-text {
+      display: block;
+      width: max-content;
+      overflow: visible;
+      white-space: pre-line;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+    }
+    .place-label.is-layout-hidden {
+      visibility: hidden;
+      opacity: 0 !important;
+      pointer-events: none;
+    }
+    @media (max-width: 768px) {
+      .place-label {
+        font-size: 12.5px;
+      }
+    }
 
     /* 말풍선 (마커 클릭 시) */
     .bubble-container {
@@ -9638,6 +9702,8 @@
       var map = null;
       var overlays = [];
       var markerElements = [];
+      var placeLabelEntries = [];
+      var placeLabelLayoutRafId = null;
       var PLACE_PIN_TIP_X_ANCHOR = 0.502;
       var PLACE_PIN_TIP_Y_ANCHOR = 0.854;
       var places = [];
@@ -9872,7 +9938,17 @@
       var nativeLocationRequestPromise = null;
       var nativeLocationFollowActive = false;
       var nativeLocationFollowUntilMs = 0;
+      var nativeLocationFollowReason = '';
+      var nativeLocationFollowStartupToken = 0;
       var startupCurrentLocationRequested = false;
+      var startupCurrentLocationState = {
+        token: 0,
+        pending: false,
+        cancelled: false,
+        consumed: false,
+        startedAt: 0,
+        cancelReason: ''
+      };
       var arrivalReportStopMapInstance = null;
       var arrivalReportStopMapOverlays = [];
       var arrivalReportStopMapCurrentOverlay = null;
@@ -10048,6 +10124,92 @@
         document.addEventListener('gestureend', preventMobilePageZoomOutsideMaps, listenerOptions);
       }
 
+      function beginStartupCurrentLocationAutoCenter() {
+        if (startupCurrentLocationRequested) return 0;
+        startupCurrentLocationRequested = true;
+        startupCurrentLocationState.token += 1;
+        startupCurrentLocationState.pending = true;
+        startupCurrentLocationState.cancelled = false;
+        startupCurrentLocationState.consumed = false;
+        startupCurrentLocationState.startedAt = Date.now();
+        startupCurrentLocationState.cancelReason = '';
+        return startupCurrentLocationState.token;
+      }
+
+      function isStartupCurrentLocationAutoCenterAllowed(token) {
+        if (!startupCurrentLocationState.pending) return false;
+        if (startupCurrentLocationState.cancelled || startupCurrentLocationState.consumed) return false;
+        if (token && startupCurrentLocationState.token !== token) return false;
+        if (!map || (sharedRouteState && sharedRouteState.active) || (favoriteRouteState && favoriteRouteState.active)) return false;
+        return true;
+      }
+
+      function consumeStartupCurrentLocationAutoCenter(token) {
+        if (token && startupCurrentLocationState.token !== token) return;
+        startupCurrentLocationState.pending = false;
+        startupCurrentLocationState.consumed = true;
+      }
+
+      function stopNativeLocationFollow(reason) {
+        nativeLocationFollowActive = false;
+        nativeLocationFollowUntilMs = 0;
+        nativeLocationFollowReason = reason || '';
+        nativeLocationFollowStartupToken = 0;
+      }
+
+      function cancelStartupCurrentLocationAutoCenter(reason) {
+        if (!startupCurrentLocationState.pending || startupCurrentLocationState.consumed) return;
+        startupCurrentLocationState.cancelled = true;
+        startupCurrentLocationState.pending = false;
+        startupCurrentLocationState.cancelReason = String(reason || 'user-interaction');
+        if (nativeLocationFollowReason === 'startup') {
+          stopNativeLocationFollow('startup-cancelled');
+        }
+      }
+
+      function markUserMapIntent(reason) {
+        var normalizedReason = String(reason || 'user-interaction');
+        cancelStartupCurrentLocationAutoCenter(normalizedReason);
+        if (normalizedReason !== 'location-button') {
+          stopNativeLocationFollow(normalizedReason);
+        }
+      }
+
+      function installStartupCurrentLocationInteractionGuard() {
+        if (!document || typeof document.addEventListener !== 'function') return;
+        var opts = { capture: true, passive: true };
+        document.addEventListener('pointerdown', function(e) {
+          var target = e && e.target;
+          if (target && typeof target.closest === 'function' && target.closest('#btnLocation')) return;
+          markUserMapIntent('pointerdown');
+        }, opts);
+        document.addEventListener('keydown', function(e) {
+          if (!e || e.key === 'Tab') return;
+          markUserMapIntent('keydown');
+        }, { capture: true });
+        document.addEventListener('wheel', function() {
+          markUserMapIntent('wheel');
+        }, opts);
+      }
+
+      function startNativeLocationFollow(reason, durationMs, startupToken) {
+        nativeLocationFollowActive = true;
+        nativeLocationFollowUntilMs = Date.now() + (Number(durationMs) || 10000);
+        nativeLocationFollowReason = String(reason || '');
+        nativeLocationFollowStartupToken = Number(startupToken || 0);
+      }
+
+      function canApplyNativeLocationFollow() {
+        if (!nativeLocationFollowActive || Date.now() > nativeLocationFollowUntilMs) {
+          stopNativeLocationFollow('expired');
+          return false;
+        }
+        if (nativeLocationFollowReason === 'startup') {
+          return isStartupCurrentLocationAutoCenterAllowed(nativeLocationFollowStartupToken);
+        }
+        return nativeLocationFollowReason === 'button';
+      }
+
       function resetPlaceHistoryState() {
         if (placeHistoryRefreshTimer) {
           clearTimeout(placeHistoryRefreshTimer);
@@ -10174,12 +10336,8 @@
 
       function readBridgeAppContext() {
         try {
-          if (
-            window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid.getAppInfo === 'function'
-          ) {
-            return parseAppContextJson(window.ShuttleGoAndroid.getAppInfo());
-          }
+          var bridge = window.ShuttleGoIOS || window.ShuttleGoAndroid;
+          if (bridge && typeof bridge.getAppInfo === 'function') return parseAppContextJson(bridge.getAppInfo());
         } catch (e) {}
         return null;
       }
@@ -10228,9 +10386,18 @@
       function readUserAgentAppContext() {
         var ua = String(navigator.userAgent || '');
         var match = ua.match(/ShuttleGoAndroidWebView\/([^\s]+)\s+\(([^)]+)\)/i);
+        if (match) {
+          return {
+            platform: 'android',
+            appBuild: 0,
+            appVersion: String(match[1] || '').trim(),
+            appClient: String(match[2] || '').trim()
+          };
+        }
+        match = ua.match(/ShuttleGoIOSWebView\/([^\s]+)\s+\(([^)]+)\)/i);
         if (!match) return null;
         return {
-          platform: 'android',
+          platform: 'ios',
           appBuild: 0,
           appVersion: String(match[1] || '').trim(),
           appClient: String(match[2] || '').trim()
@@ -10275,18 +10442,27 @@
         return appContext;
       }
 
-      function hasAndroidBridgeMethod(methodName) {
+      function getNativeBridge() {
         try {
-          return !!(
-            window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid[methodName] === 'function'
-          );
+          var platform = getAppContext().platform;
+          if (platform === 'ios' && window.ShuttleGoIOS) return window.ShuttleGoIOS;
+          if (platform === 'android' && window.ShuttleGoAndroid) return window.ShuttleGoAndroid;
+          return window.ShuttleGoIOS || window.ShuttleGoAndroid || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function hasNativeBridgeMethod(methodName) {
+        try {
+          var bridge = getNativeBridge();
+          return !!(bridge && typeof bridge[methodName] === 'function');
         } catch (e) {
           return false;
         }
       }
 
-      function hasAvailableAndroidProviderLogin(provider) {
+      function hasAvailableNativeProviderLogin(provider) {
         var normalizedProvider = String(provider || 'google').toLowerCase();
         var methodName = 'loginWithGoogle';
         var availabilityName = 'isNativeGoogleLoginAvailable';
@@ -10300,27 +10476,30 @@
           methodName = 'loginWithApple';
           availabilityName = 'isNativeAppleLoginAvailable';
         }
-        if (!hasAndroidBridgeMethod(methodName)) return false;
+        if (!hasNativeBridgeMethod(methodName)) return false;
         try {
-          return !hasAndroidBridgeMethod(availabilityName) || window.ShuttleGoAndroid[availabilityName]();
+          var bridge = getNativeBridge();
+          return !hasNativeBridgeMethod(availabilityName) || bridge[availabilityName]();
         } catch (e) {
           return false;
         }
       }
 
       function createAppCapabilities(context) {
-        var isAndroid = context.platform === 'android';
+        var isNativeApp = context.platform === 'android' || context.platform === 'ios';
         var appBuild = Number(context.appBuild || 0);
+        var minNativeBuild = context.platform === 'ios' ? 4 : 3;
+        var nativeBuildReady = isNativeApp && appBuild >= minNativeBuild;
         return {
-          nativeShare: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('share'),
-          nativeGoogleLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('google'),
-          nativeKakaoLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('kakao'),
-          nativeNaverLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('naver'),
-          nativeAppleLogin: isAndroid && appBuild >= 3 && hasAvailableAndroidProviderLogin('apple'),
-          nativeLocationSnapshot: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('getCurrentLocationSnapshot'),
-          nativeLocationUpdates: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('startLocationUpdates'),
-          nativeLocationRequest: isAndroid && appBuild >= 3 && hasAndroidBridgeMethod('requestCurrentLocation'),
-          nativeReviewLogin: isAndroid && appBuild >= 3
+          nativeShare: nativeBuildReady && hasNativeBridgeMethod('share'),
+          nativeGoogleLogin: nativeBuildReady && hasAvailableNativeProviderLogin('google'),
+          nativeKakaoLogin: nativeBuildReady && hasAvailableNativeProviderLogin('kakao'),
+          nativeNaverLogin: nativeBuildReady && hasAvailableNativeProviderLogin('naver'),
+          nativeAppleLogin: nativeBuildReady && hasAvailableNativeProviderLogin('apple'),
+          nativeLocationSnapshot: nativeBuildReady && hasNativeBridgeMethod('getCurrentLocationSnapshot'),
+          nativeLocationUpdates: nativeBuildReady && hasNativeBridgeMethod('startLocationUpdates'),
+          nativeLocationRequest: nativeBuildReady && hasNativeBridgeMethod('requestCurrentLocation'),
+          nativeReviewLogin: nativeBuildReady
         };
       }
 
@@ -10331,7 +10510,8 @@
       }
 
       function isAndroidWebViewClient() {
-        return getAppContext().platform === 'android';
+        var platform = getAppContext().platform;
+        return platform === 'android' || platform === 'ios';
       }
 
       function getAndroidWebViewAppClient() {
@@ -10347,11 +10527,15 @@
       }
 
       function isReviewTestLoginClient() {
-        if (getAppContext().platform !== 'android') return false;
+        var platform = getAppContext().platform;
+        if (platform !== 'android' && platform !== 'ios') return false;
         var appClient = getAndroidWebViewAppClient().toLowerCase();
         return appClient === 'android-webview' ||
           appClient === 'android-webview-dev' ||
-          appClient.indexOf('android-webview') === 0;
+          appClient === 'ios-webview' ||
+          appClient === 'ios-webview-dev' ||
+          appClient.indexOf('android-webview') === 0 ||
+          appClient.indexOf('ios-webview') === 0;
       }
 
       function isReportCapableClient() {
@@ -11488,19 +11672,15 @@
       function readAndroidNativeLocationSnapshot() {
         if (!isAndroidNativeLocationAvailable()) return null;
         try {
-          if (
-            window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid.startLocationUpdates === 'function'
-          ) {
-            window.ShuttleGoAndroid.startLocationUpdates();
+          var bridge = getNativeBridge();
+          if (bridge && typeof bridge.startLocationUpdates === 'function') {
+            bridge.startLocationUpdates();
           }
         } catch (e) {}
         try {
-          if (
-            window.ShuttleGoAndroid &&
-            typeof window.ShuttleGoAndroid.getCurrentLocationSnapshot === 'function'
-          ) {
-            var raw = window.ShuttleGoAndroid.getCurrentLocationSnapshot();
+          var snapshotBridge = getNativeBridge();
+          if (snapshotBridge && typeof snapshotBridge.getCurrentLocationSnapshot === 'function') {
+            var raw = snapshotBridge.getCurrentLocationSnapshot();
             var payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
             var snapshot = storeNativeLocation(payload);
             if (snapshot) return snapshot;
@@ -11516,14 +11696,15 @@
       function shareWithAndroidNativeSheet(text, url) {
         if (!isAndroidNativeShareAvailable()) return false;
         try {
-          window.ShuttleGoAndroid.share(String(text || ''), String(url || ''));
+          getNativeBridge().share(String(text || ''), String(url || ''));
           return true;
         } catch (e) {
           return false;
         }
       }
 
-      function requestAndroidNativeLocation() {
+      function requestAndroidNativeLocation(options) {
+        options = options || {};
         var snapshot = readAndroidNativeLocationSnapshot();
         if (snapshot) return Promise.resolve(snapshot);
         if (nativeLocationRequestPromise) return nativeLocationRequestPromise;
@@ -11545,7 +11726,12 @@
             timeout: timeout
           };
           try {
-            window.ShuttleGoAndroid.requestCurrentLocation(requestId);
+            var bridge = getNativeBridge();
+            if (getAppContext().platform === 'ios') {
+              bridge.requestCurrentLocation(requestId, { reason: String(options.reason || '') });
+            } else {
+              bridge.requestCurrentLocation(requestId);
+            }
           } catch (e) {
             clearTimeout(timeout);
             delete nativeLocationRequests[requestId];
@@ -11579,19 +11765,23 @@
       window.__shuttleGoNativeLocationChanged = function(payload) {
         var location = storeNativeLocation(payload);
         if (!location) return;
-        if (nativeLocationFollowActive && Date.now() <= nativeLocationFollowUntilMs) {
-          applyCurrentLocationToMap(location.lat, location.lng, {
+        if (canApplyNativeLocationFollow()) {
+          var followReason = nativeLocationFollowReason;
+          var followToken = nativeLocationFollowStartupToken;
+          var moved = applyCurrentLocationToMap(location.lat, location.lng, {
             source: 'android-native-location-update',
             forceRender: true
           });
+          if (moved && followReason === 'startup') {
+            consumeStartupCurrentLocationAutoCenter(followToken);
+            stopNativeLocationFollow('startup-consumed');
+          }
           return;
         }
-        if (currentLocationOverlay) {
-          showCurrentLocationOverlay(location.lat, location.lng, true);
-        }
+        showCurrentLocationOverlay(location.lat, location.lng, true);
       };
 
-      window.ShuttleGoAndroidAuth = {
+      var shuttleGoNativeAuthBridge = {
         onNativeAuthEvent: function(detail) {
           var type = detail && detail.type ? String(detail.type) : '';
           if (type === 'started') {
@@ -11621,6 +11811,9 @@
           alert(message || '로그인에 실패했습니다.');
         }
       };
+      window.ShuttleGoAndroidAuth = shuttleGoNativeAuthBridge;
+      window.ShuttleGoIOSAuth = shuttleGoNativeAuthBridge;
+      window.ShuttleGoNativeAuth = shuttleGoNativeAuthBridge;
 
       function startProviderLogin(provider) {
         var normalizedProvider = String(provider || 'google').toLowerCase();
@@ -11634,7 +11827,7 @@
             if (normalizedProvider === 'kakao') methodName = 'loginWithKakao';
             if (normalizedProvider === 'naver') methodName = 'loginWithNaver';
             if (normalizedProvider === 'apple') methodName = 'loginWithApple';
-            window.ShuttleGoAndroid[methodName](JSON.stringify({
+            getNativeBridge()[methodName](JSON.stringify({
               apiBase: API_BASE,
               source: 'web_login_button',
               provider: normalizedProvider,
@@ -11644,9 +11837,13 @@
           } catch (e) {
             setNativeLoginInFlight(false);
             hideProviderLoginProgress();
-            alert((e && e.message) ? e.message : 'Android 로그인을 시작하지 못했습니다.');
+            alert((e && e.message) ? e.message : '앱 로그인을 시작하지 못했습니다.');
             return;
           }
+        }
+        if (getAppContext().isAppWebView) {
+          alert('이 앱에서 해당 로그인을 사용할 수 없습니다. 앱 설정을 확인해 주세요.');
+          return;
         }
         showProviderLoginProgress();
         var callbackUrl = location.origin + '/auth-callback.html';
@@ -11691,7 +11888,9 @@
             ''
           ).toLowerCase();
           if (!provider || !(provider in authProviderAvailability)) return;
-          node.hidden = authProviderAvailability[provider] === false;
+          var backendAvailable = !(provider in authProviderAvailability) || authProviderAvailability[provider] !== false;
+          var nativeAvailable = !getAppContext().isAppWebView || isAndroidNativeLoginAvailable(provider);
+          node.hidden = !(backendAvailable && nativeAvailable);
         });
       }
 
@@ -13839,18 +14038,6 @@
         resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
         if (state) resultsPanel.classList.add(state);
         updateMapControlsPosition();
-        if (isMobile() && state) setTimeout(adjustMapForSheet, 80);
-      }
-
-      function adjustMapForSheet() {
-        if (!isMobile() || !map) return;
-        if (overlays.length === 0) return;
-        var sheetHeight = parseFloat(window.getComputedStyle(resultsPanel).height, 10);
-        if (isNaN(sheetHeight)) return;
-        var bounds = new kakao.maps.LatLngBounds();
-        overlays.forEach(function(o) { bounds.extend(o.getPosition()); });
-        map.setBounds(bounds);
-        map.panBy(0, Math.round(sheetHeight / 2));
       }
 
       function resetResultsListWrapScroll() {
@@ -17620,6 +17807,7 @@
         var shuttleScale = Math.max(1.0, Math.min(1.55, 0.8 + level * 0.055));
         mapContainer.style.setProperty('--pin-scale', String(markerScale));
         mapContainer.style.setProperty('--shuttle-pin-scale', String(shuttleScale));
+        schedulePlaceLabelLayout();
       }
 
       function clearCurrentLocationOverlay() {
@@ -17695,14 +17883,18 @@
         var options = { center: center, level: 5 };
         map = new kakao.maps.Map(mapContainer, options);
         if (mapContainer) {
-          mapContainer.addEventListener('wheel', cancelRouteVisualFitOnUserMapInteraction, { passive: true });
-          mapContainer.addEventListener('mousedown', cancelRouteVisualFitOnUserMapInteraction, { passive: true });
-          mapContainer.addEventListener('touchstart', cancelRouteVisualFitOnUserMapInteraction, { passive: true });
+          var onMainMapUserInteraction = function() {
+            markUserMapIntent('map-interaction');
+            cancelRouteVisualFitOnUserMapInteraction();
+          };
+          mapContainer.addEventListener('wheel', onMainMapUserInteraction, { passive: true });
+          mapContainer.addEventListener('mousedown', onMainMapUserInteraction, { passive: true });
+          mapContainer.addEventListener('touchstart', onMainMapUserInteraction, { passive: true });
         }
         updatePinScale();
         kakao.maps.event.addListener(map, 'dragstart', function() {
           mapDragStartedAt = Date.now();
-          nativeLocationFollowActive = false;
+          markUserMapIntent('map-drag');
         });
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
           updatePinScale();
@@ -17730,6 +17922,7 @@
           refreshWalkTimeOverlayVisibility();
           refreshWalkTimeOverlayPosition();
           refreshTransitStopBadgeVisibility();
+          schedulePlaceLabelLayout();
           if (shuttlePointContents && shuttlePointContents.length > 0) {
             scheduleShuttleLabelAdjust();
           }
@@ -17804,6 +17997,13 @@
           e.preventDefault();
           mapClickIgnore = true;
           if (typeof routeLabel.click === 'function') routeLabel.click();
+          return;
+        }
+        var placeLabel = touchTarget && touchTarget.closest('.place-label');
+        if (placeLabel) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          if (typeof placeLabel.click === 'function') placeLabel.click();
           return;
         }
         // 핀 마커 위를 탭한 경우 — 핀의 click 이벤트에 위임
@@ -18106,8 +18306,9 @@
           fetch(API_BASE + '/api/auth/logout', { method: 'POST' })
             .finally(function() {
               try {
-                if (window.ShuttleGoAndroid && typeof window.ShuttleGoAndroid.logout === 'function') {
-                  window.ShuttleGoAndroid.logout();
+                var bridge = getNativeBridge();
+                if (bridge && typeof bridge.logout === 'function') {
+                  bridge.logout();
                 }
               } catch (e) {}
               closeAccountMenu();
@@ -18209,10 +18410,286 @@
       });
 
       function clearSearchOverlays() {
+        clearPlaceLabels();
         overlays.forEach(function(o) { o.setMap(null); });
         overlays = [];
         markerElements = [];
         hideHoverMarker();
+      }
+
+      function clearPlaceLabels() {
+        if (placeLabelLayoutRafId != null) {
+          cancelAnimationFrame(placeLabelLayoutRafId);
+          placeLabelLayoutRafId = null;
+        }
+        placeLabelEntries.forEach(function(entry) {
+          if (entry && entry.overlay && typeof entry.overlay.setMap === 'function') {
+            entry.overlay.setMap(null);
+          }
+        });
+        placeLabelEntries = [];
+      }
+
+      function schedulePlaceLabelLayout() {
+        if (!map || !mapContainer || placeLabelEntries.length === 0) return;
+        if (placeLabelLayoutRafId != null) cancelAnimationFrame(placeLabelLayoutRafId);
+        placeLabelLayoutRafId = requestAnimationFrame(function() {
+          placeLabelLayoutRafId = null;
+          layoutPlaceLabels();
+        });
+      }
+
+      function getPlaceLabelViewportRect() {
+        if (!mapContainer) return null;
+        var width = Number(mapContainer.clientWidth);
+        var height = Number(mapContainer.clientHeight);
+        if (!isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return null;
+        var viewport = { left: 8, top: 8, right: width - 8, bottom: height - 8 };
+        if ((viewport.right - viewport.left) < 40 || (viewport.bottom - viewport.top) < 40) return null;
+        return viewport;
+      }
+
+      function placeLabelRectsOverlap(a, b, gap) {
+        gap = Number(gap) || 0;
+        return !(
+          a.right + gap <= b.left ||
+          b.right + gap <= a.left ||
+          a.bottom + gap <= b.top ||
+          b.bottom + gap <= a.top
+        );
+      }
+
+      function isPlaceLabelRectInside(rect, viewport) {
+        return !!(
+          rect.left >= viewport.left &&
+          rect.top >= viewport.top &&
+          rect.right <= viewport.right &&
+          rect.bottom <= viewport.bottom
+        );
+      }
+
+      function getPlaceLabelCandidates(markerRect, width, height) {
+        var gap = 3;
+        var centerX = (markerRect.left + markerRect.right) / 2;
+        var candidates = [
+          { name: 'bottom', left: centerX - width / 2, top: markerRect.bottom + gap }
+        ];
+        candidates.forEach(function(candidate) {
+          candidate.right = candidate.left + width;
+          candidate.bottom = candidate.top + height;
+        });
+        return candidates;
+      }
+
+      function getPlaceLabelDisplayName(placeName) {
+        var text = String(placeName || '').replace(/\s+/g, ' ').trim();
+        var maxCharsPerLine = 10;
+        if (!text || text.length <= maxCharsPerLine) return text;
+        var words = text.split(' ');
+        var lines = [];
+        var currentLine = '';
+
+        function charLength(value) {
+          return Array.from(String(value || '')).length;
+        }
+
+        function splitLongWord(word) {
+          var chars = Array.from(String(word || ''));
+          for (var i = 0; i < chars.length; i += maxCharsPerLine) {
+            lines.push(chars.slice(i, i + maxCharsPerLine).join(''));
+          }
+        }
+
+        function pushCurrentLine() {
+          if (currentLine) {
+            lines.push(currentLine);
+            currentLine = '';
+          }
+        }
+
+        for (var i = 0; i < words.length; i += 1) {
+          var word = words[i];
+          if (!word) continue;
+          if (charLength(word) > maxCharsPerLine) {
+            pushCurrentLine();
+            splitLongWord(word);
+            continue;
+          }
+          var candidate = currentLine ? currentLine + ' ' + word : word;
+          if (charLength(candidate) <= maxCharsPerLine) {
+            currentLine = candidate;
+            continue;
+          }
+          pushCurrentLine();
+          currentLine = word;
+        }
+
+        pushCurrentLine();
+        return lines.join('\n');
+      }
+
+      function syncPlaceLabelVisualState() {
+        placeLabelEntries.forEach(function(entry) {
+          if (!entry || !entry.element) return;
+          var isSelected = entry.index === selectedPlaceIndex;
+          entry.element.classList.toggle('selected', isSelected);
+          if (entry.overlay && typeof entry.overlay.setZIndex === 'function') {
+            entry.overlay.setZIndex(isSelected ? 120 : 20);
+          }
+        });
+      }
+
+      function layoutPlaceLabels() {
+        if (!map || !mapContainer || placeLabelEntries.length === 0) return;
+        var projection = map.getProjection();
+        var viewport = getPlaceLabelViewportRect();
+        if (!projection || !viewport || typeof projection.containerPointFromCoords !== 'function') {
+          placeLabelEntries.forEach(function(entry) {
+            if (entry && entry.element) entry.element.classList.add('is-layout-hidden');
+          });
+          return;
+        }
+
+        syncPlaceLabelVisualState();
+        var mapRect = mapContainer.getBoundingClientRect();
+        var markerRects = markerElements.map(function(markerEl) {
+          if (!markerEl || typeof markerEl.getBoundingClientRect !== 'function') return null;
+          var rect = markerEl.getBoundingClientRect();
+          if (!rect.width || !rect.height) return null;
+          return {
+            left: rect.left - mapRect.left,
+            top: rect.top - mapRect.top,
+            right: rect.right - mapRect.left,
+            bottom: rect.bottom - mapRect.top
+          };
+        });
+        var orderedEntries = placeLabelEntries.slice().sort(function(a, b) {
+          function priority(entry) {
+            if (entry.index === selectedPlaceIndex) return -200;
+            return entry.index;
+          }
+          return priority(a) - priority(b);
+        });
+        var acceptedRects = [];
+
+        placeLabelEntries.forEach(function(entry) {
+          if (entry && entry.element) entry.element.classList.add('is-layout-hidden');
+        });
+
+        orderedEntries.forEach(function(entry) {
+          if (!entry || !entry.element || !entry.position) return;
+          var markerRect = markerRects[entry.index];
+          if (!markerRect) return;
+          var markerCenterX = (markerRect.left + markerRect.right) / 2;
+          var markerCenterY = (markerRect.top + markerRect.bottom) / 2;
+          if (
+            markerCenterX < viewport.left || markerCenterX > viewport.right ||
+            markerCenterY < viewport.top || markerCenterY > viewport.bottom
+          ) {
+            return;
+          }
+          var width = Number(entry.element.offsetWidth);
+          var height = Number(entry.element.offsetHeight);
+          if (!isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return;
+          var anchorPoint = projection.containerPointFromCoords(entry.position);
+          if (!anchorPoint || !isFinite(anchorPoint.x) || !isFinite(anchorPoint.y)) return;
+          var candidates = getPlaceLabelCandidates(markerRect, width, height);
+          var selectedCandidate = null;
+          for (var i = 0; i < candidates.length; i += 1) {
+            var candidate = candidates[i];
+            if (!isPlaceLabelRectInside(candidate, viewport)) continue;
+            var overlapsLabel = acceptedRects.some(function(acceptedRect) {
+              return placeLabelRectsOverlap(candidate, acceptedRect, 4);
+            });
+            if (overlapsLabel) continue;
+            selectedCandidate = candidate;
+            break;
+          }
+          if (!selectedCandidate) return;
+          entry.element.style.left = Math.round(selectedCandidate.left - anchorPoint.x) + 'px';
+          entry.element.style.top = Math.round(selectedCandidate.top - anchorPoint.y) + 'px';
+          entry.element.classList.remove('is-layout-hidden');
+          entry.lastPlacement = selectedCandidate.name;
+          acceptedRects.push(selectedCandidate);
+        });
+      }
+
+      function addPlaceLabel(position, index) {
+        var place = places[index];
+        var placeName = String(place && (place.place_name || place.name) || '').trim();
+        if (!placeName || !position) return;
+        var anchor = document.createElement('div');
+        anchor.className = 'place-label-anchor';
+        var label = document.createElement('button');
+        label.type = 'button';
+        label.className = 'place-label is-layout-hidden';
+        label.title = placeName;
+        label.setAttribute('data-index', index);
+        label.setAttribute('aria-label', placeName + ' 선택');
+        var labelText = document.createElement('span');
+        labelText.className = 'place-label-text';
+        labelText.textContent = getPlaceLabelDisplayName(placeName);
+        label.appendChild(labelText);
+        anchor.appendChild(label);
+
+        var pointerState = { active: false, startX: 0, startY: 0, moved: false, movedAt: 0 };
+        label.addEventListener('pointerdown', function(e) {
+          pointerState.active = true;
+          pointerState.startX = Number(e.clientX) || 0;
+          pointerState.startY = Number(e.clientY) || 0;
+          pointerState.moved = false;
+        });
+        label.addEventListener('pointermove', function(e) {
+          if (!pointerState.active || pointerState.moved) return;
+          var dx = (Number(e.clientX) || 0) - pointerState.startX;
+          var dy = (Number(e.clientY) || 0) - pointerState.startY;
+          if (Math.sqrt(dx * dx + dy * dy) >= 8) {
+            pointerState.moved = true;
+            pointerState.movedAt = Date.now();
+          }
+        });
+        label.addEventListener('pointerup', function() {
+          pointerState.active = false;
+        });
+        label.addEventListener('pointercancel', function() {
+          pointerState.active = false;
+        });
+        label.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var movedRecently = pointerState.movedAt > 0 && (Date.now() - pointerState.movedAt) < 500;
+          var mapDraggedRecently = mapDragStartedAt > 0 && (Date.now() - mapDragStartedAt) < 350;
+          if (pointerState.moved || movedRecently || mapDraggedRecently) {
+            pointerState.moved = false;
+            pointerState.movedAt = 0;
+            return;
+          }
+          mapClickIgnore = true;
+          clearHoverBubbleCloseTimer();
+          activatePlaceSelection(index, {
+            source: 'label',
+            showBubble: true,
+            preserveSheetState: false
+          });
+        });
+
+        var overlay = new kakao.maps.CustomOverlay({
+          position: position,
+          content: anchor,
+          xAnchor: 0,
+          yAnchor: 0
+        });
+        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(20);
+        overlay.setMap(map);
+        placeLabelEntries.push({
+          index: index,
+          position: position,
+          overlay: overlay,
+          anchor: anchor,
+          element: label,
+          lastPlacement: ''
+        });
+        schedulePlaceLabelLayout();
       }
 
       function clearWalkTimeOverlay() {
@@ -18594,16 +19071,10 @@
           e.stopPropagation();
           mapClickIgnore = true;
           clearHoverBubbleCloseTimer();
-          var shouldRecenterAfterTransition = !!(
-            isMobile() &&
-            resultsPanel &&
-            (resultsPanel.classList.contains('sheet-half') || resultsPanel.classList.contains('sheet-full'))
-          );
           activatePlaceSelection(index, {
             source: 'marker',
             showBubble: true,
-            preserveSheetState: false,
-            recenterAfterSheetTransition: shouldRecenterAfterTransition
+            preserveSheetState: false
           });
         });
         var overlay = new kakao.maps.CustomOverlay({
@@ -18615,6 +19086,7 @@
         overlay.setMap(map);
         overlays.push(overlay);
         markerElements.push(el);
+        addPlaceLabel(pos, index);
         return pos;
       }
 
@@ -18736,25 +19208,15 @@
         if (!isFinite(lat) || !isFinite(lng)) return;
         var shouldShowBubble = options.showBubble !== false;
         var preserveSheetState = !!options.preserveSheetState;
-        var recenterAfterSheetTransition = !!options.recenterAfterSheetTransition;
         var centerMode = String(options.centerMode || '').trim().toLowerCase();
         clearHoverBubbleCloseTimer();
         closeBubble();
         selectPlace(index);
         setMapDimmed(true, index);
         if (isMobile() && resultsPanel && !preserveSheetState) {
-          // 시트를 내리되 adjustMapForSheet는 건너뜀 (panTo를 보존)
-          resultsPanel.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
-          resultsPanel.classList.add('sheet-peek');
+          setSheetState('sheet-peek');
         }
         panTo(lat, lng, { centerMode: centerMode });
-        if (isMobile() && recenterAfterSheetTransition) {
-          setTimeout(function() {
-            if (selectedPlaceIndex !== index) return;
-            if (!resultsPanel || !resultsPanel.classList.contains('sheet-peek')) return;
-            panTo(lat, lng, { centerMode: centerMode });
-          }, 280);
-        }
         if (shouldShowBubble) {
           if (isMobile()) {
             setTimeout(function() { showBubble(index, options.source); }, 60);
@@ -18973,12 +19435,11 @@
         var expanded = resultsPanel.classList.contains('sheet-half') || resultsPanel.classList.contains('sheet-full');
         if (!expanded) return false;
         if (selectedPlaceIndex >= 0) {
-          activatePlaceSelection(selectedPlaceIndex, {
-            source: 'mobile-map-blank',
-            showBubble: true,
-            preserveSheetState: false,
-            recenterAfterSheetTransition: true
-          });
+          var selectedIndex = selectedPlaceIndex;
+          setSheetState('sheet-peek');
+          setTimeout(function() {
+            if (selectedPlaceIndex === selectedIndex) showBubble(selectedIndex, 'mobile-map-blank');
+          }, 60);
         } else {
           setSheetState('sheet-peek');
           closeBubble();
@@ -19140,6 +19601,8 @@
         resultsList.querySelectorAll('.result-card').forEach(function(c) {
           c.classList.remove('highlight');
         });
+        syncPlaceLabelVisualState();
+        schedulePlaceLabelLayout();
       }
 
       function deselectPlace() {
@@ -19153,6 +19616,8 @@
         overlays.forEach(function(o) {
           o.setZIndex(0);
         });
+        syncPlaceLabelVisualState();
+        schedulePlaceLabelLayout();
       }
 
       function fitBounds() {
@@ -29743,7 +30208,6 @@
         closeBubble();
         deselectPlace();
         clearSearchOverlays();
-        clearCurrentLocationOverlay();
         resultsPlaceholder.style.display = 'none';
         resultsList.style.display = 'flex';
         resultsList.innerHTML = '';
@@ -29757,6 +30221,7 @@
       }
 
       function doSearch() {
+        markUserMapIntent('place-search');
         if (sharedRouteState.active) {
           deactivateSharedRouteView();
         } else {
@@ -29768,9 +30233,6 @@
         var searchSurface = routeInput ? 'route_mode' : 'home_search';
         var requestId = ++placeSearchRequestSerial;
         if (isMobile()) setSheetState('sheet-half');
-        if (routeInput) {
-          clearCurrentLocationOverlay();
-        }
         if (searchInput) searchInput.value = q;
         shuttleMessage.classList.remove('show');
         clearShuttleOverlays();
@@ -29987,35 +30449,53 @@
       }
       function requestLocationThenMove(moveOptions) {
         moveOptions = moveOptions || {};
-        if (isAndroidWebViewClient() && isAndroidNativeLocationAvailable()) {
-          nativeLocationFollowActive = true;
-          nativeLocationFollowUntilMs = Date.now() + 10000;
-          var snapshot = readAndroidNativeLocationSnapshot();
-          if (snapshot) {
-            applyCurrentLocationToMap(snapshot.lat, snapshot.lng, {
-              source: 'android-native-location-snapshot',
-              setLevel: moveOptions.setLevel,
-              forceRender: true
-            });
+        var moveReason = moveOptions.startup ? 'startup' : 'button';
+        var startupToken = Number(moveOptions.startupToken || 0);
+        function applyResolvedLocation(pos, source) {
+          if (!pos) return;
+          if (moveReason === 'startup' && !isStartupCurrentLocationAutoCenterAllowed(startupToken)) {
+            showCurrentLocationOverlay(pos.lat, pos.lng, true);
             return;
           }
-          requestAndroidNativeLocation()
+          var moved = applyCurrentLocationToMap(pos.lat, pos.lng, {
+            source: source,
+            setLevel: moveOptions.setLevel,
+            forceRender: isAndroidWebViewClient() || !!moveOptions.forceRender
+          });
+          if (moved && moveReason === 'startup') {
+            consumeStartupCurrentLocationAutoCenter(startupToken);
+            stopNativeLocationFollow('startup-consumed');
+          }
+        }
+        if (isAndroidWebViewClient() && isAndroidNativeLocationAvailable()) {
+          startNativeLocationFollow(moveReason, moveReason === 'startup' ? 15000 : 10000, startupToken);
+          var snapshot = readAndroidNativeLocationSnapshot();
+          if (snapshot) {
+            applyResolvedLocation(snapshot, 'android-native-location-snapshot');
+            return;
+          }
+          requestAndroidNativeLocation({ reason: moveReason })
             .then(function(pos) {
-              if (!pos) return;
-              applyCurrentLocationToMap(pos.lat, pos.lng, {
-                source: 'android-native-location',
-                setLevel: moveOptions.setLevel,
-                forceRender: true
-              });
+              applyResolvedLocation(pos, 'android-native-location');
             })
             .catch(function(err) {
+              if (moveReason === 'startup') {
+                consumeStartupCurrentLocationAutoCenter(startupToken);
+                stopNativeLocationFollow('startup-error');
+                return;
+              }
               var code = err && err.code ? String(err.code) : '';
               if (code === 'permission_denied') {
-                openLocationPermissionModal('위치 권한이 거부되었습니다. Android 설정에서 셔틀Go 앱의 위치 권한을 허용해 주세요.');
+                openLocationPermissionModal('위치 권한이 거부되었습니다. 기기 설정에서 셔틀Go 앱의 위치 권한을 허용해 주세요.');
               } else if (code !== 'timeout') {
                 openLocationPermissionModal((err && err.message) || '현재 위치를 가져오지 못했습니다. 위치 서비스 또는 네트워크 상태를 확인해 주세요.');
               }
-            });
+          });
+          return;
+        }
+        if (moveReason === 'startup' && getAppContext().isAppWebView) {
+          consumeStartupCurrentLocationAutoCenter(startupToken);
+          stopNativeLocationFollow('startup-webview-geolocation-skipped');
           return;
         }
         var opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
@@ -30023,11 +30503,14 @@
           function(pos) {
             var lat = pos.coords.latitude;
             var lng = pos.coords.longitude;
-            applyCurrentLocationToMap(lat, lng, {
-              setLevel: moveOptions.setLevel
-            });
+            applyResolvedLocation({ lat: lat, lng: lng }, 'browser-geolocation');
           },
           function(err) {
+            if (moveReason === 'startup') {
+              consumeStartupCurrentLocationAutoCenter(startupToken);
+              stopNativeLocationFollow('startup-error');
+              return;
+            }
             var msg;
             if (err.code === 1) {
               msg = '위치 권한이 거부되었습니다. PC: 브라우저 주소창 왼쪽 자물쇠(또는 아이콘)에서 이 사이트의 위치 권한을 허용해 주세요. 모바일: 기기 설정에서 브라우저 앱 > 이 웹사이트 > 위치 권한을 허용해 주세요.';
@@ -30049,6 +30532,9 @@
           options = {};
         }
         options = options || {};
+        if (!options.startup) {
+          markUserMapIntent('location-button');
+        }
         if (isDevHost() && !options.skipDevDebugPanel) {
           reopenDevDebugPanel();
         }
@@ -30102,19 +30588,22 @@
       }
       function scheduleStartupCurrentLocation() {
         if (!shouldAutoMoveToCurrentLocationOnStartup()) return;
-        startupCurrentLocationRequested = true;
+        var startupToken = beginStartupCurrentLocationAutoCenter();
+        if (!startupToken) return;
         setTimeout(function() {
-          if (!map || (sharedRouteState && sharedRouteState.active) || (favoriteRouteState && favoriteRouteState.active)) return;
-          moveToCurrentLocation({ skipDevDebugPanel: true, startup: true, setLevel: 3 });
+          if (!isStartupCurrentLocationAutoCenterAllowed(startupToken)) return;
+          moveToCurrentLocation({ skipDevDebugPanel: true, startup: true, startupToken: startupToken, setLevel: 3 });
         }, 0);
       }
 
       function zoomIn() {
+        markUserMapIntent('zoom-in');
         if (!map) return;
         var level = map.getLevel();
         map.setLevel(Math.max(1, level - 1), { animate: true });
       }
       function zoomOut() {
+        markUserMapIntent('zoom-out');
         if (!map) return;
         var level = map.getLevel();
         map.setLevel(Math.min(14, level + 1), { animate: true });
@@ -30123,6 +30612,7 @@
       if (searchBtn) searchBtn.addEventListener('click', doSearch);
       if (searchInput) {
         searchInput.addEventListener('focus', function() {
+          markUserMapIntent('search-focus');
           openPlaceHistoryForInput(searchInput);
         });
         searchInput.addEventListener('blur', function() {
@@ -30367,14 +30857,11 @@
           resultsPanel.classList.remove('sheet-dragging');
           resultsPanel.style.height = '';
           if (i === 0 && isMobile() && selectedPlaceIndex >= 0) {
-            // 장소가 선택된 상태에서 시트를 내리면 선택 상태를 유지하고
-            // 핀 중심 + 말풍선 상태로 복귀한다.
-            activatePlaceSelection(selectedPlaceIndex, {
-              source: 'sheet-collapse',
-              showBubble: true,
-              preserveSheetState: false,
-              recenterAfterSheetTransition: true
-            });
+            var selectedIndex = selectedPlaceIndex;
+            setSheetState(states[i]);
+            setTimeout(function() {
+              if (selectedPlaceIndex === selectedIndex) showBubble(selectedIndex, 'sheet-collapse');
+            }, 60);
             return;
           }
           setSheetState(states[i]);
@@ -30392,6 +30879,7 @@
         var startY = 0, startHeightPx = 0, dragStartStateIndex = 1, dragging = false;
 
         function beginSheetDrag(initialY) {
+          markUserMapIntent('sheet-drag');
           dragStartStateIndex = getCurrentState();
           startHeightPx = getPanelHeightPx();
           resultsPanel.classList.add('sheet-dragging');
@@ -34303,6 +34791,7 @@
       updateMapActionButtonVisibility();
       updateDevDebugUi();
       installMobilePageZoomGuard();
+      installStartupCurrentLocationInteractionGuard();
       checkAppUpdatePolicy();
 
       updateAccountMenuUi();
@@ -34337,6 +34826,7 @@
         updateMapActionButtonVisibility();
         updateDevDebugUi();
         syncHeaderTabWidth();
+        schedulePlaceLabelLayout();
         positionHistoryPopover();
         positionNoticeSpotlightBubble();
         if (sitePickerModal && sitePickerModal.classList.contains('show')) {
