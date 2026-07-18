@@ -19657,6 +19657,16 @@
         return true;
       }
 
+      function centerRouteVisualBoundsWithoutZoom() {
+        return fitRouteVisualBoundsOnce({
+          zoomOutCount: 0,
+          maxZoomOutCount: 0,
+          zoomInCount: 0,
+          maxZoomInCount: 0,
+          pcRelaxed: true
+        });
+      }
+
       function scheduleRouteVisualFit(opts) {
         opts = opts || {};
         if (!map || shuttlePositions.length === 0) return;
@@ -19669,7 +19679,7 @@
           zoomOutCount: 0,
           maxZoomOutCount: isMobile() ? 5 : 4,
           zoomInCount: 0,
-          maxZoomInCount: isMobile() ? 5 : 2,
+          maxZoomInCount: isMobile() ? 5 : 0,
           pcRelaxed: false
         };
         clearTimeout(routeVisualFitSettleTimer);
@@ -19702,7 +19712,8 @@
         }
       }
 
-      function setInitialRouteBounds(pathPoints) {
+      function setInitialRouteBounds(pathPoints, opts) {
+        opts = opts || {};
         if (!map || !Array.isArray(pathPoints) || pathPoints.length === 0) return false;
         var bounds = new kakao.maps.LatLngBounds();
         var hasPoint = false;
@@ -19714,6 +19725,37 @@
           hasPoint = true;
         });
         if (!hasPoint) return false;
+
+        if (opts.useVisibleViewportPadding) {
+          var insets = getMapOverlayInsets();
+          var edgePadding = 16;
+          map.setBounds(
+            bounds,
+            Math.max(edgePadding, Math.round(Number(insets.top) || 0) + edgePadding),
+            Math.max(edgePadding, Math.round(Number(insets.right) || 0) + edgePadding),
+            Math.max(edgePadding, Math.round(Number(insets.bottom) || 0) + edgePadding),
+            Math.max(edgePadding, Math.round(Number(insets.left) || 0) + edgePadding)
+          );
+          var zoomInLevels = Math.max(0, Math.floor(Number(opts.zoomInLevels) || 0));
+          if (zoomInLevels > 0) {
+            var boundsLevel = map.getLevel();
+            var zoomedLevel = Math.max(1, boundsLevel - zoomInLevels);
+            map.setLevel(zoomedLevel);
+            var visibleRect = getVisibleMapRectForRoute();
+            var routeCore = getRouteCorePixelBounds();
+            var routeMargin = 12;
+            var routeStillFits = !!(
+              visibleRect &&
+              routeCore &&
+              routeCore.minX >= visibleRect.left + routeMargin &&
+              routeCore.maxX <= visibleRect.right - routeMargin &&
+              routeCore.minY >= visibleRect.top + routeMargin &&
+              routeCore.maxY <= visibleRect.bottom - routeMargin
+            );
+            if (!routeStillFits) map.setLevel(boundsLevel);
+          }
+          return true;
+        }
 
         var sw = bounds.getSouthWest();
         var ne = bounds.getNorthEast();
@@ -22928,9 +22970,6 @@
         if (!isRouteOptionCurrentlySelected(option)) return;
         if (!selectedCard || selectedCard.classList.contains('expanded')) return;
         drawOptionOnMap(option, placeName, isDepart, selectedCard, { preserveViewport: true });
-        if (isShuttleTransferOption(option)) {
-          scheduleRouteVisualFit({ settleRetry: true });
-        }
       }
 
       function ensureRouteTimeSummary(option, placeName, isDepart, card, opts) {
@@ -22938,7 +22977,6 @@
         if (!option) return Promise.resolve(null);
         if (isShuttleTransferOption(option)) {
           syncRenderedRouteCardsForOption(option, placeName, isDepart);
-          refreshSelectedRouteOptionMap(option, placeName, isDepart);
           return Promise.resolve(buildShuttleTransferTimelineData(option, placeName, isDepart));
         }
         var selectedTransit = getSelectedTransitOption(option);
@@ -23871,9 +23909,6 @@
         });
         scheduleShuttleLabelAdjust();
         var shouldFitViewport = !skipViewportFit && shuttlePositions.length > 0;
-        if (shouldFitViewport) {
-          setInitialRouteBounds(shuttlePositions);
-        }
         renderTransitWalkTimeOverlays({ access_legs: option.transfer_legs || [] });
         if (!isMobile()) {
           showShuttleResult(buildShuttleTransferModeMessageHtml(option, placeName, isDepart));
@@ -23881,7 +23916,15 @@
           shuttleMessage.classList.remove('show');
         }
         if (shouldFitViewport) {
-          scheduleRouteVisualFit();
+          if (isMobile()) {
+            setInitialRouteBounds(shuttlePositions, {
+              useVisibleViewportPadding: true,
+              zoomInLevels: 1
+            });
+          } else {
+            setInitialRouteBounds(shuttlePositions);
+            centerRouteVisualBoundsWithoutZoom();
+          }
         }
       }
 
@@ -25369,26 +25412,10 @@
         shuttlePositions = allPathPoints.slice();
         refreshRouteDirectionArrows();
         scheduleShuttleLabelAdjust();
-        if (shouldFitViewport && allPathPoints.length) {
-          var bounds = new kakao.maps.LatLngBounds();
-          allPathPoints.forEach(function(point) {
-            bounds.extend(new kakao.maps.LatLng(point.lat, point.lng));
-          });
-          var sw = bounds.getSouthWest();
-          var ne = bounds.getNorthEast();
-          var latSpan = ne.getLat() - sw.getLat();
-          var lngSpan = ne.getLng() - sw.getLng();
-          var pad = 0.12;
-          if (latSpan < 0.002) latSpan = 0.01;
-          if (lngSpan < 0.002) lngSpan = 0.01;
-          bounds.extend(new kakao.maps.LatLng(sw.getLat() - latSpan * pad, sw.getLng()));
-          bounds.extend(new kakao.maps.LatLng(ne.getLat() + latSpan * pad, ne.getLng()));
-          bounds.extend(new kakao.maps.LatLng(sw.getLat(), sw.getLng() - lngSpan * pad));
-          bounds.extend(new kakao.maps.LatLng(ne.getLat(), ne.getLng() + lngSpan * pad));
-          map.setBounds(bounds);
-        }
         shuttleMessage.classList.remove('show');
-        if (shouldFitViewport) scheduleRouteVisualFit();
+        if (shouldFitViewport && allPathPoints.length) {
+          setInitialRouteBounds(allPathPoints, { useVisibleViewportPadding: true });
+        }
       }
 
       function findMobileShuttleLabelBreakIndex(text) {
