@@ -31552,16 +31552,6 @@
         }).catch(function() { return null; });
       }
 
-      function fetchShuttleTransferSearchStatus(sessionId) {
-        if (!sessionId) return Promise.resolve({});
-        return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId) + '/status', {
-          credentials: 'include'
-        }).then(function(resp) {
-          if (!resp.ok) return {};
-          return resp.json().catch(function() { return {}; });
-        }).catch(function() { return {}; });
-      }
-
       function appendUniqueShuttleTransferOptions(options) {
         var seen = {};
         currentShuttleTransferOptions.forEach(function(option) {
@@ -31584,7 +31574,6 @@
           : null;
         var sessionId = createRouteSearchClientId('transfer');
         var inFlight = false;
-        var progressTimer = 0;
         currentShuttleTransferRequestId = requestId;
         currentShuttleTransferSessionId = sessionId;
 
@@ -31593,66 +31582,44 @@
           catch (e) { return null; }
         }
 
-        function stopProgressPolling() {
-          if (progressTimer) window.clearTimeout(progressTimer);
-          progressTimer = 0;
-        }
-
-        function buildTransferProgressMessage(statusData) {
-          var router = statusData && statusData.router && typeof statusData.router === 'object'
-            ? statusData.router
+        function transferProgressFromResponse(data) {
+          return data && data.progress && typeof data.progress === 'object'
+            ? data.progress
             : {};
-          var radiusKm = Math.max(0, Number(
-            router.current_radius_km != null ? router.current_radius_km : statusData.current_radius_km
-          ) || 0);
-          var checked = Math.max(0, Number(router.candidate_checked || 0) || 0);
-          var total = Math.max(0, Number(router.candidate_total || 0) || 0);
-          var viable = Math.max(0, Number(router.viable_count || 0) || 0);
-          if (String(router.phase || '') === 'validating') {
-            return '반경 ' + String(radiusKm) + 'km까지 환승 후보를 확인 중입니다... 후보 ' +
-              String(checked) + '/' + String(total) + '개 확인 · 가능한 노선 ' + String(viable) + '개';
-          }
-          var roundCurrent = Math.max(0, Number(router.round_current || 0) || 0);
-          var roundTotal = Math.max(0, Number(router.round_total || 0) || 0);
-          return '반경 ' + String(radiusKm) + 'km까지 환승 후보를 구성 중입니다...' +
-            (roundCurrent > 0 && roundTotal > 0
-              ? ' 탐색 ' + String(roundCurrent) + '/' + String(roundTotal) + '단계'
-              : '');
         }
 
-        function startProgressPolling(stageToken) {
-          stopProgressPolling();
-          function poll() {
-            if (
-              requestId !== routeRequestSerial ||
-              !coordinator ||
-              coordinator.disposed ||
-              coordinator.pauseRequested ||
-              stageToken !== coordinator.stageToken
-            ) {
-              stopProgressPolling();
-              return;
-            }
-            fetchShuttleTransferSearchStatus(currentShuttleTransferSessionId || sessionId).then(function(data) {
-              if (
-                !data || requestId !== routeRequestSerial || coordinator.pauseRequested ||
-                stageToken !== coordinator.stageToken
-              ) return;
-              var router = data.router && typeof data.router === 'object' ? data.router : {};
-              coordinator.updateTransfer({
-                radiusKm: Math.max(0, Number(router.current_radius_km || data.current_radius_km || 0) || 0),
-                candidateChecked: Math.max(0, Number(router.candidate_checked || 0) || 0),
-                candidateTotal: Math.max(0, Number(router.candidate_total || 0) || 0),
-                viableCount: Math.max(0, Number(router.viable_count || 0) || 0),
-                message: buildTransferProgressMessage(data)
-              });
-            }).finally(function() {
-              if (!coordinator.pauseRequested && stageToken === coordinator.stageToken) {
-                progressTimer = window.setTimeout(poll, 750);
-              }
-            });
+        function buildTransferProgressMessage(data, pending) {
+          var progress = transferProgressFromResponse(data);
+          var radiusKm = Math.max(0, Number(
+            progress.radius_km != null ? progress.radius_km : data && data.current_radius_km
+          ) || 0);
+          var checked = Math.max(0, Number(progress.candidate_checked || 0) || 0);
+          var total = Math.max(0, Number(progress.candidate_total || 0) || 0);
+          var viable = Math.max(0, Number(progress.viable_count || 0) || 0);
+          if (total > 0) {
+            return '반경 ' + String(radiusKm) + 'km까지 후보 ' + String(checked) + '/' +
+              String(total) + '개 확인 · 가능한 노선 ' + String(viable) + '개' +
+              (pending ? ' · 추가 경로 검색 중' : '');
           }
-          progressTimer = window.setTimeout(poll, 200);
+          return '반경 ' + String(radiusKm) + 'km까지 환승 경로를 검색 중입니다...';
+        }
+
+        function pendingTransferProgressData() {
+          var radiusKm = coordinator && Number(coordinator.transfer.radiusKm || 0);
+          if (!(radiusKm > 0)) {
+            radiusKm = normalizeRouteTimeBasis(params.timeBasis || selectedRouteTimeBasis) === 'arrive_by'
+              ? 5
+              : Math.max(0.1, Number(params.maxDistanceKm || 3));
+          }
+          return {
+            current_radius_km: radiusKm,
+            progress: {
+              radius_km: radiusKm,
+              candidate_checked: coordinator ? coordinator.transfer.candidateChecked : 0,
+              candidate_total: coordinator ? coordinator.transfer.candidateTotal : 0,
+              viable_count: coordinator ? coordinator.transfer.viableCount : 0
+            }
+          };
         }
 
         function renderTransferResults() {
@@ -31694,7 +31661,19 @@
               validCount: transferValidCount,
               hasMore: currentShuttleTransferHasMore,
               radiusKm: Math.max(0, Number(data && data.current_radius_km || 0) || 0),
-              message: ''
+              candidateChecked: Math.max(
+                0,
+                Number(transferProgressFromResponse(data).candidate_checked || 0) || 0
+              ),
+              candidateTotal: Math.max(
+                0,
+                Number(transferProgressFromResponse(data).candidate_total || 0) || 0
+              ),
+              viableCount: Math.max(
+                0,
+                Number(transferProgressFromResponse(data).viable_count || 0) || 0
+              ),
+              message: buildTransferProgressMessage(data, shouldContinueStage)
             });
           }
           renderTransferResults();
@@ -31708,7 +31687,6 @@
         }
 
         function disposeTransfer() {
-          stopProgressPolling();
           if (coordinator && coordinator.transferAbortController) {
             try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
           }
@@ -31716,7 +31694,6 @@
         }
 
         function pauseTransfer() {
-          stopProgressPolling();
           inFlight = false;
           if (coordinator && coordinator.transferAbortController) {
             try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
@@ -31735,8 +31712,11 @@
           var controller = newController();
           if (coordinator) {
             coordinator.transferAbortController = controller;
-            coordinator.updateTransfer({ status: 'loading' });
-            startProgressPolling(stageToken);
+            var pendingData = pendingTransferProgressData();
+            coordinator.updateTransfer({
+              status: 'loading',
+              message: buildTransferProgressMessage(pendingData, true)
+            });
           }
           return advanceShuttleTransferSession(
             currentShuttleTransferSessionId || sessionId,
@@ -31744,7 +31724,6 @@
             advanceOptions
           ).then(function(data) {
             inFlight = false;
-            stopProgressPolling();
             if (coordinator && (coordinator.pauseRequested || stageToken !== coordinator.stageToken)) {
               return currentShuttleTransferOptions;
             }
@@ -31755,7 +31734,6 @@
             return options;
           }).catch(function(err) {
             inFlight = false;
-            stopProgressPolling();
             if (err && err.name === 'AbortError') return currentShuttleTransferOptions;
             if (coordinator && coordinator.pauseRequested) return currentShuttleTransferOptions;
             if (coordinator) {
@@ -31775,13 +31753,18 @@
         var controller = newController();
         if (coordinator) coordinator.transferAbortController = controller;
         var initialStageToken = coordinator ? coordinator.stageToken : 0;
-        if (coordinator) startProgressPolling(initialStageToken);
+        if (coordinator) {
+          var initialProgressData = pendingTransferProgressData();
+          coordinator.updateTransfer({
+            status: 'loading',
+            message: buildTransferProgressMessage(initialProgressData, true)
+          });
+        }
         var createParams = Object.assign({}, params, {
           sessionId: sessionId,
           signal: controller && controller.signal
         });
         return fetchShuttleTransferOptions(createParams).then(function(data) {
-          stopProgressPolling();
           if (requestId !== routeRequestSerial || requestId !== currentShuttleTransferRequestId) return [];
           if (coordinator && (coordinator.pauseRequested || initialStageToken !== coordinator.stageToken)) {
             return currentShuttleTransferOptions;
@@ -31792,7 +31775,6 @@
           }
           return options;
         }).catch(function(err) {
-          stopProgressPolling();
           if (requestId !== routeRequestSerial) return [];
           if (err && err.name === 'AbortError') return [];
           if (coordinator && coordinator.pauseRequested) return currentShuttleTransferOptions;
