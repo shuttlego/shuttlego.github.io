@@ -25772,6 +25772,7 @@
       var currentIsDepart = null;
       var expandedOptionIndex = -1;
       var currentRouteRecommendedSortUsesRuntimeState = false;
+      var routeLoadMoreScrollState = null;
 
       function copyRouteOptionsMeta(source, target) {
         if (!Array.isArray(target)) return target;
@@ -27547,6 +27548,36 @@
         renderArrivalBySearchState(state, placeName, isDepart, preserveSheetState);
       }
 
+      function preserveConcurrentTransferResultsDuringArrivalLoading(
+        placeName,
+        isDepart,
+        preserveSheetState,
+        loadingBannerConfig
+      ) {
+        if (!selectedShuttleTransferSearch || currentShuttleTransferOptions.length === 0) {
+          return false;
+        }
+        var canonicalOptions = getCurrentRouteCanonicalOptions();
+        var hasRenderedTransferOption = canonicalOptions.some(function(option) {
+          return isShuttleTransferOption(option);
+        });
+        if (!hasRenderedTransferOption) {
+          var directOptions = withoutShuttleTransferOptions(canonicalOptions);
+          directOptions._searchMode = activeRouteSearchMode;
+          renderRouteOptions(
+            directOptions,
+            placeName,
+            isDepart,
+            '',
+            preserveSheetState,
+            '',
+            'arrive_by'
+          );
+        }
+        prependRouteSearchStatusBanner(loadingBannerConfig);
+        return true;
+      }
+
       function renderArrivalBySearchState(state, placeName, isDepart, preserveSheetState) {
         if (!state) return;
         var countText = buildArrivalByProgressCountText(state);
@@ -27570,6 +27601,14 @@
             onStop: state.onStop
           };
           rememberActiveArrivalByLoadingBanner(loadingBannerConfig);
+          if (preserveConcurrentTransferResultsDuringArrivalLoading(
+            placeName,
+            isDepart,
+            preserveSheetState,
+            loadingBannerConfig
+          )) {
+            return;
+          }
           renderRouteOptionsLoadingState(
             placeName,
             isDepart,
@@ -28247,7 +28286,17 @@
         if (!sessionId) return Promise.resolve();
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId), {
           method: 'DELETE',
-          credentials: 'include'
+          credentials: 'include',
+          keepalive: true
+        }).catch(function() { /* best effort */ });
+      }
+
+      function pauseArrivalSearchSession(sessionId) {
+        if (!sessionId) return Promise.resolve();
+        return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId) + '/pause', {
+          method: 'POST',
+          credentials: 'include',
+          keepalive: true
         }).catch(function() { /* best effort */ });
       }
 
@@ -28285,7 +28334,7 @@
             ) || ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM[ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.length - 1]
           )
         );
-        return {
+        var payload = {
           site_id: siteId,
           direction: String(params.direction || (params.isDepart ? 'depart' : 'arrive') || 'arrive').trim().toLowerCase() || 'arrive',
           place_name: String(params.placeName || '').trim(),
@@ -28310,6 +28359,8 @@
           radius_steps_km: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
           exclude_route_ids: excludeRouteIds
         };
+        if (overrides.sessionId) payload.session_id = String(overrides.sessionId);
+        return payload;
       }
 
       function getCurrentArrivalSearchDate() {
@@ -28342,7 +28393,6 @@
           checkedCount: 0,
           candidateCount: 0,
           sessionId: '',
-          searchStartedAt: Date.now(),
           radiusSteps: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
           currentRadiusIndex: 0,
           currentRadiusKm: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM[0],
@@ -28389,8 +28439,17 @@
         }
         return resolveArrivalByLateMinutes(
           option && option.late_minutes != null ? option.late_minutes : option && option.__arrivalByLateMinutes,
-          option && option.__arrivalByTargetTime,
-          option && (option.final_arrival_hhmm || option.estimated_arrival_hhmm || option.__arrivalByEndAt)
+          option && option.__arrivalByTargetTime || (
+            normalizeRouteTimeBasis(currentRouteTimeBasisUsed) === 'arrive_by'
+              ? getDepartureTimeStr()
+              : ''
+          ),
+          option && (
+            option.final_arrival_hhmm ||
+            option.estimated_arrival_hhmm ||
+            option.__arrivalByEndAt ||
+            option.arrival_time
+          )
         );
       }
 
@@ -28409,7 +28468,8 @@
           option && (
             option.final_arrival_hhmm ||
             option.estimated_arrival_hhmm ||
-            option.__arrivalByEndAt
+            option.__arrivalByEndAt ||
+            option.arrival_time
           ) ||
           ''
         ).trim();
@@ -28418,7 +28478,11 @@
       }
 
       function getArrivalByOptionTargetMinutes(option) {
-        return parseHHMMToMinutes(String(option && option.__arrivalByTargetTime || '').trim());
+        var targetTime = String(option && option.__arrivalByTargetTime || '').trim();
+        if (!targetTime && normalizeRouteTimeBasis(currentRouteTimeBasisUsed) === 'arrive_by') {
+          targetTime = getDepartureTimeStr();
+        }
+        return parseHHMMToMinutes(targetTime);
       }
 
       function getArrivalByOptionTargetProximityMinutes(option) {
@@ -28483,7 +28547,11 @@
       }
 
       function getArrivalByOptionTransferCount(option) {
-        return Math.max(0, Number(option && option.candidate_transfer_count || 0) || 0);
+        return Math.max(0, Number(
+          option && option.candidate_transfer_count != null
+            ? option.candidate_transfer_count
+            : option && option.transfer_count
+        ) || 0);
       }
 
       function getArrivalByOptionDistanceMeters(option) {
@@ -28508,6 +28576,15 @@
         var lateMinutes = getArrivalByOptionLateMinutes(option);
         if (lateMinutes > 0) return 2;
         return getArrivalByOptionTargetProximityMinutes(option) <= ARRIVAL_BY_RECOMMENDED_WINDOW_MIN ? 0 : 1;
+      }
+
+      function isArrivalByValidOption(option) {
+        var group = getArrivalByOptionRecommendedGroup(option);
+        return group === 0 || group === 1;
+      }
+
+      function countArrivalByValidOptions(options) {
+        return (Array.isArray(options) ? options : []).filter(isArrivalByValidOption).length;
       }
 
       function compareArrivalByCommonTiebreakers(a, b) {
@@ -28911,6 +28988,8 @@
         var state = buildArrivalBySearchV2State(params);
         var finished = false;
         var pendingRequestController = null;
+        var requestedSessionId = createRouteSearchClientId('arrival');
+        state.sessionId = requestedSessionId;
         var coordinator = activeCombinedSearchCoordinator &&
           activeCombinedSearchCoordinator.requestId === Number(params && params.requestId || 0)
           ? activeCombinedSearchCoordinator
@@ -28988,8 +29067,23 @@
           return Promise.resolve(null);
         }
 
+        function requestPauseArrivalSearch() {
+          if (finished || state.stopRequested) return Promise.resolve(null);
+          state.loading = false;
+          state.paused = true;
+          state.phase = 'paused';
+          state.recommendedOptions = buildArrivalByCombinedRecommendedOptions();
+          state.message = '';
+          abortPendingArrivalSearchRequest();
+          if (!coordinator || !coordinator.disposed) renderArrivalBySearchV2State(state, params);
+          return pauseArrivalSearchSession(state.sessionId || requestedSessionId);
+        }
+
         state.onStop = coordinator ? coordinator.pauseAll : requestStopArrivalSearch;
-        if (coordinator) coordinator.arrivalDispose = requestStopArrivalSearch;
+        if (coordinator) {
+          coordinator.arrivalPause = requestPauseArrivalSearch;
+          coordinator.arrivalDispose = requestStopArrivalSearch;
+        }
         renderArrivalBySearchV2State(state, params);
 
         function cleanupArrivalSearchSession() {
@@ -29051,7 +29145,7 @@
           state.recommendedOptions = buildArrivalByCombinedRecommendedOptions();
           state.message = '';
           renderArrivalBySearchV2State(state, params);
-          return Promise.resolve(null);
+          return pauseArrivalSearchSession(state.sessionId);
         }
 
         function resumeArrivalSearch() {
@@ -29184,12 +29278,13 @@
           if (params.requestId !== routeRequestSerial || finished) return Promise.resolve(null);
           var advanceSignal = beginPendingRequest('advance');
           var remainingTarget = coordinator
-            ? Math.max(1, Number(coordinator.single.target || ROUTE_SEARCH_BATCH_SIZE) - Number(coordinator.single.count || 0))
+            ? Math.max(1, Number(coordinator.single.target || ROUTE_SEARCH_BATCH_SIZE) - Number(coordinator.single.validCount || 0))
             : ROUTE_SEARCH_BATCH_SIZE;
           return advanceArrivalSearchSession(state.sessionId, remainingTarget, { signal: advanceSignal }).then(function(stepData) {
             endPendingRequest('advance');
             if (params.requestId !== routeRequestSerial) return null;
             if (finished || state.stopRequested) return null;
+            if (coordinator && coordinator.pauseRequested) return requestPauseArrivalSearch();
             syncArrivalByV2StateFromPayload(stepData);
             consumeChunkResults(stepData && stepData.chunk_results);
             renderArrivalBySearchV2State(state, params);
@@ -29214,6 +29309,7 @@
             endPendingRequest('expand');
             if (params.requestId !== routeRequestSerial) return null;
             if (finished || state.stopRequested) return null;
+            if (coordinator && coordinator.pauseRequested) return requestPauseArrivalSearch();
             syncArrivalByV2StateFromPayload(data);
             updateRadiusMessage(
               state.currentRadiusKm || ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM[0],
@@ -29231,7 +29327,8 @@
         }
 
         var requestPayload = buildArrivalSearchV2RequestPayload(params, {
-          outerRadiusKm: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM[ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.length - 1]
+          outerRadiusKm: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM[ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.length - 1],
+          sessionId: requestedSessionId
         });
 
         var createSignal = beginPendingRequest('create');
@@ -29244,6 +29341,10 @@
               cancelArrivalSearchSession(createdSessionId).catch(function() { return null; });
             }
             return null;
+          }
+          if (coordinator && coordinator.pauseRequested) {
+            state.sessionId = String(data && data.session_id || requestedSessionId);
+            return requestPauseArrivalSearch();
           }
           syncArrivalByV2StateFromPayload(data);
           updateRadiusMessage(
@@ -31029,16 +31130,27 @@
           pauseRequested: false,
           additionalSearchStarted: false,
           disposed: false,
+          stageToken: 0,
           directAbortController: null,
           transferAbortController: null,
+          arrivalPause: null,
+          transferPause: null,
           arrivalDispose: null,
           transferDispose: null,
           arrivalResume: null,
           transferResume: null,
-          single: { status: 'loading', count: 0, target: ROUTE_SEARCH_BATCH_SIZE, hasMore: true, radiusKm: 0, message: '' },
+          single: {
+            status: 'loading', count: 0, validCount: 0, target: ROUTE_SEARCH_BATCH_SIZE,
+            hasMore: true, radiusKm: 0, message: '', candidateChecked: 0,
+            candidateTotal: 0, viableCount: 0
+          },
           transfer: transferEnabled
-            ? { status: 'loading', count: 0, target: ROUTE_SEARCH_BATCH_SIZE, hasMore: true }
-            : { status: 'complete', count: 0, target: 0, hasMore: false }
+            ? {
+                status: 'loading', count: 0, validCount: 0, target: ROUTE_SEARCH_BATCH_SIZE,
+                hasMore: true, radiusKm: 0, message: '', candidateChecked: 0,
+                candidateTotal: 0, viableCount: 0
+              }
+            : { status: 'complete', count: 0, validCount: 0, target: 0, hasMore: false }
         };
 
         function taskIsLoading(task) {
@@ -31047,11 +31159,14 @@
 
         function taskText(task) {
           var count = Math.max(0, Number(task && task.count || 0) || 0);
+          var progressCount = coordinator.timeBasis === 'arrive_by'
+            ? Math.max(0, Number(task && task.validCount || 0) || 0)
+            : count;
           if (!task) return '';
           if (task.status === 'loading') {
-            var progressText = String(count) + ' / ' +
-              String(Math.max(count, Number(task.target || ROUTE_SEARCH_BATCH_SIZE) || ROUTE_SEARCH_BATCH_SIZE)) + '개';
-            if (coordinator.timeBasis === 'arrive_by' && task === coordinator.single && Number(task.radiusKm || 0) > 0) {
+            var progressText = String(progressCount) + ' / ' +
+              String(Math.max(progressCount, Number(task.target || ROUTE_SEARCH_BATCH_SIZE) || ROUTE_SEARCH_BATCH_SIZE)) + '개';
+            if (coordinator.timeBasis === 'arrive_by' && Number(task.radiusKm || 0) > 0) {
               progressText += ' · 반경 ' + String(Number(task.radiusKm || 0)) + 'km 검색 중';
             } else {
               progressText += ' · 검색 중';
@@ -31094,9 +31209,12 @@
               );
             }
             if (transferLoading) {
-              arrivalParts.push(singleLoading
-                ? '셔틀 환승 경로도 함께 찾고 있습니다.'
-                : '셔틀 환승 경로를 찾는 중입니다.');
+              arrivalParts.push(
+                String(coordinator.transfer.message || '').trim() ||
+                (singleLoading
+                  ? '셔틀 환승 경로도 함께 찾고 있습니다.'
+                  : '셔틀 환승 경로를 찾는 중입니다.')
+              );
             }
             return arrivalParts.join(' ');
           }
@@ -31165,9 +31283,18 @@
           var streamingCount =
             (Array.isArray(state.successOptions) ? state.successOptions.length : 0) +
             (Array.isArray(state.lateEtaOptions) ? state.lateEtaOptions.length : 0);
-          coordinator.single.count = Math.max(recommendedCount, streamingCount);
+          coordinator.single.count = state.loading
+            ? Math.max(recommendedCount, streamingCount)
+            : (recommendedCount > 0 ? recommendedCount : streamingCount);
+          coordinator.single.validCount = countArrivalByValidOptions(state.successOptions);
           coordinator.single.radiusKm = Math.max(0, Number(state.currentRadiusKm || 0) || 0);
-          coordinator.single.message = String(state.message || '').trim();
+          coordinator.single.message = [
+            String(state.message || '').trim(),
+            state.loading ? buildArrivalByProgressCountText(state) : ''
+          ].filter(Boolean).join(' ');
+          coordinator.single.candidateChecked = Math.max(0, Number(state.checkedCount || 0) || 0);
+          coordinator.single.candidateTotal = Math.max(0, Number(state.candidateCount || 0) || 0);
+          coordinator.single.viableCount = coordinator.single.validCount;
           coordinator.single.hasMore = !!(
             !coordinator.disposed &&
             !state.stopRequested &&
@@ -31185,6 +31312,7 @@
           patch = patch || {};
           Object.assign(coordinator.transfer, patch);
           coordinator.transfer.count = Math.max(0, Number(coordinator.transfer.count || 0) || 0);
+          coordinator.transfer.validCount = Math.max(0, Number(coordinator.transfer.validCount || 0) || 0);
           currentShuttleTransferHasMore = !!coordinator.transfer.hasMore;
           coordinator.renderStatus();
         };
@@ -31192,7 +31320,11 @@
         coordinator.shouldPauseSource = function(source) {
           if (coordinator.disposed) return false;
           var task = source === 'transfer' ? coordinator.transfer : coordinator.single;
-          return coordinator.pauseRequested || (task.count >= task.target && !!task.hasMore);
+          if (coordinator.pauseRequested) return true;
+          if (coordinator.timeBasis === 'arrive_by') {
+            return task.validCount >= task.target && !!task.hasMore;
+          }
+          return task.count >= task.target && !!task.hasMore;
         };
 
         coordinator.pauseAll = function() {
@@ -31201,8 +31333,24 @@
           }
           coordinator.stopped = true;
           coordinator.pauseRequested = true;
+          coordinator.stageToken += 1;
+          if (taskIsLoading(coordinator.single)) coordinator.single.status = 'paused';
+          if (transferEnabled && taskIsLoading(coordinator.transfer)) coordinator.transfer.status = 'paused';
+          if (coordinator.directAbortController) {
+            try { coordinator.directAbortController.abort(); } catch (e) { /* ignore */ }
+          }
+          if (coordinator.transferAbortController) {
+            try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
+          }
           coordinator.renderStatus();
-          return Promise.resolve();
+          var pending = [];
+          if (typeof coordinator.arrivalPause === 'function') {
+            try { pending.push(Promise.resolve(coordinator.arrivalPause())); } catch (e) { /* ignore */ }
+          }
+          if (typeof coordinator.transferPause === 'function') {
+            try { pending.push(Promise.resolve(coordinator.transferPause())); } catch (e) { /* ignore */ }
+          }
+          return Promise.allSettled(pending);
         };
 
         coordinator.requestMore = function() {
@@ -31212,16 +31360,20 @@
           coordinator.stopped = false;
           coordinator.pauseRequested = false;
           coordinator.additionalSearchStarted = true;
+          coordinator.stageToken += 1;
+          beginRouteLoadMoreScrollPreservation();
           if (coordinator.single.hasMore) {
-            coordinator.single.target = coordinator.single.count + ROUTE_SEARCH_BATCH_SIZE;
+            coordinator.single.target += ROUTE_SEARCH_BATCH_SIZE;
             coordinator.single.status = 'loading';
           }
           if (transferEnabled && coordinator.transfer.hasMore) {
-            coordinator.transfer.target = coordinator.transfer.count + ROUTE_SEARCH_BATCH_SIZE;
+            coordinator.transfer.target += ROUTE_SEARCH_BATCH_SIZE;
             coordinator.transfer.status = 'loading';
           }
           coordinator.renderStatus();
-          return Promise.resolve(loadMoreRoutes(null));
+          return Promise.resolve(loadMoreRoutes(null)).finally(function() {
+            finishRouteLoadMoreScrollPreservation();
+          });
         };
 
         coordinator.dispose = function() {
@@ -31246,6 +31398,12 @@
         coordinator.stopAll = coordinator.pauseAll;
         return coordinator;
       }
+
+      window.addEventListener('pagehide', function() {
+        if (activeCombinedSearchCoordinator && typeof activeCombinedSearchCoordinator.dispose === 'function') {
+          activeCombinedSearchCoordinator.dispose();
+        }
+      });
 
       function buildShuttleTransferSearchPayload(params) {
         params = params || {};
@@ -31298,12 +31456,75 @@
         });
       }
 
-      function advanceShuttleTransferSession(sessionId, signal) {
+      function getShuttleTransferPlaceConnectionDistance(option, isDepart) {
+        var legs = Array.isArray(option && option.transfer_legs) ? option.transfer_legs : [];
+        var transitIndexes = [];
+        legs.forEach(function(leg, index) {
+          if (String(leg && leg.kind || '').trim().toLowerCase() === 'transit') {
+            transitIndexes.push(index);
+          }
+        });
+        if (transitIndexes.length === 0) return null;
+        var externalLegs = isDepart
+          ? legs.slice(0, transitIndexes[0])
+          : legs.slice(transitIndexes[transitIndexes.length - 1] + 1);
+        var distanceM = externalLegs.reduce(function(total, leg) {
+          if (String(leg && leg.kind || '').trim().toLowerCase() !== 'walk') return total;
+          var from = leg && leg.from || {};
+          var to = leg && leg.to || {};
+          var fromLng = from.lng != null ? from.lng : from.lon;
+          var toLng = to.lng != null ? to.lng : to.lon;
+          var straightDistance = haversineDistanceMeters(
+            { lat: from.lat, lng: fromLng },
+            { lat: to.lat, lng: toLng }
+          );
+          if (isFinite(straightDistance) && straightDistance >= 0) {
+            return total + straightDistance;
+          }
+          var fallbackDistance = Number(leg && leg.distance_m);
+          return total + (isFinite(fallbackDistance) && fallbackDistance > 0 ? fallbackDistance : 0);
+        }, 0);
+        return Math.max(0, Math.round(distanceM));
+      }
+
+      function normalizeShuttleTransferOptionForSearch(option, params) {
+        if (!option || typeof option !== 'object') return option;
+        params = params || {};
+        var connectionDistance = getShuttleTransferPlaceConnectionDistance(option, !!params.isDepart);
+        if (connectionDistance != null) {
+          if (option.journey_distance_m == null && option.distance_m != null) {
+            option.journey_distance_m = option.distance_m;
+          }
+          option.distance_m = connectionDistance;
+        }
+        if (normalizeRouteTimeBasis(params.timeBasis || currentRouteTimeBasisUsed) === 'arrive_by') {
+          var targetTime = String(option.__arrivalByTargetTime || getDepartureTimeStr()).trim();
+          var endAt = String(option.__arrivalByEndAt || option.arrival_time || '').trim();
+          var lateMinutes = resolveArrivalByLateMinutes(
+            option.late_minutes != null ? option.late_minutes : option.__arrivalByLateMinutes,
+            targetTime,
+            endAt
+          );
+          option.__arrivalByTargetTime = targetTime;
+          option.__arrivalByEndAt = endAt;
+          option.__arrivalByLateMinutes = lateMinutes;
+          option.__arrivalByIsFallback = lateMinutes > 0;
+          option.eta_available = !!endAt;
+        }
+        return option;
+      }
+
+      function advanceShuttleTransferSession(sessionId, signal, options) {
+        options = options || {};
         return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId) + '/advance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: '{}',
+          body: JSON.stringify({
+            expand_radius: !!options.expandRadius,
+            replace_options: !!options.replaceOptions,
+            new_batch: !!options.newBatch
+          }),
           signal: signal || undefined
         }).then(parseShuttleTransferResponse).then(function(data) {
           var options = Array.isArray(data.options) ? data.options : [];
@@ -31317,8 +31538,28 @@
         if (!sessionId) return Promise.resolve();
         return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId), {
           method: 'DELETE',
-          credentials: 'include'
+          credentials: 'include',
+          keepalive: true
         }).catch(function() { return null; });
+      }
+
+      function pauseShuttleTransferSession(sessionId) {
+        if (!sessionId) return Promise.resolve();
+        return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId) + '/pause', {
+          method: 'POST',
+          credentials: 'include',
+          keepalive: true
+        }).catch(function() { return null; });
+      }
+
+      function fetchShuttleTransferSearchStatus(sessionId) {
+        if (!sessionId) return Promise.resolve({});
+        return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId) + '/status', {
+          credentials: 'include'
+        }).then(function(resp) {
+          if (!resp.ok) return {};
+          return resp.json().catch(function() { return {}; });
+        }).catch(function() { return {}; });
       }
 
       function appendUniqueShuttleTransferOptions(options) {
@@ -31343,12 +31584,75 @@
           : null;
         var sessionId = createRouteSearchClientId('transfer');
         var inFlight = false;
+        var progressTimer = 0;
         currentShuttleTransferRequestId = requestId;
         currentShuttleTransferSessionId = sessionId;
 
         function newController() {
           try { return typeof AbortController !== 'undefined' ? new AbortController() : null; }
           catch (e) { return null; }
+        }
+
+        function stopProgressPolling() {
+          if (progressTimer) window.clearTimeout(progressTimer);
+          progressTimer = 0;
+        }
+
+        function buildTransferProgressMessage(statusData) {
+          var router = statusData && statusData.router && typeof statusData.router === 'object'
+            ? statusData.router
+            : {};
+          var radiusKm = Math.max(0, Number(
+            router.current_radius_km != null ? router.current_radius_km : statusData.current_radius_km
+          ) || 0);
+          var checked = Math.max(0, Number(router.candidate_checked || 0) || 0);
+          var total = Math.max(0, Number(router.candidate_total || 0) || 0);
+          var viable = Math.max(0, Number(router.viable_count || 0) || 0);
+          if (String(router.phase || '') === 'validating') {
+            return '반경 ' + String(radiusKm) + 'km까지 환승 후보를 확인 중입니다... 후보 ' +
+              String(checked) + '/' + String(total) + '개 확인 · 가능한 노선 ' + String(viable) + '개';
+          }
+          var roundCurrent = Math.max(0, Number(router.round_current || 0) || 0);
+          var roundTotal = Math.max(0, Number(router.round_total || 0) || 0);
+          return '반경 ' + String(radiusKm) + 'km까지 환승 후보를 구성 중입니다...' +
+            (roundCurrent > 0 && roundTotal > 0
+              ? ' 탐색 ' + String(roundCurrent) + '/' + String(roundTotal) + '단계'
+              : '');
+        }
+
+        function startProgressPolling(stageToken) {
+          stopProgressPolling();
+          function poll() {
+            if (
+              requestId !== routeRequestSerial ||
+              !coordinator ||
+              coordinator.disposed ||
+              coordinator.pauseRequested ||
+              stageToken !== coordinator.stageToken
+            ) {
+              stopProgressPolling();
+              return;
+            }
+            fetchShuttleTransferSearchStatus(currentShuttleTransferSessionId || sessionId).then(function(data) {
+              if (
+                !data || requestId !== routeRequestSerial || coordinator.pauseRequested ||
+                stageToken !== coordinator.stageToken
+              ) return;
+              var router = data.router && typeof data.router === 'object' ? data.router : {};
+              coordinator.updateTransfer({
+                radiusKm: Math.max(0, Number(router.current_radius_km || data.current_radius_km || 0) || 0),
+                candidateChecked: Math.max(0, Number(router.candidate_checked || 0) || 0),
+                candidateTotal: Math.max(0, Number(router.candidate_total || 0) || 0),
+                viableCount: Math.max(0, Number(router.viable_count || 0) || 0),
+                message: buildTransferProgressMessage(data)
+              });
+            }).finally(function() {
+              if (!coordinator.pauseRequested && stageToken === coordinator.stageToken) {
+                progressTimer = window.setTimeout(poll, 750);
+              }
+            });
+          }
+          progressTimer = window.setTimeout(poll, 200);
         }
 
         function renderTransferResults() {
@@ -31368,47 +31672,92 @@
 
         function applyTransferBatch(data) {
           if (requestId !== routeRequestSerial || requestId !== currentShuttleTransferRequestId) return [];
-          appendUniqueShuttleTransferOptions(data && data.options);
+          var normalizedOptions = (Array.isArray(data && data.options) ? data.options : []).map(function(option) {
+            return normalizeShuttleTransferOptionForSearch(option, params);
+          }).filter(Boolean);
+          if (data && data.replace_options) currentShuttleTransferOptions = [];
+          appendUniqueShuttleTransferOptions(normalizedOptions);
           currentShuttleTransferHasMore = !!(data && data.has_more);
           if (data && data.session_id) currentShuttleTransferSessionId = String(data.session_id);
           if (coordinator) {
+            var transferValidCount = countArrivalByValidOptions(currentShuttleTransferOptions);
+            var shouldContinueStage = (
+              coordinator.timeBasis === 'arrive_by' &&
+              transferValidCount < coordinator.transfer.target &&
+              currentShuttleTransferHasMore
+            );
             coordinator.updateTransfer({
-              status: coordinator.pauseRequested ? 'paused' : 'complete',
+              status: coordinator.pauseRequested
+                ? 'paused'
+                : (shouldContinueStage ? 'loading' : 'complete'),
               count: currentShuttleTransferOptions.length,
-              hasMore: currentShuttleTransferHasMore
+              validCount: transferValidCount,
+              hasMore: currentShuttleTransferHasMore,
+              radiusKm: Math.max(0, Number(data && data.current_radius_km || 0) || 0),
+              message: ''
             });
           }
           renderTransferResults();
           return currentShuttleTransferOptions;
         }
 
+        function shouldContinueTransferStage() {
+          if (!coordinator || coordinator.pauseRequested || requestId !== routeRequestSerial) return false;
+          if (coordinator.timeBasis !== 'arrive_by') return false;
+          return coordinator.transfer.validCount < coordinator.transfer.target && currentShuttleTransferHasMore;
+        }
+
         function disposeTransfer() {
+          stopProgressPolling();
           if (coordinator && coordinator.transferAbortController) {
             try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
           }
           return cancelShuttleTransferSession(currentShuttleTransferSessionId || sessionId);
         }
 
-        function advanceTransferBatch() {
+        function pauseTransfer() {
+          stopProgressPolling();
+          inFlight = false;
+          if (coordinator && coordinator.transferAbortController) {
+            try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
+          }
+          if (coordinator) coordinator.updateTransfer({ status: 'paused', message: '' });
+          return pauseShuttleTransferSession(currentShuttleTransferSessionId || sessionId);
+        }
+
+        function advanceTransferBatch(advanceOptions) {
+          advanceOptions = advanceOptions || {};
           if (inFlight || !currentShuttleTransferHasMore || requestId !== routeRequestSerial) {
             return Promise.resolve(currentShuttleTransferOptions);
           }
           inFlight = true;
+          var stageToken = coordinator ? coordinator.stageToken : 0;
           var controller = newController();
           if (coordinator) {
             coordinator.transferAbortController = controller;
             coordinator.updateTransfer({ status: 'loading' });
+            startProgressPolling(stageToken);
           }
           return advanceShuttleTransferSession(
             currentShuttleTransferSessionId || sessionId,
-            controller && controller.signal
+            controller && controller.signal,
+            advanceOptions
           ).then(function(data) {
             inFlight = false;
+            stopProgressPolling();
+            if (coordinator && (coordinator.pauseRequested || stageToken !== coordinator.stageToken)) {
+              return currentShuttleTransferOptions;
+            }
             var options = applyTransferBatch(data);
+            if (shouldContinueTransferStage()) {
+              return advanceTransferBatch({ newBatch: true });
+            }
             return options;
           }).catch(function(err) {
             inFlight = false;
+            stopProgressPolling();
             if (err && err.name === 'AbortError') return currentShuttleTransferOptions;
+            if (coordinator && coordinator.pauseRequested) return currentShuttleTransferOptions;
             if (coordinator) {
               coordinator.updateTransfer({ status: 'error', hasMore: true, message: '추가 검색 실패' });
             }
@@ -31417,22 +31766,36 @@
         }
 
         if (coordinator) {
+          coordinator.transferPause = pauseTransfer;
           coordinator.transferDispose = disposeTransfer;
-          coordinator.transferResume = advanceTransferBatch;
+          coordinator.transferResume = function() {
+            return advanceTransferBatch({ newBatch: true });
+          };
         }
         var controller = newController();
         if (coordinator) coordinator.transferAbortController = controller;
+        var initialStageToken = coordinator ? coordinator.stageToken : 0;
+        if (coordinator) startProgressPolling(initialStageToken);
         var createParams = Object.assign({}, params, {
           sessionId: sessionId,
           signal: controller && controller.signal
         });
         return fetchShuttleTransferOptions(createParams).then(function(data) {
+          stopProgressPolling();
           if (requestId !== routeRequestSerial || requestId !== currentShuttleTransferRequestId) return [];
+          if (coordinator && (coordinator.pauseRequested || initialStageToken !== coordinator.stageToken)) {
+            return currentShuttleTransferOptions;
+          }
           var options = applyTransferBatch(data || {});
+          if (shouldContinueTransferStage()) {
+            return advanceTransferBatch({ newBatch: true });
+          }
           return options;
         }).catch(function(err) {
+          stopProgressPolling();
           if (requestId !== routeRequestSerial) return [];
           if (err && err.name === 'AbortError') return [];
+          if (coordinator && coordinator.pauseRequested) return currentShuttleTransferOptions;
           currentShuttleTransferHasMore = false;
           if (coordinator) {
             coordinator.updateTransfer({ status: 'error', count: 0, hasMore: false, message: '환승 검색 실패' });
@@ -31450,10 +31813,8 @@
             sorted.sort(compareArrivalByDistanceOptions);
           } else if (arrivalSortMode === 'duration') {
             sorted.sort(compareArrivalByDurationOptions);
-          } else if (currentRouteRecommendedSortUsesRuntimeState) {
-            sorted.sort(compareArrivalByRecommendedOptions);
           } else {
-            return sorted;
+            sorted.sort(compareArrivalByRecommendedOptions);
           }
           return sorted;
         }
@@ -31833,7 +32194,10 @@
             searchCoordinator.requestMore();
             return;
           }
-          loadMoreRoutes(loadMoreBtn);
+          beginRouteLoadMoreScrollPreservation();
+          Promise.resolve(loadMoreRoutes(loadMoreBtn)).finally(function() {
+            finishRouteLoadMoreScrollPreservation();
+          });
         });
         routeOptionsWrap.appendChild(loadMoreBtn);
       }
@@ -32049,6 +32413,7 @@
             timeBasis: currentRouteTimeBasisUsed
           });
           var directController = null;
+          var directStageToken = coordinator ? coordinator.stageToken : 0;
           try { directController = typeof AbortController !== 'undefined' ? new AbortController() : null; }
           catch (e) { directController = null; }
           if (coordinator) {
@@ -32058,6 +32423,9 @@
           tasks.push(fetch(url, { signal: directController && directController.signal })
             .then(function(r) { return r.json(); })
             .then(function(data) {
+              if (coordinator && (
+                coordinator.pauseRequested || directStageToken !== coordinator.stageToken
+              )) return;
               if (typeof data.walk_otp_enabled === 'boolean') walkOtpEnabled = data.walk_otp_enabled;
               var newOptions = Array.isArray(data.options) ? data.options : [];
               applyRouteCollectorUpdatedAt(data, newOptions);
@@ -32141,6 +32509,48 @@
         if (!routeOptionsWrap) return;
         routeOptionsWrap.querySelectorAll('.route-search-status').forEach(function(node) {
           if (node && node.parentNode) node.parentNode.removeChild(node);
+        });
+      }
+
+      function getRouteResultsScrollElement() {
+        if (typeof resultsListWrap !== 'undefined' && resultsListWrap) return resultsListWrap;
+        return resultsPanel ? resultsPanel.querySelector('.results-list-wrap') : null;
+      }
+
+      function beginRouteLoadMoreScrollPreservation() {
+        var scroller = getRouteResultsScrollElement();
+        if (!scroller) return;
+        routeLoadMoreScrollState = {
+          bottomOffset: Math.max(
+            0,
+            Number(scroller.scrollHeight || 0) -
+              Number(scroller.clientHeight || 0) -
+              Number(scroller.scrollTop || 0)
+          )
+        };
+      }
+
+      function restoreRouteLoadMoreScrollPosition() {
+        if (!routeLoadMoreScrollState) return;
+        var scroller = getRouteResultsScrollElement();
+        if (!scroller) return;
+        scroller.scrollTop = Math.max(
+          0,
+          Number(scroller.scrollHeight || 0) -
+            Number(scroller.clientHeight || 0) -
+            Number(routeLoadMoreScrollState.bottomOffset || 0)
+        );
+      }
+
+      function finishRouteLoadMoreScrollPreservation() {
+        if (!routeLoadMoreScrollState) return;
+        restoreRouteLoadMoreScrollPosition();
+        requestAnimationFrame(function() {
+          restoreRouteLoadMoreScrollPosition();
+          requestAnimationFrame(function() {
+            restoreRouteLoadMoreScrollPosition();
+            routeLoadMoreScrollState = null;
+          });
         });
       }
 
@@ -32232,6 +32642,7 @@
           bindStatusAction(bottomBanner);
           routeOptionsWrap.appendChild(bottomBanner);
         }
+        restoreRouteLoadMoreScrollPosition();
       }
 
       function rememberActiveArrivalByLoadingBanner(config) {
@@ -32434,7 +32845,9 @@
           emptyMsg.textContent = noRouteMsg;
           routeOptionsWrap.appendChild(emptyMsg);
           maybePrependActiveRouteSearchStatusBanner();
-          showShuttleError(noRouteMsg);
+          if (normalizeRouteTimeBasis(timeBasis || currentRouteTimeBasisUsed) !== 'arrive_by') {
+            showShuttleError(noRouteMsg);
+          }
           if (isMobile() && !shouldPreserveSheetState) setSheetState('sheet-half');
           return;
         }
@@ -32690,6 +33103,7 @@
               timeBasis: timeBasis
             });
             var directFetchOptions = {};
+            var directStageToken = searchCoordinator ? searchCoordinator.stageToken : 0;
             if (searchCoordinator) {
               try {
                 searchCoordinator.directAbortController = typeof AbortController !== 'undefined'
@@ -32710,6 +33124,10 @@
               })
               .then(function(result) {
                 if (requestId !== routeRequestSerial) return;
+                if (searchCoordinator && (
+                  searchCoordinator.pauseRequested ||
+                  directStageToken !== searchCoordinator.stageToken
+                )) return;
                 var data = result.data || {};
                 var options = data.options || [];
                 currentDirectRouteHasMore = data.has_more != null ? !!data.has_more : options.length >= ROUTE_SEARCH_BATCH_SIZE;
