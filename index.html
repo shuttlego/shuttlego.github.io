@@ -13099,6 +13099,20 @@
           : { label: '출근', className: 'depart' };
       }
 
+      function getRouteFavoriteBadgeInfos(item) {
+        var favorite = item || {};
+        if (favorite.available === false) return [getFavoriteBadgeInfo(favorite)];
+        if (favorite.favorite_kind !== 'shuttle_transfer') {
+          return [getFavoriteBadgeInfo(favorite)];
+        }
+        return [
+          String(favorite.direction || '').trim().toLowerCase() === 'arrive'
+            ? { label: '퇴근', className: 'arrive' }
+            : { label: '출근', className: 'depart' },
+          { label: '환승', className: 'transfer' }
+        ];
+      }
+
       function getFavoriteDayTypeLabel(dayType) {
         var value = String(dayType || '').trim();
         return DAY_TYPE_LABEL_MAP[value] || value || '요일 미지정';
@@ -13862,11 +13876,12 @@
           name.textContent = String(favorite.route_name || '노선');
           nameRow.appendChild(name);
 
-          var badgeInfo = getFavoriteBadgeInfo(favorite);
-          var badge = document.createElement('span');
-          badge.className = 'home-favorite-badge ' + badgeInfo.className;
-          badge.textContent = badgeInfo.label;
-          nameRow.appendChild(badge);
+          getRouteFavoriteBadgeInfos(favorite).forEach(function(badgeInfo) {
+            var badge = document.createElement('span');
+            badge.className = 'home-favorite-badge ' + badgeInfo.className;
+            badge.textContent = badgeInfo.label;
+            nameRow.appendChild(badge);
+          });
 
           main.appendChild(nameRow);
 
@@ -15406,6 +15421,24 @@
         });
       }
 
+      function beginFavoriteRouteView() {
+        if (activeCombinedSearchCoordinator && typeof activeCombinedSearchCoordinator.dispose === 'function') {
+          activeCombinedSearchCoordinator.dispose();
+        }
+        activeCombinedSearchCoordinator = null;
+        routeRequestSerial += 1;
+        currentShuttleTransferOptions = [];
+        currentShuttleTransferRequestId = 0;
+        currentShuttleTransferSessionId = '';
+        currentShuttleTransferHasMore = false;
+        currentDirectRouteHasMore = false;
+        activeArrivalByLoadingBannerConfig = null;
+        currentRouteCanonicalOptions = [];
+        currentRouteOptions = [];
+        removeRouteSearchStatusBanner();
+        deactivateFavoriteRouteView();
+      }
+
       function openRouteFavoriteRoute(routeId, opts) {
         var normalizedRouteId = normalizeRouteFavoriteId(routeId);
         if (!normalizedRouteId) return Promise.resolve(false);
@@ -15417,7 +15450,7 @@
         } else {
           clearPendingSharedRouteUrl();
         }
-        deactivateFavoriteRouteView();
+        beginFavoriteRouteView();
         showSharedRouteStateCard('즐겨찾기', '즐겨찾기한 노선을 불러오는 중입니다...', {
           panelTitle: '즐겨찾기',
           loading: true,
@@ -15476,7 +15509,16 @@
               currentPinnedRouteId = Number(routeOption.route_id || 0) || 0;
               forceRouteViewportFitOnNextRender = true;
               closeRouteFavoritesModal();
-              renderRouteOptions(options, contextState.placeName, isDepart, '', isMobile(), '', resolvedContext.time_basis || 'depart_at');
+              renderRouteOptions(
+                options,
+                contextState.placeName,
+                isDepart,
+                '',
+                isMobile(),
+                '',
+                resolvedContext.time_basis || 'depart_at',
+                { skipTransferMerge: true }
+              );
               return true;
             });
           })
@@ -15499,7 +15541,7 @@
         var requestSeq = ++favoriteResolveRequestSeq;
         if (sharedRouteState.active) deactivateSharedRouteView();
         else clearPendingSharedRouteUrl();
-        deactivateFavoriteRouteView();
+        beginFavoriteRouteView();
         showSharedRouteStateCard('즐겨찾기', '즐겨찾기한 환승 경로를 불러오는 중입니다...', {
           panelTitle: '즐겨찾기',
           loading: true,
@@ -15556,7 +15598,8 @@
                 '',
                 isMobile(),
                 '',
-                resolvedContext.time_basis || 'depart_at'
+                resolvedContext.time_basis || 'depart_at',
+                { skipTransferMerge: true }
               );
               return true;
             });
@@ -25799,7 +25842,6 @@
       var currentIsDepart = null;
       var expandedOptionIndex = -1;
       var currentRouteRecommendedSortUsesRuntimeState = false;
-      var routeLoadMoreScrollState = null;
 
       function copyRouteOptionsMeta(source, target) {
         if (!Array.isArray(target)) return target;
@@ -31169,26 +31211,41 @@
           single: {
             status: 'loading', count: 0, validCount: 0, target: ROUTE_SEARCH_BATCH_SIZE,
             hasMore: true, radiusKm: 0, message: '', candidateChecked: 0,
-            candidateTotal: 0, viableCount: 0
+            candidateTotal: 0, viableCount: 0, pauseReason: '', stageTargetReached: false
           },
           transfer: transferEnabled
             ? {
                 status: 'loading', count: 0, validCount: 0, target: ROUTE_SEARCH_BATCH_SIZE,
                 hasMore: true, radiusKm: 0, message: '', candidateChecked: 0,
-                candidateTotal: 0, viableCount: 0
+                candidateTotal: 0, viableCount: 0, pauseReason: '', stageTargetReached: false
               }
-            : { status: 'complete', count: 0, validCount: 0, target: 0, hasMore: false }
+            : {
+                status: 'complete', count: 0, validCount: 0, target: 0, hasMore: false,
+                pauseReason: '', stageTargetReached: false
+              }
         };
 
         function taskIsLoading(task) {
           return task && task.status === 'loading';
         }
 
+        function taskProgressCount(task) {
+          if (!task) return 0;
+          return coordinator.timeBasis === 'arrive_by'
+            ? Math.max(0, Number(task.validCount || 0) || 0)
+            : Math.max(0, Number(task.count || 0) || 0);
+        }
+
+        function taskNeedsResume(task) {
+          return !!(
+            task && task.hasMore && !task.stageTargetReached &&
+            taskProgressCount(task) < Math.max(0, Number(task.target || 0) || 0)
+          );
+        }
+
         function taskText(task) {
           var count = Math.max(0, Number(task && task.count || 0) || 0);
-          var progressCount = coordinator.timeBasis === 'arrive_by'
-            ? Math.max(0, Number(task && task.validCount || 0) || 0)
-            : count;
+          var progressCount = taskProgressCount(task);
           if (!task) return '';
           if (task.status === 'loading') {
             var progressText = String(progressCount) + ' / ' +
@@ -31210,14 +31267,33 @@
           return taskIsLoading(coordinator.single) || (transferEnabled && taskIsLoading(coordinator.transfer));
         };
 
+        coordinator.isSourceLoading = function(source) {
+          return taskIsLoading(source === 'transfer' ? coordinator.transfer : coordinator.single);
+        };
+
         coordinator.getMoreSourceCount = function() {
-          var count = coordinator.single.hasMore ? 1 : 0;
-          if (transferEnabled && coordinator.transfer.hasMore) count += 1;
+          var count = coordinator.stopped
+            ? (taskNeedsResume(coordinator.single) ? 1 : 0)
+            : (coordinator.single.hasMore ? 1 : 0);
+          if (transferEnabled) {
+            count += coordinator.stopped
+              ? (taskNeedsResume(coordinator.transfer) ? 1 : 0)
+              : (coordinator.transfer.hasMore ? 1 : 0);
+          }
           return count;
         };
 
         coordinator.getMoreMaxCount = function() {
-          return coordinator.getMoreSourceCount() * ROUTE_SEARCH_BATCH_SIZE;
+          if (!coordinator.stopped) {
+            return coordinator.getMoreSourceCount() * ROUTE_SEARCH_BATCH_SIZE;
+          }
+          var remaining = taskNeedsResume(coordinator.single)
+            ? Math.max(0, Number(coordinator.single.target || 0) - taskProgressCount(coordinator.single))
+            : 0;
+          if (transferEnabled && taskNeedsResume(coordinator.transfer)) {
+            remaining += Math.max(0, Number(coordinator.transfer.target || 0) - taskProgressCount(coordinator.transfer));
+          }
+          return remaining;
         };
 
         coordinator.getMoreButtonText = function() {
@@ -31275,7 +31351,7 @@
             title: '',
             message: coordinator.buildProgressMessage(),
             rows: rows,
-            showBottom: coordinator.additionalSearchStarted,
+            showBottom: coordinator.additionalSearchStarted && getCurrentRouteCanonicalOptions().length > 0,
             action: {
               type: 'stop',
               label: '그만 찾기',
@@ -31348,10 +31424,13 @@
           if (coordinator.disposed) return false;
           var task = source === 'transfer' ? coordinator.transfer : coordinator.single;
           if (coordinator.pauseRequested) return true;
-          if (coordinator.timeBasis === 'arrive_by') {
-            return task.validCount >= task.target && !!task.hasMore;
+          var reachedTarget = taskProgressCount(task) >= Math.max(0, Number(task.target || 0) || 0);
+          if (reachedTarget && !!task.hasMore) {
+            task.stageTargetReached = true;
+            task.pauseReason = 'target';
+            return true;
           }
-          return task.count >= task.target && !!task.hasMore;
+          return false;
         };
 
         coordinator.pauseAll = function() {
@@ -31361,8 +31440,14 @@
           coordinator.stopped = true;
           coordinator.pauseRequested = true;
           coordinator.stageToken += 1;
-          if (taskIsLoading(coordinator.single)) coordinator.single.status = 'paused';
-          if (transferEnabled && taskIsLoading(coordinator.transfer)) coordinator.transfer.status = 'paused';
+          if (taskIsLoading(coordinator.single)) {
+            coordinator.single.status = 'paused';
+            coordinator.single.pauseReason = 'user';
+          }
+          if (transferEnabled && taskIsLoading(coordinator.transfer)) {
+            coordinator.transfer.status = 'paused';
+            coordinator.transfer.pauseReason = 'user';
+          }
           if (coordinator.directAbortController) {
             try { coordinator.directAbortController.abort(); } catch (e) { /* ignore */ }
           }
@@ -31384,23 +31469,31 @@
           if (coordinator.disposed || coordinator.isLoading() || coordinator.getMoreMaxCount() <= 0) {
             return Promise.resolve();
           }
+          var resumePausedStage = coordinator.stopped;
           coordinator.stopped = false;
           coordinator.pauseRequested = false;
           coordinator.additionalSearchStarted = true;
           coordinator.stageToken += 1;
-          beginRouteLoadMoreScrollPreservation();
-          if (coordinator.single.hasMore) {
-            coordinator.single.target += ROUTE_SEARCH_BATCH_SIZE;
+          var resumeSingle = resumePausedStage
+            ? taskNeedsResume(coordinator.single)
+            : !!coordinator.single.hasMore;
+          var resumeTransfer = transferEnabled && (resumePausedStage
+            ? taskNeedsResume(coordinator.transfer)
+            : !!coordinator.transfer.hasMore);
+          if (resumeSingle) {
+            if (!resumePausedStage) coordinator.single.target += ROUTE_SEARCH_BATCH_SIZE;
             coordinator.single.status = 'loading';
+            coordinator.single.pauseReason = '';
+            coordinator.single.stageTargetReached = false;
           }
-          if (transferEnabled && coordinator.transfer.hasMore) {
-            coordinator.transfer.target += ROUTE_SEARCH_BATCH_SIZE;
+          if (resumeTransfer) {
+            if (!resumePausedStage) coordinator.transfer.target += ROUTE_SEARCH_BATCH_SIZE;
             coordinator.transfer.status = 'loading';
+            coordinator.transfer.pauseReason = '';
+            coordinator.transfer.stageTargetReached = false;
           }
           coordinator.renderStatus();
-          return Promise.resolve(loadMoreRoutes(null)).finally(function() {
-            finishRouteLoadMoreScrollPreservation();
-          });
+          return Promise.resolve(loadMoreRoutes(null));
         };
 
         coordinator.dispose = function() {
@@ -31550,7 +31643,8 @@
           body: JSON.stringify({
             expand_radius: !!options.expandRadius,
             replace_options: !!options.replaceOptions,
-            new_batch: !!options.newBatch
+            new_batch: !!options.newBatch,
+            max_results: Math.max(0, Number(options.maxResults || 0) || 0) || undefined
           }),
           signal: signal || undefined
         }).then(parseShuttleTransferResponse).then(function(data) {
@@ -31675,6 +31769,13 @@
           if (data && data.session_id) currentShuttleTransferSessionId = String(data.session_id);
           if (coordinator) {
             var transferValidCount = countArrivalByValidOptions(currentShuttleTransferOptions);
+            var transferProgressCount = coordinator.timeBasis === 'arrive_by'
+              ? transferValidCount
+              : currentShuttleTransferOptions.length;
+            var transferTargetReached = (
+              transferProgressCount >= coordinator.transfer.target &&
+              currentShuttleTransferHasMore
+            );
             var shouldContinueStage = (
               coordinator.timeBasis === 'arrive_by' &&
               transferValidCount < coordinator.transfer.target &&
@@ -31687,6 +31788,8 @@
               count: currentShuttleTransferOptions.length,
               validCount: transferValidCount,
               hasMore: currentShuttleTransferHasMore,
+              stageTargetReached: transferTargetReached,
+              pauseReason: transferTargetReached ? 'target' : '',
               radiusKm: Math.max(0, Number(data && data.current_radius_km || 0) || 0),
               candidateChecked: Math.max(
                 0,
@@ -31731,7 +31834,11 @@
 
         function advanceTransferBatch(advanceOptions) {
           advanceOptions = advanceOptions || {};
-          if (inFlight || !currentShuttleTransferHasMore || requestId !== routeRequestSerial) {
+          var canResumeTransfer = currentShuttleTransferHasMore || !!(
+            coordinator && typeof coordinator.isSourceLoading === 'function' &&
+            coordinator.isSourceLoading('transfer')
+          );
+          if (inFlight || !canResumeTransfer || requestId !== routeRequestSerial) {
             return Promise.resolve(currentShuttleTransferOptions);
           }
           inFlight = true;
@@ -31745,10 +31852,20 @@
               message: buildTransferProgressMessage(pendingData, true)
             });
           }
+          var maxResults = coordinator
+            ? Math.max(
+                1,
+                Number(coordinator.transfer.target || ROUTE_SEARCH_BATCH_SIZE) -
+                  (coordinator.timeBasis === 'arrive_by'
+                    ? Number(coordinator.transfer.validCount || 0)
+                    : Number(coordinator.transfer.count || 0))
+              )
+            : ROUTE_SEARCH_BATCH_SIZE;
+          var requestOptions = Object.assign({}, advanceOptions, { maxResults: maxResults });
           return advanceShuttleTransferSession(
             currentShuttleTransferSessionId || sessionId,
             controller && controller.signal,
-            advanceOptions
+            requestOptions
           ).then(function(data) {
             inFlight = false;
             if (coordinator && (coordinator.pauseRequested || stageToken !== coordinator.stageToken)) {
@@ -32203,10 +32320,7 @@
             searchCoordinator.requestMore();
             return;
           }
-          beginRouteLoadMoreScrollPreservation();
-          Promise.resolve(loadMoreRoutes(loadMoreBtn)).finally(function() {
-            finishRouteLoadMoreScrollPreservation();
-          });
+          Promise.resolve(loadMoreRoutes(loadMoreBtn));
         });
         routeOptionsWrap.appendChild(loadMoreBtn);
       }
@@ -32402,8 +32516,12 @@
           ? activeCombinedSearchCoordinator
           : null;
         var baseOptions = withoutShuttleTransferOptions(getCurrentRouteCanonicalOptions());
-        var singleRequested = !!currentDirectRouteHasMore;
-        var transferRequested = !!(selectedShuttleTransferSearch && currentShuttleTransferHasMore);
+        var singleRequested = coordinator && typeof coordinator.isSourceLoading === 'function'
+          ? coordinator.isSourceLoading('single')
+          : !!currentDirectRouteHasMore;
+        var transferRequested = coordinator && typeof coordinator.isSourceLoading === 'function'
+          ? coordinator.isSourceLoading('transfer')
+          : !!(selectedShuttleTransferSearch && currentShuttleTransferHasMore);
         var tasks = [];
 
         if (singleRequested) {
@@ -32445,7 +32563,14 @@
                 coordinator.updateDirect({
                   status: coordinator.pauseRequested ? 'paused' : 'complete',
                   count: baseOptions.length,
-                  hasMore: currentDirectRouteHasMore
+                  hasMore: currentDirectRouteHasMore,
+                  stageTargetReached: !!(
+                    currentDirectRouteHasMore &&
+                    baseOptions.length >= coordinator.single.target
+                  ),
+                  pauseReason: currentDirectRouteHasMore && baseOptions.length >= coordinator.single.target
+                    ? 'target'
+                    : ''
                 });
               }
               renderRouteOptions(baseOptions, currentPlaceName, currentIsDepart, '', true, '', currentRouteTimeBasisUsed);
@@ -32518,48 +32643,6 @@
         if (!routeOptionsWrap) return;
         routeOptionsWrap.querySelectorAll('.route-search-status').forEach(function(node) {
           if (node && node.parentNode) node.parentNode.removeChild(node);
-        });
-      }
-
-      function getRouteResultsScrollElement() {
-        if (typeof resultsListWrap !== 'undefined' && resultsListWrap) return resultsListWrap;
-        return resultsPanel ? resultsPanel.querySelector('.results-list-wrap') : null;
-      }
-
-      function beginRouteLoadMoreScrollPreservation() {
-        var scroller = getRouteResultsScrollElement();
-        if (!scroller) return;
-        routeLoadMoreScrollState = {
-          bottomOffset: Math.max(
-            0,
-            Number(scroller.scrollHeight || 0) -
-              Number(scroller.clientHeight || 0) -
-              Number(scroller.scrollTop || 0)
-          )
-        };
-      }
-
-      function restoreRouteLoadMoreScrollPosition() {
-        if (!routeLoadMoreScrollState) return;
-        var scroller = getRouteResultsScrollElement();
-        if (!scroller) return;
-        scroller.scrollTop = Math.max(
-          0,
-          Number(scroller.scrollHeight || 0) -
-            Number(scroller.clientHeight || 0) -
-            Number(routeLoadMoreScrollState.bottomOffset || 0)
-        );
-      }
-
-      function finishRouteLoadMoreScrollPreservation() {
-        if (!routeLoadMoreScrollState) return;
-        restoreRouteLoadMoreScrollPosition();
-        requestAnimationFrame(function() {
-          restoreRouteLoadMoreScrollPosition();
-          requestAnimationFrame(function() {
-            restoreRouteLoadMoreScrollPosition();
-            routeLoadMoreScrollState = null;
-          });
         });
       }
 
@@ -32651,7 +32734,6 @@
           bindStatusAction(bottomBanner);
           routeOptionsWrap.appendChild(bottomBanner);
         }
-        restoreRouteLoadMoreScrollPosition();
       }
 
       function rememberActiveArrivalByLoadingBanner(config) {
@@ -32798,9 +32880,10 @@
         return merged;
       }
 
-      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage, timeBasis) {
+      function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage, timeBasis, renderOpts) {
         options = Array.isArray(options) ? options : [];
-        if (selectedShuttleTransferSearch && currentShuttleTransferOptions.length > 0) {
+        renderOpts = renderOpts || {};
+        if (!renderOpts.skipTransferMerge && selectedShuttleTransferSearch && currentShuttleTransferOptions.length > 0) {
           options = mergeShuttleTransferOptions(options, currentShuttleTransferOptions);
         }
         var shouldPreserveSheetState = prepareRouteOptionsView(
@@ -33144,7 +33227,14 @@
                   searchCoordinator.updateDirect({
                     status: searchCoordinator.pauseRequested ? 'paused' : 'complete',
                     count: options.length,
-                    hasMore: currentDirectRouteHasMore
+                    hasMore: currentDirectRouteHasMore,
+                    stageTargetReached: !!(
+                      currentDirectRouteHasMore &&
+                      options.length >= searchCoordinator.single.target
+                    ),
+                    pauseReason: currentDirectRouteHasMore && options.length >= searchCoordinator.single.target
+                      ? 'target'
+                      : ''
                   });
                 }
                 applyRouteCollectorUpdatedAt(data, options);
