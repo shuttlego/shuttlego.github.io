@@ -10219,7 +10219,13 @@
       var favoriteStatusByRouteUuid = {};
       var favoriteStatusByTransferTemplateId = {};
       var favoriteTransferEntryIdByTemplateId = {};
-      var favoriteStatusRequestSeq = 0;
+      // Favorite state belongs to the authenticated session, not to a card
+      // render. Keep resolved and in-flight identities separately so frequent
+      // streaming result updates do not turn into repeated /api/me reads.
+      var favoriteStatusKnownByKey = {};
+      var favoriteStatusInFlightByKey = {};
+      var favoriteStatusRetryAfterByKey = {};
+      var favoriteStatusMutationEpochByKey = {};
       var recentFavoriteItems = [];
       var recentFavoritesHasMore = false;
       var recentSearchItems = [];
@@ -12677,6 +12683,7 @@
           delete favoriteStatusByTransferTemplateId[normalized];
           delete favoriteTransferEntryIdByTemplateId[normalized];
         }
+        markFavoriteStatusKnown([favoriteStatusKey('transfer-template', normalized)]);
       }
 
       function setRouteFavorited(routeId, favorited, routeUuid) {
@@ -12690,6 +12697,7 @@
           if (favorited) favoriteStatusByRouteUuid[normalizedRouteUuid] = true;
           else delete favoriteStatusByRouteUuid[normalizedRouteUuid];
         }
+        markFavoriteStatusKnown(favoriteStatusRouteKeys(normalizedRouteId, normalizedRouteUuid));
       }
 
       function ensureFavoriteLoginPromptModal() {
@@ -13651,104 +13659,220 @@
           });
       }
 
-      function refreshVisibleRouteFavoriteStatuses(options) {
-        var optionList = Array.isArray(options) ? options : [];
-        var routeOptions = optionList.filter(function(option) { return !isShuttleTransferOption(option); });
-        var routeIds = routeOptions
-              .map(function(option) { return normalizeRouteFavoriteId(option && option.route_id); })
-              .filter(function(routeId, index, list) { return routeId > 0 && list.indexOf(routeId) === index; });
-        var routeUuids = routeOptions
-              .map(function(option) { return normalizeRouteFavoriteUuid(option && option.route_uuid); })
-              .filter(function(routeUuid, index, list) { return routeUuid && list.indexOf(routeUuid) === index; });
-        var transferTemplateIds = optionList
-          .filter(isShuttleTransferOption)
-          .map(getShuttleTransferTemplateId)
-          .filter(function(templateId, index, list) { return templateId && list.indexOf(templateId) === index; });
-        var requestSeq = ++favoriteStatusRequestSeq;
+      function favoriteStatusKey(kind, value) {
+        var normalized = String(value || '').trim();
+        return normalized ? String(kind || '') + ':' + normalized : '';
+      }
 
+      function favoriteStatusRouteKeys(routeId, routeUuid) {
+        var keys = [];
+        var normalizedRouteId = normalizeRouteFavoriteId(routeId);
+        var normalizedRouteUuid = normalizeRouteFavoriteUuid(routeUuid);
+        if (normalizedRouteId) keys.push(favoriteStatusKey('route-id', normalizedRouteId));
+        if (normalizedRouteUuid) keys.push(favoriteStatusKey('route-uuid', normalizedRouteUuid));
+        return keys.filter(Boolean);
+      }
+
+      function resetFavoriteStatusStore() {
+        favoriteStatusByRouteId = {};
+        favoriteStatusByRouteUuid = {};
+        favoriteStatusByTransferTemplateId = {};
+        favoriteTransferEntryIdByTemplateId = {};
+        favoriteStatusKnownByKey = {};
+        favoriteStatusInFlightByKey = {};
+        favoriteStatusRetryAfterByKey = {};
+        favoriteStatusMutationEpochByKey = {};
+      }
+
+      function markFavoriteStatusKnown(keys) {
+        (Array.isArray(keys) ? keys : []).forEach(function(key) {
+          if (key) favoriteStatusKnownByKey[key] = true;
+        });
+      }
+
+      function markFavoriteStatusRetry(keys) {
+        var retryAfter = Date.now() + 5000;
+        (Array.isArray(keys) ? keys : []).forEach(function(key) {
+          if (key) favoriteStatusRetryAfterByKey[key] = retryAfter;
+        });
+      }
+
+      function clearFavoriteStatusInFlight(keys, task) {
+        (Array.isArray(keys) ? keys : []).forEach(function(key) {
+          if (key && (!task || favoriteStatusInFlightByKey[key] === task)) {
+            delete favoriteStatusInFlightByKey[key];
+          }
+        });
+      }
+
+      function favoriteStatusMutationEpochs(keys) {
+        var epochs = {};
+        (Array.isArray(keys) ? keys : []).forEach(function(key) {
+          if (key) epochs[key] = Number(favoriteStatusMutationEpochByKey[key] || 0);
+        });
+        return epochs;
+      }
+
+      function favoriteStatusMutationIsCurrent(target) {
+        var epochs = target && target.mutationEpochs || {};
+        return Object.keys(epochs).every(function(key) {
+          return Number(favoriteStatusMutationEpochByKey[key] || 0) === Number(epochs[key] || 0);
+        });
+      }
+
+      function markFavoriteStatusMutation(keys) {
+        (Array.isArray(keys) ? keys : []).forEach(function(key) {
+          if (!key) return;
+          favoriteStatusMutationEpochByKey[key] = Number(favoriteStatusMutationEpochByKey[key] || 0) + 1;
+          favoriteStatusKnownByKey[key] = true;
+        });
+      }
+
+      function favoriteStatusIsSettledOrPending(keys, force) {
+        if (force) return false;
+        var now = Date.now();
+        return (Array.isArray(keys) ? keys : []).some(function(key) {
+          return !!(
+            key && (
+              favoriteStatusKnownByKey[key] ||
+              favoriteStatusInFlightByKey[key] ||
+              Number(favoriteStatusRetryAfterByKey[key] || 0) > now
+            )
+          );
+        });
+      }
+
+      function buildFavoriteStatusTargets(options, force) {
+        var routeTargets = [];
+        var transferTargets = [];
+        var seenRouteKeys = {};
+        var seenTransferKeys = {};
+        (Array.isArray(options) ? options : []).forEach(function(option) {
+          if (!option || typeof option !== 'object') return;
+          if (isShuttleTransferOption(option)) {
+            var templateId = getShuttleTransferTemplateId(option);
+            var transferKey = favoriteStatusKey('transfer-template', templateId);
+            if (!templateId || seenTransferKeys[transferKey]) return;
+            seenTransferKeys[transferKey] = true;
+            if (!favoriteStatusIsSettledOrPending([transferKey], force)) {
+              transferTargets.push({
+                templateId: templateId,
+                keys: [transferKey],
+                mutationEpochs: favoriteStatusMutationEpochs([transferKey])
+              });
+            }
+            return;
+          }
+          var routeId = normalizeRouteFavoriteId(option.route_id);
+          var routeUuid = normalizeRouteFavoriteUuid(option.route_uuid);
+          var routeKeys = favoriteStatusRouteKeys(routeId, routeUuid);
+          var targetKey = routeKeys.join('|');
+          if (!routeKeys.length || seenRouteKeys[targetKey]) return;
+          seenRouteKeys[targetKey] = true;
+          if (!favoriteStatusIsSettledOrPending(routeKeys, force)) {
+            routeTargets.push({
+              routeId: routeId,
+              routeUuid: routeUuid,
+              keys: routeKeys,
+              mutationEpochs: favoriteStatusMutationEpochs(routeKeys)
+            });
+          }
+        });
+        return { routeTargets: routeTargets, transferTargets: transferTargets };
+      }
+
+      function refreshVisibleRouteFavoriteStatuses(options, opts) {
+        var force = !!(opts && opts.force);
+        var targets = buildFavoriteStatusTargets(options, force);
         if (!authState.logged_in) {
-          routeIds.forEach(function(routeId) {
-            setRouteFavorited(routeId, false);
-          });
-          routeUuids.forEach(function(routeUuid) {
-            setRouteFavorited(0, false, routeUuid);
-          });
-          transferTemplateIds.forEach(function(templateId) {
-            setShuttleTransferFavorited(templateId, false);
-          });
           syncRouteFavoriteButtonsInView();
           return Promise.resolve([]);
         }
 
         var tasks = [];
-        if (routeIds.length > 0 || routeUuids.length > 0) {
-          var url = API_BASE + '/api/me/route-favorites/status?route_ids=' + encodeURIComponent(routeIds.join(','));
-          if (routeUuids.length > 0) {
-            url += '&route_uuids=' + encodeURIComponent(routeUuids.join(','));
-          }
-          tasks.push(fetchJson(url).then(function(result) {
-            if (!result.ok) throw new Error(result.data && result.data.error || '즐겨찾기 상태를 불러오지 못했습니다.');
-            var favoredRouteIds = Array.isArray(result.data && result.data.route_ids)
-              ? result.data.route_ids.map(normalizeRouteFavoriteId).filter(function(routeId) { return routeId > 0; })
-              : [];
-            var favoredRouteUuids = Array.isArray(result.data && result.data.route_uuids)
-              ? result.data.route_uuids.map(normalizeRouteFavoriteUuid).filter(Boolean)
-              : [];
-            routeIds.forEach(function(routeId) {
-              setRouteFavorited(routeId, favoredRouteIds.indexOf(routeId) >= 0);
+        if (targets.routeTargets.length > 0) {
+          var routeIds = targets.routeTargets.map(function(target) { return target.routeId; }).filter(Boolean);
+          var routeUuids = targets.routeTargets.map(function(target) { return target.routeUuid; }).filter(Boolean);
+          var routeKeys = targets.routeTargets.reduce(function(keys, target) {
+            return keys.concat(target.keys || []);
+          }, []);
+          var routeUrl = API_BASE + '/api/me/route-favorites/status?route_ids=' + encodeURIComponent(routeIds.join(','));
+          if (routeUuids.length > 0) routeUrl += '&route_uuids=' + encodeURIComponent(routeUuids.join(','));
+          var routeTask = fetchJson(routeUrl)
+            .then(function(result) {
+              if (!result.ok) throw new Error(result.data && result.data.error || '즐겨찾기 상태를 불러오지 못했습니다.');
+              var favoredRouteIds = Array.isArray(result.data && result.data.route_ids)
+                ? result.data.route_ids.map(normalizeRouteFavoriteId).filter(Boolean)
+                : [];
+              var favoredRouteUuids = Array.isArray(result.data && result.data.route_uuids)
+                ? result.data.route_uuids.map(normalizeRouteFavoriteUuid).filter(Boolean)
+                : [];
+              targets.routeTargets.forEach(function(target) {
+                if (!favoriteStatusMutationIsCurrent(target)) return;
+                setRouteFavorited(
+                  target.routeId,
+                  favoredRouteIds.indexOf(target.routeId) >= 0 || favoredRouteUuids.indexOf(target.routeUuid) >= 0,
+                  target.routeUuid
+                );
+                markFavoriteStatusKnown(target.keys);
+              });
+            })
+            .catch(function() {
+              markFavoriteStatusRetry(routeKeys);
+            })
+            .finally(function() {
+              clearFavoriteStatusInFlight(routeKeys, routeTask);
+              syncRouteFavoriteButtonsInView();
             });
-            routeUuids.forEach(function(routeUuid) {
-              setRouteFavorited(0, favoredRouteUuids.indexOf(routeUuid) >= 0, routeUuid);
-            });
-          }));
+          routeKeys.forEach(function(key) { favoriteStatusInFlightByKey[key] = routeTask; });
+          tasks.push(routeTask);
         }
-        if (transferTemplateIds.length > 0) {
+
+        if (targets.transferTargets.length > 0) {
+          var transferTemplateIds = targets.transferTargets.map(function(target) { return target.templateId; });
+          var transferKeys = targets.transferTargets.reduce(function(keys, target) {
+            return keys.concat(target.keys || []);
+          }, []);
           var transferUrl = API_BASE + '/api/me/transfer-favorites/status?journey_template_ids=' +
             encodeURIComponent(transferTemplateIds.join(','));
-          tasks.push(fetchJson(transferUrl).then(function(result) {
-            if (!result.ok) throw new Error(result.data && result.data.error || '환승 즐겨찾기 상태를 불러오지 못했습니다.');
-            var favoredTemplateIds = Array.isArray(result.data && result.data.journey_template_ids)
-              ? result.data.journey_template_ids.map(function(value) { return String(value || '').trim(); }).filter(Boolean)
-              : [];
-            var favoriteIdByTemplate = {};
-            (Array.isArray(result.data && result.data.favorites) ? result.data.favorites : []).forEach(function(item) {
-              var key = String(item && item.journey_template_id || '').trim();
-              var id = Number(item && item.favorite_id || 0);
-              if (key && isFinite(id) && id > 0) favoriteIdByTemplate[key] = id;
+          var transferTask = fetchJson(transferUrl)
+            .then(function(result) {
+              if (!result.ok) throw new Error(result.data && result.data.error || '환승 즐겨찾기 상태를 불러오지 못했습니다.');
+              var favoredTemplateIds = Array.isArray(result.data && result.data.journey_template_ids)
+                ? result.data.journey_template_ids.map(function(value) { return String(value || '').trim(); }).filter(Boolean)
+                : [];
+              var favoriteIdByTemplate = {};
+              (Array.isArray(result.data && result.data.favorites) ? result.data.favorites : []).forEach(function(item) {
+                var key = String(item && item.journey_template_id || '').trim();
+                var id = Number(item && item.favorite_id || 0);
+                if (key && isFinite(id) && id > 0) favoriteIdByTemplate[key] = id;
+              });
+              targets.transferTargets.forEach(function(target) {
+                if (!favoriteStatusMutationIsCurrent(target)) return;
+                setShuttleTransferFavorited(
+                  target.templateId,
+                  favoredTemplateIds.indexOf(target.templateId) >= 0,
+                  favoriteIdByTemplate[target.templateId]
+                );
+                markFavoriteStatusKnown(target.keys);
+              });
+            })
+            .catch(function() {
+              markFavoriteStatusRetry(transferKeys);
+            })
+            .finally(function() {
+              clearFavoriteStatusInFlight(transferKeys, transferTask);
+              syncRouteFavoriteButtonsInView();
             });
-            transferTemplateIds.forEach(function(templateId) {
-              setShuttleTransferFavorited(
-                templateId,
-                favoredTemplateIds.indexOf(templateId) >= 0,
-                favoriteIdByTemplate[templateId]
-              );
-            });
-          }));
+          transferKeys.forEach(function(key) { favoriteStatusInFlightByKey[key] = transferTask; });
+          tasks.push(transferTask);
         }
-        if (tasks.length === 0) {
+
+        if (!tasks.length) {
           syncRouteFavoriteButtonsInView();
           return Promise.resolve([]);
         }
-        return Promise.all(tasks)
-          .then(function() {
-            if (requestSeq !== favoriteStatusRequestSeq) return [];
-            syncRouteFavoriteButtonsInView();
-            return [];
-          })
-          .catch(function() {
-            if (requestSeq !== favoriteStatusRequestSeq) return [];
-            routeIds.forEach(function(routeId) {
-              setRouteFavorited(routeId, false);
-            });
-            routeUuids.forEach(function(routeUuid) {
-              setRouteFavorited(0, false, routeUuid);
-            });
-            transferTemplateIds.forEach(function(templateId) {
-              setShuttleTransferFavorited(templateId, false);
-            });
-            syncRouteFavoriteButtonsInView();
-            return [];
-          });
+        return Promise.all(tasks);
       }
 
       function ensureRouteFavoritesModal() {
@@ -14023,6 +14147,7 @@
           .then(function(result) {
             if (!result.ok) throw new Error(result.data && result.data.error || '즐겨찾기를 삭제하지 못했습니다.');
             setRouteFavorited(normalizedRouteId, false, normalizedRouteUuid);
+            markFavoriteStatusMutation(favoriteStatusRouteKeys(normalizedRouteId, normalizedRouteUuid));
             routeFavoritesModalItems = Array.isArray(routeFavoritesModalItems)
               ? routeFavoritesModalItems.filter(function(item) {
                   return normalizeRouteFavoriteId(item && item.route_id) !== normalizedRouteId;
@@ -14059,6 +14184,7 @@
           .then(function(result) {
             if (!result.ok) throw new Error(result.data && result.data.error || '환승 즐겨찾기를 삭제하지 못했습니다.');
             setShuttleTransferFavorited(templateId, false);
+            markFavoriteStatusMutation([favoriteStatusKey('transfer-template', templateId)]);
             routeFavoritesModalItems = Array.isArray(routeFavoritesModalItems)
               ? routeFavoritesModalItems.filter(function(item) {
                   return !(item && item.favorite_kind === 'shuttle_transfer' && Number(item.favorite_id) === normalizedId);
@@ -14123,7 +14249,7 @@
         if (currentlyFavorited) {
           var favoriteId = Number(favoriteTransferEntryIdByTemplateId[templateId] || 0);
           if (!isFinite(favoriteId) || favoriteId <= 0) {
-            requestPromise = refreshVisibleRouteFavoriteStatuses([option]).then(function() {
+            requestPromise = refreshVisibleRouteFavoriteStatuses([option], { force: true }).then(function() {
               favoriteId = Number(favoriteTransferEntryIdByTemplateId[templateId] || 0);
               if (!isFinite(favoriteId) || favoriteId <= 0) throw new Error('환승 즐겨찾기 정보를 다시 불러와주세요.');
               return fetchJson(API_BASE + '/api/me/transfer-favorites/' + encodeURIComponent(String(favoriteId)), {
@@ -14138,6 +14264,7 @@
           requestPromise = requestPromise.then(function(result) {
             if (!result.ok) throw new Error(result.data && result.data.error || '환승 즐겨찾기를 해제하지 못했습니다.');
             setShuttleTransferFavorited(templateId, false);
+            markFavoriteStatusMutation([favoriteStatusKey('transfer-template', templateId)]);
           });
         } else {
           requestPromise = prepareShuttleTransferSnapshot(option, card)
@@ -14154,6 +14281,7 @@
               if (!result.ok) throw new Error(result.data && result.data.error || '환승 즐겨찾기를 저장하지 못했습니다.');
               var favorite = result.data && result.data.favorite || {};
               setShuttleTransferFavorited(templateId, true, favorite.favorite_id);
+              markFavoriteStatusMutation([favoriteStatusKey('transfer-template', templateId)]);
             });
         }
         requestPromise
@@ -14163,7 +14291,7 @@
           })
           .catch(function(err) {
             alert(err && err.message ? err.message : '환승 즐겨찾기 처리에 실패했습니다.');
-            return refreshVisibleRouteFavoriteStatuses(currentRouteOptions || []);
+            return refreshVisibleRouteFavoriteStatuses(currentRouteOptions || [], { force: true });
           })
           .finally(function() {
             buttonEl.disabled = false;
@@ -14202,8 +14330,10 @@
           }).then(function(result) {
             if (!result.ok) throw new Error(result.data && result.data.error || '즐겨찾기를 해제하지 못했습니다.');
             setRouteFavorited(routeId, false, routeUuid);
+            markFavoriteStatusMutation(favoriteStatusRouteKeys(routeId, routeUuid));
             if (deleteRouteId !== routeId) {
               setRouteFavorited(deleteRouteId, false, deleteRouteUuid);
+              markFavoriteStatusMutation(favoriteStatusRouteKeys(deleteRouteId, deleteRouteUuid));
             }
           });
         } else {
@@ -14220,6 +14350,7 @@
           }).then(function(result) {
             if (!result.ok) throw new Error(result.data && result.data.error || '즐겨찾기를 저장하지 못했습니다.');
             setRouteFavorited(routeId, true, routeUuid);
+            markFavoriteStatusMutation(favoriteStatusRouteKeys(routeId, routeUuid));
             trackRouteResultAction(option, 'favorite_add');
           });
         }
@@ -14231,7 +14362,7 @@
           })
           .catch(function(err) {
             alert(err && err.message ? err.message : '즐겨찾기 처리에 실패했습니다.');
-            return refreshVisibleRouteFavoriteStatuses(currentRouteOptions || []);
+            return refreshVisibleRouteFavoriteStatuses(currentRouteOptions || [], { force: true });
           })
           .finally(function() {
             buttonEl.disabled = false;
@@ -14240,12 +14371,8 @@
       }
 
       function handleFavoritesAfterAuthRefresh() {
-        favoriteStatusRequestSeq += 1;
+        resetFavoriteStatusStore();
         if (!authState.logged_in) {
-          favoriteStatusByRouteId = {};
-          favoriteStatusByRouteUuid = {};
-          favoriteStatusByTransferTemplateId = {};
-          favoriteTransferEntryIdByTemplateId = {};
           recentFavoritesLoading = false;
           recentFavoriteItems = [];
           recentFavoritesHasMore = false;
@@ -33349,6 +33476,10 @@
         displayed._lastBatchSize = options.length;
         displayed._searchMode = currentRouteSearchModeUsed;
         currentRouteOptions = displayed;
+        // Resolve only previously unseen favorite identities. Rendering itself
+        // remains side-effect free so progress updates cannot fan out /api/me
+        // requests.
+        refreshVisibleRouteFavoriteStatuses(displayed);
         renderRouteCards(displayed, placeName, isDepart);
         if (isMobile() && !shouldPreserveSheetState) setSheetState('sheet-peek');
       }
@@ -38165,7 +38296,6 @@
           enhanceRouteDetailPanel(card, option, placeName, isDepart);
           syncRouteCardTimeSummary(card, option, placeName, isDepart);
         });
-        refreshVisibleRouteFavoriteStatuses(options || []);
         maybeShowRouteOnboardingGuide();
       };
 
