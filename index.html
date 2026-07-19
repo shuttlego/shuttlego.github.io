@@ -28490,11 +28490,22 @@
         });
       }
 
+      function buildSearchSessionRequestHeaders(capability, requestCapabilityProtocol) {
+        var headers = { 'Content-Type': 'application/json' };
+        if (requestCapabilityProtocol) {
+          headers['X-Shuttle-Search-Protocol'] = 'capability-v1';
+        }
+        if (capability) {
+          headers['X-Shuttle-Search-Capability'] = String(capability);
+        }
+        return headers;
+      }
+
       function createArrivalSearchSession(payload) {
         var opts = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
         return fetch(API_BASE + '/api/shuttle/arrive-search', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildSearchSessionRequestHeaders('', true),
           credentials: 'include',
           body: JSON.stringify(payload || {}),
           signal: opts && opts.signal ? opts.signal : undefined
@@ -28503,8 +28514,8 @@
         });
       }
 
-      function advanceArrivalSearchSession(sessionId, maxCandidates) {
-        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+      function advanceArrivalSearchSession(sessionId, capability, maxCandidates) {
+        var opts = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : {};
         if (maxCandidates && typeof maxCandidates === 'object') {
           opts = maxCandidates;
           maxCandidates = null;
@@ -28512,7 +28523,7 @@
         var requestedMaxCandidates = Math.max(0, Math.floor(Number(maxCandidates || 0) || 0));
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId) + '/advance', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
           body: JSON.stringify(requestedMaxCandidates > 0 ? { max_candidates: requestedMaxCandidates } : {}),
           signal: opts && opts.signal ? opts.signal : undefined
@@ -28521,11 +28532,11 @@
         });
       }
 
-      function expandArrivalSearchSession(sessionId) {
-        var opts = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+      function expandArrivalSearchSession(sessionId, capability) {
+        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId) + '/expand', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
           body: '{}',
           signal: opts && opts.signal ? opts.signal : undefined
@@ -28534,11 +28545,11 @@
         });
       }
 
-      function finalizeArrivalSearchSession(sessionId) {
-        var opts = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+      function finalizeArrivalSearchSession(sessionId, capability) {
+        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId) + '/finalize', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
           body: '{}',
           signal: opts && opts.signal ? opts.signal : undefined
@@ -28547,21 +28558,23 @@
         });
       }
 
-      function cancelArrivalSearchSession(sessionId) {
+      function cancelArrivalSearchSession(sessionId, capability) {
         if (!sessionId) return Promise.resolve();
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId), {
           method: 'DELETE',
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
-          keepalive: true
+          keepalive: !capability
         }).catch(function() { /* best effort */ });
       }
 
-      function pauseArrivalSearchSession(sessionId) {
+      function pauseArrivalSearchSession(sessionId, capability) {
         if (!sessionId) return Promise.resolve();
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId) + '/pause', {
           method: 'POST',
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
-          keepalive: true
+          keepalive: !capability
         }).catch(function() { /* best effort */ });
       }
 
@@ -28658,6 +28671,7 @@
           checkedCount: 0,
           candidateCount: 0,
           sessionId: '',
+          sessionCapability: '',
           radiusSteps: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
           currentRadiusIndex: 0,
           currentRadiusKm: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM[0],
@@ -29310,6 +29324,7 @@
         function requestStopArrivalSearch() {
           if (finished || state.stopRequested) return Promise.resolve(null);
           var sessionIdToCancel = String(state.sessionId || '').trim();
+          var sessionCapabilityToCancel = String(state.sessionCapability || '').trim();
           state.stopRequested = true;
           finished = true;
           state.finished = true;
@@ -29322,10 +29337,11 @@
           state.fallbackKind = '';
           state.message = buildImmediateStopMessage();
           state.sessionId = '';
+          state.sessionCapability = '';
           abortPendingArrivalSearchRequest();
           if (!coordinator || !coordinator.disposed) renderArrivalBySearchV2State(state, params);
           if (sessionIdToCancel) {
-            return cancelArrivalSearchSession(sessionIdToCancel).catch(function() {
+            return cancelArrivalSearchSession(sessionIdToCancel, sessionCapabilityToCancel).catch(function() {
               return null;
             });
           }
@@ -29341,7 +29357,7 @@
           state.message = '';
           abortPendingArrivalSearchRequest();
           if (!coordinator || !coordinator.disposed) renderArrivalBySearchV2State(state, params);
-          return pauseArrivalSearchSession(state.sessionId || requestedSessionId);
+          return pauseArrivalSearchSession(state.sessionId || requestedSessionId, state.sessionCapability);
         }
 
         state.onStop = coordinator ? coordinator.pauseAll : requestStopArrivalSearch;
@@ -29353,9 +29369,11 @@
 
         function cleanupArrivalSearchSession() {
           var sessionId = String(state.sessionId || '').trim();
+          var sessionCapability = String(state.sessionCapability || '').trim();
           state.sessionId = '';
+          state.sessionCapability = '';
           if (!sessionId) return Promise.resolve();
-          return cancelArrivalSearchSession(sessionId).catch(function() { return null; });
+          return cancelArrivalSearchSession(sessionId, sessionCapability).catch(function() { return null; });
         }
 
         function updateRadiusMessage(radiusKm, expanded) {
@@ -29410,7 +29428,7 @@
           state.recommendedOptions = buildArrivalByCombinedRecommendedOptions();
           state.message = '';
           renderArrivalBySearchV2State(state, params);
-          return pauseArrivalSearchSession(state.sessionId);
+          return pauseArrivalSearchSession(state.sessionId, state.sessionCapability);
         }
 
         function resumeArrivalSearch() {
@@ -29441,6 +29459,9 @@
           payload = payload || {};
           if (payload.session_id) {
             state.sessionId = String(payload.session_id || '').trim();
+          }
+          if (payload.session_capability) {
+            state.sessionCapability = String(payload.session_capability || '').trim();
           }
           if (Array.isArray(payload.radius_steps_km) && payload.radius_steps_km.length > 0) {
             state.radiusSteps = payload.radius_steps_km.map(function(value) {
@@ -29502,7 +29523,7 @@
           state.stopping = true;
           var finalizeSignal = beginPendingRequest('finalize');
           var finalizePromise = state.sessionId
-            ? finalizeArrivalSearchSession(state.sessionId, { signal: finalizeSignal }).catch(function(err) {
+            ? finalizeArrivalSearchSession(state.sessionId, state.sessionCapability, { signal: finalizeSignal }).catch(function(err) {
                 if (isArrivalSearchAbortError(err)) return null;
                 throw err;
               })
@@ -29545,7 +29566,12 @@
           var remainingTarget = coordinator
             ? Math.max(1, Number(coordinator.single.target || ROUTE_SEARCH_BATCH_SIZE) - Number(coordinator.single.validCount || 0))
             : ROUTE_SEARCH_BATCH_SIZE;
-          return advanceArrivalSearchSession(state.sessionId, remainingTarget, { signal: advanceSignal }).then(function(stepData) {
+          return advanceArrivalSearchSession(
+            state.sessionId,
+            state.sessionCapability,
+            remainingTarget,
+            { signal: advanceSignal }
+          ).then(function(stepData) {
             endPendingRequest('advance');
             if (params.requestId !== routeRequestSerial) return null;
             if (finished || state.stopRequested) return null;
@@ -29570,7 +29596,11 @@
         function expandAndContinue() {
           if (params.requestId !== routeRequestSerial || finished) return Promise.resolve(null);
           var expandSignal = beginPendingRequest('expand');
-          return expandArrivalSearchSession(state.sessionId, { signal: expandSignal }).then(function(data) {
+          return expandArrivalSearchSession(
+            state.sessionId,
+            state.sessionCapability,
+            { signal: expandSignal }
+          ).then(function(data) {
             endPendingRequest('expand');
             if (params.requestId !== routeRequestSerial) return null;
             if (finished || state.stopRequested) return null;
@@ -29603,12 +29633,15 @@
           if (finished || state.stopRequested) {
             var createdSessionId = String(data && data.session_id || '').trim();
             if (createdSessionId) {
-              cancelArrivalSearchSession(createdSessionId).catch(function() { return null; });
+              cancelArrivalSearchSession(
+                createdSessionId,
+                String(data && data.session_capability || '').trim()
+              ).catch(function() { return null; });
             }
             return null;
           }
           if (coordinator && coordinator.pauseRequested) {
-            state.sessionId = String(data && data.session_id || requestedSessionId);
+            syncArrivalByV2StateFromPayload(data);
             return requestPauseArrivalSearch();
           }
           syncArrivalByV2StateFromPayload(data);
@@ -32090,7 +32123,7 @@
         params = params || {};
         return fetch(API_BASE + '/api/shuttle/transfer-search', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildSearchSessionRequestHeaders('', true),
           credentials: 'include',
           body: JSON.stringify(buildShuttleTransferSearchPayload(params)),
           signal: params.signal || undefined
@@ -32163,11 +32196,11 @@
         return option;
       }
 
-      function advanceShuttleTransferSession(sessionId, signal, options) {
+      function advanceShuttleTransferSession(sessionId, capability, signal, options) {
         options = options || {};
         return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId) + '/advance', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
           body: JSON.stringify({
             expand_radius: !!options.expandRadius,
@@ -32184,21 +32217,23 @@
         });
       }
 
-      function cancelShuttleTransferSession(sessionId) {
+      function cancelShuttleTransferSession(sessionId, capability) {
         if (!sessionId) return Promise.resolve();
         return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId), {
           method: 'DELETE',
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
-          keepalive: true
+          keepalive: !capability
         }).catch(function() { return null; });
       }
 
-      function pauseShuttleTransferSession(sessionId) {
+      function pauseShuttleTransferSession(sessionId, capability) {
         if (!sessionId) return Promise.resolve();
         return fetch(API_BASE + '/api/shuttle/transfer-search/' + encodeURIComponent(sessionId) + '/pause', {
           method: 'POST',
+          headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
-          keepalive: true
+          keepalive: !capability
         }).catch(function() { return null; });
       }
 
@@ -32223,6 +32258,7 @@
           ? activeCombinedSearchCoordinator
           : null;
         var sessionId = createRouteSearchClientId('transfer');
+        var sessionCapability = '';
         var inFlight = false;
         currentShuttleTransferRequestId = requestId;
         currentShuttleTransferSessionId = sessionId;
@@ -32295,7 +32331,13 @@
           if (data && data.replace_options) currentShuttleTransferOptions = [];
           appendUniqueShuttleTransferOptions(normalizedOptions);
           currentShuttleTransferHasMore = !!(data && data.has_more);
-          if (data && data.session_id) currentShuttleTransferSessionId = String(data.session_id);
+          if (data && data.session_id) {
+            sessionId = String(data.session_id);
+            currentShuttleTransferSessionId = sessionId;
+          }
+          if (data && data.session_capability) {
+            sessionCapability = String(data.session_capability || '').trim();
+          }
           if (coordinator) {
             var transferValidCount = countArrivalByValidOptions(currentShuttleTransferOptions);
             var transferProgressCount = coordinator.timeBasis === 'arrive_by'
@@ -32349,7 +32391,7 @@
           if (coordinator && coordinator.transferAbortController) {
             try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
           }
-          return cancelShuttleTransferSession(currentShuttleTransferSessionId || sessionId);
+          return cancelShuttleTransferSession(currentShuttleTransferSessionId || sessionId, sessionCapability);
         }
 
         function pauseTransfer() {
@@ -32358,7 +32400,7 @@
             try { coordinator.transferAbortController.abort(); } catch (e) { /* ignore */ }
           }
           if (coordinator) coordinator.updateTransfer({ status: 'paused', message: '' });
-          return pauseShuttleTransferSession(currentShuttleTransferSessionId || sessionId);
+          return pauseShuttleTransferSession(currentShuttleTransferSessionId || sessionId, sessionCapability);
         }
 
         function advanceTransferBatch(advanceOptions) {
@@ -32393,6 +32435,7 @@
           var requestOptions = Object.assign({}, advanceOptions, { maxResults: maxResults });
           return advanceShuttleTransferSession(
             currentShuttleTransferSessionId || sessionId,
+            sessionCapability,
             controller && controller.signal,
             requestOptions
           ).then(function(data) {
@@ -32438,9 +32481,24 @@
           signal: controller && controller.signal
         });
         return fetchShuttleTransferOptions(createParams).then(function(data) {
-          if (requestId !== routeRequestSerial || requestId !== currentShuttleTransferRequestId) return [];
+          if (requestId !== routeRequestSerial || requestId !== currentShuttleTransferRequestId) {
+            return cancelShuttleTransferSession(
+              String(data && data.session_id || '').trim(),
+              String(data && data.session_capability || '').trim()
+            ).then(function() { return []; });
+          }
           if (coordinator && (coordinator.pauseRequested || initialStageToken !== coordinator.stageToken)) {
-            return currentShuttleTransferOptions;
+            if (data && data.session_id) {
+              sessionId = String(data.session_id);
+              currentShuttleTransferSessionId = sessionId;
+            }
+            if (data && data.session_capability) {
+              sessionCapability = String(data.session_capability || '').trim();
+            }
+            return pauseShuttleTransferSession(
+              currentShuttleTransferSessionId || sessionId,
+              sessionCapability
+            ).then(function() { return currentShuttleTransferOptions; });
           }
           var options = applyTransferBatch(data || {});
           if (shouldContinueTransferStage()) {
