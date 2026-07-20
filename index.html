@@ -343,8 +343,23 @@
       min-width: 0;
     }
     .time-transfer-option-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-weight: 700;
       color: #1f2937;
+    }
+    .time-transfer-beta-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: #1428A0;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
     }
     .time-transfer-option-desc {
       color: #64748b;
@@ -9408,7 +9423,7 @@
         <label class="time-transfer-toggle" for="timeTransferSearchCheckbox">
           <input type="checkbox" id="timeTransferSearchCheckbox" />
           <span class="time-transfer-option-text">
-            <span class="time-transfer-option-title">셔틀 환승 경로도 함께 찾기</span>
+            <span class="time-transfer-option-title">셔틀 환승 경로도 함께 찾기 <span class="time-transfer-beta-badge">Beta</span></span>
             <span class="time-transfer-option-desc">두 개 이상의 셔틀을 이어 타는 후보를 추가로 확인합니다.</span>
           </span>
         </label>
