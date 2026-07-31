@@ -138,7 +138,16 @@
   </script>
   <style>
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; scrollbar-gutter: stable; }
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      height: 100%;
+      margin: 0;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      scrollbar-gutter: stable;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
     body {
       display: flex;
       flex-direction: column;
@@ -252,18 +261,26 @@
       justify-content: space-between;
       gap: 12px;
       margin-bottom: 12px;
+      flex-wrap: wrap;
     }
     .time-picker-actions {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 0;
+      max-width: 100%;
     }
     .time-picker-modal .time-picker-title {
+      flex: 1 1 110px;
+      min-width: 0;
       font-weight: 600;
       font-size: 16px;
       color: #333;
       margin: 0;
+      overflow-wrap: anywhere;
     }
     .time-basis-section {
       margin-bottom: 14px;
@@ -280,6 +297,7 @@
       flex-direction: column;
       align-items: flex-start;
       gap: 4px;
+      min-width: 0;
       padding: 12px;
       min-height: 88px;
       border-radius: 10px;
@@ -504,6 +522,8 @@
       color: #555;
       cursor: pointer;
       font-family: inherit;
+      max-width: 100%;
+      white-space: nowrap;
     }
     .time-picker-now:hover,
     .time-picker-five:hover { background: #eee; border-color: #ccc; color: #333; }
@@ -546,19 +566,35 @@
       .time-picker-modal {
         left: 0;
         right: 0;
+        width: 100%;
         max-width: none;
         bottom: 0;
         top: auto;
         border-radius: 16px 16px 0 0;
         padding: 20px 16px calc(env(safe-area-inset-bottom) + 16px);
+        max-height: calc(100vh - 8px);
         max-height: min(92dvh, calc(100dvh - 8px));
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
         box-sizing: border-box;
       }
+      .time-picker-header {
+        align-items: flex-start;
+      }
+      .time-picker-actions {
+        flex: 1 1 auto;
+      }
       .time-basis-options {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .time-transfer-option,
+      .time-transfer-toggle,
+      .time-transfer-option-text {
+        min-width: 0;
+      }
+      .time-picker-wheels {
+        gap: clamp(6px, 2.5vw, 12px);
       }
       .time-picker-column .time-picker-items {
         scroll-snap-type: y proximity;
@@ -567,6 +603,57 @@
         scroll-behavior: auto;
         overflow-y: scroll;
         touch-action: pan-y;
+      }
+    }
+    @media (max-width: 390px) {
+      .time-picker-modal {
+        padding: 16px 12px calc(env(safe-area-inset-bottom) + 12px);
+      }
+      .time-picker-header {
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .time-picker-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+        gap: 6px;
+      }
+      .time-picker-now,
+      .time-picker-five {
+        width: 100%;
+        min-width: 0;
+        padding-left: 6px;
+        padding-right: 6px;
+      }
+      .time-basis-options {
+        gap: 8px;
+      }
+      .time-basis-btn {
+        min-height: 0;
+        padding: 10px;
+      }
+      .time-basis-btn-title {
+        font-size: 13px;
+      }
+      .time-basis-btn-desc {
+        font-size: 11px;
+      }
+      .time-transfer-option {
+        padding: 8px;
+      }
+      .time-picker-wheels {
+        gap: 6px;
+      }
+      .day-type-column .time-picker-item {
+        padding-left: 4px;
+        padding-right: 4px;
+      }
+      .day-type-column .day-type-label {
+        font-size: 12px;
+      }
+      .day-type-column .day-type-desc {
+        font-size: 9px;
       }
     }
 
@@ -9868,6 +9955,49 @@
       window.__SHUTTLE_ENV = ENV;
       var bootState = window.__SHUTTLE_APP_BOOT || { sdkReady: false, started: false };
       window.__SHUTTLE_APP_BOOT = bootState;
+      if (window.Promise && !Promise.prototype.finally) {
+        Promise.prototype.finally = function(onFinally) {
+          var Ctor = this.constructor || Promise;
+          return this.then(
+            function(value) {
+              return Ctor.resolve(typeof onFinally === 'function' ? onFinally() : onFinally)
+                .then(function() { return value; });
+            },
+            function(reason) {
+              return Ctor.resolve(typeof onFinally === 'function' ? onFinally() : onFinally)
+                .then(function() { throw reason; });
+            }
+          );
+        };
+      }
+      if (window.Promise && !Promise.allSettled) {
+        Promise.allSettled = function(values) {
+          return Promise.all(Array.prototype.map.call(values, function(value) {
+            return Promise.resolve(value).then(
+              function(result) { return { status: 'fulfilled', value: result }; },
+              function(reason) { return { status: 'rejected', reason: reason }; }
+            );
+          }));
+        };
+      }
+      window.__SHUTTLE_EARLY_NATIVE_LOCATION = window.__SHUTTLE_EARLY_NATIVE_LOCATION || null;
+      window.__shuttleGoNativeLocationChanged = function(payload) {
+        if (!payload || !payload.ok) return;
+        window.__SHUTTLE_EARLY_NATIVE_LOCATION = payload;
+      };
+      try {
+        if (window.ShuttleGoAndroid) {
+          if (typeof window.ShuttleGoAndroid.locationBridgeReady === 'function') {
+            window.ShuttleGoAndroid.locationBridgeReady();
+          }
+          if (typeof window.ShuttleGoAndroid.startLocationUpdates === 'function') {
+            window.ShuttleGoAndroid.startLocationUpdates();
+          }
+          if (typeof window.ShuttleGoAndroid.reportLocationMilestone === 'function') {
+            window.ShuttleGoAndroid.reportLocationMilestone('early_bridge_ready', '');
+          }
+        }
+      } catch (e) {}
       window.__startShuttleAppIfReady = function() {
         if (bootState.started || !bootState.sdkReady || typeof window.__initShuttleApp !== 'function') return;
         bootState.started = true;
@@ -10343,8 +10473,8 @@
       var ROUTE_ARROW_REFRESH_DEBOUNCE_MS = 120;
       var routeArrowRefreshTimer = null;
       var currentLocationOverlayRefreshRaf = 0;
-      var latestNativeLocation = null;
-      var nativeLocationRequestPromise = null;
+      var latestNativeLocation = window.__SHUTTLE_EARLY_NATIVE_LOCATION || null;
+      var nativeLocationRequestPromises = {};
       var nativeLocationFollowActive = false;
       var nativeLocationFollowUntilMs = 0;
       var nativeLocationFollowReason = '';
@@ -12066,16 +12196,76 @@
           lng: lng,
           accuracy: isFinite(Number(payload.accuracy)) ? Number(payload.accuracy) : null,
           provider: payload.provider || '',
+          source: payload.source || '',
           timestamp: Number(payload.timestamp) || Date.now(),
-          age_ms: isFinite(Number(payload.age_ms)) ? Number(payload.age_ms) : null
+          age_ms: isFinite(Number(payload.age_ms)) ? Number(payload.age_ms) : null,
+          fresh: payload.fresh === true
         };
       }
 
       function storeNativeLocation(payload) {
         var location = normalizeNativeLocationPayload(payload);
         if (!location) return null;
+        if (latestNativeLocation) {
+          var currentTimestamp = Number(latestNativeLocation.timestamp) || 0;
+          var candidateTimestamp = Number(location.timestamp) || 0;
+          if (candidateTimestamp < currentTimestamp - 1000) {
+            return latestNativeLocation;
+          }
+          if (Math.abs(candidateTimestamp - currentTimestamp) <= 1000) {
+            var currentAccuracy = isFinite(Number(latestNativeLocation.accuracy))
+              ? Number(latestNativeLocation.accuracy)
+              : Number.MAX_VALUE;
+            var candidateAccuracy = isFinite(Number(location.accuracy))
+              ? Number(location.accuracy)
+              : Number.MAX_VALUE;
+            if (candidateAccuracy >= currentAccuracy) {
+              return latestNativeLocation;
+            }
+          }
+        }
         latestNativeLocation = location;
+        window.__SHUTTLE_EARLY_NATIVE_LOCATION = location;
         return location;
+      }
+
+      function isFreshNativeLocation(location) {
+        if (!location) return false;
+        var timestamp = Number(location.timestamp) || 0;
+        var ageMs = timestamp > 0
+          ? Math.max(0, Date.now() - timestamp)
+          : Number(location.age_ms);
+        var accuracy = isFinite(Number(location.accuracy)) ? Number(location.accuracy) : 0;
+        return ageMs <= 15000 && (!accuracy || accuracy <= 100);
+      }
+
+      function isDisplayableNativeLocation(location) {
+        if (!location) return false;
+        var timestamp = Number(location.timestamp) || 0;
+        var ageMs = timestamp > 0
+          ? Math.max(0, Date.now() - timestamp)
+          : Number(location.age_ms);
+        var accuracy = isFinite(Number(location.accuracy)) ? Number(location.accuracy) : 0;
+        return isFinite(ageMs) && ageMs <= 120000 && (!accuracy || accuracy <= 2000);
+      }
+
+      function reportNativeLocationMilestone(name, detail) {
+        try {
+          var bridge = getNativeBridge();
+          if (bridge && typeof bridge.reportLocationMilestone === 'function') {
+            bridge.reportLocationMilestone(String(name || ''), String(detail || ''));
+          }
+        } catch (e) {}
+      }
+
+      function notifyNativeLocationBridgeReady() {
+        try {
+          var bridge = getNativeBridge();
+          if (bridge && typeof bridge.locationBridgeReady === 'function') {
+            bridge.locationBridgeReady();
+          }
+          reportNativeLocationMilestone('app_bridge_ready', '');
+        } catch (e) {}
       }
 
       function readAndroidNativeLocationSnapshot() {
@@ -12092,10 +12282,10 @@
             var raw = snapshotBridge.getCurrentLocationSnapshot();
             var payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
             var snapshot = storeNativeLocation(payload);
-            if (snapshot) return snapshot;
+            if (isDisplayableNativeLocation(snapshot)) return snapshot;
           }
         } catch (e) {}
-        return latestNativeLocation;
+        return isDisplayableNativeLocation(latestNativeLocation) ? latestNativeLocation : null;
       }
 
       function isAndroidNativeShareAvailable() {
@@ -12115,9 +12305,12 @@
       function requestAndroidNativeLocation(options) {
         options = options || {};
         var snapshot = readAndroidNativeLocationSnapshot();
-        if (snapshot) return Promise.resolve(snapshot);
-        if (nativeLocationRequestPromise) return nativeLocationRequestPromise;
-        nativeLocationRequestPromise = new Promise(function(resolve, reject) {
+        if (snapshot && !options.forceRefresh) return Promise.resolve(snapshot);
+        var requestKey = String(options.reason || 'default');
+        if (nativeLocationRequestPromises[requestKey]) {
+          return nativeLocationRequestPromises[requestKey];
+        }
+        var requestPromise = new Promise(function(resolve, reject) {
           if (!isAndroidNativeLocationAvailable()) {
             reject({ code: 'unavailable', message: '네이티브 위치 기능을 사용할 수 없습니다.' });
             return;
@@ -12146,10 +12339,23 @@
             delete nativeLocationRequests[requestId];
             reject({ code: 'unavailable', message: '네이티브 위치 요청을 시작하지 못했습니다.' });
           }
-        }).finally(function() {
-          nativeLocationRequestPromise = null;
         });
-        return nativeLocationRequestPromise;
+        function clearTrackedRequest() {
+          if (nativeLocationRequestPromises[requestKey] === requestPromise) {
+            delete nativeLocationRequestPromises[requestKey];
+          }
+        }
+        nativeLocationRequestPromises[requestKey] = requestPromise;
+        return requestPromise.then(
+          function(value) {
+            clearTrackedRequest();
+            return value;
+          },
+          function(error) {
+            clearTrackedRequest();
+            throw error;
+          }
+        );
       }
 
       window.__shuttleGoNativeLocationResult = function(requestId, payload) {
@@ -12174,6 +12380,13 @@
       window.__shuttleGoNativeLocationChanged = function(payload) {
         var location = storeNativeLocation(payload);
         if (!location) return;
+        reportNativeLocationMilestone(
+          'location_received',
+          'fresh=' + (isFreshNativeLocation(location) ? '1' : '0')
+        );
+        if (!map) {
+          return;
+        }
         if (canApplyNativeLocationFollow()) {
           var followReason = nativeLocationFollowReason;
           var followToken = nativeLocationFollowStartupToken;
@@ -12181,7 +12394,7 @@
             source: 'android-native-location-update',
             forceRender: true
           });
-          if (moved && followReason === 'startup') {
+          if (moved && followReason === 'startup' && isFreshNativeLocation(location)) {
             consumeStartupCurrentLocationAutoCenter(followToken);
             stopNativeLocationFollow('startup-consumed');
           }
@@ -12189,6 +12402,7 @@
         }
         showCurrentLocationOverlay(location.lat, location.lng, true);
       };
+      notifyNativeLocationBridgeReady();
 
       var shuttleGoNativeAuthBridge = {
         onNativeAuthEvent: function(detail) {
@@ -18757,6 +18971,15 @@
         var center = new kakao.maps.LatLng(37.5665, 126.978);
         var options = { center: center, level: 5 };
         map = new kakao.maps.Map(mapContainer, options);
+        reportNativeLocationMilestone('map_ready', '');
+        var initialNativeLocation = readAndroidNativeLocationSnapshot();
+        if (initialNativeLocation) {
+          showCurrentLocationOverlay(initialNativeLocation.lat, initialNativeLocation.lng, true);
+          reportNativeLocationMilestone(
+            'marker_rendered',
+            'source=map-ready fresh=' + (isFreshNativeLocation(initialNativeLocation) ? '1' : '0')
+          );
+        }
         if (mapContainer) {
           var onMainMapUserInteraction = function() {
             markUserMapIntent('map-interaction');
@@ -34147,6 +34370,10 @@
         }
         map.setCenter(position);
         showCurrentLocationOverlay(point.lat, point.lng, !!opts.forceRender);
+        reportNativeLocationMilestone(
+          'map_center_applied',
+          'source=' + String(opts.source || 'unknown')
+        );
         scheduleMainMapRelayout();
         return true;
       }
@@ -34165,7 +34392,7 @@
             setLevel: moveOptions.setLevel,
             forceRender: isAndroidWebViewClient() || !!moveOptions.forceRender
           });
-          if (moved && moveReason === 'startup') {
+          if (moved && moveReason === 'startup' && isFreshNativeLocation(pos)) {
             consumeStartupCurrentLocationAutoCenter(startupToken);
             stopNativeLocationFollow('startup-consumed');
           }
@@ -34175,6 +34402,8 @@
           var snapshot = readAndroidNativeLocationSnapshot();
           if (snapshot) {
             applyResolvedLocation(snapshot, 'android-native-location-snapshot');
+            requestAndroidNativeLocation({ reason: moveReason, forceRefresh: true })
+              .catch(function() {});
             return;
           }
           requestAndroidNativeLocation({ reason: moveReason })
