@@ -37996,9 +37996,11 @@
 
       function buildEtaSystemTooltipFromRunMeta(runMeta, autoInput) {
         if (autoInput) return '노선의 출발시각';
+        var provider = String(runMeta && runMeta.provider || 'tmap').trim().toLowerCase();
+        var providerLabel = provider === 'naver' ? 'Naver 지도' : 'Tmap';
         var requested = String(runMeta && runMeta.requested_start_at || '-');
         var called = String(runMeta && runMeta.called_at || '-');
-        return 'Tmap 실시간 교통정보 기반 (일반 차량 기준)\n  출발시간: ' + requested + '\n  호출시간: ' + called;
+        return providerLabel + ' 실시간 교통정보 기반 (일반 차량 기준)\n  출발시간: ' + requested + '\n  호출시간: ' + called;
       }
 
       function normalizeEtaDetailPayload(payload) {
@@ -38021,11 +38023,12 @@
           if (String(item.kind || '') === 'system') {
             var runMeta = runs[String(item.run_id || '')] || {};
             var autoInput = !!item.auto_input;
+            var provider = String(runMeta.provider || 'tmap').trim().toLowerCase();
             return {
               id: String(item.id || ''),
               is_system: true,
               is_auto_input: autoInput,
-              reporter_name: autoInput ? '자동입력' : 'Tmap',
+              reporter_name: autoInput ? '자동입력' : (provider === 'naver' ? 'Naver' : 'Tmap'),
               system_tooltip: buildEtaSystemTooltipFromRunMeta(runMeta, autoInput),
               client_reported_at: String(item.reported_at || ''),
               arrive_time: String(item.arrive_time || ''),
