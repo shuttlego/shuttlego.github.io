@@ -8808,14 +8808,16 @@
       color: #475569;
       border: 1px solid #cbd5e1;
     }
-    .report-badge.tmap {
+    .report-badge.tmap,
+    .report-badge.naver {
       background: #ffffff;
       color: #334155;
       gap: 5px;
       padding-left: 7px;
       padding-right: 9px;
     }
-    .report-badge-tmap-logo {
+    .report-badge-tmap-logo,
+    .report-badge-naver-logo {
       width: 14px;
       height: 14px;
       flex: 0 0 auto;
@@ -38078,11 +38080,15 @@
           }
           var badgeText = String(item.reporter_name || '').trim() || 'Tmap';
           var isTmapBadge = badgeText === 'Tmap';
+          var isNaverBadge = badgeText === 'Naver';
           var tmapLogoSrc = 'https://i.namu.wiki/i/wAQY69bxQDvdruV0Tds4oqP3BJToPjlIC-PW4Gy-kFQrC4qw3yoY2clcDIVcyY0NrX4T39vFiq_5mtyvWTH2Pg.svg';
+          var naverLogoSrc = 'https://i.namu.wiki/i/p_1IEyQ8rYenO9YgAFp_LHIAW46kn6DXT0VKmZ_jKNijvYth9DieYZuJX_E_H_4GkCER_sVKhMqSyQYoW94JKA.svg';
           var logoHtml = isTmapBadge
             ? '<img class="report-badge-tmap-logo" src="' + escapeAttr(tmapLogoSrc) + '" alt="" aria-hidden="true" />'
-            : '';
-          var badgeClass = 'report-badge system' + (isTmapBadge ? ' tmap' : '');
+            : (isNaverBadge
+              ? '<img class="report-badge-naver-logo" src="' + escapeAttr(naverLogoSrc) + '" alt="" aria-hidden="true" />'
+              : '');
+          var badgeClass = 'report-badge system' + (isTmapBadge ? ' tmap' : (isNaverBadge ? ' naver' : ''));
           var tooltip = String(item.system_tooltip || '').trim();
           if (!tooltip) {
             return '<span class="' + badgeClass + '">' + logoHtml + escapeHtml(badgeText) + '</span>';
