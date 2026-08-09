@@ -28989,18 +28989,22 @@
         });
       }
 
-      function advanceArrivalSearchSession(sessionId, capability, maxCandidates) {
-        var opts = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : {};
+      function advanceArrivalSearchSession(sessionId, capability, maxCandidates, targetCandidateCount) {
+        var opts = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : {};
         if (maxCandidates && typeof maxCandidates === 'object') {
           opts = maxCandidates;
           maxCandidates = null;
         }
         var requestedMaxCandidates = Math.max(0, Math.floor(Number(maxCandidates || 0) || 0));
+        var requestedTargetCandidates = Math.max(0, Math.floor(Number(targetCandidateCount || 0) || 0));
+        var requestBody = {};
+        if (requestedMaxCandidates > 0) requestBody.max_candidates = requestedMaxCandidates;
+        if (requestedTargetCandidates > 0) requestBody.target_candidate_count = requestedTargetCandidates;
         return fetch(API_BASE + '/api/shuttle/arrive-search/' + encodeURIComponent(sessionId) + '/advance', {
           method: 'POST',
           headers: buildSearchSessionRequestHeaders(capability, false),
           credentials: 'include',
-          body: JSON.stringify(requestedMaxCandidates > 0 ? { max_candidates: requestedMaxCandidates } : {}),
+          body: JSON.stringify(requestBody),
           signal: opts && opts.signal ? opts.signal : undefined
         }).then(function(resp) {
           return _parseArrivalSearchV2Response(resp, 'arrive-search advance');
@@ -29155,6 +29159,7 @@
           lateOverLimitCount: 0,
           radiusExhausted: false,
           hasMoreCandidates: false,
+          distanceFrontierComplete: false,
           stopRequested: false,
           stopping: false,
           pendingRequestKind: ''
@@ -29383,30 +29388,31 @@
         var groupB = getArrivalByOptionRecommendedGroup(b);
         if (groupA !== groupB) return groupA - groupB;
 
+        var distanceA = getArrivalByOptionDistanceMeters(a);
+        var distanceB = getArrivalByOptionDistanceMeters(b);
+        if (distanceA !== distanceB) return distanceA - distanceB;
+
+        var transferA = getArrivalByOptionTransferCount(a);
+        var transferB = getArrivalByOptionTransferCount(b);
+        if (transferA !== transferB) return transferA - transferB;
+
         if (groupA === 2) {
           var lateA = getArrivalByOptionLateMinutes(a);
           var lateB = getArrivalByOptionLateMinutes(b);
           if (lateA !== lateB) return lateA - lateB;
         }
 
-        var transferA = getArrivalByOptionTransferCount(a);
-        var transferB = getArrivalByOptionTransferCount(b);
-        if (transferA !== transferB) return transferA - transferB;
-
-        var durationA = getArrivalByOptionDurationMinutes(a);
-        var durationB = getArrivalByOptionDurationMinutes(b);
-        if (durationA !== durationB) return durationA - durationB;
-
         if (groupA === 3) {
-          var distanceA = getArrivalByOptionDistanceMeters(a);
-          var distanceB = getArrivalByOptionDistanceMeters(b);
-          if (distanceA !== distanceB) return distanceA - distanceB;
           return compareArrivalByCommonTiebreakers(a, b);
         }
 
         var proximityA = getArrivalByOptionTargetProximityMinutes(a);
         var proximityB = getArrivalByOptionTargetProximityMinutes(b);
         if (proximityA !== proximityB) return proximityA - proximityB;
+
+        var durationA = getArrivalByOptionDurationMinutes(a);
+        var durationB = getArrivalByOptionDurationMinutes(b);
+        if (durationA !== durationB) return durationA - durationB;
 
         return compareArrivalByCommonTiebreakers(a, b);
       }
@@ -29994,6 +30000,7 @@
           state.checkedCount = Math.max(0, Number(payload.cursor_feasible || 0) || 0);
           state.radiusExhausted = !!payload.radius_exhausted;
           state.hasMoreCandidates = !!payload.has_more_candidates;
+          state.distanceFrontierComplete = payload.distance_frontier_complete !== false;
           state.lateOverLimitCount = Math.max(0, Number(payload.late_over_limit_count || 0) || 0);
           if ((Number(payload.feasible_total || 0) || 0) > 0) {
             state.hasEtaCandidate = true;
@@ -30076,6 +30083,7 @@
             state.sessionId,
             state.sessionCapability,
             remainingTarget,
+            coordinator ? coordinator.single.target : ROUTE_SEARCH_BATCH_SIZE,
             { signal: advanceSignal }
           ).then(function(stepData) {
             endPendingRequest('advance');
@@ -32294,7 +32302,8 @@
           single: {
             status: 'loading', count: 0, validCount: 0, target: ROUTE_SEARCH_BATCH_SIZE,
             hasMore: true, radiusKm: 0, message: '', candidateChecked: 0,
-            candidateTotal: 0, viableCount: 0, pauseReason: '', stageTargetReached: false
+            candidateTotal: 0, viableCount: 0, pauseReason: '', stageTargetReached: false,
+            distanceFrontierComplete: true
           },
           transfer: transferEnabled
             ? {
@@ -32481,6 +32490,7 @@
           coordinator.single.candidateChecked = Math.max(0, Number(state.checkedCount || 0) || 0);
           coordinator.single.candidateTotal = Math.max(0, Number(state.candidateCount || 0) || 0);
           coordinator.single.viableCount = coordinator.single.validCount;
+          coordinator.single.distanceFrontierComplete = state.distanceFrontierComplete !== false;
           coordinator.single.hasMore = !!(
             !coordinator.disposed &&
             !state.stopRequested &&
@@ -32508,6 +32518,10 @@
           var task = source === 'transfer' ? coordinator.transfer : coordinator.single;
           if (coordinator.pauseRequested) return true;
           var reachedTarget = taskProgressCount(task) >= Math.max(0, Number(task.target || 0) || 0);
+          if (
+            source !== 'transfer' && coordinator.timeBasis === 'arrive_by' &&
+            reachedTarget && task.distanceFrontierComplete === false
+          ) return false;
           if (reachedTarget && !!task.hasMore) {
             task.stageTargetReached = true;
             task.pauseReason = 'target';
