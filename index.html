@@ -297,9 +297,11 @@
       flex-direction: column;
       align-items: flex-start;
       gap: 4px;
+      width: 100%;
       min-width: 0;
       padding: 12px;
       min-height: 88px;
+      box-sizing: border-box;
       border-radius: 10px;
       border: 1px solid #dbe3ef;
       background: #fff;
@@ -366,6 +368,16 @@
       gap: 6px;
       font-weight: 700;
       color: #1f2937;
+    }
+    .time-transfer-option-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      font-size: 15px;
+      line-height: 1;
+      flex: 0 0 auto;
     }
     .time-transfer-beta-badge {
       display: inline-flex;
@@ -5113,16 +5125,17 @@
     /* 정렬 토글 */
     .route-sort-bar {
       display: none;
-      padding: 6px 16px;
-      gap: 6px;
+      padding: 6px 8px;
+      gap: 4px;
       align-items: center;
+      flex-wrap: nowrap;
       position: relative;
     }
     .route-sort-bar.show {
       display: flex;
     }
     .route-sort-btn {
-      padding: 4px 12px;
+      padding: 4px 8px;
       font-size: 12px;
       font-weight: 500;
       border: 1px solid #ddd;
@@ -5131,6 +5144,7 @@
       color: #888;
       cursor: pointer;
       transition: all .15s;
+      white-space: nowrap;
     }
     .route-sort-btn.active {
       background: #333;
@@ -5139,10 +5153,10 @@
     }
     .route-sort-spacer {
       flex: 1;
-      min-width: 8px;
+      min-width: 0;
     }
     .route-distance-trigger {
-      padding: 4px 10px;
+      padding: 4px 8px;
       font-size: 12px;
       font-weight: 600;
       border: 1px solid #ddd;
@@ -9509,6 +9523,15 @@
         </button>
       </div>
       <div class="time-transfer-option">
+        <label class="time-transfer-toggle" for="timeTransitSearchCheckbox">
+          <input type="checkbox" id="timeTransitSearchCheckbox" />
+          <span class="time-transfer-option-text">
+            <span class="time-transfer-option-title"><span class="time-transfer-option-icon" aria-hidden="true">🚌</span>대중교통까지 연계해서 찾기</span>
+            <span class="time-transfer-option-desc">셔틀 전후 구간에서 탑승 가능한 버스 지하철을 확인합니다.</span>
+          </span>
+        </label>
+      </div>
+      <div class="time-transfer-option">
         <label class="time-transfer-toggle" for="timeTransferSearchCheckbox">
           <input type="checkbox" id="timeTransferSearchCheckbox" />
           <span class="time-transfer-option-text">
@@ -9858,8 +9881,9 @@
           <button type="button" class="route-sort-btn" id="sortByRecommended" data-sort="recommended">추천순</button>
           <button type="button" class="route-sort-btn" id="sortByDistance" data-sort="distance">거리순</button>
           <button type="button" class="route-sort-btn active" id="sortByDuration" data-sort="duration">소요시간순</button>
+          <button type="button" class="route-sort-btn" id="sortByDeparture" data-sort="departure">출발시간순</button>
           <div class="route-sort-spacer"></div>
-          <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">최대 반경 3 km 이내</button>
+          <button type="button" class="route-distance-trigger" id="maxDistanceTrigger" aria-haspopup="dialog" aria-expanded="false">3 km</button>
           <div class="route-distance-popover" id="maxDistancePopover" role="dialog" aria-hidden="true">
             <div class="route-distance-title">최대 정류장 거리</div>
             <div class="route-distance-value">반경 <span id="maxDistanceValue">3</span> km</div>
@@ -10066,6 +10090,7 @@
       var timeBasisDepartBtn = document.getElementById('timeBasisDepartBtn');
       var timeBasisArriveBtn = document.getElementById('timeBasisArriveBtn');
       var timeTransferSearchCheckbox = document.getElementById('timeTransferSearchCheckbox');
+      var timeTransitSearchCheckbox = document.getElementById('timeTransitSearchCheckbox');
       var timeTransferStepperRow = document.getElementById('timeTransferStepperRow');
       var timeTransferMinusBtn = document.getElementById('timeTransferMinusBtn');
       var timeTransferPlusBtn = document.getElementById('timeTransferPlusBtn');
@@ -10231,6 +10256,8 @@
       var SHUTTLE_TRANSFER_LEGACY_MAX_TRANSFERS = 2;
       var selectedShuttleTransferSearch = false;
       var pendingShuttleTransferSearch = false;
+      var selectedTransitSearch = false;
+      var pendingTransitSearch = false;
       var selectedShuttleTransferMaxTransfers = SHUTTLE_TRANSFER_DEFAULT_MAX_TRANSFERS;
       var pendingShuttleTransferMaxTransfers = SHUTTLE_TRANSFER_DEFAULT_MAX_TRANSFERS;
       var currentShuttleTransferOptions = [];
@@ -15614,6 +15641,15 @@
               );
               pendingShuttleTransferMaxTransfers = selectedShuttleTransferMaxTransfers;
             }
+            if (
+              Object.prototype.hasOwnProperty.call(resolvedContext, 'transit_search_enabled') ||
+              Object.prototype.hasOwnProperty.call(resolvedContext, 'arrival_transit_search_enabled')
+            ) {
+              selectedTransitSearch = Object.prototype.hasOwnProperty.call(resolvedContext, 'transit_search_enabled')
+                ? !!resolvedContext.transit_search_enabled
+                : !!resolvedContext.arrival_transit_search_enabled;
+              pendingTransitSearch = selectedTransitSearch;
+            }
             syncTimeBasisPickerUi();
             updateDepartureTriggerText();
 
@@ -15675,6 +15711,10 @@
           route_search_mode: String(recent.search_mode || activeRouteSearchMode || 'distance'),
           max_distance_km: Number(recent.max_distance_km != null ? recent.max_distance_km : maxDistanceKm),
           shuttle_transfer_search_enabled: !!recent.shuttle_transfer_search_enabled,
+          transit_search_enabled: Object.prototype.hasOwnProperty.call(recent, 'transit_search_enabled')
+            ? !!recent.transit_search_enabled
+            : !!recent.arrival_transit_search_enabled,
+          arrival_transit_search_enabled: !!recent.arrival_transit_search_enabled,
           shuttle_transfer_max_transfers: resolveShuttleTransferMaxTransfers(
             recent.shuttle_transfer_max_transfers,
             !!recent.shuttle_transfer_search_enabled
@@ -16850,6 +16890,7 @@
         pendingDayType = selectedDayType;
         pendingRouteTimeBasis = selectedRouteTimeBasis;
         pendingShuttleTransferSearch = !!selectedShuttleTransferSearch;
+        pendingTransitSearch = !!selectedTransitSearch;
         pendingShuttleTransferMaxTransfers = normalizeShuttleTransferMaxTransfers(
           selectedShuttleTransferMaxTransfers
         );
@@ -16907,6 +16948,7 @@
       function applyTimePicker() {
         var h = getTimePickerScrollIndex(timePickerHourList, 23);
         var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
+        var timeChanged = (h !== departureTime.h || m !== departureTime.m);
         departureTime.h = h;
         departureTime.m = m;
         var dayChanged = (pendingDayType !== selectedDayType);
@@ -16914,17 +16956,22 @@
         var nextTransferEnabled = !!pendingShuttleTransferSearch;
         var nextTransferMax = normalizeShuttleTransferMaxTransfers(pendingShuttleTransferMaxTransfers);
         var transferChanged = (nextTransferEnabled !== !!selectedShuttleTransferSearch);
+        var nextTransitEnabled = !!pendingTransitSearch;
+        var transitChanged = (
+          nextTransitEnabled !== !!selectedTransitSearch
+        );
         var transferMaxChanged = nextTransferEnabled && (
           nextTransferMax !== normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers)
         );
         selectedDayType = pendingDayType;
         selectedRouteTimeBasis = normalizeRouteTimeBasis(pendingRouteTimeBasis);
         selectedShuttleTransferSearch = nextTransferEnabled;
+        selectedTransitSearch = nextTransitEnabled;
         selectedShuttleTransferMaxTransfers = nextTransferMax;
         closeTimePickerModal();
         updateDepartureTriggerText();
-        // 요일/시간 기준 변경 또는 시간이 갱신되었을 때 노선 다시 검색
-        if (dayChanged || basisChanged || transferChanged || transferMaxChanged || (routeOptionsWrap && routeOptionsWrap.classList.contains('show'))) {
+        // 실제 검색 조건이 바뀐 경우에만 노선을 다시 검색한다.
+        if (timeChanged || dayChanged || basisChanged || transferChanged || transferMaxChanged || transitChanged) {
           refreshLastShuttleResult();
         }
       }
@@ -26291,6 +26338,56 @@
         return displayed;
       }
 
+      function getRouteListScrollOwner() {
+        var node = routeOptionsWrap;
+        while (node && node !== document.body && node !== document.documentElement) {
+          var style = window.getComputedStyle(node);
+          if (
+            /(auto|scroll)/.test(String(style.overflowY || '')) &&
+            node.scrollHeight > node.clientHeight + 1
+          ) {
+            return node;
+          }
+          node = node.parentElement;
+        }
+        return document.scrollingElement || document.documentElement;
+      }
+
+      function captureRouteListViewport(option) {
+        if (!routeOptionsWrap) return null;
+        var routeId = Number(option && option.route_id || 0);
+        var card = getCurrentRouteCardForOption(option) || (
+          routeId > 0
+            ? routeOptionsWrap.querySelector('.route-option-card[data-route-id="' + String(routeId) + '"]')
+            : routeOptionsWrap.querySelector('.route-option-card.selected')
+        );
+        if (!card) return null;
+        return {
+          option: option || null,
+          routeId: routeId,
+          top: card.getBoundingClientRect().top,
+          owner: getRouteListScrollOwner()
+        };
+      }
+
+      function restoreRouteListViewport(anchor) {
+        if (!anchor || !routeOptionsWrap) return;
+        var card = getCurrentRouteCardForOption(anchor.option) || (
+          anchor.routeId > 0
+            ? routeOptionsWrap.querySelector('.route-option-card[data-route-id="' + String(anchor.routeId) + '"]')
+            : routeOptionsWrap.querySelector('.route-option-card.selected')
+        );
+        if (!card) return;
+        var delta = card.getBoundingClientRect().top - Number(anchor.top || 0);
+        if (!isFinite(delta) || Math.abs(delta) < 0.5) return;
+        var owner = anchor.owner;
+        if (owner === document.scrollingElement || owner === document.documentElement || owner === document.body) {
+          window.scrollBy(0, delta);
+        } else if (owner) {
+          owner.scrollTop += delta;
+        }
+      }
+
       function rerenderCurrentRouteOptions(option, placeName, isDepart, opts) {
         opts = opts || {};
         if (!routeOptionsWrap || !routeOptionsWrap.classList.contains('show')) return;
@@ -26304,9 +26401,18 @@
         var resolvedPlaceName = String(placeName || currentPlaceName || '').trim();
         var resolvedIsDepart = (typeof isDepart === 'boolean') ? isDepart : !!currentIsDepart;
         var activeOption = option || findCurrentRouteOptionById(currentPinnedRouteId) || getCurrentRouteCanonicalOptions()[0] || null;
+        var shouldPreserveListViewport = opts.preserveListViewport === true || (
+          opts.preserveListViewport !== false && !!opts.markInteractiveOrderingChanged
+        );
+        var viewportAnchor = opts.viewportAnchor || (
+          shouldPreserveListViewport ? captureRouteListViewport(activeOption) : null
+        );
         if (activeOption) setCurrentPinnedRoute(activeOption);
         if (opts.markInteractiveOrderingChanged) {
           currentRouteRecommendedSortUsesRuntimeState = true;
+          if (activeOption && typeof activeOption === 'object') {
+            activeOption.__interactiveOrderingChanged = true;
+          }
         }
         if (opts.forceFitViewport) {
           forceRouteViewportFitOnNextRender = true;
@@ -26319,21 +26425,25 @@
         displayed._lastBatchSize = getCurrentRouteCanonicalOptions()._lastBatchSize;
         displayed._searchMode = getCurrentRouteCanonicalOptions()._searchMode;
         renderRouteCards(displayed, resolvedPlaceName, resolvedIsDepart);
-        if (!shouldKeepExpanded || !activeOption) return;
-        var routeId = Number(activeOption && activeOption.route_id || currentPinnedRouteId || 0);
-        if (!isFinite(routeId) || routeId <= 0) return;
-        var nextOption = findCurrentRouteOptionById(routeId);
-        var nextCard = routeOptionsWrap.querySelector('.route-option-card.selected[data-route-id="' + String(routeId) + '"]');
-        if (!nextCard || !nextOption) return;
-        activateRouteCardDetailView(
-          nextCard,
-          nextOption,
-          resolvedPlaceName,
-          resolvedIsDepart,
-          getRouteCardIndex(nextCard, -1),
-          opts.highlightTarget || nextOption.__detailHighlightTarget || null,
-          !!opts.fromMapLabel
-        );
+        if (shouldKeepExpanded && activeOption) {
+          var routeId = Number(activeOption && activeOption.route_id || currentPinnedRouteId || 0);
+          if (isFinite(routeId) && routeId > 0) {
+            var nextOption = findCurrentRouteOptionById(routeId);
+            var nextCard = routeOptionsWrap.querySelector('.route-option-card.selected[data-route-id="' + String(routeId) + '"]');
+            if (nextCard && nextOption) {
+              activateRouteCardDetailView(
+                nextCard,
+                nextOption,
+                resolvedPlaceName,
+                resolvedIsDepart,
+                getRouteCardIndex(nextCard, -1),
+                opts.highlightTarget || nextOption.__detailHighlightTarget || null,
+                !!opts.fromMapLabel
+              );
+            }
+          }
+        }
+        restoreRouteListViewport(viewportAnchor);
       }
 
       function removeRouteSnapshotBanner() {
@@ -26448,6 +26558,7 @@
           selected_transit_option_id: '',
           transit_query_date: '',
           transit_query_time: '',
+          transit_query_status: 'idle',
           transit_options: []
         };
       }
@@ -26774,6 +26885,10 @@
         base.selected_transit_option_id = String(raw.selected_transit_option_id || '').trim();
         base.transit_query_date = String(raw.transit_query_date || '').trim();
         base.transit_query_time = String(raw.transit_query_time || '').trim();
+        base.transit_query_status = String(raw.transit_query_status || '').trim().toLowerCase();
+        if (!['idle', 'ready', 'empty', 'error'].includes(base.transit_query_status)) {
+          base.transit_query_status = 'idle';
+        }
         base.transit_options = Array.isArray(raw.transit_options)
           ? raw.transit_options.map(sanitizeTransitOptionForShare).filter(function(item) { return !!item; }).slice(0, 5)
           : [];
@@ -26794,6 +26909,7 @@
         if (!base.selected_transit_option_id) {
           base.selected_mode = 'walk';
         }
+        if (base.transit_options.length > 0) base.transit_query_status = 'ready';
         return base;
       }
 
@@ -26849,6 +26965,7 @@
           state.transit_query_date = '';
           state.transit_query_time = '';
           state.transit_options = [];
+          state.transit_query_status = 'idle';
         }
         persistRouteModeState(option, departureTime);
         var runtimeTransit = getRouteDepartureTransitRuntime(option, departureTime);
@@ -26888,6 +27005,9 @@
         if (state.transit_options.length === 0) {
           state.selected_mode = 'walk';
           state.selected_transit_option_id = '';
+          state.transit_query_status = String(payload && payload.code || '') === 'empty_itineraries'
+            ? 'empty'
+            : 'error';
         } else if (!state.selected_transit_option_id || !state.transit_options.some(function(item) {
           return String(item && item.mode_option_id || '').trim() === state.selected_transit_option_id;
         })) {
@@ -26898,6 +27018,7 @@
             ? payloadSelectedTransitOptionId
             : String(state.transit_options[0].mode_option_id || '').trim();
         }
+        if (state.transit_options.length > 0) state.transit_query_status = 'ready';
         persistRouteModeState(option, departureTime);
         syncRouteDepartureTransitRuntimeFromModeState(option, departureTime, state);
         return state;
@@ -26906,7 +27027,7 @@
       function hasCompletedTransitCollection(option, departureTime) {
         if (!option || typeof option !== 'object') return false;
         var state = ensureRouteModeState(option, departureTime);
-        return Array.isArray(state.transit_options) && state.transit_options.length > 0;
+        return state.transit_query_status === 'ready';
       }
 
       function isTransitLoadingForRoute(option) {
@@ -27191,15 +27312,16 @@
 
       function buildTransitOptionsResponseFromRouteState(option, isDepart, departureTime) {
         var state = ensureRouteModeState(option, departureTime);
-        if (!Array.isArray(state.transit_options) || state.transit_options.length === 0) return null;
+        var options = Array.isArray(state.transit_options) ? state.transit_options : [];
+        if (options.length === 0 && state.transit_query_status !== 'empty') return null;
         return {
           route_id: Number(option && option.route_id || 0) || 0,
           query_date: String(state.transit_query_date || '').trim(),
           query_time: String(state.transit_query_time || '').trim(),
           cache_status: 'state',
-          code: 'ok',
+          code: options.length > 0 ? 'ok' : 'empty_itineraries',
           selected_option_id: String(state.selected_transit_option_id || '').trim(),
-          options: (cloneJsonValue(state.transit_options) || []).map(function(item) {
+          options: (cloneJsonValue(options) || []).map(function(item) {
             return hydrateTransitOptionEtaFromRoute(option, isDepart, item);
           }).filter(Boolean)
         };
@@ -27413,6 +27535,119 @@
         });
       }
 
+      function getTimelineTotalDurationSec(summary) {
+        var value = Number(summary && summary.total_duration_sec);
+        if (isFinite(value) && value > 0) return value;
+        var totalMinutes = Number(summary && summary.total_minutes);
+        return isFinite(totalMinutes) && totalMinutes > 0
+          ? totalMinutes * 60
+          : Number.MAX_SAFE_INTEGER;
+      }
+
+      function applyAutomaticTransitPayload(option, payload, walkSummary, placeName, isDepart, departureTime) {
+        var normalizedPayload = cloneJsonValue(payload || {}) || {};
+        if (!String(normalizedPayload.code || '').trim()) {
+          normalizedPayload.code = Array.isArray(normalizedPayload.options) && normalizedPayload.options.length > 0
+            ? 'ok'
+            : 'empty_itineraries';
+        }
+        setTransitOptionsForRoute(option, normalizedPayload, isDepart, departureTime);
+        var transitOptions = getRouteModeTransitOptions(option, departureTime);
+        if (!transitOptions.length) {
+          setSelectedRouteMode(option, 'walk', '', departureTime);
+          return 'walk';
+        }
+        var transitOption = transitOptions[0];
+        var transitSummary = buildTransitTimelineData(option, placeName, isDepart, transitOption);
+        if (
+          getTimelineTotalDurationSec(transitSummary) < getTimelineTotalDurationSec(walkSummary)
+        ) {
+          setSelectedRouteMode(
+            option,
+            'transit',
+            String(transitOption.mode_option_id || '').trim(),
+            departureTime
+          );
+          return 'transit';
+        }
+        setSelectedRouteMode(option, 'walk', '', departureTime);
+        return 'walk';
+      }
+
+      function enrichDepartureRouteOptionsWithTransit(options, placeName, isDepart, opts) {
+        opts = opts || {};
+        if (!selectedTransitSearch || normalizeRouteTimeBasis(opts.timeBasis || selectedRouteTimeBasis) !== 'depart_at') {
+          return Promise.resolve(options);
+        }
+        var candidates = (Array.isArray(options) ? options : [])
+          .filter(function(option) { return option && !isShuttleTransferOption(option); })
+          .slice(0, ROUTE_SEARCH_BATCH_SIZE);
+        if (!candidates.length) return Promise.resolve(options);
+        var summaries = new Map();
+        candidates.forEach(function(option) {
+          setTransitLoadingForRoute(option, true, getOptionDisplayDepartureTime(option));
+        });
+        return Promise.all(candidates.map(function(option) {
+          var departureTime = getOptionDisplayDepartureTime(option);
+          return ensureRouteTimeSummary(option, placeName, isDepart, null, {
+            departureTime: departureTime
+          }).then(function(summary) {
+            summaries.set(option, summary || null);
+            var snapshot = buildTransitOptionsRequestSnapshot(option, null, {});
+            return snapshot ? {
+              request_id: String(option.route_id || '') + ':' + String(departureTime || ''),
+              snapshot: snapshot,
+              option: option,
+              departureTime: departureTime
+            } : null;
+          });
+        })).then(function(prepared) {
+          var items = prepared.filter(Boolean);
+          if (!items.length) return options;
+          return fetchJson(API_BASE + '/api/otp/transit-options/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: items.map(function(item) {
+                return { request_id: item.request_id, snapshot: item.snapshot };
+              })
+            }),
+            signal: opts.signal || undefined
+          }).then(function(result) {
+            if (!result.ok) throw new Error(String(result.data && result.data.error || '대중교통 경로를 불러오지 못했습니다.'));
+            var responseById = {};
+            (Array.isArray(result.data && result.data.results) ? result.data.results : []).forEach(function(item) {
+              responseById[String(item && item.request_id || '')] = item || {};
+            });
+            items.forEach(function(item) {
+              var response = responseById[item.request_id] || {};
+              var payload = response.ok && response.data && typeof response.data === 'object'
+                ? response.data
+                : { code: String(response.code || 'otp_transit_request_failed'), options: [] };
+              applyAutomaticTransitPayload(
+                item.option,
+                payload,
+                summaries.get(item.option),
+                placeName,
+                isDepart,
+                item.departureTime
+              );
+            });
+            return options;
+          });
+        }).catch(function(err) {
+          if (err && err.name === 'AbortError') throw err;
+          candidates.forEach(function(option) {
+            setSelectedRouteMode(option, 'walk', '', getOptionDisplayDepartureTime(option));
+          });
+          return options;
+        }).finally(function() {
+          candidates.forEach(function(option) {
+            setTransitLoadingForRoute(option, false, getOptionDisplayDepartureTime(option));
+          });
+        });
+      }
+
       function getArrivalByClockDeltaMinutes(targetTime, actualTime) {
         var targetMinutes = parseHHMMToMinutes(targetTime);
         var actualMinutes = parseHHMMToMinutes(actualTime);
@@ -27537,7 +27772,7 @@
         var modeRank = normalizedMode === 'walk' ? 0 : 1;
         return {
           mode: normalizedMode,
-          sortKey: [successRank, durationRank, proximityRank, transferRank, modeRank]
+          sortKey: [successRank, durationRank, transferRank, proximityRank, modeRank]
         };
       }
 
@@ -28872,6 +29107,7 @@
           client_action_id: createClientActionId(),
           shuttle_transfer_search_enabled: !!selectedShuttleTransferSearch,
           shuttle_transfer_max_transfers: normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers),
+          include_transit: !!selectedTransitSearch,
           outer_radius_km: outerRadiusKm,
           inner_radius_km: ARRIVAL_SEARCH_V2_INNER_RADIUS_KM,
           radius_steps_km: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
@@ -29066,6 +29302,27 @@
       }
 
       function getArrivalByOptionTransferCount(option) {
+        var explicitBurden = Number(option && option.journey_transfer_burden);
+        if (isFinite(explicitBurden) && explicitBurden >= 0) return explicitBurden;
+        if (isShuttleTransferOption(option)) {
+          var shuttleTransfers = Math.max(0, Number(option && option.transfer_count) || 0);
+          var externalTransitLegs = (Array.isArray(option && option.transfer_legs) ? option.transfer_legs : [])
+            .filter(function(leg) {
+              return leg && leg.connection_role === 'external' && leg.kind === 'transit';
+            }).length;
+          return shuttleTransfers + externalTransitLegs;
+        }
+        var activeDepartureTime = getOptionDisplayDepartureTime(option);
+        if (getRouteModeSelection(option, activeDepartureTime) === 'walk') return 0;
+        var selectedTransit = getSelectedTransitOption(option, activeDepartureTime);
+        if (selectedTransit && Array.isArray(selectedTransit.access_legs)) {
+          return selectedTransit.access_legs.filter(function(leg) {
+            if (!leg || typeof leg !== 'object') return false;
+            var kind = String(leg.kind || '').trim().toLowerCase();
+            var mode = String(leg.mode || '').trim().toUpperCase();
+            return kind === 'transit' || (mode && mode !== 'WALK');
+          }).length;
+        }
         return Math.max(0, Number(
           option && option.candidate_transfer_count != null
             ? option.candidate_transfer_count
@@ -29090,7 +29347,12 @@
               : option.__arrivalByRecommendedGroup
           )
         );
-        if (isFinite(explicitGroup) && explicitGroup >= 0) return Math.round(explicitGroup);
+        if (
+          !currentRouteRecommendedSortUsesRuntimeState &&
+          !(option && option.__interactiveOrderingChanged) &&
+          isFinite(explicitGroup) &&
+          explicitGroup >= 0
+        ) return Math.round(explicitGroup);
         if (!getArrivalByOptionHasEta(option)) return 3;
         var lateMinutes = getArrivalByOptionLateMinutes(option);
         if (lateMinutes > 0) return 2;
@@ -29126,6 +29388,10 @@
           var lateB = getArrivalByOptionLateMinutes(b);
           if (lateA !== lateB) return lateA - lateB;
         }
+
+        var transferA = getArrivalByOptionTransferCount(a);
+        var transferB = getArrivalByOptionTransferCount(b);
+        if (transferA !== transferB) return transferA - transferB;
 
         var durationA = getArrivalByOptionDurationMinutes(a);
         var durationB = getArrivalByOptionDurationMinutes(b);
@@ -30403,6 +30669,9 @@
 
       function restoreRouteCardsFromTransitPicker() {
         var opts = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+        var viewportAnchor = activeTransitPickerState && activeTransitPickerState.listViewportAnchor
+          ? activeTransitPickerState.listViewportAnchor
+          : null;
         activeTransitPickerState = null;
         if (
           getCurrentRouteCanonicalOptions().length === 0 &&
@@ -30428,6 +30697,7 @@
           null;
         rerenderCurrentRouteOptions(activeOption, currentPlaceName, currentIsDepart, {
           forceFitViewport: true,
+          viewportAnchor: viewportAnchor,
           markInteractiveOrderingChanged: !!opts.markInteractiveOrderingChanged
         });
       }
@@ -30436,6 +30706,7 @@
         opts = opts || {};
         if (!option) return;
         setCurrentPinnedRoute(option);
+        var listViewportAnchor = captureRouteListViewport(option);
         var requestedDepartureTime = String(
           opts.routeModeStateTime ||
           option.__activeDetailTime ||
@@ -30468,6 +30739,7 @@
             payload: immediatePayload,
             previewOptionId: String(ensureRouteModeState(option, requestedDepartureTime).selected_transit_option_id || '').trim(),
             departureTime: requestedDepartureTime,
+            listViewportAnchor: listViewportAnchor,
             errorMessage: '',
             emptyMessage: '선택 가능한 대중교통 경로가 없습니다.'
           };
@@ -30486,7 +30758,8 @@
           previewOptionId: String(ensureRouteModeState(option, requestedDepartureTime).selected_transit_option_id || '').trim(),
           errorMessage: '',
           emptyMessage: '',
-          departureTime: requestedDepartureTime
+          departureTime: requestedDepartureTime,
+          listViewportAnchor: listViewportAnchor
         };
         renderTransitPickerView();
         fetchTransitOptionsForRoute(option, card, isDepart, { routeModeStateTime: requestedDepartureTime })
@@ -30705,6 +30978,7 @@
       function openShuttleTransferTransitPicker(option, isDepart, opts) {
         opts = opts || {};
         if (!option || option.__transferConnectionLoading) return;
+        var listViewportAnchor = captureRouteListViewport(option);
         option.__transferConnectionLoading = true;
         syncRouteModeButtonsForOption(option, currentPlaceName || '', !!currentIsDepart, currentRouteOptions || []);
         activeTransitPickerState = {
@@ -30715,7 +30989,8 @@
           options: [],
           previewOptionId: '',
           errorMessage: '',
-          emptyMessage: ''
+          emptyMessage: '',
+          listViewportAnchor: listViewportAnchor
         };
         renderTransitPickerView();
         fetchShuttleTransferTransitOptions(option, opts)
@@ -31613,14 +31888,21 @@
 
       function normalizeArrivalByRouteSortMode(value) {
         var mode = String(value || '').trim().toLowerCase();
-        if (mode === 'distance' || mode === 'duration' || mode === 'recommended') return mode;
+        if (mode === 'distance' || mode === 'duration' || mode === 'departure' || mode === 'recommended') return mode;
         return 'recommended';
+      }
+
+      function normalizeDepartureRouteSortMode(value, fallbackSearchMode) {
+        var mode = String(value || '').trim().toLowerCase();
+        if (mode === 'distance' || mode === 'duration' || mode === 'departure') return mode;
+        if (mode === 'time') return 'duration';
+        return normalizeRouteSearchMode(fallbackSearchMode) === 'time' ? 'duration' : 'distance';
       }
 
       function getEffectiveRouteSortMode(value, timeBasis) {
         return isArrivalByRouteTimeBasis(timeBasis)
           ? normalizeArrivalByRouteSortMode(value)
-          : normalizeRouteSearchMode(value);
+          : normalizeDepartureRouteSortMode(value, activeRouteSearchMode);
       }
 
       function normalizeRouteTimeBasis(value) {
@@ -31656,6 +31938,7 @@
         if (timeBasisDepartBtn) timeBasisDepartBtn.classList.toggle('active', normalized === 'depart_at');
         if (timeBasisArriveBtn) timeBasisArriveBtn.classList.toggle('active', normalized === 'arrive_by');
         if (timeTransferSearchCheckbox) timeTransferSearchCheckbox.checked = !!pendingShuttleTransferSearch;
+        if (timeTransitSearchCheckbox) timeTransitSearchCheckbox.checked = !!pendingTransitSearch;
         pendingShuttleTransferMaxTransfers = normalizeShuttleTransferMaxTransfers(
           pendingShuttleTransferMaxTransfers
         );
@@ -31694,7 +31977,7 @@
       function updateMaxDistanceUi() {
         var appliedDisplay = formatMaxDistanceKm(maxDistanceKm);
         var pendingDisplay = formatMaxDistanceKm(maxDistancePendingKm);
-        if (maxDistanceTrigger) maxDistanceTrigger.textContent = '최대 반경 ' + appliedDisplay + ' km 이내';
+        if (maxDistanceTrigger) maxDistanceTrigger.textContent = appliedDisplay + ' km';
         if (maxDistanceValue) maxDistanceValue.textContent = pendingDisplay;
         updateMaxDistanceTriggerVisibility();
       }
@@ -31934,6 +32217,7 @@
           '&shuttle_transfer_max_transfers=' + encodeURIComponent(String(
             normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers)
           )) +
+          '&transit_search_enabled=' + (selectedTransitSearch ? '1' : '0') +
           '&use_endpoint_filter=1';
         if (placeObj) {
           if (placeObj.place_id || placeObj.id) {
@@ -32341,7 +32625,8 @@
           max_distance_km: Math.max(0.1, Number(maxDistanceKm || 3)),
           max_transfers: normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers),
           search_mode: normalizeRouteSearchMode(activeRouteSearchMode),
-          search_source: String(params.searchSource || currentSearchSource || 'manual_search')
+          search_source: String(params.searchSource || currentSearchSource || 'manual_search'),
+          include_transit: !!selectedTransitSearch
         };
         if (params.sessionId) payload.session_id = String(params.sessionId);
         return payload;
@@ -32757,6 +33042,39 @@
         });
       }
 
+      function getRouteOptionDepartureSortMinutes(option) {
+        var serviceMinuteFields = [
+          option && option.candidate_departure_service_min,
+          option && option.journey_start_min
+        ];
+        for (var i = 0; i < serviceMinuteFields.length; i += 1) {
+          var serviceMinutes = Number(serviceMinuteFields[i]);
+          if (isFinite(serviceMinutes)) return serviceMinutes;
+        }
+        var departureMinutes = parseHHMMToMinutes(getOptionDisplayDepartureTime(option));
+        if (departureMinutes == null) return Number.MAX_SAFE_INTEGER;
+        var referenceMinutes = parseHHMMToMinutes(getDepartureTimeStr());
+        if (referenceMinutes != null && departureMinutes < referenceMinutes) {
+          departureMinutes += 24 * 60;
+        }
+        return departureMinutes;
+      }
+
+      function compareRouteOptionDepartureTimes(a, b) {
+        var departureA = getRouteOptionDepartureSortMinutes(a);
+        var departureB = getRouteOptionDepartureSortMinutes(b);
+        if (departureA !== departureB) return departureA - departureB;
+        var durationA = getRouteOptionTotalDurationMinutes(a);
+        var durationB = getRouteOptionTotalDurationMinutes(b);
+        if (durationA !== durationB) return durationA - durationB;
+        var distanceA = Number(a && a.distance_m);
+        var distanceB = Number(b && b.distance_m);
+        if (isFinite(distanceA) && isFinite(distanceB) && distanceA !== distanceB) {
+          return distanceA - distanceB;
+        }
+        return String(a && a.route_name || '').localeCompare(String(b && b.route_name || ''));
+      }
+
       function sortOptions(options, mode, timeBasisOverride) {
         var sorted = options.slice();
         var effectiveTimeBasis = normalizeRouteTimeBasis(timeBasisOverride || currentRouteTimeBasisUsed);
@@ -32766,12 +33084,15 @@
             sorted.sort(compareArrivalByDistanceOptions);
           } else if (arrivalSortMode === 'duration') {
             sorted.sort(compareArrivalByDurationOptions);
+          } else if (arrivalSortMode === 'departure') {
+            sorted.sort(compareRouteOptionDepartureTimes);
           } else {
             sorted.sort(compareArrivalByRecommendedOptions);
           }
           return sorted;
         }
-        if (mode === 'time') {
+        var departureSortMode = normalizeDepartureRouteSortMode(mode, activeRouteSearchMode);
+        if (departureSortMode === 'duration') {
           sorted.sort(function(a, b) {
             var durationA = getRouteOptionTotalDurationMinutes(a);
             var durationB = getRouteOptionTotalDurationMinutes(b);
@@ -32786,6 +33107,8 @@
             }
             return String(a && a.route_name || '').localeCompare(String(b && b.route_name || ''));
           });
+        } else if (departureSortMode === 'departure') {
+          sorted.sort(compareRouteOptionDepartureTimes);
         } else {
           sorted.sort(function(a, b) {
             return (a.distance_m || 0) - (b.distance_m || 0);
@@ -32798,6 +33121,7 @@
         var recommendedBtn = document.getElementById('sortByRecommended');
         var distanceBtn = document.getElementById('sortByDistance');
         var durationBtn = document.getElementById('sortByDuration');
+        var departureBtn = document.getElementById('sortByDeparture');
         var isArrivalBy = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed);
         if (recommendedBtn) {
           recommendedBtn.style.display = isArrivalBy ? '' : 'none';
@@ -32808,8 +33132,12 @@
           distanceBtn.classList.toggle('active', currentSortMode === 'distance');
         }
         if (durationBtn) {
-          durationBtn.textContent = isArrivalBy ? '소요시간순' : '시간순';
-          durationBtn.classList.toggle('active', isArrivalBy ? currentSortMode === 'duration' : currentSortMode === 'time');
+          durationBtn.textContent = '소요시간순';
+          durationBtn.classList.toggle('active', currentSortMode === 'duration');
+        }
+        if (departureBtn) {
+          departureBtn.textContent = '출발시간순';
+          departureBtn.classList.toggle('active', currentSortMode === 'departure');
         }
       }
 
@@ -33384,23 +33712,36 @@
               var newOptions = Array.isArray(data.options) ? data.options : [];
               applyRouteCollectorUpdatedAt(data, newOptions);
               currentDirectRouteHasMore = data.has_more != null ? !!data.has_more : newOptions.length >= ROUTE_SEARCH_BATCH_SIZE;
-              baseOptions = baseOptions.concat(newOptions);
-              baseOptions._searchMode = normalizeRouteSearchMode(data.search_mode || activeRouteSearchMode);
-              if (coordinator) {
-                coordinator.updateDirect({
-                  status: coordinator.pauseRequested ? 'paused' : 'complete',
-                  count: baseOptions.length,
-                  hasMore: currentDirectRouteHasMore,
-                  stageTargetReached: !!(
-                    currentDirectRouteHasMore &&
-                    baseOptions.length >= coordinator.single.target
-                  ),
-                  pauseReason: currentDirectRouteHasMore && baseOptions.length >= coordinator.single.target
-                    ? 'target'
-                    : ''
-                });
-              }
-              renderRouteOptions(baseOptions, currentPlaceName, currentIsDepart, '', true, '', currentRouteTimeBasisUsed);
+              return enrichDepartureRouteOptionsWithTransit(
+                newOptions,
+                currentPlaceName,
+                currentIsDepart,
+                {
+                  timeBasis: currentRouteTimeBasisUsed,
+                  signal: directController && directController.signal
+                }
+              ).then(function(enrichedNewOptions) {
+                if (coordinator && (
+                  coordinator.pauseRequested || directStageToken !== coordinator.stageToken
+                )) return;
+                baseOptions = baseOptions.concat(enrichedNewOptions);
+                baseOptions._searchMode = normalizeRouteSearchMode(data.search_mode || activeRouteSearchMode);
+                if (coordinator) {
+                  coordinator.updateDirect({
+                    status: coordinator.pauseRequested ? 'paused' : 'complete',
+                    count: baseOptions.length,
+                    hasMore: currentDirectRouteHasMore,
+                    stageTargetReached: !!(
+                      currentDirectRouteHasMore &&
+                      baseOptions.length >= coordinator.single.target
+                    ),
+                    pauseReason: currentDirectRouteHasMore && baseOptions.length >= coordinator.single.target
+                      ? 'target'
+                      : ''
+                  });
+                }
+                renderRouteOptions(baseOptions, currentPlaceName, currentIsDepart, '', true, '', currentRouteTimeBasisUsed);
+              });
             }).catch(function(err) {
               if (err && err.name === 'AbortError') return;
               if (coordinator) {
@@ -33436,7 +33777,9 @@
             ? normalizeArrivalByRouteSortMode(currentSortMode)
             : 'recommended';
         } else {
-          currentSortMode = normalizeRouteSearchMode(currentSortMode);
+          currentSortMode = previousTimeBasis === 'arrive_by'
+            ? normalizeDepartureRouteSortMode('', activeRouteSearchMode)
+            : normalizeDepartureRouteSortMode(currentSortMode, activeRouteSearchMode);
           setArrivalByFirstCardAutoActivation(false);
         }
         if (currentRouteTimeBasisUsed !== 'arrive_by') {
@@ -33726,7 +34069,7 @@
         currentRouteCanonicalOptions._searchMode = currentRouteSearchModeUsed;
         currentSortMode = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed)
           ? normalizeArrivalByRouteSortMode(currentSortMode)
-          : currentRouteSearchModeUsed;
+          : normalizeDepartureRouteSortMode(currentSortMode, currentRouteSearchModeUsed);
         if (options.length > 0) {
           var hasPinnedOption = getCurrentRouteCanonicalOptions().some(function(item) {
             return Number(item && item.route_id) === Number(currentPinnedRouteId || 0);
@@ -34054,20 +34397,6 @@
                 var data = result.data || {};
                 var options = data.options || [];
                 currentDirectRouteHasMore = data.has_more != null ? !!data.has_more : options.length >= ROUTE_SEARCH_BATCH_SIZE;
-                if (searchCoordinator) {
-                  searchCoordinator.updateDirect({
-                    status: searchCoordinator.pauseRequested ? 'paused' : 'complete',
-                    count: options.length,
-                    hasMore: currentDirectRouteHasMore,
-                    stageTargetReached: !!(
-                      currentDirectRouteHasMore &&
-                      options.length >= searchCoordinator.single.target
-                    ),
-                    pauseReason: currentDirectRouteHasMore && options.length >= searchCoordinator.single.target
-                      ? 'target'
-                      : ''
-                  });
-                }
                 applyRouteCollectorUpdatedAt(data, options);
                 if (!result.ok && data.options == null) {
                   renderRouteOptions(
@@ -34095,7 +34424,34 @@
                   walkOtpEnabled = data.walk_otp_enabled;
                 }
                 options._searchMode = normalizeRouteSearchMode(data.search_mode || activeRouteSearchMode);
-                renderRouteOptions(options, name, isDepart, data.last_departure_time || '', opts.preserveSheetState, '', 'depart_at');
+                return enrichDepartureRouteOptionsWithTransit(options, name, isDepart, {
+                  timeBasis: timeBasis,
+                  signal: searchCoordinator && searchCoordinator.directAbortController
+                    ? searchCoordinator.directAbortController.signal
+                    : undefined
+                }).then(function(enrichedOptions) {
+                  if (requestId !== routeRequestSerial) return;
+                  if (searchCoordinator && (
+                    searchCoordinator.pauseRequested ||
+                    directStageToken !== searchCoordinator.stageToken
+                  )) return;
+                  if (searchCoordinator) {
+                    searchCoordinator.updateDirect({
+                      status: searchCoordinator.pauseRequested ? 'paused' : 'complete',
+                      count: enrichedOptions.length,
+                      hasMore: currentDirectRouteHasMore,
+                      stageTargetReached: !!(
+                        currentDirectRouteHasMore &&
+                        enrichedOptions.length >= searchCoordinator.single.target
+                      ),
+                      pauseReason: currentDirectRouteHasMore && enrichedOptions.length >= searchCoordinator.single.target
+                        ? 'target'
+                        : ''
+                    });
+                  }
+                  enrichedOptions._searchMode = options._searchMode;
+                  renderRouteOptions(enrichedOptions, name, isDepart, data.last_departure_time || '', opts.preserveSheetState, '', 'depart_at');
+                });
               }).catch(function(err) {
                 if (err && err.name === 'AbortError') return;
                 if (requestId !== routeRequestSerial) return;
@@ -34651,9 +35007,21 @@
         }
       });
       document.getElementById('sortByDuration').addEventListener('click', function() {
-        var nextMode = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed) ? 'duration' : 'time';
+        var nextMode = 'duration';
         if (currentSortMode === nextMode) return;
         currentSortMode = nextMode;
+        updateSortButtons();
+        if (getCurrentRouteCanonicalOptions().length > 0) {
+          var displayed = refreshCurrentRouteDisplayedOptions();
+          displayed._lastBatchSize = getCurrentRouteCanonicalOptions()._lastBatchSize;
+          displayed._searchMode = currentRouteSearchModeUsed;
+          currentRouteOptions = displayed;
+          renderRouteCards(displayed, currentPlaceName, currentIsDepart);
+        }
+      });
+      document.getElementById('sortByDeparture').addEventListener('click', function() {
+        if (currentSortMode === 'departure') return;
+        currentSortMode = 'departure';
         updateSortButtons();
         if (getCurrentRouteCanonicalOptions().length > 0) {
           var displayed = refreshCurrentRouteDisplayedOptions();
@@ -34730,6 +35098,12 @@
         if (timeTransferSearchCheckbox) {
           timeTransferSearchCheckbox.addEventListener('change', function() {
             pendingShuttleTransferSearch = !!timeTransferSearchCheckbox.checked;
+            syncTimeBasisPickerUi();
+          });
+        }
+        if (timeTransitSearchCheckbox) {
+          timeTransitSearchCheckbox.addEventListener('change', function() {
+            pendingTransitSearch = !!timeTransitSearchCheckbox.checked;
             syncTimeBasisPickerUi();
           });
         }
@@ -38421,6 +38795,7 @@
         ).trim();
         var rerenderOpts = {
           keepExpanded: keepExpanded,
+          preserveListViewport: true,
           highlightTarget: option.__detailHighlightTarget || null,
           fromMapLabel: !!option.__detailOpenedFromMapLabel,
           markInteractiveOrderingChanged: !!(nextSelectedTime && nextSelectedTime !== previousDepartureTime)
@@ -38475,6 +38850,7 @@
             if (!isRouteOptionCurrentlySelected(nextOption)) return;
             rerenderCurrentRouteOptions(nextOption, placeName, isDepart, {
               keepExpanded: isRouteOptionCurrentlyExpanded(nextOption),
+              preserveListViewport: true,
               highlightTarget: rerenderOpts.highlightTarget,
               fromMapLabel: rerenderOpts.fromMapLabel,
               markInteractiveOrderingChanged: rerenderOpts.markInteractiveOrderingChanged
