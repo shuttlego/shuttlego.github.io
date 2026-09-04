@@ -13415,7 +13415,7 @@
         var timeSuffix = normalizeRouteTimeBasis(item && item.time_basis) === 'arrive_by' ? '도착' : '출발';
         if (siteName) parts.push(siteName);
         if (dayTypeLabel) parts.push(dayTypeLabel);
-        if (departureTime) parts.push(departureTime + '분 ' + timeSuffix);
+        if (departureTime) parts.push(departureTime + ' ' + timeSuffix);
         return parts.join(' · ');
       }
 
@@ -13607,7 +13607,7 @@
         var timeText = String(item && (item.search_time || item.departure_time) || '').trim();
         if (siteName) parts.push(siteName);
         if (dayTypeLabel) parts.push(dayTypeLabel);
-        if (timeText) parts.push(timeText + '분 ' + getRouteSearchTimeBasisLabel(item));
+        if (timeText) parts.push(timeText + ' ' + getRouteSearchTimeBasisLabel(item));
         else parts.push(getRouteSearchTimeBasisLabel(item));
         return parts.join(' · ');
       }
@@ -16564,14 +16564,14 @@
         var shortLabel = DAY_TYPE_SHORT_MAP[selectedDayType] || dayLabel;
         var fullLabel = selectedDayType === 'familyday' ? shortLabel : dayLabel;
         if (isArrivalByRouteTimeBasis(selectedRouteTimeBasis)) {
-          departureTriggerText.setAttribute('data-full', fullLabel + ' ' + timeStr + '분 도착');
-          departureTriggerText.setAttribute('data-mid', shortLabel + ' ' + timeStr + '분 도착');
+          departureTriggerText.setAttribute('data-full', fullLabel + ' ' + timeStr + ' 도착');
+          departureTriggerText.setAttribute('data-mid', shortLabel + ' ' + timeStr + ' 도착');
           departureTriggerText.setAttribute('data-compact', shortLabel + ' ' + timeStr + ' 도착');
           departureTriggerText.setAttribute('data-short', timeStr + ' 도착');
         } else {
-          departureTriggerText.setAttribute('data-full', fullLabel + ' ' + timeStr + '분 출발');
-          departureTriggerText.setAttribute('data-mid', shortLabel + ' ' + timeStr + '분 출발');
-          departureTriggerText.setAttribute('data-compact', shortLabel + ' ' + timeStr + '분');
+          departureTriggerText.setAttribute('data-full', fullLabel + ' ' + timeStr + ' 출발');
+          departureTriggerText.setAttribute('data-mid', shortLabel + ' ' + timeStr + ' 출발');
+          departureTriggerText.setAttribute('data-compact', shortLabel + ' ' + timeStr);
           departureTriggerText.setAttribute('data-short', shortLabel + ' ' + timeStr);
         }
         syncHeaderTabWidth();
@@ -21829,38 +21829,38 @@
         }
         if (isDepart && index === 1) {
           if (hasEta && boardAt) {
-            return renderTag(boardAt + '분 탑승', 'time-tag');
+            return renderTag(boardAt + ' 탑승', 'time-tag');
           }
           if (departureTime) {
-            return renderTag(departureTime + '분 노선 탑승', 'time-tag');
+            return renderTag(departureTime + ' 노선 탑승', 'time-tag');
           }
           return '';
         }
         if (isDepart && index === 0) {
-          return (hasEta && startAt) ? renderTag(startAt + '분 출발', 'time-tag') : '';
+          return (hasEta && startAt) ? renderTag(startAt + ' 출발', 'time-tag') : '';
         }
         if (isDepart && index === 2) {
-          return (hasEta && alightAt) ? renderTag(alightAt + '분 하차', 'getoff-tag') : '';
+          return (hasEta && alightAt) ? renderTag(alightAt + ' 하차', 'getoff-tag') : '';
         }
         if (!isDepart && index === 0) {
           if (hasEta && boardAt) {
-            return renderTag(boardAt + '분 탑승', 'time-tag');
+            return renderTag(boardAt + ' 탑승', 'time-tag');
           }
           if (departureTime) {
-            return renderTag(departureTime + '분 노선 탑승', 'time-tag');
+            return renderTag(departureTime + ' 노선 탑승', 'time-tag');
           }
           return '';
         }
         if (!isDepart && index === 1) {
           if (hasEta && alightAt) {
-            return renderTag(alightAt + '분 하차', 'getoff-tag');
+            return renderTag(alightAt + ' 하차', 'getoff-tag');
           }
           var seq = resolveRouteGetoffSequence(option);
           var hasSeq = (seq != null && seq !== '');
           return renderTag(hasSeq ? (String(seq) + ' 번째 하차') : '하차', 'getoff-tag');
         }
         if (!isDepart && index === 2) {
-          return (hasEta && endAt) ? renderTag(endAt + '분 도착', 'time-tag') : '';
+          return (hasEta && endAt) ? renderTag(endAt + ' 도착', 'time-tag') : '';
         }
         return '';
       }
@@ -23839,7 +23839,7 @@
         if (!option) return '';
         var timeStr = (option.board_time != null && option.board_time !== '') ? option.board_time : getDepartureTimeStr();
         var routeNameHtml = '<span class="hl">' + escapeHtml(option.route_name || '') + '</span>';
-        var routeTimeHtml = '<span class="hl">' + escapeHtml(timeStr || '') + '분</span>';
+        var routeTimeHtml = '<span class="hl">' + escapeHtml(timeStr || '') + '</span>';
         var serviceLabel = getRouteServiceLabel(option.route_type, isDepart);
         var routePurposeLabel = isShuttleRouteType(option.route_type) ? '이동하기 위해서는' : '출근하기 위해서는';
         var stopBadgeHtml = function(nameText) {
@@ -24335,7 +24335,7 @@
           var boardKind = (!isDepart && index === 0) ? 'start' : 'stop';
           var alightKind = (isDepart && isLastTransit) ? 'arrive' : 'stop';
           var routeName = '<span class="hl">' + escapeHtml(String(leg.route_short_name || leg.route_long_name || '셔틀')) + '</span>';
-          var departureTime = '<span class="hl">' + escapeHtml(String(leg.start_time || '')) + '분</span>';
+          var departureTime = '<span class="hl">' + escapeHtml(String(leg.start_time || '')) + '</span>';
           return pill(boardKind, leg.from_name || '탑승 정류장') + '에서 ' +
             routeName + ' ' + departureTime + ' 노선에 탑승하고 ' +
             pill(alightKind, leg.to_name || '하차 정류장') + '에서 하차';
@@ -24386,7 +24386,7 @@
             if (!event.time) return '';
             var tagClass = event.role === 'alight' || event.role === 'arrive' ? 'getoff-tag' : 'time-tag';
             return '<span class="' + tagClass + '">(' +
-              escapeHtml(event.time + '분 ' + event.label) +
+              escapeHtml(event.time + ' ' + event.label) +
             ')</span>';
           }).join('');
           var labelAnchor = document.createElement('div');
@@ -37206,7 +37206,7 @@
         ).trim();
         var selectedDayLabel = String(DAY_TYPE_LABEL_MAP[reportDayType] || reportDayType || '-');
         departureLine.innerHTML = '<div class="report-confirm-label">요일 및<br>출발시각</div><div class="report-confirm-value navy">' +
-          escapeHtml(selectedDayLabel + ' ' + String(arrivalReportPendingTarget.selected_departure_time || '-')) + '분</div>';
+          escapeHtml(selectedDayLabel + ' ' + String(arrivalReportPendingTarget.selected_departure_time || '-')) + '</div>';
         summary.appendChild(departureLine);
 
         var selectedContext = getCandidateSelectedDepartureContext(arrivalReportPendingTarget);
@@ -37589,7 +37589,7 @@
           if (!departureOptionsMap[depKey]) {
             departureOptionsMap[depKey] = {
               value: depKey,
-              label: String(DAY_TYPE_LABEL_MAP[group.day_type] || group.day_type || '-') + ' ' + String(group.departure_time || '-') + '분'
+              label: String(DAY_TYPE_LABEL_MAP[group.day_type] || group.day_type || '-') + ' ' + String(group.departure_time || '-')
             };
           }
         });
@@ -37808,7 +37808,7 @@
                 '<div class="report-history-group-route">' + buildReportHistoryRouteTitleHtml(group.route_name || '-', group.__routeMatch, group.direction, group.route_type) + '</div>' +
                 '<div class="report-history-group-meta">' +
                   escapeHtml(String(DAY_TYPE_LABEL_MAP[group.day_type] || group.day_type || '-')) + ' ' +
-                  escapeHtml(String(group.departure_time || '-')) + '분 · ' +
+                  escapeHtml(String(group.departure_time || '-')) + ' · ' +
                   escapeHtml(String(group.stop_name || '-')) +
                 '</div>' +
               '</div>' +
@@ -37977,7 +37977,7 @@
         }
         selectedStop.departure_groups = Array.isArray(selectedStop.departure_groups) ? selectedStop.departure_groups : [];
         selectedStop.departure_groups.forEach(function(entry) {
-          entry.label = entry.label || (String(DAY_TYPE_LABEL_MAP[entry.day_type] || entry.day_type || '-') + ' ' + String(entry.departure_time || '-') + '분');
+          entry.label = entry.label || (String(DAY_TYPE_LABEL_MAP[entry.day_type] || entry.day_type || '-') + ' ' + String(entry.departure_time || '-'));
         });
         if (!reportDataState.myReportsRouteSelectedDepartureKey && selectedStop.departure_groups.length === 1) {
           reportDataState.myReportsRouteSelectedDepartureKey = String(selectedStop.departure_groups[0].key || '');
@@ -38047,13 +38047,13 @@
               if (stopGroup.departure_groups.length > 1) {
                 html += '<div class="report-history-selector-label">출발시각 선택</div><div class="report-history-selector-list">';
                 stopGroup.departure_groups.forEach(function(entry) {
-                  var label = entry.label || (String(DAY_TYPE_LABEL_MAP[entry.day_type] || entry.day_type || '-') + ' ' + String(entry.departure_time || '-') + '분');
+                  var label = entry.label || (String(DAY_TYPE_LABEL_MAP[entry.day_type] || entry.day_type || '-') + ' ' + String(entry.departure_time || '-'));
                   var isActive = departureGroup && String(departureGroup.key || '') === String(entry.key || '');
                   html += '<button type="button" class="report-history-selector-chip' + (isActive ? ' active' : '') + '" data-my-route-departure-key="' + escapeAttr(entry.key) + '">' + escapeHtml(label) + '</button>';
                 });
                 html += '</div>';
               } else if (stopGroup.departure_groups.length === 1) {
-                var onlyLabel = stopGroup.departure_groups[0].label || (String(DAY_TYPE_LABEL_MAP[stopGroup.departure_groups[0].day_type] || stopGroup.departure_groups[0].day_type || '-') + ' ' + String(stopGroup.departure_groups[0].departure_time || '-') + '분');
+                var onlyLabel = stopGroup.departure_groups[0].label || (String(DAY_TYPE_LABEL_MAP[stopGroup.departure_groups[0].day_type] || stopGroup.departure_groups[0].day_type || '-') + ' ' + String(stopGroup.departure_groups[0].departure_time || '-'));
                 html += '<div class="report-history-selector-current">출발시각: ' + escapeHtml(onlyLabel) + '</div>';
               }
             }
@@ -38063,7 +38063,7 @@
                 html += '<button type="button" class="report-history-breadcrumb-btn" data-my-route-back="stop">' + escapeHtml(stopGroup.stop_name || '-') + '</button>';
               }
               if (departureGroup) {
-                var selectedLabel = departureGroup.label || (String(DAY_TYPE_LABEL_MAP[departureGroup.day_type] || departureGroup.day_type || '-') + ' ' + String(departureGroup.departure_time || '-') + '분');
+                var selectedLabel = departureGroup.label || (String(DAY_TYPE_LABEL_MAP[departureGroup.day_type] || departureGroup.day_type || '-') + ' ' + String(departureGroup.departure_time || '-'));
                 html += '<span aria-hidden="true">&gt;</span><button type="button" class="report-history-breadcrumb-btn" data-my-route-back="departure">' + escapeHtml(selectedLabel) + '</button>';
               }
               html += '</div>';
