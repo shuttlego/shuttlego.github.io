@@ -13218,6 +13218,7 @@
           category_name: String(place.category_name || ''),
           category_group_code: String(place.category_group_code || ''),
           category_group_name: String(place.category_group_name || ''),
+          place_selection_token: String(place.place_selection_token || opts.placeSelectionToken || ''),
           x: String(lng),
           y: String(lat),
           _place_source: placeSource,
@@ -15677,6 +15678,7 @@
               category_name: String(place.category_name || ''),
               category_group_code: String(place.category_group_code || ''),
               category_group_name: String(place.category_group_name || ''),
+              place_selection_token: String(place.place_selection_token || ''),
               x: String(lng),
               y: String(lat),
               _place_source: currentPlaceSource,
@@ -15733,7 +15735,8 @@
             lng: Number(recent.lng),
             category_name: String(recent.category_name || ''),
             category_group_code: String(recent.category_group_code || ''),
-            category_group_name: String(recent.category_group_name || '')
+            category_group_name: String(recent.category_group_name || ''),
+            place_selection_token: String(recent.place_selection_token || '')
           }
         };
         trackAnalyticsEvent('sg_recent_search_click', Object.assign(
@@ -15802,6 +15805,7 @@
           category_name: String(placeItem.category_name || ''),
           category_group_code: String(placeItem.category_group_code || ''),
           category_group_name: String(placeItem.category_group_name || ''),
+          place_selection_token: String(placeItem.place_selection_token || ''),
           x: String(lng),
           y: String(lat),
           _place_source: 'search',
@@ -29101,6 +29105,7 @@
           category_name: String(placeObj.category_name || ''),
           category_group_code: String(placeObj.category_group_code || ''),
           category_group_name: String(placeObj.category_group_name || ''),
+          place_selection_token: String(placeObj.place_selection_token || ''),
           destination_lat: params.lat,
           destination_lng: params.lng,
           target_arrival_time: targetTime,
@@ -32246,6 +32251,9 @@
           if (placeObj.category_group_name) {
             url += '&category_group_name=' + encodeURIComponent(String(placeObj.category_group_name || ''));
           }
+          if (placeObj.place_selection_token) {
+            url += '&place_selection_token=' + encodeURIComponent(String(placeObj.place_selection_token || ''));
+          }
         }
         if (!omitTime && timeText) {
           url += '&time=' + encodeURIComponent(timeText);
@@ -32635,6 +32643,7 @@
           lng: Number(params.lng),
           place_name: String(params.placeName || ''),
           place_id: String(placeObj && (placeObj.place_id || placeObj.id) || ''),
+          place_selection_token: String(placeObj && placeObj.place_selection_token || ''),
           selected_endpoints: getSelectedEndpointNamesSorted(),
           max_distance_km: Math.max(0.1, Number(maxDistanceKm || 3)),
           max_transfers: normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers),
