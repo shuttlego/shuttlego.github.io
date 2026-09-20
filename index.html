@@ -5151,6 +5151,42 @@
       color: #fff;
       border-color: #333;
     }
+    .route-transit-policy-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 16px;
+    }
+    .route-transit-policy-btn {
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      background: #fff;
+      color: #888;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+    .route-transit-policy-btn.active {
+      background: #333;
+      color: #fff;
+      border-color: #333;
+    }
+    .route-transit-policy-btn.loading::after {
+      content: '';
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      margin-left: 5px;
+      border: 1.5px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      vertical-align: -1px;
+      animation: route-transit-picker-spin .8s linear infinite;
+    }
     .route-sort-spacer {
       flex: 1;
       min-width: 0;
@@ -10365,6 +10401,9 @@
       var routeModePlaceName = '';
       var routePlaceInputSubmitting = false;
       var activeTransitPickerState = null;
+      var TRANSIT_MODE_POLICY_RECOMMENDED = 'recommended';
+      var TRANSIT_MODE_POLICY_SUBWAY_ONLY = 'subway_only';
+      var selectedTransitModePolicy = TRANSIT_MODE_POLICY_RECOMMENDED;
       var activeArrivalByLoadingBannerConfig = null;
       var sharedRouteState = {
         active: false,
@@ -15147,6 +15186,11 @@
       }
 
       function getEndpointOptionComponents(opt) {
+        if (opt && Array.isArray(opt.endpoint_display_components) && opt.endpoint_display_components.length > 0) {
+          return opt.endpoint_display_components
+            .map(function(name) { return String(name || '').trim(); })
+            .filter(function(name) { return name.length > 0; });
+        }
         if (opt && Array.isArray(opt.endpoint_components) && opt.endpoint_components.length > 0) {
           return opt.endpoint_components
             .map(function(name) { return String(name || '').trim(); })
@@ -15419,6 +15463,12 @@
             if (n) parts.push(n);
           });
         }
+        if (opt && Array.isArray(opt.endpoint_display_components) && opt.endpoint_display_components.length > 0) {
+          opt.endpoint_display_components.forEach(function(name) {
+            var n = String(name || '').trim();
+            if (n) parts.push(n);
+          });
+        }
         var display = String((opt && opt.endpoint_display_name) || '').replace(/\n/g, ' ').trim();
         if (display) parts.push(display);
         var endpointName = String((opt && opt.endpoint_name) || '').replace(/\//g, ' ').trim();
@@ -15438,6 +15488,16 @@
             ? item.endpoint_components
                 .map(function(name) { return String(name || '').trim(); })
                 .filter(function(name) { return name.length > 0; })
+            : [],
+          serviceable_endpoint_components: Array.isArray(item.serviceable_endpoint_components)
+            ? item.serviceable_endpoint_components
+                .map(function(name) { return String(name || '').trim(); })
+                .filter(function(name) { return name.length > 0; })
+            : [],
+          endpoint_display_components: Array.isArray(item.endpoint_display_components)
+            ? item.endpoint_display_components
+                .map(function(name) { return String(name || '').trim(); })
+                .filter(function(name) { return name.length > 0; })
             : []
         };
         mapped._search_text = getEndpointOptionSearchText(mapped);
@@ -15454,7 +15514,13 @@
             endpoint_primary_name: String(raw.endpoint_primary_name || ''),
             endpoint_display_name: String(raw.endpoint_display_name || ''),
             endpoint_section_name: String(raw.endpoint_section_name || ''),
-            endpoint_components: Array.isArray(raw.endpoint_components) ? raw.endpoint_components : []
+            endpoint_components: Array.isArray(raw.endpoint_components) ? raw.endpoint_components : [],
+            serviceable_endpoint_components: Array.isArray(raw.serviceable_endpoint_components)
+              ? raw.serviceable_endpoint_components
+              : [],
+            endpoint_display_components: Array.isArray(raw.endpoint_display_components)
+              ? raw.endpoint_display_components
+              : []
           });
         }
         return mapEndpointOption({
@@ -15464,7 +15530,9 @@
           endpoint_primary_name: String(raw || ''),
           endpoint_display_name: String(raw || ''),
           endpoint_section_name: '',
-          endpoint_components: [String(raw || '')]
+          endpoint_components: [String(raw || '')],
+          serviceable_endpoint_components: [],
+          endpoint_display_components: [String(raw || '')]
         });
       }
 
@@ -15482,6 +15550,12 @@
               endpoint_section_name: String(opt.endpoint_section_name || ''),
               endpoint_components: Array.isArray(opt.endpoint_components)
                 ? opt.endpoint_components.slice()
+                : [],
+              serviceable_endpoint_components: Array.isArray(opt.serviceable_endpoint_components)
+                ? opt.serviceable_endpoint_components.slice()
+                : [],
+              endpoint_display_components: Array.isArray(opt.endpoint_display_components)
+                ? opt.endpoint_display_components.slice()
                 : []
             };
           });
@@ -26556,9 +26630,24 @@
         return '<span class="route-mode-btn-icon walk" aria-hidden="true"></span>';
       }
 
+      function normalizeTransitModePolicy(value) {
+        return String(value || '').trim().toLowerCase() === TRANSIT_MODE_POLICY_SUBWAY_ONLY
+          ? TRANSIT_MODE_POLICY_SUBWAY_ONLY
+          : TRANSIT_MODE_POLICY_RECOMMENDED;
+      }
+
+      function getRouteActiveTransitModePolicy(option) {
+        return normalizeTransitModePolicy(
+          option && option.__activeTransitModePolicy ||
+          option && option.route_mode_state && option.route_mode_state.transit_mode_policy ||
+          TRANSIT_MODE_POLICY_RECOMMENDED
+        );
+      }
+
       function buildDefaultRouteModeState() {
         return {
           selected_mode: 'walk',
+          transit_mode_policy: TRANSIT_MODE_POLICY_RECOMMENDED,
           selected_transit_option_id: '',
           transit_query_date: '',
           transit_query_time: '',
@@ -26853,6 +26942,7 @@
         return {
           mode_option_id: String(option.mode_option_id || '').trim(),
           mode: 'transit',
+          transit_mode_policy: normalizeTransitModePolicy(option.transit_mode_policy),
           route_id: Number(option.route_id || 0) || 0,
           route_name: String(option.route_name || '').trim(),
           query_date: String(option.query_date || '').trim(),
@@ -26886,6 +26976,7 @@
         var base = buildDefaultRouteModeState();
         if (!raw || typeof raw !== 'object') return base;
         base.selected_mode = String(raw.selected_mode || '').trim() === 'transit' ? 'transit' : 'walk';
+        base.transit_mode_policy = normalizeTransitModePolicy(raw.transit_mode_policy);
         base.selected_transit_option_id = String(raw.selected_transit_option_id || '').trim();
         base.transit_query_date = String(raw.transit_query_date || '').trim();
         base.transit_query_time = String(raw.transit_query_time || '').trim();
@@ -26946,6 +27037,11 @@
           store[key] = normalizeRouteModeStateSnapshot(source);
         }
         option.__routeModeState = store[key];
+        if (!option.__activeTransitModePolicy) {
+          option.__activeTransitModePolicy = normalizeTransitModePolicy(
+            option.__routeModeState.transit_mode_policy
+          );
+        }
         syncRouteDepartureTransitRuntimeFromModeState(option, departureTime, option.__routeModeState);
         return option.__routeModeState;
       }
@@ -26957,6 +27053,9 @@
         store[key] = cloneJsonValue(ensureRouteModeState(option, departureTime)) || buildDefaultRouteModeState();
         option.__routeModeState = store[key];
         option.route_mode_state = cloneJsonValue(store[key]) || buildDefaultRouteModeState();
+        option.__activeTransitModePolicy = normalizeTransitModePolicy(
+          option.route_mode_state.transit_mode_policy
+        );
         syncRouteDepartureTransitRuntimeFromModeState(option, departureTime, option.__routeModeState);
       }
 
@@ -26998,6 +27097,9 @@
       function setTransitOptionsForRoute(option, payload, isDepart, departureTime) {
         if (!option || typeof option !== 'object') return buildDefaultRouteModeState();
         var state = ensureRouteModeState(option, departureTime);
+        var responsePolicy = normalizeTransitModePolicy(payload && payload.transit_mode_policy);
+        option.__activeTransitModePolicy = responsePolicy;
+        state.transit_mode_policy = responsePolicy;
         var payloadSelectedTransitOptionId = String(payload && payload.selected_option_id || '').trim();
         state.transit_query_date = String(payload && payload.query_date || '').trim();
         state.transit_query_time = String(payload && payload.query_time || '').trim();
@@ -27028,29 +27130,52 @@
         return state;
       }
 
+      function canStoreTransitPayloadWithoutChangingAppliedRoute(option, departureTime, transitModePolicy) {
+        var state = ensureRouteModeState(option, departureTime);
+        return state.selected_mode !== 'transit' ||
+          normalizeTransitModePolicy(state.transit_mode_policy) === normalizeTransitModePolicy(transitModePolicy);
+      }
+
+      function storeTransitPayloadIfNonDisruptive(option, payload, isDepart, departureTime, transitModePolicy) {
+        if (!canStoreTransitPayloadWithoutChangingAppliedRoute(option, departureTime, transitModePolicy)) {
+          return false;
+        }
+        setTransitOptionsForRoute(option, payload, isDepart, departureTime);
+        return true;
+      }
+
       function hasCompletedTransitCollection(option, departureTime) {
         if (!option || typeof option !== 'object') return false;
         var state = ensureRouteModeState(option, departureTime);
         return state.transit_query_status === 'ready';
       }
 
-      function isTransitLoadingForRoute(option) {
-        if (!option || typeof option !== 'object') return false;
-        var key = getRouteModeStateTimeKey(option);
-        var store = getTransitLoadingStore(option);
-        return !!store[key];
+      function getTransitLoadingKey(option, departureTime, transitModePolicy) {
+        return getRouteModeStateTimeKey(option, departureTime) + '|' + normalizeTransitModePolicy(transitModePolicy);
       }
 
-      function setTransitLoadingForRoute(option, loading, departureTime) {
+      function isTransitLoadingForRoute(option, departureTime, transitModePolicy) {
+        if (!option || typeof option !== 'object') return false;
+        var store = getTransitLoadingStore(option);
+        if (transitModePolicy) {
+          return !!store[getTransitLoadingKey(option, departureTime, transitModePolicy)];
+        }
+        var prefix = getRouteModeStateTimeKey(option, departureTime) + '|';
+        return Object.keys(store).some(function(key) {
+          return key.indexOf(prefix) === 0 && !!store[key];
+        });
+      }
+
+      function setTransitLoadingForRoute(option, loading, departureTime, transitModePolicy) {
         if (!option || typeof option !== 'object') return;
-        var key = getRouteModeStateTimeKey(option, departureTime);
+        var key = getTransitLoadingKey(option, departureTime, transitModePolicy);
         var store = getTransitLoadingStore(option);
         if (loading) {
           store[key] = true;
         } else {
           delete store[key];
         }
-        option.__transitLoading = !!store[getRouteModeStateTimeKey(option)];
+        option.__transitLoading = isTransitLoadingForRoute(option, departureTime);
         getRouteDepartureTransitRuntime(option, departureTime).loading = !!loading;
       }
 
@@ -27165,6 +27290,9 @@
           String(option.connection_mode || '').trim().toLowerCase() === 'transit' &&
           (Array.isArray(option.transfer_legs) ? option.transfer_legs : []).some(isShuttleTransferPublicTransitLeg)
         );
+        if (option.__transferTransitCollected) {
+          selectedTransitModePolicy = normalizeTransitModePolicy(option.transit_mode_policy);
+        }
         return detailComplete;
       }
 
@@ -27244,6 +27372,10 @@
         var store = getRouteModeStateStore(option);
         store[getRouteModeStateTimeKey(option)] = routeModeState;
         option.__routeModeState = routeModeState;
+        option.__activeTransitModePolicy = normalizeTransitModePolicy(routeModeState.transit_mode_policy);
+        if (routeModeState.selected_mode === 'transit') {
+          selectedTransitModePolicy = option.__activeTransitModePolicy;
+        }
         persistRouteModeState(option);
       }
 
@@ -27260,7 +27392,7 @@
         }
       }
 
-      function buildTransitOptionsCacheKey(snapshot) {
+      function buildTransitOptionsCacheKey(snapshot, transitModePolicy) {
         if (!snapshot || typeof snapshot !== 'object') return '';
         var routeOption = snapshot.route_option && typeof snapshot.route_option === 'object'
           ? snapshot.route_option
@@ -27293,7 +27425,8 @@
               routeOption.board_time ||
               snapshot.departure_time ||
               ''
-            ).trim()
+            ).trim(),
+            transit_mode_policy: normalizeTransitModePolicy(transitModePolicy)
           });
         } catch (e) {
           return '';
@@ -27314,8 +27447,12 @@
         }
       }
 
-      function buildTransitOptionsResponseFromRouteState(option, isDepart, departureTime) {
+      function buildTransitOptionsResponseFromRouteState(option, isDepart, departureTime, transitModePolicy) {
         var state = ensureRouteModeState(option, departureTime);
+        var requestedPolicy = transitModePolicy == null
+          ? getRouteActiveTransitModePolicy(option)
+          : normalizeTransitModePolicy(transitModePolicy);
+        if (normalizeTransitModePolicy(state.transit_mode_policy) !== requestedPolicy) return null;
         var options = Array.isArray(state.transit_options) ? state.transit_options : [];
         if (options.length === 0 && state.transit_query_status !== 'empty') return null;
         return {
@@ -27323,6 +27460,7 @@
           query_date: String(state.transit_query_date || '').trim(),
           query_time: String(state.transit_query_time || '').trim(),
           cache_status: 'state',
+          transit_mode_policy: requestedPolicy,
           code: options.length > 0 ? 'ok' : 'empty_itineraries',
           selected_option_id: String(state.selected_transit_option_id || '').trim(),
           options: (cloneJsonValue(options) || []).map(function(item) {
@@ -27475,6 +27613,7 @@
         if (resolvedIsDepart == null) {
           resolvedIsDepart = !!currentIsDepart;
         }
+        var transitModePolicy = normalizeTransitModePolicy(opts.transitModePolicy);
         var requestedDepartureTime = String(
           opts.routeModeStateTime ||
           option.__activeDetailTime ||
@@ -27483,7 +27622,14 @@
           ''
         ).trim();
         var useStatePayload = !opts.departureTimeOverride && !opts.transitArriveBy && !opts.sharedVariantDetail;
-        var statePayload = useStatePayload ? buildTransitOptionsResponseFromRouteState(option, resolvedIsDepart, requestedDepartureTime) : null;
+        var statePayload = useStatePayload
+          ? buildTransitOptionsResponseFromRouteState(
+              option,
+              resolvedIsDepart,
+              requestedDepartureTime,
+              transitModePolicy
+            )
+          : null;
         if (statePayload) {
           return Promise.resolve(cloneJsonValue(statePayload) || statePayload);
         }
@@ -27493,25 +27639,42 @@
           invalidErr.code = 'invalid_snapshot';
           return Promise.reject(invalidErr);
         }
-        var cacheKey = buildTransitOptionsCacheKey(snapshot);
+        var cacheKey = buildTransitOptionsCacheKey(snapshot, transitModePolicy);
         var cached = getTransitOptionsCache(cacheKey);
         if (cached) {
-          setTransitOptionsForRoute(option, cached, resolvedIsDepart, requestedDepartureTime);
-          return Promise.resolve(buildTransitOptionsResponseFromRouteState(option, resolvedIsDepart, requestedDepartureTime));
+          if (normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
+            storeTransitPayloadIfNonDisruptive(
+              option,
+              cached,
+              resolvedIsDepart,
+              requestedDepartureTime,
+              transitModePolicy
+            );
+          }
+          return Promise.resolve(cached);
         }
         if (cacheKey && transitOptionsPending.has(cacheKey)) {
           return transitOptionsPending.get(cacheKey).then(function(value) {
             var cloned = cloneJsonValue(value);
-            if (cloned) {
-              setTransitOptionsForRoute(option, cloned, resolvedIsDepart, requestedDepartureTime);
+            if (cloned && normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
+              storeTransitPayloadIfNonDisruptive(
+                option,
+                cloned,
+                resolvedIsDepart,
+                requestedDepartureTime,
+                transitModePolicy
+              );
             }
-            return buildTransitOptionsResponseFromRouteState(option, resolvedIsDepart, requestedDepartureTime) || cloned;
+            return cloned;
           });
         }
         var pending = fetchJson(API_BASE + '/api/otp/transit-options', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ snapshot: snapshot })
+          body: JSON.stringify({
+            snapshot: snapshot,
+            transit_mode_policy: transitModePolicy
+          })
         })
           .then(function(result) {
             var data = cloneJsonValue(result.data || {}) || {};
@@ -27524,11 +27687,20 @@
             if (!String(data.code || '').trim()) {
               data.code = (Array.isArray(data.options) && data.options.length > 0) ? 'ok' : 'empty_itineraries';
             }
-            setTransitOptionsForRoute(option, data, resolvedIsDepart, requestedDepartureTime);
+            data.transit_mode_policy = normalizeTransitModePolicy(data.transit_mode_policy || transitModePolicy);
+            if (normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
+              storeTransitPayloadIfNonDisruptive(
+                option,
+                data,
+                resolvedIsDepart,
+                requestedDepartureTime,
+                transitModePolicy
+              );
+            }
             if (cacheKey) {
               setTransitOptionsCache(cacheKey, data);
             }
-            return buildTransitOptionsResponseFromRouteState(option, resolvedIsDepart, requestedDepartureTime) || cloneJsonValue(data) || data;
+            return cloneJsonValue(data) || data;
           })
           .finally(function() {
             if (cacheKey) transitOptionsPending.delete(cacheKey);
@@ -27613,7 +27785,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               items: items.map(function(item) {
-                return { request_id: item.request_id, snapshot: item.snapshot };
+                return {
+                  request_id: item.request_id,
+                  snapshot: item.snapshot,
+                  transit_mode_policy: TRANSIT_MODE_POLICY_RECOMMENDED
+                };
               })
             }),
             signal: opts.signal || undefined
@@ -27628,6 +27804,14 @@
               var payload = response.ok && response.data && typeof response.data === 'object'
                 ? response.data
                 : { code: String(response.code || 'otp_transit_request_failed'), options: [] };
+              payload.transit_mode_policy = TRANSIT_MODE_POLICY_RECOMMENDED;
+              var automaticCacheKey = buildTransitOptionsCacheKey(
+                item.snapshot,
+                TRANSIT_MODE_POLICY_RECOMMENDED
+              );
+              if (response.ok && automaticCacheKey) {
+                setTransitOptionsCache(automaticCacheKey, payload);
+              }
               applyAutomaticTransitPayload(
                 item.option,
                 payload,
@@ -30547,6 +30731,35 @@
         });
       }
 
+      function isTransitPolicyLoadingForPicker(state, option, transitModePolicy) {
+        if (state && state.sourceKind === 'transfer') {
+          return isShuttleTransferTransitLoading(option, transitModePolicy);
+        }
+        return isTransitLoadingForRoute(
+          option,
+          state && state.departureTime,
+          transitModePolicy
+        );
+      }
+
+      function buildTransitModePolicyBarHtml(state, option) {
+        var activePolicy = normalizeTransitModePolicy(state && state.transitModePolicy);
+        return '<div class="route-transit-policy-bar" role="radiogroup" aria-label="대중교통 경로 방식">' +
+          [
+            { value: TRANSIT_MODE_POLICY_RECOMMENDED, label: '추천' },
+            { value: TRANSIT_MODE_POLICY_SUBWAY_ONLY, label: '지하철만' }
+          ].map(function(item) {
+            var isActive = item.value === activePolicy;
+            var isLoading = isTransitPolicyLoadingForPicker(state, option, item.value);
+            return '<button type="button" class="route-transit-policy-btn' +
+              (isActive ? ' active' : '') +
+              (isLoading ? ' loading' : '') +
+              '" data-transit-mode-policy="' + item.value + '" role="radio" aria-checked="' +
+              (isActive ? 'true' : 'false') + '">' + item.label + '</button>';
+          }).join('') +
+        '</div>';
+      }
+
       function renderTransitPickerView() {
         if (!routeOptionsWrap || !activeTransitPickerState) return;
         var state = activeTransitPickerState;
@@ -30569,17 +30782,23 @@
 
         var bodyHtml = '';
         if (state.status === 'loading') {
+          var loadingText = normalizeTransitModePolicy(state.transitModePolicy) === TRANSIT_MODE_POLICY_SUBWAY_ONLY
+            ? '지하철 경로를 찾고 있습니다. 잠시만 기다려주세요.'
+            : '대중교통 경로를 가져오고 있습니다. 5~10초 정도 소요됩니다. 잠시만 기다려주세요.';
           bodyHtml =
             '<div class="route-transit-picker-loading">' +
-              '<div>대중교통 경로를 가져오고 있습니다. 5~10초 정도 소요됩니다. 잠시만 기다려주세요.</div>' +
+              '<div>' + loadingText + '</div>' +
               '<div class="route-transit-picker-loading-spinner" aria-hidden="true"></div>' +
             '</div>';
         } else if (state.status === 'error') {
           bodyHtml =
             '<div class="route-transit-picker-empty">' + escapeHtml(String(state.errorMessage || '대중교통 경로를 불러오지 못했습니다.')) + '</div>';
         } else if (state.status === 'empty') {
+          var defaultEmptyMessage = normalizeTransitModePolicy(state.transitModePolicy) === TRANSIT_MODE_POLICY_SUBWAY_ONLY
+            ? '지하철만으로 이동 가능한 경로가 없습니다.'
+            : '선택 가능한 대중교통 경로가 없습니다.';
           bodyHtml =
-            '<div class="route-transit-picker-empty">' + escapeHtml(String(state.emptyMessage || '선택 가능한 대중교통 경로가 없습니다.')) + '</div>';
+            '<div class="route-transit-picker-empty">' + escapeHtml(String(state.emptyMessage || defaultEmptyMessage)) + '</div>';
         } else {
           var transitOptions = isTransferPicker
             ? (Array.isArray(state.options) ? state.options : [])
@@ -30620,17 +30839,41 @@
               '</div>' +
               (actionsHtml ? '<div class="route-transit-picker-actions">' + actionsHtml + '</div>' : '') +
             '</div>' +
+            buildTransitModePolicyBarHtml(state, option) +
             '<div class="route-transit-picker-body">' + bodyHtml + '</div>' +
           '</div>';
+        routeOptionsWrap.querySelectorAll('[data-transit-mode-policy]').forEach(function(node) {
+          node.addEventListener('click', function() {
+            var nextPolicy = normalizeTransitModePolicy(node.getAttribute('data-transit-mode-policy'));
+            if (nextPolicy === normalizeTransitModePolicy(state.transitModePolicy)) return;
+            selectedTransitModePolicy = nextPolicy;
+            var commonOpts = {
+              transitModePolicy: nextPolicy,
+              listViewportAnchor: state.listViewportAnchor
+            };
+            if (isTransferPicker) {
+              openShuttleTransferTransitPicker(option, state.isDepart, commonOpts);
+            } else {
+              commonOpts.routeModeStateTime = state.departureTime;
+              openTransitPickerForRoute(option, state.isDepart, commonOpts);
+            }
+          });
+        });
         var retryBtn = routeOptionsWrap.querySelector('[data-transit-picker-retry="1"]');
         if (retryBtn) {
           retryBtn.addEventListener('click', function() {
             if (isTransferPicker) {
-              openShuttleTransferTransitPicker(option, state.isDepart, { forceReload: true });
+              openShuttleTransferTransitPicker(option, state.isDepart, {
+                forceReload: true,
+                transitModePolicy: state.transitModePolicy,
+                listViewportAnchor: state.listViewportAnchor
+              });
             } else {
               openTransitPickerForRoute(option, state.isDepart, {
                 forceReload: true,
-                routeModeStateTime: state.departureTime
+                routeModeStateTime: state.departureTime,
+                transitModePolicy: state.transitModePolicy,
+                listViewportAnchor: state.listViewportAnchor
               });
             }
           });
@@ -30665,6 +30908,15 @@
               if (!selected) return;
               copyShuttleTransferConnectionVariant(option, selected);
             } else {
+              var appliedPayload = cloneJsonValue(state.payload || {}) || {};
+              appliedPayload.selected_option_id = transitOptionId;
+              appliedPayload.transit_mode_policy = normalizeTransitModePolicy(state.transitModePolicy);
+              setTransitOptionsForRoute(
+                option,
+                appliedPayload,
+                state.isDepart,
+                state.departureTime
+              );
               setSelectedRouteMode(option, 'transit', transitOptionId, state.departureTime);
             }
             setCurrentPinnedRoute(option);
@@ -30718,8 +30970,12 @@
       function openTransitPickerForRoute(option, isDepart, opts) {
         opts = opts || {};
         if (!option) return;
+        var transitModePolicy = normalizeTransitModePolicy(
+          opts.transitModePolicy != null ? opts.transitModePolicy : selectedTransitModePolicy
+        );
+        selectedTransitModePolicy = transitModePolicy;
         setCurrentPinnedRoute(option);
-        var listViewportAnchor = captureRouteListViewport(option);
+        var listViewportAnchor = opts.listViewportAnchor || captureRouteListViewport(option);
         var requestedDepartureTime = String(
           opts.routeModeStateTime ||
           option.__activeDetailTime ||
@@ -30731,18 +30987,25 @@
           var forceSnapshot = buildTransitOptionsRequestSnapshot(option, null, {
             departureTimeOverride: requestedDepartureTime
           });
-          var forceCacheKey = buildTransitOptionsCacheKey(forceSnapshot);
+          var forceCacheKey = buildTransitOptionsCacheKey(forceSnapshot, transitModePolicy);
           if (forceCacheKey) {
             transitOptionsCache.delete(forceCacheKey);
             transitOptionsPending.delete(forceCacheKey);
           }
-          invalidateRouteModeState(option, false, requestedDepartureTime);
+          if (getRouteActiveTransitModePolicy(option) === transitModePolicy) {
+            invalidateRouteModeState(option, false, requestedDepartureTime);
+          }
         }
         var immediatePayload = !opts.forceReload
-          ? buildTransitOptionsResponseFromRouteState(option, !!isDepart, requestedDepartureTime)
+          ? buildTransitOptionsResponseFromRouteState(
+              option,
+              !!isDepart,
+              requestedDepartureTime,
+              transitModePolicy
+            )
           : null;
         if (immediatePayload) {
-          setTransitLoadingForRoute(option, false, requestedDepartureTime);
+          setTransitLoadingForRoute(option, false, requestedDepartureTime, transitModePolicy);
           activeTransitPickerState = {
             sourceKind: 'direct',
             routeId: Number(option.route_id || 0) || 0,
@@ -30754,13 +31017,16 @@
             departureTime: requestedDepartureTime,
             listViewportAnchor: listViewportAnchor,
             errorMessage: '',
-            emptyMessage: '선택 가능한 대중교통 경로가 없습니다.'
+            emptyMessage: transitModePolicy === TRANSIT_MODE_POLICY_SUBWAY_ONLY
+              ? '지하철만으로 이동 가능한 경로가 없습니다.'
+              : '선택 가능한 대중교통 경로가 없습니다.',
+            transitModePolicy: transitModePolicy
           };
           renderTransitPickerView();
           return;
         }
         var card = getCurrentRouteCardForOption(option);
-        setTransitLoadingForRoute(option, true, requestedDepartureTime);
+        setTransitLoadingForRoute(option, true, requestedDepartureTime, transitModePolicy);
         activeTransitPickerState = {
           sourceKind: 'direct',
           routeId: Number(option.route_id || 0) || 0,
@@ -30772,37 +31038,62 @@
           errorMessage: '',
           emptyMessage: '',
           departureTime: requestedDepartureTime,
-          listViewportAnchor: listViewportAnchor
+          listViewportAnchor: listViewportAnchor,
+          transitModePolicy: transitModePolicy
         };
         renderTransitPickerView();
-        fetchTransitOptionsForRoute(option, card, isDepart, { routeModeStateTime: requestedDepartureTime })
+        fetchTransitOptionsForRoute(option, card, isDepart, {
+          routeModeStateTime: requestedDepartureTime,
+          transitModePolicy: transitModePolicy
+        })
           .then(function(payload) {
-            setTransitLoadingForRoute(option, false, requestedDepartureTime);
+            setTransitLoadingForRoute(option, false, requestedDepartureTime, transitModePolicy);
             if (
               !activeTransitPickerState ||
               Number(activeTransitPickerState.routeId) !== Number(option.route_id) ||
-              String(activeTransitPickerState.departureTime || '').trim() !== requestedDepartureTime
+              String(activeTransitPickerState.departureTime || '').trim() !== requestedDepartureTime ||
+              normalizeTransitModePolicy(activeTransitPickerState.transitModePolicy) !== transitModePolicy
             ) {
               syncRouteModeButtonsForOption(option, currentPlaceName || '', !!currentIsDepart, currentRouteOptions || []);
+              if (
+                activeTransitPickerState &&
+                Number(activeTransitPickerState.routeId) === Number(option.route_id) &&
+                String(activeTransitPickerState.departureTime || '').trim() === requestedDepartureTime
+              ) renderTransitPickerView();
               return;
             }
+            storeTransitPayloadIfNonDisruptive(
+              option,
+              payload,
+              !!isDepart,
+              requestedDepartureTime,
+              transitModePolicy
+            );
             activeTransitPickerState.payload = payload;
             if (!payload || !Array.isArray(payload.options) || payload.options.length === 0) {
               activeTransitPickerState.status = 'empty';
-              activeTransitPickerState.emptyMessage = '선택 가능한 대중교통 경로가 없습니다.';
+              activeTransitPickerState.emptyMessage = transitModePolicy === TRANSIT_MODE_POLICY_SUBWAY_ONLY
+                ? '지하철만으로 이동 가능한 경로가 없습니다.'
+                : '선택 가능한 대중교통 경로가 없습니다.';
             } else {
               activeTransitPickerState.status = 'ready';
             }
             renderTransitPickerView();
           })
           .catch(function(err) {
-            setTransitLoadingForRoute(option, false, requestedDepartureTime);
+            setTransitLoadingForRoute(option, false, requestedDepartureTime, transitModePolicy);
             if (
               !activeTransitPickerState ||
               Number(activeTransitPickerState.routeId) !== Number(option.route_id) ||
-              String(activeTransitPickerState.departureTime || '').trim() !== requestedDepartureTime
+              String(activeTransitPickerState.departureTime || '').trim() !== requestedDepartureTime ||
+              normalizeTransitModePolicy(activeTransitPickerState.transitModePolicy) !== transitModePolicy
             ) {
               syncRouteModeButtonsForOption(option, currentPlaceName || '', !!currentIsDepart, currentRouteOptions || []);
+              if (
+                activeTransitPickerState &&
+                Number(activeTransitPickerState.routeId) === Number(option.route_id) &&
+                String(activeTransitPickerState.departureTime || '').trim() === requestedDepartureTime
+              ) renderTransitPickerView();
               return;
             }
             activeTransitPickerState.status = 'error';
@@ -30815,7 +31106,32 @@
         return String(option && option.connection_option_id || 'transfer-transit-' + String(index)).trim();
       }
 
-      function buildShuttleTransferTransitOptionsCacheKey(option) {
+      function getShuttleTransferTransitLoadingStore(option) {
+        if (!option || typeof option !== 'object') return {};
+        if (!option.__transferTransitLoadingByPolicy || typeof option.__transferTransitLoadingByPolicy !== 'object') {
+          option.__transferTransitLoadingByPolicy = {};
+        }
+        return option.__transferTransitLoadingByPolicy;
+      }
+
+      function isShuttleTransferTransitLoading(option, transitModePolicy) {
+        var store = getShuttleTransferTransitLoadingStore(option);
+        if (transitModePolicy) {
+          return !!store[normalizeTransitModePolicy(transitModePolicy)];
+        }
+        return Object.keys(store).some(function(key) { return !!store[key]; });
+      }
+
+      function setShuttleTransferTransitLoading(option, loading, transitModePolicy) {
+        if (!option || typeof option !== 'object') return;
+        var policy = normalizeTransitModePolicy(transitModePolicy);
+        var store = getShuttleTransferTransitLoadingStore(option);
+        if (loading) store[policy] = true;
+        else delete store[policy];
+        option.__transferConnectionLoading = isShuttleTransferTransitLoading(option);
+      }
+
+      function buildShuttleTransferTransitOptionsCacheKey(option, transitModePolicy) {
         if (!option || typeof option !== 'object') return '';
         var context = option.transfer_context && typeof option.transfer_context === 'object'
           ? option.transfer_context
@@ -30850,7 +31166,8 @@
             user_lat: Number(userPoint.lat),
             user_lng: Number(userPoint.lng),
             canonical_journey_id: String(option.canonical_journey_id || '').trim(),
-            company_legs: companyLegs
+            company_legs: companyLegs,
+            transit_mode_policy: normalizeTransitModePolicy(transitModePolicy)
           });
         } catch (e) {
           return '';
@@ -30881,7 +31198,8 @@
 
       function fetchShuttleTransferTransitOptions(option, opts) {
         opts = opts || {};
-        var cacheKey = buildShuttleTransferTransitOptionsCacheKey(option);
+        var transitModePolicy = normalizeTransitModePolicy(opts.transitModePolicy);
+        var cacheKey = buildShuttleTransferTransitOptionsCacheKey(option, transitModePolicy);
         if (opts.forceReload && cacheKey) {
           shuttleTransferTransitOptionsCache.delete(cacheKey);
           shuttleTransferTransitOptionsPending.delete(cacheKey);
@@ -30899,7 +31217,8 @@
           credentials: 'include',
           body: JSON.stringify({
             option: buildShuttleTransferConnectionRequestOption(option),
-            mode: 'transit'
+            mode: 'transit',
+            transit_mode_policy: transitModePolicy
           })
         })
           .then(function(resp) {
@@ -30911,6 +31230,7 @@
           })
           .then(function(data) {
             var normalized = {
+              transit_mode_policy: normalizeTransitModePolicy(data && data.transit_mode_policy || transitModePolicy),
               options: Array.isArray(data && data.options) ? data.options.slice(0, 5) : []
             };
             if (cacheKey) setShuttleTransferTransitOptionsCache(cacheKey, normalized);
@@ -30990,9 +31310,13 @@
 
       function openShuttleTransferTransitPicker(option, isDepart, opts) {
         opts = opts || {};
-        if (!option || option.__transferConnectionLoading) return;
-        var listViewportAnchor = captureRouteListViewport(option);
-        option.__transferConnectionLoading = true;
+        if (!option) return;
+        var transitModePolicy = normalizeTransitModePolicy(
+          opts.transitModePolicy != null ? opts.transitModePolicy : selectedTransitModePolicy
+        );
+        selectedTransitModePolicy = transitModePolicy;
+        var listViewportAnchor = opts.listViewportAnchor || captureRouteListViewport(option);
+        setShuttleTransferTransitLoading(option, true, transitModePolicy);
         syncRouteModeButtonsForOption(option, currentPlaceName || '', !!currentIsDepart, currentRouteOptions || []);
         activeTransitPickerState = {
           sourceKind: 'transfer',
@@ -31003,29 +31327,51 @@
           previewOptionId: '',
           errorMessage: '',
           emptyMessage: '',
-          listViewportAnchor: listViewportAnchor
+          listViewportAnchor: listViewportAnchor,
+          transitModePolicy: transitModePolicy
         };
         renderTransitPickerView();
-        fetchShuttleTransferTransitOptions(option, opts)
+        fetchShuttleTransferTransitOptions(option, {
+          forceReload: !!opts.forceReload,
+          transitModePolicy: transitModePolicy
+        })
           .then(function(data) {
-            option.__transferConnectionLoading = false;
+            setShuttleTransferTransitLoading(option, false, transitModePolicy);
             var candidates = Array.isArray(data.options) ? data.options.slice(0, 5) : [];
             option.__transferTransitCollected = candidates.length > 0;
             syncRouteModeButtonsForOption(option, currentPlaceName || '', !!currentIsDepart, currentRouteOptions || []);
-            if (!activeTransitPickerState || activeTransitPickerState.sourceKind !== 'transfer' || activeTransitPickerState.option !== option) return;
+            if (
+              !activeTransitPickerState ||
+              activeTransitPickerState.sourceKind !== 'transfer' ||
+              activeTransitPickerState.option !== option ||
+              normalizeTransitModePolicy(activeTransitPickerState.transitModePolicy) !== transitModePolicy
+            ) {
+              if (activeTransitPickerState && activeTransitPickerState.option === option) renderTransitPickerView();
+              return;
+            }
             activeTransitPickerState.options = candidates;
             activeTransitPickerState.status = candidates.length ? 'ready' : 'empty';
-            activeTransitPickerState.emptyMessage = '선택 가능한 대중교통 경로가 없습니다.';
+            activeTransitPickerState.emptyMessage = transitModePolicy === TRANSIT_MODE_POLICY_SUBWAY_ONLY
+              ? '지하철만으로 이동 가능한 경로가 없습니다.'
+              : '선택 가능한 대중교통 경로가 없습니다.';
             activeTransitPickerState.previewOptionId = candidates.length
               ? getShuttleTransferTransitPickerOptionId(candidates[0], 0)
               : '';
             renderTransitPickerView();
           })
           .catch(function(err) {
-            option.__transferConnectionLoading = false;
+            setShuttleTransferTransitLoading(option, false, transitModePolicy);
             option.__transferTransitCollected = false;
             syncRouteModeButtonsForOption(option, currentPlaceName || '', !!currentIsDepart, currentRouteOptions || []);
-            if (!activeTransitPickerState || activeTransitPickerState.sourceKind !== 'transfer' || activeTransitPickerState.option !== option) return;
+            if (
+              !activeTransitPickerState ||
+              activeTransitPickerState.sourceKind !== 'transfer' ||
+              activeTransitPickerState.option !== option ||
+              normalizeTransitModePolicy(activeTransitPickerState.transitModePolicy) !== transitModePolicy
+            ) {
+              if (activeTransitPickerState && activeTransitPickerState.option === option) renderTransitPickerView();
+              return;
+            }
             activeTransitPickerState.status = 'error';
             activeTransitPickerState.errorMessage = String(err && err.message || '대중교통 경로를 불러오지 못했습니다.');
             renderTransitPickerView();
@@ -34174,6 +34520,7 @@
         setArrivalByFirstCardAutoActivation(false);
         forceRouteViewportFitOnNextRender = false;
         currentPinnedRouteId = 0;
+        selectedTransitModePolicy = TRANSIT_MODE_POLICY_RECOMMENDED;
         currentRouteOptionsRenderSignature = '';
         currentRouteOptions = null;
         currentRouteCanonicalOptions = null;
@@ -34280,6 +34627,21 @@
         });
         if (!normalizedPlace) return;
         place = normalizedPlace;
+        var previousPlaceLat = Number(lastPlace && (lastPlace.y != null ? lastPlace.y : lastPlace.lat));
+        var previousPlaceLng = Number(lastPlace && (lastPlace.x != null ? lastPlace.x : lastPlace.lng));
+        var nextPlaceLat = Number(place.y != null ? place.y : place.lat);
+        var nextPlaceLng = Number(place.x != null ? place.x : place.lng);
+        var sameTransitSearchContext = !!(
+          lastPlace &&
+          String(lastShuttleType || '') === String(direction || '') &&
+          isFinite(previousPlaceLat) && isFinite(previousPlaceLng) &&
+          isFinite(nextPlaceLat) && isFinite(nextPlaceLng) &&
+          Math.abs(previousPlaceLat - nextPlaceLat) < 0.000001 &&
+          Math.abs(previousPlaceLng - nextPlaceLng) < 0.000001
+        );
+        if (!sameTransitSearchContext) {
+          selectedTransitModePolicy = TRANSIT_MODE_POLICY_RECOMMENDED;
+        }
         placeSearchRequestSerial += 1;
         if (sharedRouteState.active) {
           deactivateSharedRouteView();
