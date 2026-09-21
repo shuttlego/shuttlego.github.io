@@ -4564,7 +4564,7 @@
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='4.5' width='14' height='12.5' rx='3'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M8.5 17v1.5'/%3E%3Cpath d='M15.5 17v1.5'/%3E%3Ccircle cx='9' cy='18.5' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15' cy='18.5' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .transit-stop-badge.subway {
-      background-color: #e84c9b;
+      background-color: var(--subway-color, #e84c9b);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4.5' y='4.5' width='15' height='12.5' rx='2.8'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M9 17.5l-1 2'/%3E%3Cpath d='M15 17.5l1 2'/%3E%3Ccircle cx='8.8' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15.2' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .transit-stop-dot {
@@ -4583,7 +4583,7 @@
       border-color: #6f5ae8;
     }
     .transit-stop-dot.subway {
-      border-color: #e84c9b;
+      border-color: var(--subway-color, #e84c9b);
     }
     .transit-stop-name {
       position: absolute;
@@ -4608,7 +4608,7 @@
       color: #6f5ae8;
     }
     .transit-stop-name.subway {
-      color: #e84c9b;
+      color: var(--subway-color-dark, #c6367f);
     }
     .transit-stop-name.endpoint {
       font-size: 14px;
@@ -4652,7 +4652,7 @@
       border-right: 6px solid #6f5ae8;
     }
     .transit-stop-bubble.subway {
-      background: #e84c9b;
+      background: var(--subway-color, #e84c9b);
     }
     .transit-stop-collapsed-dot {
       display: none;
@@ -4673,7 +4673,7 @@
       display: block;
     }
     .transit-stop-bubble.subway::before {
-      border-right: 6px solid #e84c9b;
+      border-right: 6px solid var(--subway-color, #e84c9b);
     }
     .route-direction-arrow-wrap {
       position: relative;
@@ -5686,7 +5686,7 @@
       background: linear-gradient(90deg, #6f5ae8 0%, #8b6dff 100%);
     }
     .route-option-card .route-time-segment.is-subway .route-time-segment-fill {
-      background: linear-gradient(90deg, #e84c9b 0%, #f58cc7 100%);
+      background: linear-gradient(90deg, var(--subway-color, #e84c9b) 0%, var(--subway-color-light, #f58cc7) 100%);
     }
     .route-option-card .route-time-segment.is-walk,
     .route-option-card .route-time-segment.is-wait {
@@ -5750,7 +5750,7 @@
       box-shadow: none;
     }
     .route-option-card .route-time-segment-badge.subway {
-      background-color: #e84c9b;
+      background-color: var(--subway-color, #e84c9b);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4.5' y='4.5' width='15' height='12.5' rx='2.8'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M9 17.5l-1 2'/%3E%3Cpath d='M15 17.5l1 2'/%3E%3Ccircle cx='8.8' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15.2' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .route-option-card .route-time-segment-label {
@@ -5826,7 +5826,7 @@
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='4.5' width='14' height='12.5' rx='3'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M8.5 17v1.5'/%3E%3Cpath d='M15.5 17v1.5'/%3E%3Ccircle cx='9' cy='18.5' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15' cy='18.5' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .route-option-card .route-time-point-icon.stop.subway {
-      background-color: #e84c9b;
+      background-color: var(--subway-color, #e84c9b);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4.5' y='4.5' width='15' height='12.5' rx='2.8'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M9 17.5l-1 2'/%3E%3Cpath d='M15 17.5l1 2'/%3E%3Ccircle cx='8.8' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15.2' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .route-option-card .route-time-point-icon.arrive {
@@ -5926,7 +5926,7 @@
       color: #6f5ae8;
     }
     .route-option-card .route-timeline-connector-marker.is-subway {
-      color: #e84c9b;
+      color: var(--subway-color, #e84c9b);
     }
     .route-option-card .route-timeline-connector-marker.is-transit {
       color: #ff8f2a;
@@ -5947,7 +5947,7 @@
       font-weight: 700;
     }
     .route-option-card .route-timeline-connector-text.is-subway {
-      color: #e84c9b;
+      color: var(--subway-color-dark, #c6367f);
       font-weight: 700;
     }
     .route-option-card .route-timeline-connector-text.is-transit {
@@ -6403,7 +6403,7 @@
       color: #6f5ae8;
     }
     .route-transit-option-title-segment.subway {
-      color: #e84c9b;
+      color: var(--subway-color-dark, #c6367f);
     }
     .route-transit-option-title-segment.fallback {
       color: #1428A0;
@@ -6488,7 +6488,7 @@
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
     }
     .route-transit-option-timebar-segment.is-subway .route-transit-option-timebar-segment-fill {
-      background: linear-gradient(90deg, #e84c9b 0%, #f58cc7 100%);
+      background: linear-gradient(90deg, var(--subway-color, #e84c9b) 0%, var(--subway-color-light, #f58cc7) 100%);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
     }
     .route-transit-option-timebar-segment.is-walk {
@@ -6570,7 +6570,7 @@
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='4.5' width='14' height='12.5' rx='3'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M8.5 17v1.5'/%3E%3Cpath d='M15.5 17v1.5'/%3E%3Ccircle cx='9' cy='18.5' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15' cy='18.5' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .route-transit-option-timebar-icon.subway {
-      background-color: #e84c9b;
+      background-color: var(--subway-color, #e84c9b);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4.5' y='4.5' width='15' height='12.5' rx='2.8'/%3E%3Cpath d='M8 8.5h8'/%3E%3Cpath d='M7.5 12.5h9'/%3E%3Cpath d='M9 17.5l-1 2'/%3E%3Cpath d='M15 17.5l1 2'/%3E%3Ccircle cx='8.8' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3Ccircle cx='15.2' cy='16.8' r='1' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
     }
     .route-transit-option-timebar-icon.walk {
@@ -6633,6 +6633,11 @@
     .route-transit-leg-chip.transit {
       background: #e8edff;
       color: #1428A0;
+    }
+    .route-transit-leg-chip.subway {
+      border: 1px solid var(--subway-color, #e84c9b);
+      background: #fff;
+      color: var(--subway-color-dark, #c6367f);
     }
     .route-transit-leg-chip.walk {
       background: #eef2f6;
@@ -10491,6 +10496,31 @@
       var SHUTTLE_ROUTE_TRANSIT_BUS_INNER_COLOR = '#6f5ae8';
       var SHUTTLE_ROUTE_SUBWAY_OUTER_COLOR = '#c6367f';
       var SHUTTLE_ROUTE_SUBWAY_INNER_COLOR = '#e84c9b';
+      var SUBWAY_LINE_COLORS = {
+        line1: '#004A85',
+        line2: '#00A23F',
+        line3: '#ED6C00',
+        line4: '#009BCE',
+        line5: '#794698',
+        line6: '#7C4932',
+        line7: '#6E7E31',
+        line8: '#D11D70',
+        line9: '#A49D87',
+        gyeongui_jungang: '#6AC2B3',
+        suin_bundang: '#ECA300',
+        shinbundang: '#B81B30',
+        incheon1: '#B4C7E7',
+        airport: '#0079AC',
+        ui_sinseol: '#BACC50',
+        sillim: '#5E7DBB',
+        uijeongbu: '#F0831E',
+        everline: '#44A436',
+        incheon2: '#F4A462',
+        gimpo_gold: '#957326',
+        gyeongchun: '#007A62',
+        gyeonggang: '#0B318F',
+        seohae: '#5EAC41'
+      };
       var SHUTTLE_ROUTE_BUS_OUTER_COLOR = '#0b3f8c';
       var SHUTTLE_ROUTE_BUS_INNER_COLOR = '#1f78ff';
       var TRANSIT_STOP_BADGE_MAX_LEVEL = 6;
@@ -10525,6 +10555,87 @@
       var ARRIVAL_BY_MAX_LOOKBACK_MIN = 150;
       var ARRIVAL_BY_CANDIDATE_LIMIT = 5;
       var ARRIVAL_BY_EXPANSION_STEPS = [30, 60, 90, 120, 150];
+
+      function normalizeSubwayLineLookupText(value) {
+        var text = String(value || '').trim();
+        if (!text) return '';
+        if (typeof text.normalize === 'function') text = text.normalize('NFKC');
+        return text
+          .toLowerCase()
+          .replace(/\([^)]*\)/g, '')
+          .replace(/[\s·ㆍ・._\-\/]/g, '');
+      }
+
+      function resolveSubwayLineColorKey(routeShortName, routeLongName) {
+        var candidates = [routeShortName, routeLongName]
+          .map(normalizeSubwayLineLookupText)
+          .filter(Boolean);
+        for (var i = 0; i < candidates.length; i++) {
+          var text = candidates[i];
+          if (text.indexOf('신분당') >= 0) return 'shinbundang';
+          if (text.indexOf('수인분당') >= 0 || text === '분당' || text.indexOf('분당선') >= 0) return 'suin_bundang';
+          if (text.indexOf('경의중앙') >= 0) return 'gyeongui_jungang';
+          if (text.indexOf('인천1호선') >= 0 || text === '인천1') return 'incheon1';
+          if (text.indexOf('인천2호선') >= 0 || text === '인천2') return 'incheon2';
+          if (text.indexOf('공항철도') >= 0 || text === 'arex') return 'airport';
+          if (text.indexOf('우이신설') >= 0) return 'ui_sinseol';
+          if (text.indexOf('신림선') >= 0 || text === '신림') return 'sillim';
+          if (text.indexOf('의정부경전철') >= 0 || text === '의정부') return 'uijeongbu';
+          if (text.indexOf('용인에버라인') >= 0 || text.indexOf('용인경전철') >= 0 || text === '에버라인') return 'everline';
+          if (text.indexOf('김포골드') >= 0) return 'gimpo_gold';
+          if (text.indexOf('경춘선') >= 0 || text === '경춘') return 'gyeongchun';
+          if (text.indexOf('경강선') >= 0 || text === '경강') return 'gyeonggang';
+          if (text.indexOf('서해선') >= 0 || text === '서해') return 'seohae';
+          var numberedLine = text.match(/(?:서울|수도권|지하철|전철)*(\d)호선/);
+          if (!numberedLine && /^[1-9]$/.test(text)) numberedLine = [text, text];
+          if (numberedLine && SUBWAY_LINE_COLORS['line' + numberedLine[1]]) {
+            return 'line' + numberedLine[1];
+          }
+        }
+        return '';
+      }
+
+      function mixHexColor(fromHex, toHex, ratio) {
+        var from = String(fromHex || '').replace('#', '');
+        var to = String(toHex || '').replace('#', '');
+        if (!/^[0-9a-f]{6}$/i.test(from) || !/^[0-9a-f]{6}$/i.test(to)) return String(fromHex || '');
+        var amount = Math.max(0, Math.min(1, Number(ratio) || 0));
+        var channels = [0, 2, 4].map(function(offset) {
+          var start = parseInt(from.slice(offset, offset + 2), 16);
+          var end = parseInt(to.slice(offset, offset + 2), 16);
+          return Math.round(start + (end - start) * amount).toString(16).padStart(2, '0');
+        });
+        return '#' + channels.join('').toUpperCase();
+      }
+
+      function getSubwayLineVisual(routeShortName, routeLongName) {
+        var key = resolveSubwayLineColorKey(routeShortName, routeLongName);
+        var color = key ? SUBWAY_LINE_COLORS[key] : SHUTTLE_ROUTE_SUBWAY_INNER_COLOR;
+        return {
+          key: key,
+          color: color,
+          lightColor: key ? mixHexColor(color, '#FFFFFF', 0.28) : '#F58CC7',
+          darkColor: key ? mixHexColor(color, '#000000', 0.20) : SHUTTLE_ROUTE_SUBWAY_OUTER_COLOR
+        };
+      }
+
+      function buildSubwayLineCssVariables(routeShortName, routeLongName) {
+        var visual = getSubwayLineVisual(routeShortName, routeLongName);
+        return '--subway-color:' + visual.color +
+          ';--subway-color-light:' + visual.lightColor +
+          ';--subway-color-dark:' + visual.darkColor;
+      }
+
+      function getTransitLegSubwayRouteName(leg) {
+        if (!leg || typeof leg !== 'object') return '';
+        if (!isSubwayTransitMode(leg.mode)) return '';
+        return String(leg.route_short_name || leg.route_long_name || '').trim();
+      }
+
+      function isSubwayTransitMode(mode) {
+        var normalized = String(mode || '').trim().toUpperCase();
+        return normalized === 'SUBWAY' || normalized === 'RAIL';
+      }
       // ── ArriveBy search V2 (server-managed pull-based session) ──
       // When enabled, runArrivalByRouteSearchWithPlace dispatches to the
       // V2 orchestrator that talks to /api/shuttle/arrive-search instead
@@ -14617,8 +14728,13 @@
 
         var requestPromise;
         if (currentlyFavorited) {
-          var deleteRouteId = normalizeRouteFavoriteId(option.__favoriteEntryRouteId || routeId);
-          var deleteRouteUuid = normalizeRouteFavoriteUuid(option.__favoriteEntryRouteUuid || routeUuid);
+          var hasFavoriteEntryRouteId = Object.prototype.hasOwnProperty.call(option, '__favoriteEntryRouteId');
+          var hasFavoriteEntryRouteUuid = Object.prototype.hasOwnProperty.call(option, '__favoriteEntryRouteUuid');
+          var favoriteEntryRouteId = normalizeRouteFavoriteId(option.__favoriteEntryRouteId);
+          var deleteRouteId = hasFavoriteEntryRouteId && favoriteEntryRouteId ? favoriteEntryRouteId : routeId;
+          var deleteRouteUuid = hasFavoriteEntryRouteUuid
+            ? normalizeRouteFavoriteUuid(option.__favoriteEntryRouteUuid)
+            : routeUuid;
           var deleteUrl = API_BASE + '/api/me/route-favorites/' + encodeURIComponent(String(deleteRouteId));
           if (deleteRouteUuid) {
             deleteUrl += '?route_uuid=' + encodeURIComponent(deleteRouteUuid);
@@ -22026,7 +22142,7 @@
         return buildRouteShuttleConnectorText(routeLabel, durationText, stopMoveCount);
       }
 
-      function buildModeTimelineSegment(kind, durationSec, showLabels) {
+      function buildModeTimelineSegment(kind, durationSec, showLabels, subwayRouteName) {
         var segmentKind = String(kind || '').trim().toLowerCase();
         if (segmentKind === 'shuttle') segmentKind = 'bus';
         if (segmentKind === 'transit') segmentKind = 'transit-bus';
@@ -22041,7 +22157,8 @@
           kind: segmentKind,
           duration_min: durationMin,
           flex_value: durationMin,
-          label_text: showLabels ? formatRouteSegmentDuration(durationMin) : ''
+          label_text: showLabels ? formatRouteSegmentDuration(durationMin) : '',
+          subway_route_name: segmentKind === 'subway' ? String(subwayRouteName || '').trim() : ''
         };
       }
 
@@ -22069,7 +22186,7 @@
         var stopCalls = Array.isArray(leg.stop_calls) ? leg.stop_calls : [];
         var movedCount = Math.max(0, stopCalls.length - 1);
         if (movedCount <= 0) return '';
-        var unit = String(leg.mode || '').trim().toUpperCase() === 'SUBWAY' ? '역' : '정류장';
+        var unit = isSubwayTransitMode(leg.mode) ? '역' : '정류장';
         return String(movedCount) + '개 ' + unit + ' 이동';
       }
 
@@ -22086,7 +22203,7 @@
           return ['도보', durationText, walkDistanceText].filter(Boolean).join(' · ');
         }
         var modeLabel = _transitModeLabel(leg.mode);
-        var routeLabel = buildTransitRouteNameOnly(leg.mode, leg.route_short_name);
+        var routeLabel = buildTransitRouteNameOnly(leg.mode, leg.route_short_name || leg.route_long_name);
         var departureTimeText = includeDepartureTime ? String(leg.start_time || '').trim() : '';
         var routeWithTimeText = routeLabel
           ? (departureTimeText ? (routeLabel + '(' + departureTimeText + ')') : routeLabel)
@@ -22100,7 +22217,7 @@
         var labels = [];
         legs.forEach(function(leg) {
           if (!leg || getTransitTimelineConnectorKind(leg.kind) !== 'transit') return;
-          var label = buildTransitRouteLabel(leg.mode, leg.route_short_name);
+          var label = buildTransitRouteLabel(leg.mode, leg.route_short_name || leg.route_long_name);
           if (!label) return;
           labels.push(label);
         });
@@ -22113,18 +22230,22 @@
         legs.forEach(function(leg) {
           if (!leg || getTransitTimelineConnectorKind(leg.kind) !== 'transit') return;
           var mode = String(leg.mode || '').trim().toUpperCase();
-          var label = buildTransitRouteLabel(leg.mode, leg.route_short_name);
+          var label = buildTransitRouteLabel(leg.mode, leg.route_short_name || leg.route_long_name);
           if (!label) return;
           parts.push({
             label: label,
-            className: mode === 'SUBWAY' ? 'subway' : 'bus'
+            className: isSubwayTransitMode(mode) ? 'subway' : 'bus',
+            subwayRouteName: isSubwayTransitMode(mode) ? String(leg.route_short_name || leg.route_long_name || '').trim() : ''
           });
         });
         if (!parts.length) return '';
         return parts.map(function(part, index) {
           return (
             (index > 0 ? '<span class="route-transit-option-title-arrow">·</span>' : '') +
-            '<span class="route-transit-option-title-segment ' + part.className + '">' + escapeHtml(part.label) + '</span>'
+            '<span class="route-transit-option-title-segment ' + part.className + '"' +
+              (part.className === 'subway'
+                ? ' style="' + buildSubwayLineCssVariables(part.subwayRouteName) + '"'
+                : '') + '>' + escapeHtml(part.label) + '</span>'
           );
         }).join('');
       }
@@ -22258,7 +22379,7 @@
       function getTransitAccessDisplayKind(leg) {
         if (!leg || typeof leg !== 'object') return 'walk';
         if (String(leg.kind || '').trim().toLowerCase() === 'walk') return 'walk';
-        return String(leg.mode || '').trim().toUpperCase() === 'SUBWAY' ? 'subway' : 'transit-bus';
+        return isSubwayTransitMode(leg.mode) ? 'subway' : 'transit-bus';
       }
 
       function resolveTransitDetailPointIconKind(previousLeg, nextLeg, fallbackKind) {
@@ -22282,6 +22403,7 @@
         var normalized = {
           icon: icon,
           icon_kind: String(point.icon_kind || '').trim(),
+          subway_route_name: String(point.subway_route_name || '').trim(),
           time: String(point.time || '').trim(),
           name: name,
           role: String(point.role || '').trim()
@@ -22297,6 +22419,10 @@
         if (prev === 'transit') return '하차';
         if (next === 'transit') return '승차';
         return '';
+      }
+
+      function resolveTransitDetailPointSubwayRouteName(previousLeg, nextLeg) {
+        return getTransitLegSubwayRouteName(previousLeg) || getTransitLegSubwayRouteName(nextLeg);
       }
 
       function buildExpandedTransitTimeline(option, placeName, isDepart, data, showTimes) {
@@ -22347,13 +22473,17 @@
             var nextLeg = accessLegs[index + 1] || null;
             connectors.push({
               kind: getTransitAccessDisplayKind(leg),
-              text: buildTransitAccessLegConnectorText(leg, showTimes)
+              text: buildTransitAccessLegConnectorText(leg, showTimes),
+              subway_route_name: getTransitLegSubwayRouteName(leg)
             });
             appendTransitTimelinePoint(points, {
               icon: 'stop',
               icon_kind: (index === accessLegs.length - 1)
                 ? 'shuttle'
                 : resolveTransitDetailPointIconKind(leg, nextLeg, 'stop'),
+              subway_route_name: (index === accessLegs.length - 1)
+                ? ''
+                : resolveTransitDetailPointSubwayRouteName(leg, nextLeg),
               time: showTimes
                 ? String((index === accessLegs.length - 1 ? boardPoint.time : leg.end_time) || '').trim()
                 : '',
@@ -22400,13 +22530,17 @@
             var nextLeg = accessLegs[index + 1] || null;
             connectors.push({
               kind: getTransitAccessDisplayKind(leg),
-              text: buildTransitAccessLegConnectorText(leg, showTimes)
+              text: buildTransitAccessLegConnectorText(leg, showTimes),
+              subway_route_name: getTransitLegSubwayRouteName(leg)
             });
             appendTransitTimelinePoint(points, {
               icon: (index === accessLegs.length - 1) ? 'arrive' : 'stop',
               icon_kind: (index === accessLegs.length - 1)
                 ? 'arrive'
                 : resolveTransitDetailPointIconKind(leg, nextLeg, 'stop'),
+              subway_route_name: (index === accessLegs.length - 1)
+                ? ''
+                : resolveTransitDetailPointSubwayRouteName(leg, nextLeg),
               time: showTimes
                 ? String((index === accessLegs.length - 1 ? (summaryPoints[2] || {}).time : leg.end_time) || '').trim()
                 : '',
@@ -22437,7 +22571,12 @@
           var legKind = String(leg && leg.kind || '').trim().toLowerCase() === 'walk'
             ? 'walk'
             : getTransitAccessDisplayKind(leg);
-          return buildModeTimelineSegment(legKind, durationSec, showLabels);
+          return buildModeTimelineSegment(
+            legKind,
+            durationSec,
+            showLabels,
+            getTransitLegSubwayRouteName(leg)
+          );
         }).filter(Boolean);
         if (isFinite(shuttleDurationSec) && shuttleDurationSec > 0) {
           var shuttleSegment = buildModeTimelineSegment('bus', shuttleDurationSec, showLabels);
@@ -22450,7 +22589,12 @@
         return rawSegments.map(function(segment) {
           var kind = String(segment && segment.kind || '').trim().toLowerCase();
           if (kind === 'shuttle') kind = 'bus';
-          return buildModeTimelineSegment(kind, Number(segment && segment.duration_sec || 0) || 0, showLabels);
+          return buildModeTimelineSegment(
+            kind,
+            Number(segment && segment.duration_sec || 0) || 0,
+            showLabels,
+            segment && (segment.route_short_name || segment.route_long_name || segment.subway_route_name)
+          );
         });
       }
 
@@ -22716,6 +22860,7 @@
           var candidateLabel = String(segment && segment.label_text || '').trim() || formatRouteSegmentDuration(durationMin);
           return {
             type: type,
+            subway_route_name: type === 'subway' ? String(segment && segment.subway_route_name || '').trim() : '',
             duration_min: durationMin,
             candidate_label: candidateLabel,
             icon_required: type === 'bus' || type === 'transit-bus' || type === 'transit' || type === 'subway',
@@ -22791,6 +22936,7 @@
         return normalized.map(function(item) {
           return {
             type: item.type,
+            subway_route_name: item.subway_route_name,
             flex_value: item.duration_min,
             min_width_px: item.min_width_px,
             show_icon: item.show_icon,
@@ -22819,13 +22965,17 @@
           if (index === 0) extraClasses.push('is-first-segment');
           if (segment.round_start) extraClasses.push('is-rounded-start');
           if (segment.round_end) extraClasses.push('is-rounded-end');
+          var subwayStyle = kind === 'subway'
+            ? ';' + buildSubwayLineCssVariables(segment.subway_route_name)
+            : '';
           return '' +
             '<div class="route-time-segment is-' + kind + ' ' + extraClasses.join(' ') + '"' +
               ' style="--segment-flex:' + String(Math.max(1, Number(segment.flex_value || 1))) +
                 ';--segment-min-width:' + String(Math.max(0, Number(segment.min_width_px || 0))) + 'px' +
                 ';--segment-fill-end:' + String(Math.max(0, Number(segment.fill_end_px || 0))) + 'px' +
                 ';--segment-label-left:' + String(Math.max(0, Number(segment.label_left_px || 0))) + 'px' +
-                ';--segment-label-right:' + String(Math.max(0, Number(segment.label_right_px || 0))) + 'px">' +
+                ';--segment-label-right:' + String(Math.max(0, Number(segment.label_right_px || 0))) + 'px' +
+                subwayStyle + '">' +
               (kind !== 'walk' && kind !== 'wait'
                 ? '<span class="route-time-segment-fill" aria-hidden="true"></span>'
                 : '') +
@@ -22910,9 +23060,12 @@
           }
           var timeText = showTimes ? String(point.time || '').trim() : '';
           var roleText = String(point.role || '').trim();
+          var pointSubwayStyle = iconKind === 'subway'
+            ? ' style="' + buildSubwayLineCssVariables(point.subway_route_name) + '"'
+            : '';
           html += '' +
             '<div class="route-timeline-point ' + (timeText ? 'has-time' : 'no-time') + '">' +
-              '<span class="route-time-point-icon ' + iconClass + '" aria-hidden="true"></span>' +
+              '<span class="route-time-point-icon ' + iconClass + '"' + pointSubwayStyle + ' aria-hidden="true"></span>' +
               (timeText
                 ? ('<span class="route-timeline-point-time">' + escapeHtml(timeText) + '</span>')
                 : '') +
@@ -22932,8 +23085,11 @@
               connectorKind !== 'transit-bus' &&
               connectorKind !== 'subway'
             ) connectorKind = 'walk';
+            var connectorSubwayStyle = connectorKind === 'subway'
+              ? ' style="' + buildSubwayLineCssVariables(connector.subway_route_name) + '"'
+              : '';
             html += '' +
-              '<div class="route-timeline-connector ' + (showTimes ? 'has-time' : 'no-time') + '">' +
+              '<div class="route-timeline-connector ' + (showTimes ? 'has-time' : 'no-time') + '"' + connectorSubwayStyle + '>' +
                 buildConnectorMarkerHtml(connectorKind) +
                 '<span class="route-timeline-connector-text is-' + connectorKind + '">' + escapeHtml(String(connector.text || '')) + '</span>' +
               '</div>';
@@ -22960,7 +23116,7 @@
 
       function getShuttleTransferPublicTransitLegText(leg) {
         var mode = String(leg && leg.mode || '').trim().toUpperCase();
-        var modeLabel = mode === 'SUBWAY' ? '지하철' : '버스';
+        var modeLabel = isSubwayTransitMode(mode) ? '지하철' : '버스';
         var routeName = String(leg && (leg.route_short_name || leg.route_long_name) || '').trim();
         var boardTime = String(leg && leg.start_time || '').trim();
         var durationMin = Math.max(1, Math.round(Number(leg && leg.duration_sec || 0) / 60) || 1);
@@ -23036,10 +23192,11 @@
               kind: isTransitLeg(leg)
                 ? 'bus'
                 : (isPublicTransit
-                  ? (String(leg && leg.mode || '').trim().toUpperCase() === 'SUBWAY' ? 'subway' : 'transit-bus')
+                  ? (isSubwayTransitMode(leg && leg.mode) ? 'subway' : 'transit-bus')
                   : 'walk'),
               duration_min: durationMinutes,
-              label_text: formatRouteSegmentDuration(durationMinutes)
+              label_text: formatRouteSegmentDuration(durationMinutes),
+              subway_route_name: isPublicTransit ? getTransitLegSubwayRouteName(leg) : ''
             });
             var endMin = legMinute(leg, 'end_min');
             previousEndMin = endMin != null
@@ -23064,7 +23221,7 @@
         function legTravelKind(leg) {
           if (isTransitLeg(leg)) return 'shuttle';
           if (isShuttleTransferPublicTransitLeg(leg)) {
-            return String(leg && leg.mode || '').trim().toUpperCase() === 'SUBWAY'
+            return isSubwayTransitMode(leg && leg.mode)
               ? 'subway'
               : 'transit-bus';
           }
@@ -23083,6 +23240,9 @@
           var nextKind = legTravelKind(nextLeg);
           if (nextKind === 'transit-bus' || nextKind === 'subway') return nextKind;
           return fallback;
+        }
+        function pointSubwayRouteName(previousLeg, nextLeg) {
+          return getTransitLegSubwayRouteName(previousLeg) || getTransitLegSubwayRouteName(nextLeg);
         }
         function waitMinutesBetween(leg, nextLeg) {
           var endMin = legMinute(leg, 'end_min');
@@ -23105,7 +23265,11 @@
             parts.push(formatRouteTotalDuration(legDurationMinutes(leg)));
           }
           if (waitMinutes > 0) parts.push('대기 ' + String(waitMinutes) + '분');
-          return { kind: kind, text: parts.filter(Boolean).join(' · ') };
+          return {
+            kind: kind,
+            text: parts.filter(Boolean).join(' · '),
+            subway_route_name: kind === 'subway' ? getTransitLegSubwayRouteName(leg) : ''
+          };
         }
         function arrivalRole(leg, nextLeg, isLast) {
           if (isLast) {
@@ -23155,6 +23319,9 @@
             icon_kind: isLast && String(pointLeg.connection_role || '').trim() === 'external'
               ? 'arrive'
               : pointIconKind(mergeWalkAndWaitBeforeBoarding ? leg : pointLeg, nextLeg, 'stop'),
+            subway_route_name: isLast && String(pointLeg.connection_role || '').trim() === 'external'
+              ? ''
+              : pointSubwayRouteName(mergeWalkAndWaitBeforeBoarding ? leg : pointLeg, nextLeg),
             time: legTime(mergeWalkAndWaitBeforeBoarding ? nextLeg.start_time : leg.end_time),
             name: legPointName(
               mergeWalkAndWaitBeforeBoarding ? nextLeg.from : leg.to,
@@ -23168,6 +23335,7 @@
             appendDetailPoint({
               icon: 'stop',
               icon_kind: pointIconKind(leg, nextLeg, 'stop'),
+              subway_route_name: pointSubwayRouteName(leg, nextLeg),
               time: legTime(nextLeg.start_time),
               name: legPointName(nextLeg.from, nextLeg.from_name || '정류장'),
               role: isBoardingLeg(nextLeg) ? '탑승' : ''
@@ -24222,12 +24390,15 @@
           if (kind === 'shuttle') {
             renderKind = 'bus';
           } else if (kind === 'transit') {
-            renderKind = mode === 'SUBWAY' ? 'subway' : 'transit-bus';
+            renderKind = isSubwayTransitMode(mode) ? 'subway' : 'transit-bus';
           }
           var group = clonePathPointGroup(pathPoints);
           if (group.length === 0) return;
           output.segments.push({
             kind: renderKind,
+            subway_route_name: renderKind === 'subway'
+              ? String(segment && (segment.route_short_name || segment.route_long_name) || '').trim()
+              : '',
             pathPoints: group
           });
           if (renderKind === 'bus') {
@@ -24429,7 +24600,7 @@
         var skipViewportFit = !!opts.skipViewportFit;
         var pathSegments = buildShuttleTransferPathSegments(option);
         pathSegments.segments.forEach(function(segment) {
-          renderStyledRoutePath(segment.pathPoints, segment.kind);
+          renderStyledRoutePath(segment.pathPoints, segment.kind, segment.subway_route_name);
         });
         setShuttlePathGroups(
           pathSegments.busPathGroups,
@@ -24545,6 +24716,7 @@
               .map(function(segment) {
                 return {
                   kind: String(segment && segment.kind || '').trim().toLowerCase(),
+                  subway_route_name: String(segment && segment.subway_route_name || '').trim(),
                   pathPoints: clonePathPointGroup(segment && segment.pathPoints)
                 };
               })
@@ -24584,7 +24756,7 @@
       }
 
       function getTransitStopBadgeKind(mode) {
-        return String(mode || '').trim().toUpperCase() === 'SUBWAY' ? 'subway' : 'bus';
+        return isSubwayTransitMode(mode) ? 'subway' : 'bus';
       }
 
       function getTransitLegEndpointPoint(leg, edge) {
@@ -24637,6 +24809,7 @@
               lng: lng,
               name: label,
               kind: String(opts.kind || 'bus'),
+              subway_route_name: String(opts.subwayRouteName || '').trim(),
               bubble_label: '',
               is_board: false,
               is_alight: false,
@@ -24655,12 +24828,14 @@
           if (opts.isBoard) {
             entry.is_board = true;
             entry.kind = String(opts.kind || entry.kind || 'bus');
+            entry.subway_route_name = String(opts.subwayRouteName || entry.subway_route_name || '').trim();
             entry.bubble_label = String(opts.bubbleLabel || entry.bubble_label || '').trim();
           }
           if (opts.isAlight) {
             entry.is_alight = true;
             if (!entry.is_board) {
               entry.kind = String(opts.kind || entry.kind || 'bus');
+              entry.subway_route_name = String(opts.subwayRouteName || entry.subway_route_name || '').trim();
             }
           }
           return entry;
@@ -24669,7 +24844,8 @@
         accessLegs.forEach(function(leg, legIndex) {
           if (!leg || getTransitTimelineConnectorKind(leg.kind) !== 'transit') return;
           var kind = getTransitStopBadgeKind(leg.mode);
-          var bubbleLabel = buildTransitRouteNameOnly(leg.mode, leg.route_short_name);
+          var bubbleLabel = buildTransitRouteNameOnly(leg.mode, leg.route_short_name || leg.route_long_name);
+          var subwayRouteName = getTransitLegSubwayRouteName(leg);
           var fromName = String(leg.from_name || '').trim();
           var toName = String(leg.to_name || '').trim();
           if (inferredDepart) {
@@ -24692,13 +24868,15 @@
             variant: 'endpoint',
             visibleMaxLevel: TRANSIT_STOP_BADGE_MAX_LEVEL,
             isBoard: true,
-            bubbleLabel: bubbleLabel
+            bubbleLabel: bubbleLabel,
+            subwayRouteName: subwayRouteName
           });
           upsertEntry(getTransitLegEndpointPoint(leg, 'to'), toName, {
             kind: kind,
             variant: 'endpoint',
             visibleMaxLevel: TRANSIT_STOP_BADGE_MAX_LEVEL,
-            isAlight: true
+            isAlight: true,
+            subwayRouteName: subwayRouteName
           });
           var stopCalls = Array.isArray(leg.stop_calls) ? leg.stop_calls : [];
           stopCalls.forEach(function(stopCall, index) {
@@ -24707,7 +24885,8 @@
             upsertEntry(stopCall, stopCall.name, {
               kind: kind,
               variant: 'intermediate',
-              visibleMaxLevel: TRANSIT_STOP_INTERMEDIATE_MAX_LEVEL
+              visibleMaxLevel: TRANSIT_STOP_INTERMEDIATE_MAX_LEVEL,
+              subwayRouteName: subwayRouteName
             });
           });
         });
@@ -24721,6 +24900,9 @@
           var anchor = document.createElement('div');
           var isIntermediate = String(entry.variant || '') === 'intermediate';
           anchor.className = 'transit-stop-anchor' + (isIntermediate ? ' is-intermediate' : '');
+          if (entry.kind === 'subway') {
+            anchor.setAttribute('style', buildSubwayLineCssVariables(entry.subway_route_name));
+          }
           anchor.setAttribute('data-transit-stop-variant', isIntermediate ? 'intermediate' : 'endpoint');
           anchor.setAttribute(
             'data-visible-max-level',
@@ -25258,7 +25440,7 @@
         shuttleDirectionArrowElements.push(arrowWrap);
       }
 
-      function getRoutePathStyle(kind) {
+      function getRoutePathStyle(kind, subwayRouteName) {
         if (kind === 'bus') {
           return {
             outerColor: SHUTTLE_ROUTE_BUS_OUTER_COLOR,
@@ -25272,9 +25454,10 @@
           };
         }
         if (kind === 'subway') {
+          var subwayVisual = getSubwayLineVisual(subwayRouteName, '');
           return {
-            outerColor: SHUTTLE_ROUTE_SUBWAY_OUTER_COLOR,
-            innerColor: SHUTTLE_ROUTE_SUBWAY_INNER_COLOR
+            outerColor: subwayVisual.darkColor,
+            innerColor: subwayVisual.color
           };
         }
         return {
@@ -25396,10 +25579,10 @@
         }
       }
 
-      function renderStyledRoutePath(pathPoints, kind) {
+      function renderStyledRoutePath(pathPoints, kind, subwayRouteName) {
         var path = pathPoints.map(function(p) { return new kakao.maps.LatLng(p.lat, p.lng); });
         if (path.length === 0) return path;
-        var style = getRoutePathStyle(kind);
+        var style = getRoutePathStyle(kind, subwayRouteName);
 
         var outerLine = new kakao.maps.Polyline({
           path: path,
@@ -25490,7 +25673,7 @@
         });
 
         pathSegments.segments.forEach(function(segment) {
-          renderStyledRoutePath(segment.pathPoints, segment.kind);
+          renderStyledRoutePath(segment.pathPoints, segment.kind, segment.subway_route_name);
         });
         renderTransitWalkTimeOverlays(transitOption);
         renderTransitStopBadges(transitOption);
@@ -30376,12 +30559,12 @@
       function getTransitAccessLegLabel(leg) {
         if (!leg || typeof leg !== 'object') return '';
         if (String(leg.kind || '').trim() === 'walk') return '도보';
-        return String(leg.route_short_name || '').trim() || _transitModeLabel(String(leg.mode || '').trim());
+        return String(leg.route_short_name || leg.route_long_name || '').trim() || _transitModeLabel(String(leg.mode || '').trim());
       }
 
       function _transitModeLabel(mode) {
         var token = String(mode || '').trim().toUpperCase();
-        if (token === 'SUBWAY') return '지하철';
+        if (token === 'SUBWAY' || token === 'RAIL') return '지하철';
         if (token === 'BUS' || token === 'TRAM') return '버스';
         if (token === 'WALK') return '도보';
         return token || '대중교통';
@@ -30390,13 +30573,18 @@
       function buildTransitOptionLegsHtml(legs) {
         if (!Array.isArray(legs) || legs.length === 0) return '';
         return legs.map(function(leg) {
-          var kind = String(leg && leg.kind || '').trim() === 'walk' ? 'walk' : 'transit';
+          var kind = String(leg && leg.kind || '').trim() === 'walk'
+            ? 'walk'
+            : (isSubwayTransitMode(leg && leg.mode) ? 'subway' : 'transit');
           var durationSec = Number(leg && leg.duration_sec);
           var label = getTransitAccessLegLabel(leg);
           var durationText = (isFinite(durationSec) && durationSec > 0)
             ? formatRouteSegmentDuration(Math.max(1, Math.round(durationSec / 60)))
             : '';
-          return '<span class="route-transit-leg-chip ' + kind + '">' +
+          var subwayStyle = kind === 'subway'
+            ? ' style="' + buildSubwayLineCssVariables(getTransitLegSubwayRouteName(leg)) + '"'
+            : '';
+          return '<span class="route-transit-leg-chip ' + kind + '"' + subwayStyle + '>' +
             escapeHtml([label, durationText].filter(Boolean).join(' · ')) +
           '</span>';
         }).join('');
@@ -30478,7 +30666,7 @@
         if (!leg || typeof leg !== 'object') return 'walk';
         if (String(leg.kind || '').trim().toLowerCase() === 'walk') return 'walk';
         var mode = String(leg.mode || '').trim().toUpperCase();
-        return mode === 'SUBWAY' ? 'subway' : 'transit-bus';
+        return isSubwayTransitMode(mode) ? 'subway' : 'transit-bus';
       }
 
       function getTransitPickerTimeBarWidthEstimate() {
@@ -30511,7 +30699,8 @@
               return {
                 kind: getTransitPickerTimeBarSegmentType(leg),
                 duration_min: durationMin,
-                label_text: formatRouteSegmentDuration(durationMin)
+                label_text: formatRouteSegmentDuration(durationMin),
+                subway_route_name: getTransitLegSubwayRouteName(leg)
               };
             }).filter(Boolean);
         var normalizedLegs = rawSegments.map(function(segment) {
@@ -30524,6 +30713,7 @@
           var labelNeedPx = estimateRouteTimeBarLabelWidthPx(labelText);
           return {
             type: type,
+            subway_route_name: type === 'subway' ? String(segment && segment.subway_route_name || '').trim() : '',
             duration_min: durationMin,
             candidate_label: labelText,
             icon_required: type === 'bus' || type === 'transit-bus' || type === 'transit' || type === 'subway',
@@ -30586,6 +30776,7 @@
         return normalizedLegs.map(function(item) {
           return {
             type: item.type,
+            subway_route_name: item.subway_route_name,
             duration_min: item.duration_min,
             flex_value: item.duration_min,
             min_width_px: item.min_width_px,
@@ -30615,6 +30806,9 @@
           if (index === 0) extraClasses.push('is-first-segment');
           if (segment.round_start) extraClasses.push('is-rounded-start');
           if (segment.round_end) extraClasses.push('is-rounded-end');
+          var subwayStyle = type === 'subway'
+            ? ';' + buildSubwayLineCssVariables(segment.subway_route_name)
+            : '';
           return '' +
             '<div class="route-transit-option-timebar-segment is-' + type + ' ' + extraClasses.join(' ') + '"' +
               ' style="--segment-flex:' + String(Math.max(1, Number(segment.flex_value || 1))) +
@@ -30622,7 +30816,8 @@
                 ';--segment-fill-end:' + String(Math.max(0, Number(segment.fill_end_px || 0))) + 'px' +
                 ';--segment-label-left:' + String(Math.max(0, Number(segment.label_left_px || 0))) + 'px' +
                 ';--segment-label-right:' + String(Math.max(0, Number(segment.label_right_px || 0))) + 'px' +
-                ';--segment-label-justify:' + escapeHtml(String(segment.label_justify || 'center')) + '">' +
+                ';--segment-label-justify:' + escapeHtml(String(segment.label_justify || 'center')) +
+                subwayStyle + '">' +
               (type !== 'walk'
                 ? '<span class="route-transit-option-timebar-segment-fill" aria-hidden="true"></span>'
                 : '') +
@@ -31254,9 +31449,12 @@
         return publicLegs.map(function(leg) {
           var routeName = String(leg.route_short_name || leg.route_long_name || '').trim();
           var mode = String(leg.mode || '').trim().toUpperCase();
-          var label = routeName || (mode === 'SUBWAY' ? '지하철' : '버스');
-          var className = mode === 'SUBWAY' ? 'subway' : 'bus';
-          return '<span class="route-transit-option-title-segment ' + className + '">' + escapeHtml(label) + '</span>';
+          var label = routeName || (isSubwayTransitMode(mode) ? '지하철' : '버스');
+          var className = isSubwayTransitMode(mode) ? 'subway' : 'bus';
+          var subwayStyle = className === 'subway'
+            ? ' style="' + buildSubwayLineCssVariables(routeName) + '"'
+            : '';
+          return '<span class="route-transit-option-title-segment ' + className + '"' + subwayStyle + '>' + escapeHtml(label) + '</span>';
         }).join('<span class="route-transit-option-title-arrow" aria-hidden="true">→</span>');
       }
 
