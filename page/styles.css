@@ -92,6 +92,44 @@ img {
   color: var(--ink);
 }
 
+.header-actions,
+.header-store-links {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.header-store-links {
+  gap: 6px;
+}
+
+.header-store-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.header-store-link img {
+  display: block;
+  width: 21px;
+  height: 21px;
+  object-fit: contain;
+}
+
+.header-store-link:focus-visible {
+  outline: 3px solid rgba(34, 72, 218, 0.32);
+  outline-offset: 3px;
+}
+
 .header-cta,
 .primary-action,
 .secondary-action,
@@ -112,6 +150,11 @@ img {
   color: var(--paper);
   background: var(--brand-blue);
   box-shadow: 0 12px 26px rgba(20, 40, 160, 0.24);
+}
+
+.header-cta,
+.primary-action {
+  font-weight: 500;
 }
 
 .header-cta {
@@ -291,6 +334,58 @@ h1 span {
 
 .primary-action {
   padding: 0 20px;
+}
+
+.app-downloads {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.app-downloads--hero {
+  justify-content: flex-start;
+}
+
+.app-downloads--device,
+.app-downloads--final {
+  justify-content: center;
+}
+
+.app-downloads--device {
+  margin-top: 20px;
+}
+
+.app-downloads--final {
+  margin-top: 18px;
+}
+
+.app-download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 140px;
+  height: 52px;
+}
+
+.app-download-link:focus-visible {
+  outline: 3px solid rgba(34, 72, 218, 0.32);
+  outline-offset: 4px;
+}
+
+.app-download-badge {
+  display: block;
+  width: auto;
+  max-width: none;
+}
+
+.app-download-badge--apple {
+  height: 40px;
+}
+
+.app-download-badge--google {
+  height: 52px;
 }
 
 .secondary-action {
@@ -1127,7 +1222,7 @@ h1 span {
   border-radius: 8px 8px 0 0;
 }
 
-.final-cta img {
+.final-cta > img {
   width: 78px;
   height: 78px;
   margin: 0 auto 16px;
@@ -1196,15 +1291,12 @@ h1 span {
 @media (max-width: 760px) {
   .site-header {
     grid-template-columns: auto auto;
+    gap: 12px;
     padding: 12px 16px;
   }
 
   .top-nav {
     display: none;
-  }
-
-  .header-cta {
-    justify-self: end;
   }
 
   .hero {
@@ -1254,6 +1346,10 @@ h1 span {
   .primary-action,
   .secondary-action {
     width: 100%;
+  }
+
+  .app-downloads--hero {
+    justify-content: center;
   }
 
   .hero-visual {
@@ -1333,14 +1429,41 @@ h1 span {
 }
 
 @media (max-width: 430px) {
+  .brand {
+    gap: 6px;
+  }
+
+  .brand img {
+    width: 32px;
+    height: 32px;
+  }
+
   .brand span {
     font-size: 16px;
   }
 
+  .header-actions {
+    gap: 6px;
+  }
+
+  .header-store-links {
+    gap: 4px;
+  }
+
+  .header-store-link {
+    width: 32px;
+    height: 32px;
+  }
+
+  .header-store-link img {
+    width: 19px;
+    height: 19px;
+  }
+
   .header-cta {
-    min-height: 40px;
-    padding: 0 12px;
-    font-size: 13px;
+    min-height: 36px;
+    padding: 0 9px;
+    font-size: 12px;
   }
 
   h1 {

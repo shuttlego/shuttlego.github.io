@@ -783,6 +783,41 @@
       font-family: inherit;
       transition: background-color .15s ease, border-color .15s ease;
     }
+    .desktop-store-links {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .desktop-store-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      min-width: 44px;
+      height: 42px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #374151;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    .desktop-store-link:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    .desktop-store-link:focus-visible {
+      outline: 2px solid rgba(20, 40, 160, 0.42);
+      outline-offset: 2px;
+    }
+    .desktop-store-link img {
+      display: block;
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+    }
     .notice-open-btn svg {
       width: 18px;
       height: 18px;
@@ -6892,8 +6927,61 @@
     .route-operator-info {
       font-size: 11px;
       color: #888;
-      text-align: right;
-      margin-top: 8px;
+      text-align: left;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #edf0f5;
+    }
+    .route-vehicle-title {
+      color: #475569;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    .route-vehicle-row {
+      color: #4b5563;
+      font-size: 12px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    .route-vehicle-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      margin-left: 3px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #273aa7;
+      font-size: 10px;
+      font-weight: 700;
+      vertical-align: 1px;
+    }
+    .route-vehicle-status.is-danger {
+      background: #fff1f2;
+      color: #be123c;
+    }
+    .route-vehicle-status.is-muted {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+    .route-vehicle-loading {
+      color: #64748b;
+    }
+    .route-vehicle-loading::before {
+      content: '';
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      margin-right: 6px;
+      border: 1.5px solid #cbd5e1;
+      border-top-color: #3347bd;
+      border-radius: 50%;
+      animation: routeVehicleSpin .8s linear infinite;
+      vertical-align: -1px;
+    }
+    @keyframes routeVehicleSpin {
+      to { transform: rotate(360deg); }
     }
     .transfer-timetable-group + .transfer-timetable-group {
       margin-top: 16px;
@@ -7137,6 +7225,9 @@
 
     /* 모바일: 레이아웃 전환 + 하단 시트 */
     @media (max-width: 768px) {
+      .desktop-store-links {
+        display: none;
+      }
       .header {
         flex-wrap: wrap;
         gap: 10px;
@@ -9490,6 +9581,14 @@
         </div>
       </div>
     <div class="site-profile-wrap">
+      <div class="desktop-store-links" aria-label="셔틀Go 앱 다운로드">
+        <a class="desktop-store-link" href="https://apps.apple.com/kr/app/%EC%85%94%ED%8B%80go-%ED%86%B5%EA%B7%BC-%EC%85%94%ED%8B%80-%EB%85%B8%EC%84%A0-%EA%B2%80%EC%83%89/id6793066543" target="_blank" rel="noopener noreferrer" title="App Store" aria-label="App Store에서 셔틀Go 다운로드">
+          <img src="/page/assets/app-store-official.png" alt="" aria-hidden="true" />
+        </a>
+        <a class="desktop-store-link" href="https://play.google.com/store/apps/details?id=com.shuttlego.app" target="_blank" rel="noopener noreferrer" title="Google Play" aria-label="Google Play에서 셔틀Go 다운로드">
+          <img src="/page/assets/google-play-official.png" alt="" aria-hidden="true" />
+        </a>
+      </div>
       <button type="button" class="notice-open-btn notice-open-btn-desktop" id="noticeOpenBtn" title="공지" aria-label="공지">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
@@ -10767,7 +10866,9 @@
         myReportsRouteFilterQuery: '',
         myReportsRouteSelectedRouteId: '',
         myReportsRouteSelectedStopId: '',
-        myReportsRouteSelectedDepartureKey: ''
+        myReportsRouteSelectedDepartureKey: '',
+        etaDetailPayload: null,
+        etaDetailBucket: ''
       };
       var etaFloatingTooltipEl = null;
       var etaFloatingTooltipTrigger = null;
@@ -21343,12 +21444,13 @@
         noteNode.textContent = noteText;
       }
 
-      function buildRouteVariantDetailCacheKey(routeId, dayType, departureTime, variantId) {
+      function buildRouteVariantDetailCacheKey(routeId, dayType, departureTime, variantId, etaReferenceDate) {
         return [
           String(routeId || '').trim(),
           String(dayType || '').trim() || 'weekday',
           String(departureTime || '').trim(),
-          String(variantId || '').trim()
+          String(variantId || '').trim(),
+          String(etaReferenceDate || getTodayKstDateText() || '').trim()
         ].join('|');
       }
 
@@ -21374,7 +21476,11 @@
         return {
           selected_departure_time: timeText,
           route_stops: cloneJsonValue(routeStops) || [],
-          selected_operator: String(detail.selected_operator || '').trim()
+          selected_operator: String(detail.selected_operator || '').trim(),
+          eta_reference_date: String(detail.eta_reference_date || '').trim(),
+          eta_day_bucket: String(detail.eta_day_bucket || '').trim(),
+          eta_day_bucket_label: String(detail.eta_day_bucket_label || '').trim(),
+          eta_fallback_used: !!detail.eta_fallback_used
         };
       }
 
@@ -21411,19 +21517,30 @@
           var detail = variants[timeText];
           setRouteDepartureVariantDetail(option, timeText, detail);
           if (isFinite(routeId) && routeId > 0) {
-            setRouteVariantDetailCache(buildRouteVariantDetailCacheKey(routeId, selectedDayType, timeText), detail);
+            setRouteVariantDetailCache(
+              buildRouteVariantDetailCacheKey(
+                routeId,
+                selectedDayType,
+                timeText,
+                '',
+                detail.eta_reference_date
+              ),
+              detail
+            );
           }
         });
       }
 
       function fetchRouteVariantDetailData(routeId, departureTime, variantId) {
         var timeText = String(departureTime || '').trim() || getDepartureTimeStr();
+        var etaReferenceDate = getTodayKstDateText();
         var normalizedVariantId = Number(variantId || 0);
         var cacheKey = buildRouteVariantDetailCacheKey(
           routeId,
           selectedDayType,
           timeText,
-          isFinite(normalizedVariantId) && normalizedVariantId > 0 ? normalizedVariantId : ''
+          isFinite(normalizedVariantId) && normalizedVariantId > 0 ? normalizedVariantId : '',
+          etaReferenceDate
         );
         var cached = getRouteVariantDetailCache(cacheKey);
         if (cached) return Promise.resolve(cached);
@@ -21434,7 +21551,8 @@
         }
         var detailUrl = API_BASE + '/api/route/' + encodeURIComponent(String(routeId)) + '/variant-detail' +
           '?day_type=' + encodeURIComponent(selectedDayType) +
-          '&departure_time=' + encodeURIComponent(timeText);
+          '&departure_time=' + encodeURIComponent(timeText) +
+          '&eta_reference_date=' + encodeURIComponent(etaReferenceDate);
         if (isFinite(normalizedVariantId) && normalizedVariantId > 0) {
           detailUrl += '&variant_id=' + encodeURIComponent(String(normalizedVariantId));
         }
@@ -23530,6 +23648,10 @@
           var sectionHeadHtml = '<div class="transfer-timetable-head">' +
             '<div class="transfer-timetable-route">' + escapeHtml(String(transitIndex + 1) + '번째 셔틀 · ' + routeName) + '</div>' +
           '</div>';
+          var vehicleInfoHtml = buildVehicleAssignmentInfoHtml(
+            leg.__vehicleAssignment || null,
+            leg.operator || leg.agency_name || ''
+          );
           departureSectionsHtml += '<section class="transfer-timetable-section" data-transfer-route-id="' + escapeAttr(leg.route_id || '') + '">' +
             sectionHeadHtml +
             '<div class="departure-times">' + (departureTimesHtml || '-') + '</div>' +
@@ -23537,6 +23659,7 @@
           stopSectionsHtml += '<section class="transfer-timetable-section" data-transfer-route-id="' + escapeAttr(leg.route_id || '') + '">' +
             sectionHeadHtml +
             '<div class="route-stops-list">' + buildShuttleTransferRouteStopsHtml(leg, selectedTime) + '</div>' +
+            (vehicleInfoHtml ? '<div class="route-operator-info">' + vehicleInfoHtml + '</div>' : '') +
           '</section>';
         });
         var html = '<div class="transfer-timetable-group transfer-timetable-departures">' +
@@ -27528,7 +27651,13 @@
         ).trim();
         if (routeStops.length === 0) {
           var cachedDetail = getRouteVariantDetailCache(
-            buildRouteVariantDetailCacheKey(option.route_id, selectedDayType, selectedTime)
+            buildRouteVariantDetailCacheKey(
+              option.route_id,
+              selectedDayType,
+              selectedTime,
+              '',
+              activeDetail && activeDetail.eta_reference_date
+            )
           );
           if (cachedDetail && Array.isArray(cachedDetail.route_stops) && cachedDetail.route_stops.length > 0) {
             routeStops = Array.isArray(cachedDetail.route_stops) ? cachedDetail.route_stops : [];
@@ -27541,7 +27670,11 @@
         return {
           selected_departure_time: selectedTime,
           route_stops: cloneJsonValue(routeStops),
-          selected_operator: selectedOperator
+          selected_operator: selectedOperator,
+          eta_reference_date: String(activeDetail && activeDetail.eta_reference_date || '').trim(),
+          eta_day_bucket: String(activeDetail && activeDetail.eta_day_bucket || '').trim(),
+          eta_day_bucket_label: String(activeDetail && activeDetail.eta_day_bucket_label || '').trim(),
+          eta_fallback_used: !!(activeDetail && activeDetail.eta_fallback_used)
         };
       }
 
@@ -31929,6 +32062,7 @@
           day_type: String(selectedDayType || ''),
           time_basis: normalizeRouteTimeBasis(selectedRouteTimeBasis),
           direction: isDepart ? 'depart' : 'arrive',
+          query_date: getCurrentArrivalSearchDate(),
           departure_time: getDepartureTimeStr(),
           place: placePayload,
           place_source: String(currentPlaceSource || 'unknown'),
@@ -33775,6 +33909,270 @@
         return '<span class="route-name-text">' + routeName + '</span>';
       }
 
+      var vehicleAssignmentCache = new Map();
+
+      function vehicleAssignmentRequestKey(routeId, dayType, departureTime) {
+        var normalizedRouteId = Number(routeId || 0);
+        var normalizedDayType = String(dayType || selectedDayType || 'weekday').trim() || 'weekday';
+        var normalizedTime = String(departureTime || '').trim();
+        if (!isFinite(normalizedRouteId) || normalizedRouteId <= 0 || !normalizedTime) return '';
+        return [String(normalizedRouteId), normalizedDayType, normalizedTime].join('|');
+      }
+
+      function formatVehicleServiceDate(value) {
+        var clean = String(value || '').trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return '';
+        var parts = clean.split('-');
+        var parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        var weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+        return String(Number(parts[1])) + '/' + String(Number(parts[2])) + '(' + weekdays[parsed.getDay()] + ')';
+      }
+
+      function buildVehicleAssignmentInfoHtml(info, fallbackOperator) {
+        var payload = info && typeof info === 'object' ? info : null;
+        var state = String(payload && payload.state || '').trim();
+        var serviceDateLabel = formatVehicleServiceDate(payload && payload.service_date);
+        var title = serviceDateLabel ? serviceDateLabel + ' 운행 정보' : '운행 정보';
+        if (state === 'loading') {
+          return '<div class="route-vehicle-title">' + escapeHtml(title) + '</div>' +
+            '<div class="route-vehicle-row route-vehicle-loading">배차 정보를 확인하고 있습니다.</div>';
+        }
+        var assignments = Array.isArray(payload && payload.assignments) ? payload.assignments : [];
+        if (assignments.length) {
+          return '<div class="route-vehicle-title">' + escapeHtml(title) + '</div>' + assignments.map(function(item) {
+            var parts = [];
+            var operatorName = String(item && item.operator_name || '').trim();
+            var vehicleNumber = String(item && item.vehicle_number || '').trim();
+            var displayStatus = String(item && item.display_status || '').trim();
+            if (operatorName) parts.push(operatorName);
+            if (vehicleNumber) parts.push(vehicleNumber);
+            var tone = String(item && item.status_tone || '').trim();
+            var statusClass = tone === 'danger' ? ' is-danger' : (tone === 'muted' ? ' is-muted' : '');
+            return '<div class="route-vehicle-row">' +
+              escapeHtml(parts.join(' · ') || '차량 정보') +
+              (displayStatus
+                ? '<span class="route-vehicle-status' + statusClass + '">' + escapeHtml(displayStatus) + '</span>'
+                : '') +
+            '</div>';
+          }).join('');
+        }
+        var staticCompanies = Array.isArray(payload && payload.static_companies)
+          ? payload.static_companies.map(function(value) { return String(value || '').trim(); }).filter(Boolean)
+          : [];
+        var cleanFallback = String(fallbackOperator || '').trim();
+        if (!staticCompanies.length && cleanFallback && cleanFallback.indexOf(',') < 0) {
+          staticCompanies = [cleanFallback];
+        }
+        if (state === 'unsupported') {
+          return cleanFallback ? escapeHtml(cleanFallback) : '';
+        }
+        if (state === 'not_assigned' || state === 'unavailable' || state === 'unsupported_date') {
+          var unknownParts = staticCompanies.length === 1 ? [staticCompanies[0]] : [];
+          return '<div class="route-vehicle-title">' + escapeHtml(title) + '</div>' +
+            '<div class="route-vehicle-row">' + escapeHtml(unknownParts.join(' · ') || '배차 정보 미확인') +
+              (unknownParts.length ? '<span class="route-vehicle-status is-muted">배차 정보 미확인</span>' : '') +
+            '</div>';
+        }
+        return cleanFallback ? escapeHtml(cleanFallback) : '';
+      }
+
+      function applyVehicleAssignmentToOption(option, requestKey, info) {
+        if (!option || String(option.__vehicleAssignmentRequestKey || '') !== String(requestKey || '')) return;
+        option.__vehicleAssignment = info;
+        var card = getLiveRouteCardForOption(option);
+        if (!card) return;
+        var node = card.querySelector('.route-operator-info');
+        if (!node) return;
+        var html = buildVehicleAssignmentInfoHtml(info, option.operator || '');
+        node.innerHTML = html;
+        node.style.display = html ? '' : 'none';
+      }
+
+      function collectVehicleAssignmentTargets(options) {
+        var targets = [];
+        (Array.isArray(options) ? options : []).forEach(function(option) {
+          if (!option) return;
+          if (isShuttleTransferOption(option)) {
+            getShuttleTransferTransitEntries(option).forEach(function(entry) {
+              var leg = entry && entry.leg || {};
+              var routeId = Number(leg.route_id || 0);
+              var departureTime = getShuttleTransferLegDepartureTime(leg);
+              var dayType = String(leg.day_type || option.day_type || selectedDayType || 'weekday').trim();
+              var key = vehicleAssignmentRequestKey(routeId, dayType, departureTime);
+              if (!key) return;
+              leg.__vehicleAssignmentRequestKey = key;
+              targets.push({ route_id: routeId, day_type: dayType, departure_time: departureTime, key: key, target: leg, parent: option });
+            });
+            return;
+          }
+          var routeId = Number(option.route_id || 0);
+          var departureTime = getOptionDisplayDepartureTime(option);
+          var dayType = String(option.day_type || selectedDayType || 'weekday').trim();
+          var key = vehicleAssignmentRequestKey(routeId, dayType, departureTime);
+          if (!key) return;
+          option.__vehicleAssignmentRequestKey = key;
+          targets.push({ route_id: routeId, day_type: dayType, departure_time: departureTime, key: key, target: option, parent: option });
+        });
+        return targets;
+      }
+
+      function applyVehicleAssignmentTarget(target, info) {
+        if (!target || !target.target) return;
+        if (String(target.target.__vehicleAssignmentRequestKey || '') !== String(target.key || '')) return;
+        target.target.__vehicleAssignment = info;
+        if (target.target === target.parent) {
+          applyVehicleAssignmentToOption(target.parent, target.key, info);
+          return;
+        }
+        var card = getLiveRouteCardForOption(target.parent);
+        if (card) refreshShuttleTransferTimetable(card, target.parent, currentPlaceName, currentIsDepart);
+      }
+
+      function requestVehicleAssignmentTargets(targets) {
+        var pendingTargets = [];
+        targets.forEach(function(target) {
+          var cached = vehicleAssignmentCache.get(target.key);
+          if (cached && cached.result) {
+            applyVehicleAssignmentTarget(target, cached.result);
+            return;
+          }
+          if (cached && cached.pending) {
+            cached.pendingTargets.push(target);
+            applyVehicleAssignmentTarget(target, {
+              state: 'loading',
+              assignments: [],
+              service_date: ''
+            });
+            return;
+          }
+          applyVehicleAssignmentTarget(target, {
+            state: 'loading',
+            assignments: [],
+            service_date: ''
+          });
+          pendingTargets.push(target);
+        });
+        if (!pendingTargets.length) return;
+        for (var offset = 0; offset < pendingTargets.length; offset += 10) {
+          (function(batch) {
+            var unique = [];
+            var seen = {};
+            batch.forEach(function(target) {
+              if (seen[target.key]) return;
+              seen[target.key] = true;
+              unique.push(target);
+            });
+            unique.forEach(function(target) {
+              vehicleAssignmentCache.set(target.key, {
+                pending: true,
+                pendingTargets: batch.filter(function(candidate) { return candidate.key === target.key; }),
+                startedAt: Date.now()
+              });
+            });
+            pollVehicleAssignmentTargets(unique, 0);
+          })(pendingTargets.slice(offset, offset + 10));
+        }
+      }
+
+      function finishVehicleAssignmentTarget(target, item) {
+        var pendingEntry = vehicleAssignmentCache.get(target.key);
+        var waitingTargets = pendingEntry && Array.isArray(pendingEntry.pendingTargets)
+          ? pendingEntry.pendingTargets.slice()
+          : [target];
+        vehicleAssignmentCache.set(target.key, { result: item });
+        waitingTargets.forEach(function(candidate) {
+          applyVehicleAssignmentTarget(candidate, item);
+        });
+      }
+
+      function pollVehicleAssignmentTargets(targets, attempt) {
+        var activeTargets = (Array.isArray(targets) ? targets : []).filter(function(target) {
+          var entry = vehicleAssignmentCache.get(target.key);
+          return !!(entry && entry.pending);
+        });
+        if (!activeTargets.length) return;
+        fetchJson(API_BASE + '/api/route-vehicle-assignments/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: activeTargets.map(function(target) {
+              return {
+                route_id: target.route_id,
+                day_type: target.day_type,
+                departure_time: target.departure_time
+              };
+            })
+          })
+        }).then(function(result) {
+          var supported = !!(result.ok && result.data && result.data.enabled !== false);
+          var rows = supported && Array.isArray(result.data.items) ? result.data.items : [];
+          var byKey = {};
+          var nextTargets = [];
+          var nextDelay = Math.min(3000, 800 + (Number(attempt || 0) * 300));
+          rows.forEach(function(item) {
+            var key = vehicleAssignmentRequestKey(item.route_id, item.day_type, item.departure_time);
+            if (key) byKey[key] = item;
+          });
+          activeTargets.forEach(function(target) {
+            var entry = vehicleAssignmentCache.get(target.key);
+            if (!entry || !entry.pending) return;
+            var elapsed = Date.now() - Number(entry.startedAt || Date.now());
+            var item = byKey[target.key] || null;
+            var state = String(item && item.state || '').trim();
+            if (supported && state === 'loading' && elapsed < 45000) {
+              var requestedDelay = Number(item.poll_after_ms || 0);
+              if (isFinite(requestedDelay) && requestedDelay > 0) {
+                nextDelay = Math.max(nextDelay, Math.min(3000, requestedDelay));
+              }
+              entry.pendingTargets.forEach(function(candidate) {
+                applyVehicleAssignmentTarget(candidate, item);
+              });
+              nextTargets.push(target);
+              return;
+            }
+            finishVehicleAssignmentTarget(target, item || {
+              route_id: target.route_id,
+              day_type: target.day_type,
+              departure_time: target.departure_time,
+              state: supported ? 'unavailable' : 'unsupported',
+              assignments: []
+            });
+          });
+          if (nextTargets.length) {
+            window.setTimeout(function() {
+              pollVehicleAssignmentTargets(nextTargets, Number(attempt || 0) + 1);
+            }, nextDelay);
+          }
+        }).catch(function() {
+          var retryTargets = [];
+          activeTargets.forEach(function(target) {
+            var entry = vehicleAssignmentCache.get(target.key);
+            if (!entry || !entry.pending) return;
+            var elapsed = Date.now() - Number(entry.startedAt || Date.now());
+            if (elapsed < 45000) {
+              retryTargets.push(target);
+              return;
+            }
+            finishVehicleAssignmentTarget(target, {
+              route_id: target.route_id,
+              day_type: target.day_type,
+              departure_time: target.departure_time,
+              state: 'unavailable',
+              assignments: []
+            });
+          });
+          if (retryTargets.length) {
+            window.setTimeout(function() {
+              pollVehicleAssignmentTargets(retryTargets, Number(attempt || 0) + 1);
+            }, Math.min(3000, 1000 + (Number(attempt || 0) * 400)));
+          }
+        });
+      }
+
+      function refreshVehicleAssignments(options) {
+        requestVehicleAssignmentTargets(collectVehicleAssignmentTargets(options));
+      }
+
       function resetRouteShareButtonLabel(button, originalText) {
         if (!button) return;
         button.disabled = false;
@@ -34116,7 +34514,9 @@
               '<hr class="route-stops-divider">' +
               '<div class="detail-title">노선 경유지</div>' +
               '<div class="route-stops-list">' + (stopsHtml || '-') + '</div>' +
-              (opt.operator ? '<div class="route-operator-info">' + escapeHtml(opt.operator) + '</div>' : '') +
+              '<div class="route-operator-info"' + (opt.operator ? '' : ' style="display:none"') + '>' +
+                buildVehicleAssignmentInfoHtml(opt.__vehicleAssignment || null, opt.operator || '') +
+              '</div>' +
               (optionUpdatedAt ? '<div class="route-db-updated">마지막 업데이트: ' + escapeHtml(optionUpdatedAt) + '</div>' : '');
           card.innerHTML =
             '<div class="route-card-actions">' +
@@ -38962,7 +39362,7 @@
 
       function normalizeEtaDetailPayload(payload) {
         if (Array.isArray(payload)) {
-          return { version: 1, items: payload, empty_code: '' };
+          return { version: 1, items: payload, empty_code: '', eta_day_bucket: 'unsplit' };
         }
         var data = (payload && typeof payload === 'object') ? payload : {};
         var version = Number(data.version || 1);
@@ -38970,7 +39370,8 @@
           return {
             version: 1,
             items: Array.isArray(data.items) ? data.items : [],
-            empty_code: String(data.empty_code || '')
+            empty_code: String(data.empty_code || ''),
+            eta_day_bucket: String(data.eta_day_bucket || 'unsplit')
           };
         }
         var runs = (data.runs && typeof data.runs === 'object') ? data.runs : {};
@@ -38998,7 +39399,9 @@
               eta_exclude_reason: '',
               like_count: 0,
               liked_by_me: false,
-              like_disabled: true
+              like_disabled: true,
+              eta_day_bucket: String(item.eta_day_bucket || runMeta.eta_day_bucket || 'unsplit'),
+              eta_day_bucket_label: String(item.eta_day_bucket_label || '')
             };
           }
           return {
@@ -39017,19 +39420,59 @@
             eta_exclude_reason: String(item.eta_exclude_reason || ''),
             like_count: Math.max(0, Number(item.like_count || 0) || 0),
             liked_by_me: !!item.liked_by_me,
-            like_disabled: !!item.like_disabled
+            like_disabled: !!item.like_disabled,
+            eta_day_bucket: String(item.eta_day_bucket || 'unsplit'),
+            eta_day_bucket_label: String(item.eta_day_bucket_label || '')
           };
         });
         return {
           version: 2,
           items: normalizedItems,
-          empty_code: String(data.empty_code || '')
+          empty_code: String(data.empty_code || ''),
+          eta_reference_date: String(data.eta_reference_date || ''),
+          eta_day_bucket: String(data.eta_day_bucket || 'unsplit'),
+          eta_day_bucket_label: String(data.eta_day_bucket_label || '')
         };
       }
 
       function renderEtaDetailItems(payload) {
         var normalized = normalizeEtaDetailPayload(payload);
         var items = Array.isArray(normalized.items) ? normalized.items : [];
+        var hasSplitProfiles = normalized.eta_day_bucket === 'mon_thu' || normalized.eta_day_bucket === 'friday' || items.some(function(item) {
+          return item.eta_day_bucket === 'mon_thu' || item.eta_day_bucket === 'friday';
+        });
+        if (hasSplitProfiles && reportDataTabs) {
+          var activeBucket = String(reportDataState.etaDetailBucket || normalized.eta_day_bucket || 'all');
+          if (activeBucket !== 'all' && activeBucket !== 'mon_thu' && activeBucket !== 'friday') {
+            activeBucket = 'all';
+          }
+          reportDataState.etaDetailBucket = activeBucket;
+          reportDataTabs.classList.add('show');
+          reportDataTabs.innerHTML = '';
+          [
+            { key: 'all', label: '전체' },
+            { key: 'mon_thu', label: '월-목' },
+            { key: 'friday', label: '금요일' }
+          ].forEach(function(def) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'report-data-tab' + (def.key === activeBucket ? ' active' : '');
+            btn.textContent = def.label;
+            btn.addEventListener('click', function() {
+              reportDataState.etaDetailBucket = def.key;
+              renderEtaDetailItems(reportDataState.etaDetailPayload || payload);
+            });
+            reportDataTabs.appendChild(btn);
+          });
+          if (activeBucket !== 'all') {
+            items = items.filter(function(item) {
+              return String(item.eta_day_bucket || 'unsplit') === activeBucket;
+            });
+          }
+        } else if (reportDataTabs) {
+          reportDataTabs.classList.remove('show');
+          reportDataTabs.innerHTML = '';
+        }
         if (!items.length) {
           reportDataBody.innerHTML = '<div class="report-empty-state">' + buildEtaDetailEmptyMessageHtml() + '</div>';
           return;
@@ -39161,6 +39604,8 @@
 
       function openEtaReportDetailModal(routeId, departureTime, stopId, stopName, routeUuid, stopUuid) {
         reportDataState.mode = 'eta-detail';
+        reportDataState.etaDetailPayload = null;
+        reportDataState.etaDetailBucket = '';
         openReportDataModal(buildEtaReportTitleHtml(stopName), { htmlTitle: true });
         if (reportDataTabs) {
           reportDataTabs.classList.remove('show');
@@ -39171,6 +39616,7 @@
           '&day_type=' + encodeURIComponent(selectedDayType) +
           '&departure_time=' + encodeURIComponent(String(departureTime || '')) +
           '&stop_id=' + encodeURIComponent(String(stopId)) +
+          '&eta_reference_date=' + encodeURIComponent(getTodayKstDateText()) +
           '&response_version=2';
         var normalizedRouteUuid = String(routeUuid || '').trim();
         var normalizedStopUuid = String(stopUuid || '').trim();
@@ -39183,6 +39629,8 @@
         fetchJson(url)
           .then(function(result) {
             if (!result.ok) throw new Error(result.data.error || '제보 내역을 불러오지 못했습니다.');
+            reportDataState.etaDetailPayload = result.data || {};
+            reportDataState.etaDetailBucket = String(result.data && result.data.eta_day_bucket || 'all');
             renderEtaDetailItems(result.data || {});
           })
           .catch(function(err) {
@@ -39356,8 +39804,17 @@
           }
         }
         if (operatorInfo) {
-          operatorInfo.textContent = nextOperatorText;
-          operatorInfo.style.display = nextOperatorText ? '' : 'none';
+          var assignmentKey = vehicleAssignmentRequestKey(
+            option.route_id,
+            option.day_type || selectedDayType,
+            selectedTime
+          );
+          var assignmentInfo = String(option.__vehicleAssignmentRequestKey || '') === assignmentKey
+            ? option.__vehicleAssignment
+            : null;
+          var operatorHtml = buildVehicleAssignmentInfoHtml(assignmentInfo, nextOperatorText);
+          operatorInfo.innerHTML = operatorHtml;
+          operatorInfo.style.display = operatorHtml ? '' : 'none';
         }
         syncRouteUpdatedInfo(panel, getRouteCardUpdatedAt(option));
       }
@@ -39402,6 +39859,7 @@
         var panel = (card && card.isConnected) ? card.querySelector('.route-detail-panel') : null;
         if (!panel) return;
         syncRouteDetailPanelWithDetail(card, option, isDepart, normalizedDetail);
+        refreshVehicleAssignments([option]);
         var arrivalRefreshPromise = maybeRefreshArrivalByRouteVariant(
           option,
           normalizedDetail,
@@ -39566,6 +40024,7 @@
           enhanceRouteDetailPanel(card, option, placeName, isDepart);
           syncRouteCardTimeSummary(card, option, placeName, isDepart);
         });
+        refreshVehicleAssignments(options);
         maybeShowRouteOnboardingGuide();
       };
 

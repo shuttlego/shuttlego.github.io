@@ -345,6 +345,10 @@
   margin-top: 36px;
 }
 
+.hwaseong-landing .app-downloads--hero {
+  justify-content: center;
+}
+
 .hwaseong-landing .landing-section {
   width: min(1040px, calc(100% - 56px));
   text-align: center;
@@ -415,12 +419,6 @@
   }
 }
 
-@media (min-width: 1041px) {
-  .hwaseong-landing .landing-hero h1 span:first-child {
-    white-space: nowrap;
-  }
-}
-
 @media (max-width: 760px) {
   .landing-hero,
   .landing-section {
@@ -433,6 +431,10 @@
 
   .landing-hero h1 {
     font-size: 34px;
+  }
+
+  .landing-hero h1 span {
+    overflow-wrap: anywhere;
   }
 
   .landing-lead {
