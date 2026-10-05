@@ -31,6 +31,8 @@ jobs:
           cp index.html _site/index.html
           cp auth-callback.html _site/auth-callback.html
           cp dev.config.js _site/dev.config.js
+          cp ads.js ads.css _site/
+          cp -R fonts _site/fonts
           cp legal.css _site/legal.css
           cp robots.txt _site/robots.txt
           cp sitemap.xml _site/sitemap.xml
