@@ -1,0 +1,22 @@
+@font-face {
+  font-family: "Wanted Sans Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 1000;
+  src: url("/fonts/wanted-sans/WantedSansVariable.woff2?v=1.196") format("woff2-variations");
+}
+
+:root {
+  --shuttle-font-sans: "Wanted Sans Variable", "Wanted Sans", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea,
+summary {
+  font-family: var(--shuttle-font-sans);
+  font-synthesis: none;
+}

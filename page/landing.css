@@ -25,7 +25,7 @@
   background: var(--brand-blue);
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .landing-hero h1 {
@@ -33,7 +33,7 @@
   margin: 18px 0 0;
   font-size: 42px;
   line-height: 1.12;
-  font-weight: 950;
+  font-weight: 700;
   word-break: keep-all;
 }
 
@@ -41,7 +41,7 @@
   margin: 22px 0 0;
   color: var(--ink-soft);
   font-size: 18px;
-  font-weight: 650;
+  font-weight: 400;
   word-break: keep-all;
 }
 
@@ -62,7 +62,7 @@
   border: 1px solid var(--brand-blue-line);
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .landing-hero .primary-action {
@@ -131,7 +131,7 @@
   color: var(--ink);
   font-size: 19px;
   line-height: 1.35;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .intent-card p,
@@ -139,7 +139,7 @@
 .keyword-card p {
   margin: 10px 0 0;
   color: var(--muted);
-  font-weight: 650;
+  font-weight: 400;
   word-break: keep-all;
 }
 
@@ -160,7 +160,7 @@
   background: var(--brand-blue);
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .example-card strong {
@@ -181,7 +181,7 @@
   gap: 16px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .route-facts b {
@@ -221,13 +221,13 @@
   color: var(--ink);
   font-size: 20px;
   line-height: 1.35;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .feature-shot-card p {
   margin: 10px 0 0;
   color: var(--muted);
-  font-weight: 650;
+  font-weight: 400;
   word-break: keep-all;
 }
 
@@ -253,7 +253,7 @@
 .keyword-card a {
   color: var(--blue);
   font-size: 17px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .related-route-grid {
@@ -279,14 +279,14 @@
 .related-route-card span {
   color: var(--teal);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .related-route-card strong {
   color: var(--ink);
   font-size: 18px;
   line-height: 1.35;
-  font-weight: 950;
+  font-weight: 700;
   word-break: keep-all;
 }
 
@@ -294,7 +294,7 @@
   margin: 0;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 400;
   word-break: keep-all;
 }
 
@@ -307,7 +307,7 @@
   margin: 18px 0 0;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 400;
 }
 
 .hwaseong-landing {
@@ -366,7 +366,7 @@
 .hwaseong-landing .section-heading p:not(.eyebrow) {
   margin: 14px auto 0;
   color: var(--muted);
-  font-weight: 650;
+  font-weight: 400;
   word-break: keep-all;
 }
 
