@@ -140,6 +140,7 @@
   </script>
   <style>
     * { box-sizing: border-box; }
+    :root { --shuttle-map-label-font-size: 15px; }
     html, body {
       width: 100%;
       max-width: 100%;
@@ -639,6 +640,9 @@
       }
       .time-picker-header {
         align-items: flex-start;
+      }
+      .time-picker-modal.modal-pull-dragging {
+        transition: none;
       }
       .time-basis-options {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3079,6 +3083,11 @@
         top: auto;
         max-height: 50vh;
         border-radius: 16px 16px 0 0;
+        transition: transform .18s ease;
+        overscroll-behavior: contain;
+      }
+      .site-picker-modal.modal-pull-dragging {
+        transition: none;
       }
       .site-picker-modal .site-picker-title {
         padding: 20px 16px 12px;
@@ -4531,7 +4540,7 @@
       border-radius: 10px;
       border: 1px solid #2f3a4f;
       box-shadow: 0 2px 8px rgba(0,0,0,.18);
-      font-size: 15px;
+      font-size: var(--shuttle-map-label-font-size);
       font-weight: 700;
       line-height: 1.25;
       color: #1f2a37;
@@ -8673,11 +8682,35 @@
       overflow-wrap: anywhere;
       word-break: break-word;
     }
+    .crowding-table { width: 100%; min-width: max-content; display: grid; grid-template-columns: minmax(max-content, 1.05fr) minmax(max-content, 1.6fr) minmax(max-content, .7fr) minmax(max-content, 1fr); column-gap: 6px; }
+    .crowding-table .report-table-head,
+    .crowding-table .report-table-row { grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; column-gap: 6px; }
+    @supports not (grid-template-columns: subgrid) {
+      .crowding-table { display: block; min-width: 28em; }
+      .crowding-table .report-table-head, .crowding-table .report-table-row { grid-template-columns: minmax(7em, 1.05fr) minmax(9em, 1.6fr) minmax(4em, .7fr) minmax(6em, 1fr); }
+    }
+    .crowding-table .report-table-cell { text-align: center; white-space: nowrap; }
+    .crowding-table .report-table-row { font-weight: 400; }
+    .crowding-vehicle { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+    .crowding-vehicle:focus-visible { outline: 2px solid #1428a0; outline-offset: 3px; }
+    .crowding-summary { margin-bottom: 8px; font-size: 16px; font-weight: 700; }
+    .crowding-description, .crowding-context, .crowding-change { margin-bottom: 12px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .crowding-day-heading { grid-column: 1 / -1; padding: 14px 0 6px; color: #64748b; font-size: 12px; font-weight: 400; }
+    .report-data-modal.crowding-detail .report-data-body { overflow-x: auto; }
     .report-table-note {
       margin-top: 6px;
       font-size: 12px;
       color: #64748b;
       line-height: 1.45;
+    }
+    .report-gps-note {
+      grid-column: 1 / -1;
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.5;
+      color: #64748b;
+      text-align: left;
     }
     .report-history-browser-note {
       margin-bottom: 10px;
@@ -9149,6 +9182,7 @@
       color: #475569;
       border: 1px solid #cbd5e1;
     }
+    .report-badge.gps,
     .report-badge.tmap,
     .report-badge.naver {
       background: #ffffff;
@@ -9174,6 +9208,7 @@
       font: inherit;
       cursor: pointer;
     }
+    .report-badge.gps.eta-system-tooltip-trigger,
     .report-badge.tmap.eta-system-tooltip-trigger {
       background: #ffffff;
       color: #334155;
@@ -9369,6 +9404,31 @@
     .route-stop-label {
       min-width: 0;
       flex: 1;
+    }
+    .route-stop-metrics { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 4px 8px; max-width: 55%; }
+    .route-stop-crowding { padding: 0; border: 0; background: transparent; color: #64748b; font: inherit; font-weight: 400; white-space: nowrap; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+    .route-stop-crowding:focus-visible { outline: 2px solid #1428a0; outline-offset: 3px; }
+    .route-metric-tooltip { position: fixed; z-index: 100000; max-width: 300px; padding: 8px 10px; border-radius: 6px; background: #17212e; color: #fff; font-family: var(--shuttle-font-sans); font-size: 12px; font-weight: 400; line-height: 1.5; pointer-events: none; }
+    .route-stop-table.with-crowding { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content; column-gap: 8px; }
+    .route-stop-table.with-crowding .route-stop-item,
+    .route-stop-table.with-crowding .route-stop-line,
+    .route-stop-columns { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: 8px; align-items: start; }
+    .route-stop-table.with-crowding .route-stop-metrics { display: contents; }
+    .route-stop-table.with-crowding .route-stop-label { overflow-wrap: anywhere; }
+    .route-stop-table.with-crowding .route-stop-crowding,
+    .route-stop-table.with-crowding .route-stop-crowding-placeholder,
+    .route-stop-table.with-crowding .route-stop-eta { justify-self: end; }
+    .route-stop-columns { padding-bottom: 5px; color: #64748b; font-weight: 500; }
+    .route-stop-metric-title { display: inline-flex; align-items: center; justify-self: end; gap: 4px; white-space: nowrap; }
+    .route-stop-info, .home-ranking-info { display: inline-flex; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+    .route-stop-info { font: inherit; align-items: center; min-height: 24px; }
+    .route-stop-info img, .home-ranking-info img { width: 13px; height: 13px; }
+    .route-stop-info:focus-visible, .home-ranking-info:focus-visible { outline: 2px solid #1428a0; outline-offset: 3px; }
+    .home-ranking-info { flex-shrink: 0; align-items: center; justify-content: center; width: 24px; height: 24px; color: #64748b; }
+    @supports not (grid-template-columns: subgrid) {
+      .route-stop-table.with-crowding { display: block; }
+      .route-stop-table.with-crowding .route-stop-line,
+      .route-stop-columns { grid-template-columns: minmax(0, 1fr) 4.5em 6.5em; }
     }
     .route-stop-eta {
       flex-shrink: 0;
@@ -9746,6 +9806,7 @@
     }
   </style>
   <link rel="stylesheet" href="ads.css?v=4" />
+  <link rel="stylesheet" href="vehicle-positions.css?v=8" />
 </head>
 <body>
   <header class="header">
@@ -9773,7 +9834,7 @@
     </div>
       <div class="header-center">
         <div class="search-bar">
-          <input type="text" id="searchInput" placeholder="장소 검색 (e.g., 강남역)" autocomplete="off" enterkeyhint="done" />
+          <input type="text" id="searchInput" placeholder="장소 검색 (ex. 강남역)" autocomplete="off" enterkeyhint="done" />
           <button type="button" class="notice-open-btn notice-open-btn-mobile" id="mobileNoticeOpenBtn" title="공지" aria-label="공지">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 11.5v1a2.5 2.5 0 0 0 2.5 2.5H6l1.8 4h2.2L8.6 15H13l5 3V6l-5 3H5.5A2.5 2.5 0 0 0 3 11.5z"></path>
@@ -10300,6 +10361,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
+  <script src="vehicle-positions.js?v=14"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -10418,6 +10480,18 @@
       window.fetch = function(input, init) {
         var nextInit = init ? Object.assign({}, init) : {};
         if (!nextInit.credentials) nextInit.credentials = 'include';
+        var requestedUrl = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+        var gpsEvidenceRequest = requestedUrl.indexOf(API_BASE + '/api/shuttle/') === 0 ||
+          requestedUrl.indexOf(API_BASE + '/api/route/') === 0 || requestedUrl.indexOf(API_BASE + '/api/reports/eta-detail') === 0 ||
+          requestedUrl === API_BASE + '/api/vehicle-positions' || requestedUrl.indexOf(API_BASE + '/api/vehicle-positions?') === 0;
+        if (gpsEvidenceRequest && liveVehicleController && typeof liveVehicleController.configReady === 'function' && !liveVehicleController.configReady()) {
+          return liveVehicleController.ready().then(function() { return window.fetch(input, nextInit); });
+        }
+        if (liveVehicleController && liveVehicleController.evidenceEnabled() && gpsEvidenceRequest) {
+          var headers = new Headers(nextInit.headers || (input && input.headers) || {});
+          headers.set('X-Shuttle-GPS-Evidence', typeof liveVehicleController.evidenceMode === 'function' ? liveVehicleController.evidenceMode() : 'gps-v1');
+          nextInit.headers = headers;
+        }
         return nativeFetch(input, nextInit).then(function(response) {
           try {
             var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
@@ -10814,6 +10888,10 @@
       var routeRequestSerial = 0;
       var dayTypeRequestSerial = 0;
       var currentPinnedRouteId = 0;
+      var currentPinnedRouteOption = null;
+      var routeSelectionSerial = 0;
+      var routeDepartureSelections = new WeakMap();
+      var preserveRouteViewportOnNextRender = false;
       var arrivalByAutoActivateFirstCard = false;
       var WALK_OTP_TIMEOUT_MS = 1500;
       var WALK_OTP_TIMEOUT_BACKOFF_INITIAL_MS = 1000;
@@ -10854,13 +10932,14 @@
       var SHUTTLE_ROUTE_BUS_INNER_COLOR = '#1f78ff';
       var TRANSIT_STOP_BADGE_MAX_LEVEL = 6;
       var TRANSIT_STOP_INTERMEDIATE_MAX_LEVEL = 4;
-      var ROUTE_POINT_PIN_Z_ORDER = [32, 33, 31];
-      var ROUTE_POINT_LABEL_Z_OFFSET = 20;
+      var ROUTE_OVERLAY_LAYERS = { walk: 24, pin: 32, vehicle: 1000, label: 2000 };
+      var ROUTE_POINT_PIN_Z_ORDER = [ROUTE_OVERLAY_LAYERS.pin, ROUTE_OVERLAY_LAYERS.pin + 1, ROUTE_OVERLAY_LAYERS.pin - 1];
+      var ROUTE_POINT_LABEL_Z_OFFSET = ROUTE_OVERLAY_LAYERS.label - ROUTE_OVERLAY_LAYERS.pin;
       var TRANSIT_STOP_INTERMEDIATE_ZINDEX = 16;
       var TRANSIT_STOP_ENDPOINT_ZINDEX = 18;
       var TRANSIT_STOP_BOARD_ZINDEX = 22;
       var TRANSIT_STOP_COLLAPSED_ZINDEX = 0;
-      var WALK_TIME_OVERLAY_ZINDEX = 24;
+      var WALK_TIME_OVERLAY_ZINDEX = ROUTE_OVERLAY_LAYERS.walk;
       var SHUTTLE_ROUTE_OUTER_WEIGHT = 12;
       var SHUTTLE_ROUTE_INNER_WEIGHT = 8;
       var SHUTTLE_ROUTE_ARROW_SPACING_PX = 40;
@@ -11106,6 +11185,7 @@
         etaDetailBucket: ''
       };
       var etaFloatingTooltipEl = null;
+      var crowdingDetailState = { requestId: 0, controller: null, query: null, bucket: '', trigger: null };
       var etaFloatingTooltipTrigger = null;
       var etaFloatingTooltipGlobalBound = false;
       var historyOpenInput = null;
@@ -11121,6 +11201,8 @@
       var timePickerHourItems = [];
       var timePickerMinuteItems = [];
       var selectedTimePickerHourIndex = -1;
+      var timePickerDraftTime = null;
+      var timePickerOpenGeneration = 0;
       var selectedTimePickerMinuteIndex = -1;
       var timePickerSelectedClassRaf = 0;
       if (maxDistanceSlider) {
@@ -14051,6 +14133,15 @@
         title.className = 'home-section-title';
         title.textContent = String(titleText || '').trim();
         row.appendChild(title);
+        if (options.explanation) {
+          var info = document.createElement('button');
+          info.type = 'button'; info.className = 'home-ranking-info';
+          info.setAttribute('data-metric-explanation', options.explanation);
+          info.setAttribute('aria-label', String(titleText || '') + ' 순위 안내');
+          info.setAttribute('aria-expanded', 'false');
+          info.innerHTML = '<img src="/images/lucide-info.svg" alt="" aria-hidden="true">';
+          row.appendChild(info);
+        }
         if (options.action && typeof options.action.onClick === 'function') {
           var actionBtn = document.createElement('button');
           actionBtn.type = 'button';
@@ -14317,7 +14408,7 @@
           resultsList,
           String(homeRestaurantRanking && homeRestaurantRanking.title || '삼성인의 인기 맛집'),
           '',
-          { iconHtml: getHomeRestaurantIconHtml() }
+          { iconHtml: getHomeRestaurantIconHtml(), explanation: '최근 2개월 동안 이 사업장에서 노선을 검색할 때 많이 찾은 음식점 순위입니다.' }
         );
         if (
           homeRestaurantRanking &&
@@ -14336,7 +14427,7 @@
           resultsList,
           String(homeMicroFeed && homeMicroFeed.title || '인기 장소'),
           '',
-          { iconHtml: getHomePopularPlaceIconHtml(), iconClass: 'place' }
+          { iconHtml: getHomePopularPlaceIconHtml(), iconClass: 'place', explanation: '최근 2주 동안 이 사업장에서 노선을 검색할 때 많이 찾은 장소 순위입니다.' }
         );
         if (homeMicroFeed && Array.isArray(homeMicroFeed.items) && homeMicroFeed.items.length > 0) {
           resultsList.appendChild(buildHomePopularPlaceList(homeMicroFeed.items));
@@ -16112,6 +16203,7 @@
       function ensureContextDayTypeSelected(dayType) {
         var desiredDayType = String(dayType || '').trim();
         if (!desiredDayType) return;
+        initialDayTypeSelectionPending = false;
         var hasDesired = DAY_TYPE_OPTIONS.some(function(option) {
           return String(option && option.value || '') === desiredDayType;
         });
@@ -17454,13 +17546,22 @@
         return Math.max(0, Math.min(maxIndex, index));
       }
       function updateTimePickerSelectedClasses() {
-        var h = getTimePickerScrollIndex(timePickerHourList, 23);
-        var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
+        if (!timePickerDraftTime) timePickerDraftTime = { h: departureTime.h, m: departureTime.m };
+        if (timePickerHourList && timePickerHourList.__pickerUserInput) timePickerDraftTime.h = getTimePickerScrollIndex(timePickerHourList, 23);
+        if (timePickerMinuteList && timePickerMinuteList.__pickerUserInput) timePickerDraftTime.m = getTimePickerScrollIndex(timePickerMinuteList, 59);
+        var h = timePickerDraftTime.h;
+        var m = timePickerDraftTime.m;
         selectedTimePickerHourIndex = setTimePickerSelectedItem(timePickerHourItems, selectedTimePickerHourIndex, h);
         selectedTimePickerMinuteIndex = setTimePickerSelectedItem(timePickerMinuteItems, selectedTimePickerMinuteIndex, m);
       }
       function openTimePickerModal() {
         if (!timePickerBackdrop || !timePickerModal) return;
+        var openGeneration = ++timePickerOpenGeneration;
+        timePickerDraftTime = { h: departureTime.h, m: departureTime.m };
+        [dayTypeList, timePickerHourList, timePickerMinuteList].forEach(function(list) {
+          cancelWheelSnap(list);
+          if (list) list.__pickerUserInput = false;
+        });
         buildTimePickerWheels();
         pendingDayType = selectedDayType;
         pendingRouteTimeBasis = selectedRouteTimeBasis;
@@ -17490,40 +17591,70 @@
         timePickerBackdrop.classList.add('show');
         timePickerModal.classList.add('show');
         requestAnimationFrame(function() {
-          scrollDayTypeToValue(pendingDayType);
-          timePickerHourList.scrollTop = departureTime.h * ITEM_HEIGHT;
-          timePickerMinuteList.scrollTop = departureTime.m * ITEM_HEIGHT;
+          if (openGeneration !== timePickerOpenGeneration || !timePickerModal.classList.contains('show')) return;
+          if (!dayTypeList.__pickerUserInput) scrollDayTypeToValue(pendingDayType);
+          if (!timePickerHourList.__pickerUserInput) timePickerHourList.scrollTop = timePickerDraftTime.h * ITEM_HEIGHT;
+          if (!timePickerMinuteList.__pickerUserInput) timePickerMinuteList.scrollTop = timePickerDraftTime.m * ITEM_HEIGHT;
           updateDayTypeSelectedClasses();
           updateTimePickerSelectedClasses();
         });
       }
       function closeTimePickerModal() {
+        timePickerOpenGeneration++;
+        [dayTypeList, timePickerHourList, timePickerMinuteList].forEach(cancelWheelSnap);
+        timePickerNowRequestSerial++;
         if (timePickerBackdrop) timePickerBackdrop.classList.remove('show');
         if (timePickerModal) timePickerModal.classList.remove('show');
       }
       function setTimePickerToNow() {
+        initialDayTypeSelectionPending = false;
         var now = new Date();
         var h = now.getHours();
         var m = now.getMinutes();
+        cancelWheelSnap(timePickerHourList);
+        cancelWheelSnap(timePickerMinuteList);
+        cancelWheelSnap(dayTypeList);
+        timePickerDraftTime = { h: h, m: m };
+        if (timePickerHourList) timePickerHourList.__pickerUserInput = false;
+        if (timePickerMinuteList) timePickerMinuteList.__pickerUserInput = false;
         if (timePickerHourList) timePickerHourList.scrollTop = h * ITEM_HEIGHT;
         if (timePickerMinuteList) timePickerMinuteList.scrollTop = m * ITEM_HEIGHT;
         updateTimePickerSelectedClasses();
-        // 평일이 보이면 평일, 아니면 현재 표시 가능한 첫 번째 요일 사용
-        var hasWeekday = DAY_TYPE_OPTIONS.some(function(opt) { return opt.value === 'weekday'; });
-        pendingDayType = hasWeekday
-          ? 'weekday'
-          : (DAY_TYPE_OPTIONS.length > 0 ? DAY_TYPE_OPTIONS[0].value : selectedDayType);
-        scrollDayTypeToValue(pendingDayType);
+        var requestedSiteId = selectedSiteId;
+        var requestId = ++timePickerNowRequestSerial;
+        applyCurrentDayToPicker(DAY_TYPE_OPTIONS.map(function(opt) { return opt.value; }), now);
+        return fetchDayTypesForDate(requestedSiteId, now).then(function(data) {
+          if (requestId !== timePickerNowRequestSerial || requestedSiteId !== selectedSiteId ||
+              !timePickerModal.classList.contains('show')) return;
+          updateDayTypeCalendar(data.calendar);
+          applyCurrentDayToPicker(Array.isArray(data.day_types) ? data.day_types : [], now);
+        }).catch(function() {});
+      }
+      function applyCurrentDayToPicker(dayTypes, now) {
+        var desired = availableCurrentDayType(dayTypes, now);
+        var values = dayTypes.slice();
+        if (values.indexOf(desired) < 0) values.push(desired);
+        applyAvailableDayTypes(values, { preserveDayType: selectedDayType });
+        pendingDayType = desired;
+        buildDayTypeWheel();
+        scrollDayTypeToValue(desired);
         updateDayTypeSelectedClasses();
       }
       function setTimePickerToFive() {
+        timePickerDraftTime = { h: 5, m: 0 };
+        [timePickerHourList, timePickerMinuteList].forEach(function(list) {
+          cancelWheelSnap(list);
+          if (list) list.__pickerUserInput = false;
+        });
         if (timePickerHourList) timePickerHourList.scrollTop = 5 * ITEM_HEIGHT;
         if (timePickerMinuteList) timePickerMinuteList.scrollTop = 0;
         updateTimePickerSelectedClasses();
       }
       function applyTimePicker() {
-        var h = getTimePickerScrollIndex(timePickerHourList, 23);
-        var m = getTimePickerScrollIndex(timePickerMinuteList, 59);
+        initialDayTypeSelectionPending = false;
+        updateTimePickerSelectedClasses();
+        var h = timePickerDraftTime.h;
+        var m = timePickerDraftTime.m;
         var timeChanged = (h !== departureTime.h || m !== departureTime.m);
         departureTime.h = h;
         departureTime.m = m;
@@ -17583,6 +17714,9 @@
 
       // 모달 내에서만 임시 선택 상태를 유지 (확인 전)
       var pendingDayType = 'weekday';
+      var initialDayTypeSelectionPending = true;
+      var timePickerNowRequestSerial = 0;
+      var dayTypeCalendar = null;
 
       function buildDayTypeOptionsFromValues(dayTypeValues) {
         if (!Array.isArray(dayTypeValues)) return DAY_TYPE_OPTIONS.slice();
@@ -17615,6 +17749,14 @@
         if (preserveDayType && values.indexOf(preserveDayType) < 0) {
           values.push(preserveDayType);
         }
+        if (opts.currentDate) {
+          selectedDayType = availableCurrentDayType(values, opts.currentDate);
+          pendingDayType = selectedDayType;
+        }
+        if (values.indexOf(selectedDayType) < 0 && !preserveDayType) {
+          selectedDayType = 'weekday';
+        }
+        if (selectedDayType === 'weekday' && values.indexOf('weekday') < 0) values.push('weekday');
         DAY_TYPE_OPTIONS = buildDayTypeOptionsFromValues(values);
 
         var hasSelected = DAY_TYPE_OPTIONS.some(function(opt) { return opt.value === selectedDayType; });
@@ -17633,27 +17775,43 @@
       }
 
       function isFamilyDay(date) {
-        var y = date.getFullYear(), m = date.getMonth();
-        var day21 = new Date(y, m, 21);
-        var dow21 = day21.getDay(); // 0=일 ... 6=토
+        var korea = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+        var y = korea.getUTCFullYear(), m = korea.getUTCMonth();
+        var day21 = new Date(Date.UTC(y, m, 21));
+        var dow21 = day21.getUTCDay();
         var mondayOffset = (dow21 + 6) % 7;
         var mondayDate = 21 - mondayOffset;
-        var friday = new Date(y, m, mondayDate + 4);
-        return date.getDate() === friday.getDate() && date.getMonth() === friday.getMonth();
+        var friday = new Date(Date.UTC(y, m, mondayDate + 4));
+        return korea.getUTCDate() === friday.getUTCDate() && korea.getUTCMonth() === friday.getUTCMonth();
       }
 
-      function detectDayType() {
-        var now = new Date();
-        var dow = now.getDay();
+      function getCalendarDate(date) {
+        return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      }
+      function updateDayTypeCalendar(calendar) {
+        if (calendar && /^\d{4}-\d{2}-\d{2}$/.test(calendar.date) &&
+            ['weekday', 'saturday', 'holiday', 'familyday'].indexOf(calendar.day_type) >= 0) {
+          dayTypeCalendar = { date: calendar.date, day_type: calendar.day_type };
+        }
+      }
+      function availableCurrentDayType(dayTypes, now) {
+        var detected = detectDayType(now);
+        return dayTypes.indexOf(detected) >= 0 ? detected : 'weekday';
+      }
+      function detectDayType(date) {
+        var now = date || new Date();
+        if (dayTypeCalendar && dayTypeCalendar.date === getCalendarDate(now)) return dayTypeCalendar.day_type;
+        var dow = new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
         if (dow === 0) return 'holiday';
         if (dow === 6) return 'saturday';
-        if (dow === 1) return 'monday';
         if (dow === 5 && isFamilyDay(now)) return 'familyday';
         return 'weekday';
       }
 
       function buildDayTypeWheel() {
         if (!dayTypeList) return;
+        cancelWheelSnap(dayTypeList);
+        dayTypeList.__pickerUserInput = false;
         dayTypeList.innerHTML = '';
         var padTop = document.createElement('div');
         padTop.className = 'time-picker-pad';
@@ -17688,7 +17846,8 @@
           pendingDayType = selectedDayType;
           return;
         }
-        var idx = getDayTypeScrollIndex();
+        var idx = dayTypeList && dayTypeList.__pickerUserInput ? getDayTypeScrollIndex()
+          : Math.max(0, DAY_TYPE_OPTIONS.findIndex(function(opt) { return opt.value === pendingDayType; }));
         if (dayTypeList) {
           dayTypeList.querySelectorAll('.time-picker-item').forEach(function(item, i) {
             item.classList.toggle('selected', i === idx);
@@ -17698,13 +17857,16 @@
       }
       function scrollDayTypeToValue(value) {
         if (!dayTypeList || DAY_TYPE_OPTIONS.length === 0) return;
+        cancelWheelSnap(dayTypeList);
+        dayTypeList.__pickerUserInput = false;
         var idx = 0;
         DAY_TYPE_OPTIONS.forEach(function(opt, i) { if (opt.value === value) idx = i; });
+        pendingDayType = DAY_TYPE_OPTIONS[idx].value;
         dayTypeList.scrollTop = idx * DAY_TYPE_ITEM_HEIGHT;
       }
 
-      // 초기화: 요일 기본값은 평일
-      selectedDayType = 'weekday';
+      // 사업장 요일 목록과 공휴일 자료 수신 후 초기 선택을 확정한다.
+      selectedDayType = detectDayType();
 
       function updateSiteTriggerText() {
         if (!siteSelectTrigger || !siteSelect) return;
@@ -19777,28 +19939,45 @@
         }
       }
 
+      function fetchDayTypesForDate(siteId, now) {
+        return fetch(API_BASE + '/api/shuttle/day-types?site_id=' + encodeURIComponent(siteId) +
+          '&reference_date=' + encodeURIComponent(getCalendarDate(now)), { cache: 'no-store' })
+          .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(data) {
+              if (!r.ok) throw new Error(data.error || '요일 목록 조회에 실패했습니다.');
+              return data;
+            });
+          });
+      }
       function refreshDayTypeOptionsForSite(siteId, opts) {
         opts = opts || {};
         var requestedSiteId = String(siteId || '').trim();
         var requestId = ++dayTypeRequestSerial;
-        return fetch(API_BASE + '/api/shuttle/day-types?site_id=' + encodeURIComponent(requestedSiteId))
-          .then(function(r) {
-            return r.json().catch(function() { return {}; }).then(function(data) {
-              return { ok: r.ok, data: data };
-            });
-          })
-          .then(function(result) {
+        var now = new Date();
+        return fetchDayTypesForDate(requestedSiteId, now)
+          .then(function(data) {
             if (requestId !== dayTypeRequestSerial) return false;
-            if (!result.ok) {
-              throw new Error(result.data.error || '요일 목록 조회에 실패했습니다.');
-            }
-            var dayTypes = Array.isArray(result.data.day_types) ? result.data.day_types : [];
+            updateDayTypeCalendar(data.calendar);
+            var dayTypes = Array.isArray(data.day_types) ? data.day_types : [];
             var preserveDayType = String(opts.preserveDayType || '').trim() || getSharedRoutePreservedDayType(requestedSiteId);
-            applyAvailableDayTypes(dayTypes, { preserveDayType: preserveDayType });
+            var autoSelect = initialDayTypeSelectionPending && !preserveDayType && !lastPlace &&
+              !pendingSharedRouteToken && !sharedRouteState.active && !favoriteRouteState.active;
+            applyAvailableDayTypes(dayTypes, { preserveDayType: preserveDayType, currentDate: autoSelect ? now : null });
+            initialDayTypeSelectionPending = false;
+            if (timePickerModal && timePickerModal.classList.contains('show')) {
+              buildDayTypeWheel();
+              scrollDayTypeToValue(pendingDayType);
+              updateDayTypeSelectedClasses();
+            }
             return true;
           })
           .catch(function() {
             if (requestId !== dayTypeRequestSerial) return false;
+            if (initialDayTypeSelectionPending) {
+              selectedDayType = 'weekday';
+              pendingDayType = 'weekday';
+              initialDayTypeSelectionPending = false;
+            }
             applyAvailableDayTypes(null);
             return true;
           });
@@ -19860,6 +20039,17 @@
       if (siteSelectTrigger) siteSelectTrigger.addEventListener('click', openSitePickerModal);
       if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
       if (sitePickerModal) sitePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+      bindMobilePullDownDismissModal({
+        modal: sitePickerModal,
+        scrollEl: sitePickerList,
+        closeFn: closeSitePickerModal
+      });
+      bindMobilePullDownDismissModal({
+        modal: timePickerModal,
+        scrollEl: timePickerModal,
+        ignoreSelector: '.time-picker-column',
+        closeFn: applyTimePicker
+      });
       updateSiteTriggerText();
       setSiteSelectorEnabled(false);
 
@@ -20428,7 +20618,13 @@
         shuttleWalkTimeEntries = [];
       }
 
-      function clearShuttleOverlays() {
+      function clearShuttleOverlays(keepVehiclePositions) {
+        var attribution = document.getElementById('gpsShapeAttribution');
+        if (attribution) attribution.hidden = true;
+        if (!keepVehiclePositions) {
+          clearTimeout(liveVehicleTimer);
+          if (liveVehicleController) liveVehicleController.stop();
+        }
         clearTimeout(routeVisualFitSettleTimer);
         routeVisualFitSettleTimer = null;
         clearRouteVisualFitWatcher();
@@ -21685,8 +21881,7 @@
             : '도보 연결';
           return formatDistance(option && option.distance_m) + ' · ' + arrivalMode;
         }
-        var serviceLabel = getRouteServiceLabel(option && option.route_type, isDepart);
-        return formatDistance(option && option.distance_m) + ' · ' + timeStr + ' ' + serviceLabel + ' 노선';
+        return formatDistance(option && option.distance_m) + ' · ' + timeStr + ' 노선';
       }
 
       function syncRouteCardMeta(card, option, isDepart) {
@@ -21704,7 +21899,13 @@
           nameNode.innerHTML = buildRouteNameHtml(option, currentPlaceName || '', isDepart);
         }
         if (metaNode) {
-          metaNode.textContent = buildRouteMetaLineText(option, isDepart, currentPlaceName || '');
+          var metaText = metaNode.querySelector('.route-meta-text');
+          if (!metaText) {
+            metaText = document.createElement('span');
+            metaText.className = 'route-meta-text';
+            metaNode.prepend(metaText);
+          }
+          metaText.textContent = buildRouteMetaLineText(option, isDepart, currentPlaceName || '');
         }
         var actionBadgesNode = card.querySelector('.route-card-actions-badges');
         if (actionBadgesNode) {
@@ -21841,7 +22042,9 @@
         if (isFinite(normalizedVariantId) && normalizedVariantId > 0) {
           detailUrl += '&variant_id=' + encodeURIComponent(String(normalizedVariantId));
         }
-        var pending = fetchJson(detailUrl)
+        var abort = new AbortController();
+        var deadline = setTimeout(function() { abort.abort(); }, 15000);
+        var pending = fetchJson(detailUrl, { signal: abort.signal })
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data && result.data.error || '노선 상세를 불러오지 못했습니다.');
@@ -21851,6 +22054,7 @@
             return detail;
           })
           .finally(function() {
+            clearTimeout(deadline);
             routeVariantDetailPending.delete(cacheKey);
           });
         routeVariantDetailPending.set(cacheKey, pending);
@@ -23500,8 +23704,8 @@
         });
         html += '</div>' +
           '<div class="route-timeline-notes">' +
-            '<div class="route-timeline-note">강조된 부분을 클릭하면 노선 시간표를 볼 수 있습니다.</div>' +
             '<div class="route-timeline-note">도착 예상 시간과 경로는 실제와 다를 수 있습니다.</div>' +
+            '<div class="route-timeline-note">배경을 클릭하면 노선 시간표 및 세부 내역을 볼 수 있습니다.</div>' +
           '</div>';
         return html;
       }
@@ -23858,12 +24062,76 @@
         return !!normalizedName && normalizeStopName(stop.stop_name || stop.name) === normalizedName;
       }
 
+      function hasStopCrowding(stop) {
+        var value = stop && stop.crowding;
+        return !!value && Number.isInteger(value.percentage) && value.percentage >= 0 && value.percentage <= 100 && value.kind === 'historical_incoming';
+      }
+      var routeCrowdingExplanation = '선택한 출발 시간의 버스가 이 정류장에 도착하기 전에 확인한 탑승 인원 비율의 평균입니다. 최근 10개 운행일의 차량 기록을 사용하며, 실제 탑승 상황은 다를 수 있습니다.';
+      var routeArrivalExplanation = '이전 운행의 도착 기록과 도착 제보 등을 참고한 예상 도착 시간입니다. 교통 상황이나 운행 사정에 따라 실제 도착 시간은 달라질 수 있습니다.';
+      function routeStopsColumnsHtml() {
+        function heading(label, text) {
+          return '<span class="route-stop-metric-title"><button type="button" class="route-stop-info" data-metric-explanation="' + escapeAttr(text) + '" aria-label="' + label + ' 계산 안내" aria-expanded="false">' + label + '</button></span>';
+        }
+        return '<div class="route-stop-columns"><span aria-hidden="true"></span>' + heading('혼잡도', routeCrowdingExplanation) + heading('도착', routeArrivalExplanation) + '</div>';
+      }
+      function wrapRouteStopsHtml(html, hasCrowding) {
+        return hasCrowding ? '<div class="route-stop-table with-crowding">' + routeStopsColumnsHtml() + html + '</div>' : html;
+      }
+      function crowdingHtml(stop, reserveSpace) {
+        if (!hasStopCrowding(stop)) return reserveSpace ? '<span class="route-stop-crowding-placeholder" aria-hidden="true"></span>' : '';
+        var value = stop.crowding;
+        var detail = value.detail_ref && typeof value.detail_ref === 'object' ? Object.assign({}, value.detail_ref) : null;
+        if (detail) detail.stop_name = String(stop.stop_name || stop.name || '정류장');
+        var detailAttr = detail ? ' data-crowding-detail="' + escapeAttr(JSON.stringify(detail)) + '" aria-haspopup="dialog"' : '';
+        return '<button type="button" class="route-stop-crowding" aria-label="' + escapeAttr('혼잡도 ' + value.percentage + '%' + (detail ? ' 내역 보기' : '')) + '"' + detailAttr + '>' + value.percentage + '%</button>';
+      }
+      (function bindCrowdingTooltips() {
+        var tooltip = null, trigger = null;
+        function hide() { if (tooltip) tooltip.hidden = true; if (trigger) trigger.setAttribute('aria-expanded','false'); trigger = null; }
+        function show(button, text) {
+          hide();
+          if (!tooltip) { tooltip = document.createElement('div'); tooltip.className = 'route-metric-tooltip'; tooltip.id = 'route-metric-tooltip'; tooltip.setAttribute('role','tooltip'); document.body.appendChild(tooltip); }
+          trigger = button; tooltip.textContent = text || button.getAttribute('data-metric-explanation'); tooltip.hidden = false;
+          button.setAttribute('aria-describedby',tooltip.id); button.setAttribute('aria-expanded','true');
+          var box = button.getBoundingClientRect();
+          tooltip.style.maxWidth = Math.min(300,window.innerWidth-20) + 'px';
+          var size = tooltip.getBoundingClientRect();
+          tooltip.style.left = Math.max(10, Math.min(box.right-size.width,window.innerWidth-size.width-10)) + 'px';
+          var top = box.bottom+8+size.height > window.innerHeight-10 ? box.top-size.height-8 : box.bottom+8;
+          tooltip.style.top = Math.max(10, Math.min(top,window.innerHeight-size.height-10)) + 'px';
+        }
+        document.addEventListener('click',function(event) {
+          var info = event.target.closest && event.target.closest('.route-stop-info, .home-ranking-info');
+          if (info) {
+            event.preventDefault(); event.stopPropagation();
+            if (event.detail > 0 && !window.matchMedia('(hover: hover) and (pointer: fine)').matches && trigger === info && tooltip && !tooltip.hidden) hide(); else show(info);
+            return;
+          }
+          var button = event.target.closest && event.target.closest('.route-stop-crowding');
+          if (!button) { hide(); return; }
+          event.preventDefault(); event.stopPropagation(); hide();
+          if (button.hasAttribute('data-crowding-detail')) openCrowdingDetailModal(button);
+          else show(button, routeCrowdingExplanation);
+        },true);
+        document.addEventListener('mouseover',function(event) {
+          var button = event.target.closest && event.target.closest('.route-stop-info, .home-ranking-info');
+          if (button && window.matchMedia('(hover: hover) and (pointer: fine)').matches) show(button);
+        });
+        document.addEventListener('mouseout',function(event) {
+          if (window.matchMedia('(hover: hover) and (pointer: fine)').matches && trigger && trigger.matches('.route-stop-info, .home-ranking-info') && trigger.contains(event.target) && !trigger.contains(event.relatedTarget)) hide();
+        });
+        document.addEventListener('focusin',function(event) { if (event.target.matches('.route-stop-info, .home-ranking-info') && event.target.matches(':focus-visible')) show(event.target); });
+        document.addEventListener('focusout',function(event) { if (trigger && trigger.contains(event.target)) hide(); });
+        document.addEventListener('keydown',function(event) { if (event.key === 'Escape') hide(); });
+        window.addEventListener('resize',hide); document.addEventListener('scroll',hide,true);
+      })();
       function buildShuttleTransferRouteStopsHtml(leg, departureTime) {
         var rows = getShuttleTransferLegStops(leg);
         if (!rows.length) return '-';
+        var hasCrowding = rows.some(hasStopCrowding);
         var routeId = Number(leg && leg.route_id || 0);
         var routeUuid = String(leg && leg.route_uuid || '').trim();
-        return rows.map(function(stop) {
+        var html = rows.map(function(stop) {
           var isBoard = shuttleTransferStopMatchesPoint(
             stop,
             leg && leg.from,
@@ -23907,10 +24175,11 @@
               '<span class="route-stop-label">' + escapeHtml(sequenceText + stopName) +
                 (roles.length ? '<span class="route-stop-role">' + escapeHtml(roles.join(' · ')) + '</span>' : '') +
               '</span>' +
-              etaHtml +
+              '<span class="route-stop-metrics">' + crowdingHtml(stop, hasCrowding) + etaHtml + '</span>' +
             '</div>' +
           '</div>';
         }).join('');
+        return wrapRouteStopsHtml(html, hasCrowding);
       }
 
       function buildShuttleTransferTimetableHtml(option, optionUpdatedAt) {
@@ -24185,16 +24454,22 @@
               if (localDetail) return Promise.resolve(localDetail);
               return fetchRouteVariantDetailData(option.route_id, departureTime);
             })();
+        var summarySelection = routeDepartureSelections.get(option);
+        var summaryRequest = routeRequestSerial, summarySite = selectedSiteId, summaryDay = selectedDayType;
         var walkPromise = fetchWalkPathData(walkLeg.fromPos, walkLeg.toPos);
         var pending = Promise.all([detailPromise, walkPromise])
           .then(function(values) {
             var detail = values[0] || null;
             var walkInfo = values[1] || null;
-            var normalizedDetail = applyRouteVariantDetailToOption(option, detail, departureTime) || detail;
+            if (summaryRequest !== routeRequestSerial || summarySite !== selectedSiteId || summaryDay !== selectedDayType) return null;
+            var stillActive = getOptionDisplayDepartureTime(option) === departureTime &&
+              routeDepartureSelections.get(option) === summarySelection;
+            var summaryOption = stillActive ? option : (cloneJsonValue(option) || {});
+            var normalizedDetail = applyRouteVariantDetailToOption(summaryOption, detail, departureTime) || detail;
             if (walkInfo) {
-              setRouteOptionWalkingInfo(option, walkInfo, departureTime, walkLeg);
+              setRouteOptionWalkingInfo(summaryOption, walkInfo, departureTime, walkLeg);
             }
-            var summary = buildRouteTimeSummaryData(option, placeName, isDepart, departureTime, normalizedDetail, walkInfo);
+            var summary = buildRouteTimeSummaryData(summaryOption, placeName, isDepart, departureTime, normalizedDetail, walkInfo);
             if (!summary) {
               setRouteTimeSummaryEntry(option, departureTime, {
                 status: 'invalid',
@@ -26128,7 +26403,11 @@
         opts = opts || {};
         var skipViewportFit = !!opts.skipViewportFit;
         clearSearchOverlays();
-        clearShuttleOverlays();
+        clearShuttleOverlays(!!selectedCard);
+        scheduleLiveVehiclePositions(option, selectedCard, isDepart);
+        syncGpsShapeAttribution(isShuttleTransferOption(option)
+          ? getShuttleTransferTransitEntries(option).reduce(function(stops, entry) { return stops.concat(getShuttleTransferLegStops(entry.leg)); }, [])
+          : getActiveRouteDetailStops(option));
         var selectedTransit = getSelectedTransitOption(option);
         if (selectedTransit) {
           renderTransitOptionOnMap(option, placeName, isDepart, selectedTransit, selectedCard, {
@@ -26313,11 +26592,26 @@
           });
       }
 
+      function syncGpsShapeAttribution(stops) {
+        var node = document.getElementById('gpsShapeAttribution');
+        var visible = (stops || []).some(function(stop) { return stop.next_polyline_source === 'gps_learned'; });
+        if (!node && visible) {
+          node = document.createElement('a'); node.id = 'gpsShapeAttribution';
+          node.href = 'https://www.openstreetmap.org/copyright'; node.target = '_blank'; node.rel = 'noopener noreferrer';
+          node.textContent = '© OpenStreetMap';
+          node.style.cssText = 'position:absolute;bottom:24px;left:10px;z-index:500;padding:2px 5px;background:white;color:#475569;font-size:11px;';
+          var container = document.getElementById('map');
+          if (container) container.appendChild(node);
+        }
+        if (node) node.hidden = !visible;
+      }
       function drawRouteDetailOnMap(option, placeName, isDepart, highlightTarget, fitViewport) {
         activeOptionDrawToken += 1;
         clearSearchOverlays();
-        clearShuttleOverlays();
+        clearShuttleOverlays(true);
+        scheduleLiveVehiclePositions(option, getLiveRouteCardForOption(option), isDepart);
         var routeStops = option.route_stops || [];
+        syncGpsShapeAttribution(routeStops);
         if (routeStops.length === 0) return;
         var shouldFitViewport = (fitViewport !== false);
         var hasExplicitHighlight = !!(
@@ -26365,7 +26659,7 @@
             '<span class="shuttle-point-name">' + escapeHtml(s.sequence + '. ' + s.stop_name) + '</span>' +
             etaHtml +
           '</div>';
-          var labelZIndex = totalStops - i + totalStops + (isHighlightedStop ? (totalStops + 20) : 0);
+          var labelZIndex = ROUTE_OVERLAY_LAYERS.label + totalStops - i + totalStops + (isHighlightedStop ? (totalStops + 20) : 0);
           var labelOverlay = new kakao.maps.CustomOverlay({
             position: pos,
             content: labelAnchor,
@@ -26472,9 +26766,11 @@
       function drawShuttleTransferDetailOnMap(option, highlightTarget, fitViewport) {
         activeOptionDrawToken += 1;
         clearSearchOverlays();
-        clearShuttleOverlays();
+        clearShuttleOverlays(true);
+        scheduleLiveVehiclePositions(option, getLiveRouteCardForOption(option), currentIsDepart);
         var transitEntries = getShuttleTransferTransitEntries(option);
         if (!transitEntries.length) return;
+        syncGpsShapeAttribution(transitEntries.reduce(function(stops, entry) { return stops.concat(getShuttleTransferLegStops(entry.leg)); }, []));
         var shouldFitViewport = fitViewport !== false;
         var allPathPoints = [];
         var busPathGroups = [];
@@ -26582,7 +26878,7 @@
               yAnchor: 1.0
             });
             labelOverlay.setZIndex(
-              totalStops + Math.max(1, totalStopGroups - markerIndex) +
+              ROUTE_OVERLAY_LAYERS.label + totalStops + Math.max(1, totalStopGroups - markerIndex) +
               (group.isHighlighted ? totalStops + 20 : 0)
             );
             labelOverlay.setMap(map);
@@ -26891,6 +27187,7 @@
         expandedOptionIndex = -1;
         drawOptionOnMap(option, placeName, isDepart, card);
         ensureRouteTimeSummary(option, placeName, isDepart, card);
+        scheduleLiveVehiclePositions(option, card, isDepart);
       }
 
       function triggerRouteDetailButtonAttention(card) {
@@ -26918,6 +27215,7 @@
           drawRouteDetailOnMap(option, placeName, isDepart, highlightTarget || null, fitViewport);
         }
         ensureRouteTimeSummary(option, placeName, isDepart, card);
+        scheduleLiveVehiclePositions(option, card, isDepart);
         if (isFromMapLabel) {
           routeLabelTriggeredDetailState = {
             card: card,
@@ -27097,7 +27395,12 @@
         var displayed = refreshCurrentRouteDisplayedOptions();
         displayed._lastBatchSize = getCurrentRouteCanonicalOptions()._lastBatchSize;
         displayed._searchMode = getCurrentRouteCanonicalOptions()._searchMode;
-        renderRouteCards(displayed, resolvedPlaceName, resolvedIsDepart);
+        preserveRouteViewportOnNextRender = opts.preserveMapViewport === true;
+        try {
+          renderRouteCards(displayed, resolvedPlaceName, resolvedIsDepart);
+        } finally {
+          preserveRouteViewportOnNextRender = false;
+        }
         if (shouldKeepExpanded && activeOption) {
           var routeId = Number(activeOption && activeOption.route_id || currentPinnedRouteId || 0);
           if (isFinite(routeId) && routeId > 0) {
@@ -27798,7 +28101,7 @@
       }
 
       function buildShareableRouteOption(option) {
-        var cloned = cloneJsonValue(option) || {};
+        var cloned = stripPrivateSnapshotFields(option || {});
         Object.keys(cloned).forEach(function(key) {
           if (key.indexOf('__') === 0) delete cloned[key];
         });
@@ -27812,8 +28115,12 @@
         if (Array.isArray(value)) return value.map(stripPrivateSnapshotFields);
         if (!value || typeof value !== 'object') return value;
         var output = {};
+        var runtimeKeys = ['vehicle_positions','live_eta','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
+          'vehicle_ref','vehicle_id','public_vehicle_id','gps_age_seconds','trip_match_state','live_eta_state','source_interval_seconds',
+          'gps_status','gps_source_kind','source_key','upstream_key','customer','source_route_id','vehicle_assignment','vehicle_assignments',
+          'vehicle_number','run_status','vehicle_status_code','vehicle_status_label','occupancy','occupancy_age_seconds'];
         Object.keys(value).forEach(function(key) {
-          if (key.indexOf('__') === 0) return;
+          if (key.indexOf('__') === 0 || runtimeKeys.indexOf(key) !== -1) return;
           output[key] = stripPrivateSnapshotFields(value[key]);
         });
         return output;
@@ -28149,6 +28456,8 @@
       }
 
       function setCurrentPinnedRoute(option) {
+        if (currentPinnedRouteOption !== option) routeSelectionSerial += 1;
+        currentPinnedRouteOption = option;
         var routeId = Number(option && option.route_id);
         currentPinnedRouteId = (isFinite(routeId) && routeId > 0) ? routeId : 0;
       }
@@ -28248,7 +28557,7 @@
         var cacheKey = buildTransitOptionsCacheKey(snapshot, transitModePolicy);
         var cached = getTransitOptionsCache(cacheKey);
         if (cached) {
-          if (normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
+          if ((!opts.isCurrent || opts.isCurrent()) && normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
             storeTransitPayloadIfNonDisruptive(
               option,
               cached,
@@ -28262,7 +28571,7 @@
         if (cacheKey && transitOptionsPending.has(cacheKey)) {
           return transitOptionsPending.get(cacheKey).then(function(value) {
             var cloned = cloneJsonValue(value);
-            if (cloned && normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
+            if (cloned && (!opts.isCurrent || opts.isCurrent()) && normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
               storeTransitPayloadIfNonDisruptive(
                 option,
                 cloned,
@@ -28294,7 +28603,7 @@
               data.code = (Array.isArray(data.options) && data.options.length > 0) ? 'ok' : 'empty_itineraries';
             }
             data.transit_mode_policy = normalizeTransitModePolicy(data.transit_mode_policy || transitModePolicy);
-            if (normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
+            if ((!opts.isCurrent || opts.isCurrent()) && normalizeTransitModePolicy(selectedTransitModePolicy) === transitModePolicy) {
               storeTransitPayloadIfNonDisruptive(
                 option,
                 data,
@@ -28967,6 +29276,9 @@
           ? detail
           : buildArrivalBySharedVariantDetail(null, departureTime);
         var selectedTime = String(departureTime || option.__activeDetailTime || '').trim();
+        var isCurrent = previousState && previousState.isCurrent || function() {
+          return String(option.__activeDetailTime || '').trim() === selectedTime;
+        };
         var previousMode = normalizeArrivalByMode(previousState && previousState.mode);
         var previousTransitOptionId = String(previousState && previousState.transitOptionId || '').trim();
         var currentTransitPayload = buildTransitOptionsResponseFromRouteState(option, isDepart, selectedTime);
@@ -28997,8 +29309,10 @@
           routeModeStateTime: selectedTime,
           departureTimeOverride: selectedTime,
           sharedVariantDetail: sharedVariantDetail,
-          transitArriveBy: true
+          transitArriveBy: true,
+          isCurrent: isCurrent
         }).then(function(payload) {
+          if (!isCurrent()) return option;
           setTransitLoadingForRoute(option, false, selectedTime);
           if (String(option.__activeDetailTime || '').trim() !== selectedTime) {
             syncRouteModeButtonsForOption(option, placeName, isDepart, currentRouteOptions || []);
@@ -29021,6 +29335,7 @@
           }
           return option;
         }).catch(function() {
+          if (!isCurrent()) return option;
           setTransitLoadingForRoute(option, false, selectedTime);
           syncRouteModeButtonsForOption(option, placeName, isDepart, currentRouteOptions || []);
           syncRenderedRouteCardsForOption(option, placeName, isDepart);
@@ -32402,7 +32717,7 @@
           );
         }
         var sharedVariantDetail = buildSharedVariantDetailSnapshot(option);
-        if (sharedVariantDetail) snapshot.shared_variant_detail = sharedVariantDetail;
+        if (sharedVariantDetail) snapshot.shared_variant_detail = stripPrivateSnapshotFields(sharedVariantDetail);
         var walkSnapshot = getSuccessfulWalkShareSnapshot(option, isDepart);
         if (walkSnapshot) snapshot.walk_path = walkSnapshot;
         snapshot.route_mode_state = buildShareableRouteModeState(option);
@@ -32665,6 +32980,7 @@
           dayTypeValues.push(String(snapshot.day_type || ''));
         }
         applyAvailableDayTypes(dayTypeValues, { preserveDayType: String(snapshot.day_type || '').trim() });
+        initialDayTypeSelectionPending = false;
         selectedDayType = String(snapshot.day_type || selectedDayType || 'weekday');
         pendingDayType = selectedDayType;
         selectedRouteTimeBasis = normalizeRouteTimeBasis(snapshot.time_basis || selectedRouteTimeBasis);
@@ -34467,6 +34783,58 @@
       }
 
       var vehicleAssignmentCache = new Map();
+      var liveVehicleController = null;
+      var liveVehicleTimer = null;
+      var vehicleMapClickIgnoreTimer = null;
+
+      function markVehicleMapInteraction() {
+        mapClickIgnore = true;
+        clearTimeout(vehicleMapClickIgnoreTimer);
+        vehicleMapClickIgnoreTimer = setTimeout(function() { mapClickIgnore = false; }, 350);
+      }
+
+      function scheduleLiveVehiclePositions(option, card, isDepart) {
+        clearTimeout(liveVehicleTimer);
+        if (!liveVehicleController || !option || !card) return;
+        liveVehicleTimer = setTimeout(function() {
+          if (!card.isConnected || !card.classList.contains('selected')) return;
+          if (option.__favoriteSnapshotOnly) {
+            liveVehicleController.stop();
+            return;
+          }
+          var legs = isShuttleTransferOption(option)
+            ? getShuttleTransferTransitEntries(option).map(function(entry) { return entry.leg; }) : [option];
+          var targets = legs.map(function(leg) {
+            var transfer = isShuttleTransferOption(option);
+            var stops = transfer ? getShuttleTransferLegStops(leg) : getActiveRouteDetailStops(leg);
+            var targetUuid = String(transfer ? (leg.to && leg.to.stop_uuid || leg.to_stop_uuid || '')
+              : (isDepart ? leg.terminus_stop_uuid : leg.getoff_stop_uuid) || '');
+            var targetName = transfer ? String(leg.to_name || leg.to && leg.to.name || '') : (isDepart ? leg.terminus_name : leg.getoff_stop_name);
+            var targetSeq = transfer ? leg.alight_sequence : (isDepart ? leg.terminus_sequence : leg.getoff_stop_sequence);
+            var matches = stops.filter(function(stop) {
+              return targetUuid ? stop.stop_uuid === targetUuid
+                : (targetSeq != null ? Number(stop.sequence) === Number(targetSeq) : stop.stop_name === targetName);
+            });
+            if (!targetUuid && matches.length === 1) targetUuid = String(matches[0].stop_uuid || '');
+            if (!targetUuid) return null;
+            var detail = transfer ? getShuttleTransferLegDetail(leg) : null;
+            var serviceDeparture = transfer
+              ? String(leg.__activeServiceDepartureTime || leg.service_departure_time || detail && detail.selected_departure_time || '')
+              : String(leg.__activeDetailTime || leg.__originBoardTime || getOptionDisplayDepartureTime(leg) || '');
+            if (!serviceDeparture) return null;
+            return { card: card, option: option, departureSelectable: !transfer && !option.__favoriteSnapshotOnly,
+              label: String(targetName || leg.to_stop_name || '하차 정류장'), context: {
+              route_id: Number(leg.route_id || 0), route_uuid: String(leg.route_uuid || ''), site_id: String(leg.site_id || selectedSiteId),
+              day_type: String(leg.day_type || selectedDayType),
+              departure_time: serviceDeparture,
+              target_stop_uuid: targetUuid, service_date: String(leg.eta_reference_date || option.eta_reference_date || ''),
+              historical_snapshot: !!sharedRouteState.active,
+              shared_route_token: sharedRouteState.active ? String(sharedRouteState.token || '') : ''
+            } };
+          }).filter(function(target) { return target && target.context.route_id > 0; });
+          liveVehicleController.select(targets);
+        }, 80);
+      }
 
       function vehicleAssignmentRequestKey(routeId, dayType, departureTime) {
         var normalizedRouteId = Number(routeId || 0);
@@ -35088,7 +35456,7 @@
             '<div class="card-main">' +
               '<div class="card-title-wrap">' +
                 '<div class="route-name">' + buildRouteNameHtml(opt, placeName, isDepart) + '</div>' +
-                '<div class="route-meta">' + escapeHtml(buildRouteMetaLineText(opt, isDepart, placeName)) + '</div>' +
+                '<div class="route-meta"><span class="route-meta-text">' + escapeHtml(buildRouteMetaLineText(opt, isDepart, placeName)) + '</span></div>' +
               '</div>' +
             '</div>' +
             buildRouteModeButtonsHtml(opt) +
@@ -35155,14 +35523,15 @@
         var selectedOption = options[selectedIndex] || options[0];
         if (selectedOption) {
           var shouldPreserveViewport = (
-            !forceRouteViewportFitOnNextRender &&
-            previousSelectionKey === buildRouteViewportSelectionKey(selectedOption, placeName, isDepart)
+            preserveRouteViewportOnNextRender || (!forceRouteViewportFitOnNextRender &&
+            previousSelectionKey === buildRouteViewportSelectionKey(selectedOption, placeName, isDepart))
           );
           setCurrentPinnedRoute(selectedOption);
           drawOptionOnMap(selectedOption, placeName, isDepart, firstCard, {
             preserveViewport: shouldPreserveViewport
           });
           ensureRouteTimeSummary(selectedOption, placeName, isDepart, firstCard);
+          scheduleLiveVehiclePositions(selectedOption, firstCard, isDepart);
           triggerRouteDetailButtonAttention(firstCard);
         }
         forceRouteViewportFitOnNextRender = false;
@@ -36671,6 +37040,25 @@
         }
         if (timePickerBackdrop) timePickerBackdrop.addEventListener('click', applyTimePicker);
         if (timePickerModal) timePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
+        if (timePickerModal) {
+          ['pointerdown', 'wheel', 'keydown'].forEach(function(eventName) {
+            timePickerModal.addEventListener(eventName, function(e) {
+              [dayTypeList, timePickerHourList, timePickerMinuteList].forEach(function(list) {
+                if (!list || !list.contains(e.target)) return;
+                if (!list.__pickerUserInput) {
+                  cancelWheelSnap(list);
+                  if (list === dayTypeList) scrollDayTypeToValue(pendingDayType);
+                  else list.scrollTop = (list === timePickerHourList ? timePickerDraftTime.h : timePickerDraftTime.m) * ITEM_HEIGHT;
+                }
+                list.__pickerUserInput = true;
+              });
+              if (dayTypeList && dayTypeList.contains(e.target)) {
+                timePickerNowRequestSerial++;
+                initialDayTypeSelectionPending = false;
+              }
+            }, { capture: true, passive: true });
+          });
+        }
         if (dayTypeList) {
           dayTypeList.addEventListener('scroll', function() {
             updateDayTypeSelectedClasses();
@@ -36975,6 +37363,7 @@
         modal.addEventListener('touchstart', function(e) {
           if (!isMobile() || !modal.classList.contains('show') || !e.touches.length) return;
           var target = e.target;
+          if (config.ignoreSelector && target && target.closest && target.closest(config.ignoreSelector)) return;
           var header = target && target.closest ? target.closest('.issue-modal-header, .report-modal-header, .endpoint-picker-title-row') : null;
           var inBody = !!(scrollEl && (target === scrollEl || scrollEl.contains(target)));
           var inModal = target && (target === modal || modal.contains(target));
@@ -37428,6 +37817,10 @@
       }
 
       function closeReportDataModal() {
+        cancelCrowdingDetailRequest();
+        var returnFocus = crowdingDetailState.trigger;
+        crowdingDetailState.trigger = null;
+        reportDataState.mode = '';
         hideEtaFloatingTooltip();
         if (reportDataBackdrop) reportDataBackdrop.classList.remove('show');
         if (reportDataModal) reportDataModal.classList.remove('show');
@@ -37436,11 +37829,19 @@
           reportDataTabs.innerHTML = '';
         }
         syncReportOverscrollLock();
+        if (reportDataModal) reportDataModal.classList.remove('crowding-detail');
+        if (reportDataTabs) reportDataTabs.removeAttribute('role');
+        if (returnFocus && returnFocus.isConnected) returnFocus.focus({ preventScroll: true });
       }
 
       function openReportDataModal(title, opts) {
         opts = opts || {};
         if (!reportDataModal || !reportDataBackdrop || !reportDataBody || !reportDataTitle) return;
+        cancelCrowdingDetailRequest();
+        crowdingDetailState.trigger = null;
+        reportDataModal.classList.remove('crowding-detail');
+        reportDataModal.setAttribute('aria-label', opts.ariaLabel || (opts.htmlTitle ? '제보 내역' : String(title || '상세 내역')));
+        if (reportDataTabs) reportDataTabs.removeAttribute('role');
         hideEtaFloatingTooltip();
         reportDataBody.innerHTML = buildLoadingStateHtml('report-empty-state', '불러오는 중...');
         if (opts.htmlTitle) {
@@ -37459,6 +37860,187 @@
         if (!reportDataBody) return;
         reportDataBody.innerHTML = '<div class="report-empty-state">' + escapeHtml(message || '불러오지 못했습니다.') + '</div>';
       }
+
+      function cancelCrowdingDetailRequest() {
+        crowdingDetailState.requestId += 1;
+        if (crowdingDetailState.controller) crowdingDetailState.controller.abort();
+        crowdingDetailState.controller = null;
+      }
+
+      (function bindCrowdingNativeBack() {
+        var previous = window.ShuttleGoAppBackHandler;
+        var legacy = window.shuttleGoBack;
+        function handleBack() {
+          if (reportDataState.mode === 'crowding-detail' && reportDataModal && reportDataModal.classList.contains('show')) {
+            closeReportDataModal(); return true;
+          }
+          if (previous && typeof previous.handleBack === 'function') return previous.handleBack.apply(previous, arguments) === true;
+          return typeof legacy === 'function' && legacy.apply(window, arguments) === true;
+        }
+        window.ShuttleGoAppBackHandler = Object.assign({}, previous || {}, { handleBack: handleBack });
+        window.shuttleGoBack = handleBack;
+      })();
+
+      function openCrowdingDetailModal(button) {
+        var reference;
+        try { reference = JSON.parse(button.getAttribute('data-crowding-detail')); } catch (err) { return; }
+        if (!reference || !reference.route_id || !reference.route_uuid || !reference.stop_uuid) return;
+        openReportDataModal(buildInlineStopPillHtml(reference.stop_name) + '<span class="eta-title-suffix">혼잡도 내역</span>',
+          { htmlTitle: true, ariaLabel: reference.stop_name + ' 혼잡도 내역' });
+        reportDataState.mode = 'crowding-detail';
+        reportDataModal.classList.add('crowding-detail');
+        crowdingDetailState.trigger = button;
+        crowdingDetailState.query = reference;
+        crowdingDetailState.bucket = reference.bucket;
+        crowdingDetailState.frozen = !!sharedRouteState.active;
+        reportDataTabs.innerHTML = '';
+        reportDataTabs.classList.toggle('show', reference.day_type === 'weekday');
+        if (reference.day_type === 'weekday') {
+          reportDataTabs.setAttribute('role', 'tablist');
+          [{ key: 'mon_thu', label: '월~목' }, { key: 'friday', label: '금요일' }].forEach(function(def) {
+            var tab = document.createElement('button'); tab.type = 'button'; tab.className = 'report-data-tab';
+            tab.textContent = def.label; tab.setAttribute('role', 'tab'); tab.setAttribute('data-crowding-bucket', def.key);
+            tab.addEventListener('click', function() { loadCrowdingDetail(def.key); });
+            tab.addEventListener('keydown', function(event) {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              var tabs = Array.from(reportDataTabs.querySelectorAll('[data-crowding-bucket]'));
+              var next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+              tabs[next].focus(); loadCrowdingDetail(tabs[next].getAttribute('data-crowding-bucket'));
+            });
+            reportDataTabs.appendChild(tab);
+          });
+        }
+        if (reportDataCloseBtn) reportDataCloseBtn.focus({ preventScroll: true });
+        loadCrowdingDetail(reference.bucket);
+      }
+
+      function loadCrowdingDetail(bucket) {
+        if (reportDataState.mode !== 'crowding-detail' || !crowdingDetailState.query) return;
+        cancelCrowdingDetailRequest();
+        var requestId = crowdingDetailState.requestId, reference = crowdingDetailState.query;
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        crowdingDetailState.controller = controller; crowdingDetailState.bucket = bucket;
+        reportDataTabs.querySelectorAll('[data-crowding-bucket]').forEach(function(tab) {
+          var active = tab.getAttribute('data-crowding-bucket') === bucket;
+          tab.classList.toggle('active', active); tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        reportDataBody.innerHTML = buildLoadingStateHtml('report-empty-state', '불러오는 중...');
+        var params = new URLSearchParams();
+        ['route_uuid', 'day_type', 'departure_time', 'stop_uuid', 'stop_visit_index', 'route_revision', 'eta_reference_date'].forEach(function(key) {
+          if (reference[key] != null) params.set(key, String(reference[key]));
+        });
+        params.set('bucket', bucket);
+        if (reference.bucket === bucket && reference.expected_detail_revision) params.set('expected_detail_revision', reference.expected_detail_revision);
+        if (crowdingDetailState.frozen) params.set('frozen', '1');
+        var timeoutId;
+        var timeout = new Promise(function(resolve, reject) {
+          timeoutId = window.setTimeout(function() { reject(new Error('응답이 지연되고 있습니다. 다시 시도해 주세요.')); if (controller) controller.abort(); }, 10000);
+        });
+        var operation = fetchCrowdingDetail(API_BASE + '/api/route/' + encodeURIComponent(reference.route_id) + '/crowding-detail?' + params.toString(), controller ? { signal: controller.signal } : {});
+        Promise.race([operation, timeout]).then(function(result) {
+          if (requestId !== crowdingDetailState.requestId || reportDataState.mode !== 'crowding-detail') return;
+          if (!result.ok) {
+            var state = result.data && result.data.state;
+            throw new Error(state === 'context_changed' ? '노선 정보가 변경되었습니다. 다시 검색해 주세요.' : '혼잡도 내역을 불러오지 못했습니다.');
+          }
+          var data = result.data || {}, context = data.context;
+          if (context && (Number(context.route_id) !== Number(reference.route_id) || context.route_uuid !== reference.route_uuid || context.stop_uuid !== reference.stop_uuid ||
+              context.departure_time !== reference.departure_time || context.day_type !== reference.day_type ||
+              context.bucket !== bucket || context.route_revision !== reference.route_revision || Number(context.stop_visit_index) !== Number(reference.stop_visit_index))) throw new Error('선택한 정류장의 정보와 일치하지 않습니다.');
+          renderCrowdingDetail(data);
+        }).catch(function(err) {
+          if (requestId !== crowdingDetailState.requestId || reportDataState.mode !== 'crowding-detail') return;
+          renderReportError(err.message || '혼잡도 내역을 불러오지 못했습니다.');
+          var retry = document.createElement('button'); retry.type = 'button'; retry.className = 'report-modal-btn'; retry.textContent = '다시 시도';
+          retry.addEventListener('click', function() { loadCrowdingDetail(bucket); }); reportDataBody.appendChild(retry);
+        }).finally(function() { window.clearTimeout(timeoutId); });
+      }
+
+      async function fetchCrowdingDetail(url, init) {
+        var response = await fetch(url, init), limit = 128 * 1024;
+        if (Number(response.headers.get('Content-Length')) > limit) throw new Error('혼잡도 기록이 너무 큽니다.');
+        var text = '';
+        if (response.body && response.body.getReader && typeof TextDecoder === 'function') {
+          var reader = response.body.getReader(), decoder = new TextDecoder(), size = 0;
+          try {
+            while (true) {
+              var chunk = await reader.read();
+              if (chunk.done) break;
+              size += chunk.value.byteLength;
+              if (size > limit) { await reader.cancel(); throw new Error('혼잡도 기록이 너무 큽니다.'); }
+              text += decoder.decode(chunk.value, { stream: true });
+            }
+            text += decoder.decode();
+          } finally { reader.releaseLock(); }
+        } else {
+          text = await response.text();
+          if (new Blob([text]).size > limit) throw new Error('혼잡도 기록이 너무 큽니다.');
+        }
+        return { ok: response.ok, status: response.status, data: JSON.parse(text) };
+      }
+
+      function crowdingDateLabel(value) {
+        var text = String(value || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '-';
+        var day = new Date(text + 'T12:00:00+09:00').getUTCDay();
+        return Number(text.slice(5, 7)) + '.' + Number(text.slice(8, 10)) + '(' + ['일', '월', '화', '수', '목', '금', '토'][day] + ')';
+      }
+
+      function renderCrowdingDetail(data) {
+        if (!data || data.schema_version !== 1) throw new Error('혼잡도 기록 형식이 올바르지 않습니다.');
+        var messages = { disabled: '혼잡도 상세 내역을 제공하지 않습니다.', empty: '이 조건에 해당하는 혼잡도 기록이 없습니다.',
+          snapshot_unavailable: '공유 당시 계산에 사용된 상세 기록을 그대로 확인할 수 없습니다. 최신 검색에서 확인해 주세요.' };
+        if (messages[data.state]) { reportDataBody.innerHTML = '<div class="report-empty-state">' + escapeHtml(messages[data.state]) + '</div>'; return; }
+        var days = Array.isArray(data.days) ? data.days : [], context = data.context || {}, summary = data.summary;
+        var ids = new Set(), dates = new Set(), ratios = [], total = 0;
+        var valid = !!data.context && ['available', 'stale'].includes(data.state) && days.length > 0 && days.length <= 10;
+        valid = valid && days.every(function(day) {
+          if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day.service_date) || dates.has(day.service_date) ||
+              !Number.isFinite(Date.parse(day.service_date)) || new Date(day.service_date).toISOString().slice(0, 10) !== day.service_date ||
+              !Array.isArray(day.entries) || !day.entries.length || day.entries.length > 40) return false;
+          dates.add(day.service_date);
+          if (!day.entries.every(function(entry) {
+            if (!entry || typeof entry.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(entry.id) || ids.has(entry.id) ||
+                !Number.isInteger(entry.onboard_count) || entry.onboard_count < 0 || entry.onboard_count > 200 ||
+                !Number.isInteger(entry.capacity) || entry.capacity < 1 || entry.capacity > 200 ||
+                typeof entry.vehicle_number !== 'string' || typeof entry.plate_suffix !== 'string' ||
+                (entry.plate_suffix && !/^[0-9]{4}$/.test(entry.plate_suffix)) ||
+                (entry.vehicle_number && (!/^(?:[가-힣]{2,4})?\d{2,3}[가-힣]\d{4}$/.test(entry.vehicle_number) || entry.vehicle_number.slice(-4) !== entry.plate_suffix)) ||
+                typeof entry.received_at !== 'string' || entry.received_at.length > 40 || !Number.isFinite(Date.parse(entry.received_at))) return false;
+            var ratio = Math.min(100, entry.onboard_count * 100 / entry.capacity);
+            if (entry.percentage !== Math.floor(ratio + .5)) return false;
+            ids.add(entry.id); ratios.push(ratio); return true;
+          })) return false;
+          total += day.entries.length; return true;
+        });
+        if (data.state === 'available') valid = valid && !!summary && Number.isInteger(summary.percentage) && summary.percentage >= 0 && summary.percentage <= 100 && summary.day_count === days.length && summary.observed_vehicle_count === total &&
+          (data.aggregation !== 'vehicle_record_mean' || summary.percentage === Math.floor(ratios.reduce(function(sum, ratio) { return sum + ratio; }, 0) / total + .5));
+        else valid = valid && summary === null;
+        if (!valid) throw new Error('혼잡도 기록 형식이 올바르지 않습니다.');
+        var html = '<div class="crowding-table" role="table" aria-label="혼잡도 계산에 사용한 운행 기록" aria-colcount="4"><div class="report-table-head" role="row">' +
+          ['운행일', '탑승 / 정원', '비율', '차량'].map(function(label) { return '<div class="report-table-cell" role="columnheader">' + label + '</div>'; }).join('') + '</div>';
+        days.forEach(function(day) {
+          day.entries.forEach(function(entry) {
+            var vehicle = entry.plate_suffix ? escapeHtml(entry.plate_suffix) : '정보 없음';
+            if (entry.vehicle_number) vehicle = '<button type="button" class="crowding-vehicle eta-system-tooltip-trigger" data-eta-tooltip="' + escapeAttr('차량번호: ' + entry.vehicle_number) + '" aria-label="' + escapeAttr('차량 ' + entry.plate_suffix + ' 번호 확인') + '">' + vehicle + '</button>';
+            html += '<div class="report-table-row crowding-entry" role="row"><div class="report-table-cell" role="cell" aria-label="' + escapeAttr(day.service_date) + '">' + escapeHtml(crowdingDateLabel(day.service_date)) + '</div>' +
+              '<div class="report-table-cell" role="cell">' + escapeHtml(entry.onboard_count) + ' / ' + escapeHtml(entry.capacity) + ' 명</div>' +
+              '<div class="report-table-cell" role="cell">' + escapeHtml(entry.percentage) + '%</div><div class="report-table-cell" role="cell">' + vehicle + '</div></div>';
+          });
+        });
+        reportDataBody.innerHTML = html + '</div>'; bindEtaDetailTooltipTriggers();
+      }
+
+      document.addEventListener('keydown', function(event) {
+        if (reportDataState.mode !== 'crowding-detail' || !reportDataModal.classList.contains('show')) return;
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeReportDataModal(); return; }
+        if (event.key !== 'Tab') return;
+        var controls = Array.from(reportDataModal.querySelectorAll('button:not([disabled]), [tabindex="0"]')).filter(function(node) { return node.getClientRects().length; });
+        var first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }, true);
 
       function createWheelColumn(values, selectedValue, onSelect) {
         var column = document.createElement('div');
@@ -39962,6 +40544,7 @@
           fetchJson(API_BASE + '/api/me/reports/route-index')
         ])
           .then(function(results) {
+            if (reportDataState.mode !== 'my-reports') return;
             var basicResult = results[0] || {};
             var routeResult = results[1] || {};
             if (!basicResult.ok) throw new Error((basicResult.data && basicResult.data.error) || '제보 기록을 불러오지 못했습니다.');
@@ -39977,6 +40560,7 @@
             renderMyReportItems();
           })
           .catch(function(err) {
+            if (reportDataState.mode !== 'my-reports') return;
             renderReportError(err.message || '제보 기록을 불러오지 못했습니다.');
           });
       }
@@ -40014,6 +40598,15 @@
         var compactItems = Array.isArray(data.items) ? data.items : [];
         var normalizedItems = compactItems.map(function(rawItem) {
           var item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+          if (String(item.kind || '') === 'gps') {
+            var vehicleNumber = String(item.vehicle_number || '').trim();
+            return { id: String(item.id || ''), is_system: true, is_auto_input: false,
+              reporter_name: 'GPS 관측', report_state: 'gps', report_state_label: '', report_note: '',
+              system_tooltip: '실제 셔틀버스의 실시간 GPS 위치를 기반으로 측정한 정류장 도착시각입니다.\n차량번호: ' + (vehicleNumber || '정보 없음'),
+              client_reported_at: String(item.reported_at || ''), arrive_time: String(item.arrive_time || ''),
+              is_deleted: false, eta_excluded: false, like_count: 0, liked_by_me: false, like_disabled: true,
+              eta_day_bucket: String(item.eta_day_bucket || 'unsplit') };
+          }
           if (String(item.kind || '') === 'system') {
             var runMeta = runs[String(item.run_id || '')] || {};
             var autoInput = !!item.auto_input;
@@ -40096,6 +40689,10 @@
             btn.textContent = def.label;
             btn.addEventListener('click', function() {
               reportDataState.etaDetailBucket = def.key;
+              if (reportDataState.etaDetailUrl) {
+                loadEtaDetailPage(def.key, '');
+                return;
+              }
               renderEtaDetailItems(reportDataState.etaDetailPayload || payload);
             });
             reportDataTabs.appendChild(btn);
@@ -40127,7 +40724,7 @@
             : (isNaverBadge
               ? '<img class="report-badge-naver-logo" src="' + escapeAttr(naverLogoSrc) + '" alt="" aria-hidden="true" />'
               : '');
-          var badgeClass = 'report-badge system' + (isTmapBadge ? ' tmap' : (isNaverBadge ? ' naver' : ''));
+          var badgeClass = 'report-badge system' + (isTmapBadge ? ' tmap' : (isNaverBadge ? ' naver' : (item.report_state === 'gps' ? ' gps' : '')));
           var tooltip = String(item.system_tooltip || '').trim();
           if (!tooltip) {
             return '<span class="' + badgeClass + '">' + logoHtml + escapeHtml(badgeText) + '</span>';
@@ -40137,7 +40734,8 @@
           '</button>';
         }
         var rows = items.map(function(item) {
-          var noteHtml = buildReportNoteHtml(item);
+          var isGps = item.report_state === 'gps';
+          var noteHtml = isGps ? '' : buildReportNoteHtml(item);
           var reportTime = formatReportTimeOnly(item.client_reported_at) || String(item.arrive_time || '-');
           var reportDate = (item && item.is_system && item.is_auto_input)
             ? '-'
@@ -40150,6 +40748,17 @@
           '</div>';
         }).join('');
         reportDataBody.innerHTML = renderReportRows('eta-detail', ['제보 일자', '도착 시각', '닉네임', '좋아요'], rows);
+        if (payload.gps_next_cursor) {
+          var more = document.createElement('button');
+          more.type = 'button';
+          more.className = 'report-data-tab';
+          more.textContent = '더 보기';
+          more.addEventListener('click', function() {
+            more.disabled = true;
+            loadEtaDetailPage(reportDataState.etaDetailBucket || 'all', payload.gps_next_cursor);
+          });
+          reportDataBody.appendChild(more);
+        }
         bindEtaDetailTooltipTriggers();
         ensureReportNoteTooltipDelegation();
         reportDataBody.querySelectorAll('.report-like-btn').forEach(function(btn) {
@@ -40213,6 +40822,7 @@
         }
         fetchJson(API_BASE + '/api/reports/leaderboard?window=' + encodeURIComponent(reportDataState.leaderboardWindow))
           .then(function(result) {
+            if (reportDataState.mode !== 'leaderboard') return;
             if (!result.ok) throw new Error(result.data.error || '랭킹을 불러오지 못했습니다.');
             var items = result.data.items || [];
             if (reportDataState.leaderboardWindow === 'all') {
@@ -40224,6 +40834,7 @@
             renderLeaderboardItems(items);
           })
           .catch(function(err) {
+            if (reportDataState.mode !== 'leaderboard') return;
             renderReportError(err.message || '랭킹을 불러오지 못했습니다.');
           });
       }
@@ -40241,7 +40852,8 @@
       function openEtaReportDetailModal(routeId, departureTime, stopId, stopName, routeUuid, stopUuid) {
         reportDataState.mode = 'eta-detail';
         reportDataState.etaDetailPayload = null;
-        reportDataState.etaDetailBucket = '';
+        reportDataState.etaDetailBucket = 'all';
+        reportDataState.etaDetailUrl = '';
         openReportDataModal(buildEtaReportTitleHtml(stopName), { htmlTitle: true });
         if (reportDataTabs) {
           reportDataTabs.classList.remove('show');
@@ -40262,14 +40874,35 @@
         if (normalizedStopUuid) {
           url += '&stop_uuid=' + encodeURIComponent(normalizedStopUuid);
         }
+        reportDataState.etaDetailUrl = url;
+        loadEtaDetailPage('all', '');
+      }
+
+      function loadEtaDetailPage(bucket, cursor) {
+        var requestId = (reportDataState.etaDetailRequestId || 0) + 1;
+        reportDataState.etaDetailRequestId = requestId;
+        var url = reportDataState.etaDetailUrl + '&gps_bucket=' + encodeURIComponent(bucket) +
+          (cursor ? '&gps_cursor=' + encodeURIComponent(cursor) : '');
         fetchJson(url)
           .then(function(result) {
+            if (reportDataState.mode !== 'eta-detail' || requestId !== reportDataState.etaDetailRequestId) return;
             if (!result.ok) throw new Error(result.data.error || '제보 내역을 불러오지 못했습니다.');
-            reportDataState.etaDetailPayload = result.data || {};
-            reportDataState.etaDetailBucket = String(result.data && result.data.eta_day_bucket || 'all');
-            renderEtaDetailItems(result.data || {});
+            var data = result.data || {};
+            if (cursor && reportDataState.etaDetailPayload) {
+              var unique = {};
+              data.items = (reportDataState.etaDetailPayload.items || []).concat(data.items || []).filter(function(item) {
+                var key = String(item.kind || '') + ':' + String(item.id);
+                if (unique[key]) return false;
+                unique[key] = true;
+                return true;
+              }).sort(function(a, b) { return String(b.reported_at || '').localeCompare(String(a.reported_at || '')); });
+            }
+            reportDataState.etaDetailPayload = data;
+            reportDataState.etaDetailBucket = bucket;
+            renderEtaDetailItems(data);
           })
           .catch(function(err) {
+            if (reportDataState.mode !== 'eta-detail' || requestId !== reportDataState.etaDetailRequestId) return;
             renderReportError(err.message || '제보 내역을 불러오지 못했습니다.');
           });
       }
@@ -40277,10 +40910,11 @@
       function buildRouteStopsHtml(option, routeStops, departureTime, isDepart) {
         var rows = Array.isArray(routeStops) ? routeStops : [];
         if (!rows.length) return '-';
+        var hasCrowding = rows.some(hasStopCrowding);
         var boardStopName = isDepart ? String(option && option.nearest_stop_name || '') : String(option && option.start_stop_name || '');
         var alightStopName = isDepart ? String(option && option.terminus_name || '') : String(option && option.getoff_stop_name || '');
         var routeUuid = String((option && (option.route_uuid || option.resolved_route_uuid)) || '').trim();
-        return rows.map(function(stop) {
+        var html = rows.map(function(stop) {
           var stopName = String(stop.stop_name || '');
           var stopUuid = String(stop.stop_uuid || '').trim();
           var isBoardStop = stopName === boardStopName;
@@ -40305,8 +40939,9 @@
             ' data-eta-has-evidence="' + (etaHasEvidence ? '1' : '0') + '">' +
             escapeHtml(etaDisplay) +
           '</span>';
-          return '<div class="route-stop-item' + ((isBoardStop || isAlightStop) ? ' highlight' : ' is-muted') + '"><div class="route-stop-line"><span class="route-stop-label">' + stopLabel + '</span>' + etaHtml + '</div></div>';
+          return '<div class="route-stop-item' + ((isBoardStop || isAlightStop) ? ' highlight' : ' is-muted') + '"><div class="route-stop-line"><span class="route-stop-label">' + stopLabel + '</span><span class="route-stop-metrics">' + crowdingHtml(stop, hasCrowding) + etaHtml + '</span></div></div>';
         }).join('');
+        return wrapRouteStopsHtml(html, hasCrowding);
       }
 
       function enhanceRouteDetailPanel(card, option, placeName, isDepart) {
@@ -40357,7 +40992,7 @@
                   nextSharedDetail.route_stops.length > 0 &&
                   routeStopsHaveVariantDetail(nextSharedDetail.route_stops)
                 ) {
-                  applyRouteVariantDetailToCard(card, option, placeName, isDepart, nextSharedDetail);
+                  selectRouteDeparture(card, option, placeName, isDepart, timeText);
                   return;
                 }
                 promptLatestSearchFromSharedRouteForDepartureTime(timeText);
@@ -40370,7 +41005,7 @@
               }
               evt.preventDefault();
               evt.stopPropagation();
-              loadRouteVariantDetail(card, option, placeName, isDepart, timeText);
+              selectRouteDeparture(card, option, placeName, isDepart, timeText);
             });
           });
         }
@@ -40455,8 +41090,10 @@
         syncRouteUpdatedInfo(panel, getRouteCardUpdatedAt(option));
       }
 
-      function applyRouteVariantDetailToCard(card, option, placeName, isDepart, detail) {
+      function applyRouteVariantDetailToCard(card, option, placeName, isDepart, detail, selectionOpts) {
         if (!card || !option || !detail) return;
+        selectionOpts = selectionOpts || {};
+        if (selectionOpts.isCurrent && !selectionOpts.isCurrent()) return;
         var liveCard = getLiveRouteCardForOption(option);
         if (liveCard) card = liveCard;
         var previousDepartureTime = getOptionDisplayDepartureTime(option);
@@ -40472,12 +41109,14 @@
         var rerenderOpts = {
           keepExpanded: keepExpanded,
           preserveListViewport: true,
+          preserveMapViewport: !!selectionOpts.preserveMapViewport,
           highlightTarget: option.__detailHighlightTarget || null,
           fromMapLabel: !!option.__detailOpenedFromMapLabel,
           markInteractiveOrderingChanged: !!(nextSelectedTime && nextSelectedTime !== previousDepartureTime)
         };
         var previousArrivalState = {
           mode: previousRouteMode,
+          isCurrent: selectionOpts.isCurrent,
           transitOptionId: String(previousSelectedTransit && previousSelectedTransit.mode_option_id || '').trim(),
           hadTransitOption: !!(
             previousSelectedTransit ||
@@ -40522,12 +41161,14 @@
           typeof arrivalRefreshPromise.then === 'function'
         ) {
           arrivalRefreshPromise.then(function(updatedOption) {
+            if (selectionOpts.isCurrent && !selectionOpts.isCurrent()) return;
             var nextOption = updatedOption && typeof updatedOption === 'object' ? updatedOption : option;
             if (String(nextOption.__activeDetailTime || '').trim() !== selectedTime) return;
             if (!isRouteOptionCurrentlySelected(nextOption)) return;
             rerenderCurrentRouteOptions(nextOption, placeName, isDepart, {
               keepExpanded: isRouteOptionCurrentlyExpanded(nextOption),
               preserveListViewport: true,
+              preserveMapViewport: !!selectionOpts.preserveMapViewport,
               highlightTarget: rerenderOpts.highlightTarget,
               fromMapLabel: rerenderOpts.fromMapLabel,
               markInteractiveOrderingChanged: rerenderOpts.markInteractiveOrderingChanged
@@ -40536,14 +41177,101 @@
         }
       }
 
-      function loadRouteVariantDetail(card, option, placeName, isDepart, requestedTime) {
-        if (!card || !option) return;
-        var departureTime = String(requestedTime || option.__activeDetailTime || option.board_time || getDepartureTimeStr());
-        fetchRouteVariantDetailData(option.route_id, departureTime)
+      function showRouteDepartureFailure() {
+        var notice = document.getElementById('routeDepartureNotice');
+        if (!notice) {
+          notice = document.createElement('div');
+          notice.id = 'routeDepartureNotice';
+          notice.className = 'route-departure-notice';
+          notice.setAttribute('role', 'status');
+          document.body.appendChild(notice);
+        }
+        clearTimeout(notice.__hideTimer);
+        notice.textContent = '출발편을 변경하지 못했습니다.';
+        notice.hidden = false;
+        notice.__hideTimer = setTimeout(function() { notice.hidden = true; }, 4000);
+      }
+
+      function canSelectRouteDeparture(option, departureTime) {
+        if (!option || isShuttleTransferOption(option) || option.__favoriteSnapshotOnly) return false;
+        if (!/^\d{2}:\d{2}$/.test(departureTime) ||
+            (option.all_departure_times || []).indexOf(departureTime) < 0) return false;
+        if (!sharedRouteState.active) return true;
+        var detail = getOptionExistingVariantDetail(option, departureTime);
+        return !!(detail && routeStopsHaveVariantDetail(detail.route_stops || []));
+      }
+
+      function selectRouteDeparture(card, option, placeName, isDepart, requestedTime, opts) {
+        opts = opts || {};
+        var departureTime = String(requestedTime || '').trim();
+        if (!card || !card.isConnected || !isRouteOptionCurrentlySelected(option) ||
+            (!opts.hydrate && !canSelectRouteDeparture(option, departureTime))) return Promise.resolve(false);
+        var prior = routeDepartureSelections.get(option);
+        // Opening the timetable must not supersede a pending explicit selection.
+        if (prior && prior.pending && prior.isCurrent() && (prior.departureTime === departureTime || opts.hydrate)) return prior.promise;
+        if (!opts.hydrate && departureTime === getOptionDisplayDepartureTime(option)) {
+          // Cancel B when A is clicked, but keep A's legitimate follow-up calculations alive.
+          if (prior && prior.departureTime !== departureTime) routeDepartureSelections.delete(option);
+          if (liveVehicleController) liveVehicleController.previewDeparture(option,null);
+          return Promise.resolve(true);
+        }
+        var requestSerial = routeRequestSerial, selectionSerial = routeSelectionSerial;
+        var site = selectedSiteId, day = selectedDayType, date = getTodayKstDateText();
+        var sharedToken = sharedRouteState.active ? sharedRouteState.token : '';
+        var ticket = { departureTime: departureTime, pending: true };
+        ticket.isCurrent = function() {
+          return routeDepartureSelections.get(option) === ticket && requestSerial === routeRequestSerial &&
+            selectionSerial === routeSelectionSerial && site === selectedSiteId && day === selectedDayType &&
+            date === getTodayKstDateText() && sharedToken === (sharedRouteState.active ? sharedRouteState.token : '') &&
+            (currentRouteOptions || []).indexOf(option) >= 0 && isRouteOptionCurrentlySelected(option);
+        };
+        routeDepartureSelections.set(option, ticket);
+        if (!opts.hydrate && liveVehicleController) liveVehicleController.previewDeparture(option,departureTime);
+        var saved = sharedRouteState.active ? getOptionExistingVariantDetail(option, departureTime) : null;
+        ticket.promise = (sharedRouteState.active ? Promise.resolve(saved) : fetchRouteVariantDetailData(option.route_id, departureTime))
           .then(function(detail) {
-            applyRouteVariantDetailToCard(card, option, placeName, isDepart, detail || {});
-          })
-          .catch(function() {});
+            if (!ticket.isCurrent()) return false;
+            if (!detail || String(detail.selected_departure_time || '') !== departureTime ||
+                !Array.isArray(detail.route_stops) || !detail.route_stops.length ||
+                (!sharedRouteState.active && (String(detail.route_uuid || '') !== String(option.route_uuid || option.resolved_route_uuid || '') ||
+                  Number(detail.route_id) !== Number(option.route_id) || String(detail.site_id) !== String(option.site_id || site))) ||
+                (detail.eta_reference_date && detail.eta_reference_date !== date)) {
+              routeVariantDetailCache.delete(buildRouteVariantDetailCacheKey(option.route_id, day, departureTime, '', date));
+              throw new Error('departure_mismatch');
+            }
+            applyRouteVariantDetailToCard(getLiveRouteCardForOption(option), option, placeName, isDepart, detail, {
+              isCurrent: ticket.isCurrent, preserveMapViewport: opts.preserveMapViewport === true
+            });
+            return true;
+          }).catch(function() {
+            if (!opts.hydrate && ticket.isCurrent()) {
+              if (liveVehicleController) liveVehicleController.previewDeparture(option,null);
+              showRouteDepartureFailure();
+            }
+            return false;
+          }).finally(function() { ticket.pending = false; });
+        return ticket.promise;
+      }
+
+      function loadRouteVariantDetail(card, option, placeName, isDepart, requestedTime) {
+        return selectRouteDeparture(card, option, placeName, isDepart,
+          requestedTime || getOptionDisplayDepartureTime(option), { hydrate: true });
+      }
+
+      function selectRouteDepartureFromVehicle(selection) {
+        var target = selection && selection.target, context = target && target.context;
+        var option = target && target.option;
+        if (!context || !option || !target.departureSelectable || !target.card.isConnected ||
+            !isRouteOptionCurrentlySelected(option) || isShuttleTransferOption(option) ||
+            target.card !== getLiveRouteCardForOption(option) ||
+            String(context.route_uuid || '') !== String(option.route_uuid || '') ||
+            String(context.site_id) !== String(option.site_id || selectedSiteId) ||
+            context.day_type !== (option.day_type || selectedDayType) ||
+            !!context.historical_snapshot !== !!sharedRouteState.active ||
+            (context.shared_route_token || '') !== (sharedRouteState.active ? sharedRouteState.token || '' : '') ||
+            (context.service_date && context.service_date !== selection.serviceDate)) return Promise.resolve(false);
+        return selectRouteDeparture(target.card, option, currentPlaceName, !!currentIsDepart,
+          selection.departureTime, { preserveMapViewport: true });
       }
 
       function applyRouteVariantDetailToOption(option, detail, fallbackDepartureTime) {
@@ -40658,6 +41386,10 @@
           option.__originBoardTime = String(option.__originBoardTime || option.board_time || getDepartureTimeStr());
           setRouteActiveDepartureTime(option, option.__activeDetailTime || option.__originBoardTime);
           enhanceRouteDetailPanel(card, option, placeName, isDepart);
+          if (!isShuttleTransferOption(option)) {
+            var detail = getActiveRouteVariantDetail(option);
+            if (detail) syncRouteDetailPanelWithDetail(card, option, isDepart, detail);
+          }
           syncRouteCardTimeSummary(card, option, placeName, isDepart);
         });
         refreshVehicleAssignments(options);
@@ -40835,6 +41567,17 @@
             if (!getAppCapabilities().nativeOpenExternal) return false;
             try { getNativeBridge().openExternal(url); return true; } catch (e) { return false; }
           }
+        });
+      }
+      if (window.ShuttleVehiclePositions) {
+        liveVehicleController = window.ShuttleVehiclePositions.start({ apiBase: API_BASE, zIndex: ROUTE_OVERLAY_LAYERS.vehicle,
+          getMap: function() { return map; }, getMapContainer: function() { return mapContainer; },
+          onSelectDeparture: selectRouteDepartureFromVehicle,
+          canSelectDeparture: function(selection) {
+            return canSelectRouteDeparture(selection.target.option, selection.departureTime);
+          },
+          onMarkerInteraction: markVehicleMapInteraction,
+          mapDraggedRecently: function() { return mapDragStartedAt > 0 && Date.now() - mapDragStartedAt < 350; }
         });
       }
       updateMapActionButtonVisibility();
