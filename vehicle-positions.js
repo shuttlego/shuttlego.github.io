@@ -39,19 +39,43 @@
       return JSON.stringify([c.route_id,c.route_uuid,c.site_id,c.day_type,c.target_stop_uuid,
         serviceDate,revision,c.historical_snapshot,c.shared_route_token]);
     }
+    function currentOwners(vehicle) {
+      return (vehicle.owners || []).filter(function(owner) {
+        return owner.generation === generation && entries.indexOf(owner.entry) >= 0 &&
+          owner.target.card.isConnected && owner.target.card.classList.contains('selected');
+      });
+    }
+    function canResumeVehicle(vehicle) { return idlePaused && currentOwners(vehicle).length>0; }
     function selectionFor(vehicle) {
       if (!vehicle.vehicle_id) return null;
-      var owners = (vehicle.owners || []).filter(function(owner) {
-        return owner.generation === generation && entries.indexOf(owner.entry) >= 0 &&
-          owner.target.card.isConnected && owner.target.card.classList.contains('selected') &&
-          owner.target.departureSelectable === true;
-      });
+      var owners = currentOwners(vehicle).filter(function(owner) { return owner.target.departureSelectable===true; });
       if (!owners.length || !options.onSelectDeparture ||
           owners.some(function(owner) { return owner.scope !== owners[0].scope || owner.target.option !== owners[0].target.option; })) return null;
       var first = owners[0];
       var selection = {target:first.target,vehicleId:vehicle.vehicle_id,departureTime:vehicle.departure_time,
         serviceDate:first.serviceDate,routeRevision:first.revision};
       return !options.canSelectDeparture || options.canSelectDeparture(selection) ? selection : null;
+    }
+    function selectVehicle(vehicle) {
+      var selection=selectionFor(vehicle);
+      if (canResumeVehicle(vehicle) && !resume()) return;
+      if (selection) options.onSelectDeparture(selection);
+    }
+    function activateGroup(key) {
+      var group=overlays[key] && overlays[key].group;
+      if (!group) return;
+      if (group.vehicles.length===1) { selectVehicle(group.vehicles[0]); return; }
+      if (group.vehicles.some(canResumeVehicle)) {
+        if (!resume()) return;
+        group=overlays[key] && overlays[key].group;
+        if (!group) return;
+      }
+      if (pickerState && pickerState.key===key) { closePicker(); return; }
+      var selectable=group.vehicles.map(selectionFor).find(Boolean);
+      if (!selectable) return;
+      closePicker(); pickerState={key:key,option:selectable.target.option,context:selectable.target.context,
+        scope:selectionScope(selectable.target,selectable.serviceDate,selectable.routeRevision)};
+      overlays[key].root.querySelector('button').setAttribute('aria-expanded','true'); renderPicker(group);
     }
     function closePicker(restoreFocus) {
       var previous = pickerState && overlays[pickerState.key];
@@ -153,10 +177,7 @@
         if (selection) {
           row.type='button'; row.setAttribute('aria-pressed',String(!!vehicle.selected_trip));
           row.setAttribute('aria-label',vehicle.departure_time+' 출발 버스 선택'+(vehicle.plate_suffix ? ' · '+vehicle.plate_suffix : ''));
-          bindMarkerButton(row,function() {
-            var current = selectionFor(vehicle);
-            if (current) options.onSelectDeparture(current);
-          });
+          bindMarkerButton(row,function() { selectVehicle(vehicle); });
         }
         var list=node('span','live-vehicle-lines'); appendVehicleLines(list,vehicle); row.appendChild(list); picker.appendChild(row);
         if (focused === vehicle.markerKey && selection) row.focus({preventScroll:true});
@@ -264,9 +285,9 @@
       return JSON.stringify(['route_id','route_uuid','site_id','day_type','departure_time','service_date','route_revision','target_stop_uuid','historical_snapshot','shared_route_token']
         .filter(function(k) { return !positionsOnly || k !== 'departure_time'; }).map(function(k) { return c[k] == null ? null : c[k]; }));
     }
-    function positionHandoff(entry, target) {
-      if (!entry || !target.departureSelectable || !entry.target.departureSelectable ||
-          entry.target.option !== target.option || contextKey(entry.target,true) !== contextKey(target,true)) return null;
+    function positionHandoff(entry, target, resuming) {
+      if (!entry || entry.target.option !== target.option || contextKey(entry.target,true) !== contextKey(target,true) ||
+          (resuming ? contextKey(entry.target)!==contextKey(target) : !target.departureSelectable || !entry.target.departureSelectable)) return null;
       var data = entry.data, at = entry.receivedAt;
       if ((!data || !data.vehicles.length) && entry.handoff) { data=entry.handoff.data; at=entry.handoff.at; }
       if (data && data.state==='unavailable' && !data.vehicles.length && entry.lastGood &&
@@ -317,10 +338,11 @@
       renderMap();
     }
     function resume() {
-      if (document.hidden || suspended || !targets.length) return;
+      if (!idlePaused || document.hidden || suspended || !targets.length) return false;
       var next = targets.slice();
-      stop(true); idlePaused = false; lastActivity = activityTime(); lastActivityWall = Date.now();
-      select(next);
+      idlePaused = false; lastActivity = activityTime(); lastActivityWall = Date.now();
+      select(next,true);
+      return true;
     }
     function activity(event) {
       if (!event.isTrusted || document.hidden || suspended || (event.type === 'pointermove' && !event.buttons)) return;
@@ -474,29 +496,21 @@
         if (existing && existing.signature === signature) {
           existing.overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon));
           if (existing.map !== map) existing.overlay.setMap(map);
-          existing.map = map; updated[key] = existing; return;
+          existing.map = map; existing.group=group; updated[key] = existing; return;
         }
         var root = node('div', 'live-vehicle-marker');
-        var actionable = vehicles.some(selectionFor);
+        var selectable = vehicles.some(selectionFor), resumable = vehicles.some(canResumeVehicle);
+        var actionable = selectable || resumable;
         var label = node(actionable ? 'button' : 'div', 'live-vehicle-label' + (selected ? ' is-selected' : '') + (stale ? ' is-stale' : '') + (actionable ? ' is-actionable' : ''));
         if (actionable) {
           label.type='button';
-          label.setAttribute('aria-label',vehicles.length>1 ? '이동 중인 버스 '+vehicles.length+'대 선택' : first.departure_time+' 출발 버스 선택'+(first.plate_suffix ? ' · '+first.plate_suffix : ''));
-          if (vehicles.length>1) { label.setAttribute('aria-haspopup','dialog'); label.setAttribute('aria-expanded',String(!!pickerState && pickerState.key===key)); }
-          else label.setAttribute('aria-pressed',String(selected));
-          bindMarkerButton(label,function() {
-            if (vehicles.length>1) {
-              if (pickerState && pickerState.key===key) { closePicker(); return; }
-              var selectable = vehicles.map(selectionFor).find(Boolean);
-              if (!selectable) return;
-              closePicker(); pickerState={key:key,option:selectable.target.option,context:selectable.target.context,
-                scope:selectionScope(selectable.target,selectable.serviceDate,selectable.routeRevision)};
-              label.setAttribute('aria-expanded','true'); renderPicker(group);
-            } else {
-              var selection=selectionFor(first);
-              if (selection) options.onSelectDeparture(selection);
-            }
-          });
+          label.setAttribute('aria-label',selectable ? (vehicles.length>1 ? '이동 중인 버스 '+vehicles.length+'대 선택'
+            : first.departure_time+' 출발 버스 선택'+(first.plate_suffix ? ' · '+first.plate_suffix : ''))
+            +(resumable ? ' · 버스 위치 확인 재개' : '') : '버스 위치 확인 재개');
+          if (resumable) label.title='버스 위치 확인 재개';
+          if (selectable && vehicles.length>1) { label.setAttribute('aria-haspopup','dialog'); label.setAttribute('aria-expanded',String(!!pickerState && pickerState.key===key)); }
+          else if (selectable) label.setAttribute('aria-pressed',String(selected));
+          bindMarkerButton(label,function() { activateGroup(key); });
         }
         var image = node('img'); image.src = '/images/app_main_icon.png'; image.alt = ''; image.width = 20; image.height = 20;
         label.appendChild(image);
@@ -514,7 +528,7 @@
         var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: true, yAnchor: 1, zIndex: options.zIndex || 1000 });
         if (existing) { overlay.setContent(root); overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon)); }
         if (!existing || existing.map !== map) overlay.setMap(map);
-        updated[key] = {overlay:overlay,signature:signature,map:map,root:root};
+        updated[key] = {overlay:overlay,signature:signature,map:map,root:root,group:group};
       });
       Object.keys(overlays).forEach(function(key) { if (!updated[key]) overlays[key].overlay.setMap(null); });
       overlays = updated;
@@ -719,19 +733,19 @@
         }
       });
     }
-    function select(next) {
+    function select(next, resuming) {
       var wanted = (next || []).slice(0, 3);
       if (!wanted.length) { stop(false); return; }
       var same = targets.length === wanted.length && wanted.every(function(target,index) { return contextKey(targets[index]) === contextKey(target); });
       var retryRequested = entries.some(function(entry) { return entry.permanentAt != null && lastSignal > entry.permanentAt; });
-      if (entries.length && same && !retryRequested) {
+      if (entries.length && same && !retryRequested && !resuming) {
         targets = wanted;
         entries.forEach(function(entry,index) { entry.target = wanted[index]; });
         renderRows();
         renderMap(); return;
       }
       var wasPaused = idlePaused, priorActivity = lastActivity, priorWall = lastActivityWall, hadTargets = targets.length > 0;
-      var handoffs = wanted.length===entries.length ? wanted.map(function(target,index) { return positionHandoff(entries[index],target); }) : [];
+      var handoffs = wanted.length===entries.length ? wanted.map(function(target,index) { return positionHandoff(entries[index],target,resuming); }) : [];
       stop(true,undefined,handoffs.some(Boolean));
       targets = wanted;
       if (pickerState && !wanted.some(function(target) {

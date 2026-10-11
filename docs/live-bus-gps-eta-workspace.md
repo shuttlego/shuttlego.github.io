@@ -14,4 +14,8 @@
 초기 기능 preview는 8180을 사용하고 Dev 실환경 배포는 전용 시험 시간대에 진행한다.
 새 asset은 Pages 배포 workflow에 포함하고 원본 APK·decompiled vendor 코드·secret을 web 배포에 넣지 않는다.
 
-이번 단계에서는 설계 문서와 작업 공간만 준비했다. 기능 구현, commit/push, Dev/Prd 배포는 아직 수행하지 않았다.
+2026-10-11 후속 상태: GPS 위치/ETA·도착 제보·혼잡도·경로 개선 기능과 관련 화면의 구현 및 Dev 검증을 완료했다.
+공유 프론트는 `/Users/brad/shuttle-go-backend`와 `/Users/brad/shuttle-go-web`에 동일하게 반영한다.
+출발편 전환 중 유효한 위치를 유지하고 선택 색상을 먼저 반영하며, 무입력 5분으로 중단된 흐린 말풍선으로도 위치 확인을 재개한다. JS 자원 버전은 15다.
+최근 검증 기록은 backend의 `docs/analysis/gps-vehicle-bubble-handoff-dev-validation-2026-10-11.md`와 `docs/analysis/gps-idle-marker-resume-dev-validation-2026-10-11.md`를 따른다.
+사용자 요청에 따라 구현 커밋과 후속 변경을 두 저장소의 같은 기능 브랜치에 푸시한다. private GPS·배포 자료는 Git 제외 규칙을 유지한다.
