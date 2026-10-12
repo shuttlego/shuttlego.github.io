@@ -92,7 +92,7 @@
     function selectVehicle(vehicle) {
       var selection=selectionFor(vehicle);
       if (canResumeVehicle(vehicle) && !resume()) return;
-      if (selection) options.onSelectDeparture(selection);
+      if (selection) { closePicker(); options.onSelectDeparture(selection); }
     }
     function activateGroup(key) {
       var group=overlays[key] && overlays[key].group;
@@ -108,7 +108,7 @@
       if (!selectable) return;
       closePicker(); pickerState={key:key,option:selectable.target.option,context:selectable.target.context,
         scope:selectionScope(selectable.target,selectable.serviceDate,selectable.routeRevision)};
-      overlays[key].root.querySelector('button').setAttribute('aria-expanded','true'); renderPicker(group);
+      overlays[key].root.querySelector('.live-vehicle-label').setAttribute('aria-expanded','true'); renderPicker(group);
     }
     function closePicker(restoreFocus) {
       var previous = pickerState && overlays[pickerState.key];
@@ -119,7 +119,7 @@
         if (button) button.setAttribute('aria-expanded','false');
       });
       if (restoreFocus && previous && previous.root.isConnected) {
-        var trigger=previous.root.querySelector('button');
+        var trigger=previous.root.querySelector('.live-vehicle-label');
         if (trigger) trigger.focus({preventScroll:true});
       }
     }
@@ -127,15 +127,18 @@
     function bindMarkerButton(button, activate) {
       var pointer = null, moved = false, started = 0, touchHandledAt = -Infinity;
       button.addEventListener('pointerdown',function(event) {
+        markerInteraction();
         moved = false; started = activityTime(); pointer = {x:event.clientX,y:event.clientY,id:event.pointerId};
       });
       function track(event) {
         if (pointer && event.pointerId === pointer.id && Math.hypot(event.clientX-pointer.x,event.clientY-pointer.y) >= 8) moved = true;
       }
       button.addEventListener('pointermove',track);
-      button.addEventListener('pointerup',track);
+      button.addEventListener('pointerup',function(event) { track(event); markerInteraction(); });
+      button.addEventListener('mousedown',markerInteraction);
       button.addEventListener('pointercancel',function() { moved = true; });
       button.addEventListener('touchstart',function(event) {
+        markerInteraction();
         var touch=event.touches[0];
         moved=event.touches.length!==1; started=activityTime();
         pointer=touch ? {x:touch.clientX,y:touch.clientY} : null;
@@ -152,7 +155,9 @@
       // Kakao handles touchend before a compatibility click on some WebViews.
       // Consume the tap here and suppress its later click, while keeping native keyboard clicks.
       button.addEventListener('touchend',function(event) {
-        event.preventDefault(); event.stopPropagation(); markerInteraction(); touchHandledAt=activityTime();
+        touchHandledAt=activityTime();
+        if (moved) return;
+        event.preventDefault(); event.stopPropagation(); markerInteraction();
         if (allowed()) activate();
       },{passive:false});
       button.addEventListener('click',function(event) {
@@ -162,6 +167,48 @@
             options.mapDraggedRecently && options.mapDraggedRecently()) return;
         activate();
       });
+      if (button.getAttribute('role')==='button') {
+        var spacePressed=false;
+        button.addEventListener('keydown',function(event) {
+          if (event.key!=='Enter' && event.key!==' ') return;
+          event.preventDefault(); event.stopPropagation(); markerInteraction();
+          if (event.repeat || !button.isConnected) return;
+          if (event.key==='Enter') activate(); else spacePressed=true;
+        });
+        button.addEventListener('keyup',function(event) {
+          if (event.key!==' ') return;
+          event.preventDefault(); event.stopPropagation();
+          if (spacePressed && button.isConnected) activate();
+          spacePressed=false;
+        });
+        button.addEventListener('blur',function() { spacePressed=false; });
+      }
+    }
+    function clusterEta(vehicles) {
+      var chosen=vehicles.filter(function(v) { return v.selected_trip; });
+      var scope=null, departure=null;
+      for (var i=0;i<chosen.length;i++) {
+        var owners=currentOwners(chosen[i]);
+        if (!owners.length) return null;
+        for (var j=0;j<owners.length;j++) {
+          if (scope!==null && scope!==owners[j].scope || departure!==null && departure!==chosen[i].departure_time) return null;
+          scope=owners[j].scope; departure=chosen[i].departure_time;
+        }
+      }
+      var estimates=chosen.filter(function(v) { return !v.display_stale && v.live_eta && isFinite(Date.parse(v.live_eta.eta_at)); });
+      if (!estimates.length) return null;
+      var mean=estimates.reduce(function(sum,v) { return sum+Date.parse(v.live_eta.eta_at); },0)/estimates.length;
+      return {eta_at:new Date(mean).toISOString(),retained:estimates.some(function(v) { return v.eta_retained; })};
+    }
+    function appendClusterLine(list,vehicles) {
+      var line=node('span','live-vehicle-line',vehicles.length+'대 이동 중'), eta=clusterEta(vehicles);
+      if (eta) {
+        var estimate=node('small','','· 예상 '+clock(eta.eta_at));
+        estimate.setAttribute('aria-label','선택한 출발편의 평균 도착 예상시각 '+clock(eta.eta_at));
+        if (eta.retained) estimate.title='최근 계산한 도착 예상시각입니다.';
+        line.appendChild(estimate);
+      }
+      list.appendChild(line);
     }
     function appendVehicleLines(list, vehicle) {
       list.appendChild(node('span','live-vehicle-line',vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '')));
@@ -219,30 +266,56 @@
       });
       picker.scrollTop=scrollTop; positionPicker();
     }
+    var dismissedMapTapUntil=-Infinity;
+    var dismissGesture=false;
+    function dismissPickerForMapTap(target) {
+      if (target && (picker && picker.contains(target) || target.closest && target.closest('.live-vehicle-marker'))) return false;
+      if (!pickerState) return activityTime()<dismissedMapTapUntil;
+      closePicker(); markerInteraction(); dismissedMapTapUntil=activityTime()+350; return true;
+    }
+    function beginMapDismiss(event) {
+      if (!pickerState) return;
+      var container=options.getMapContainer && options.getMapContainer();
+      if (container && container.contains(event.target) && dismissPickerForMapTap(event.target)) dismissGesture=true;
+    }
+    function endMapDismiss() {
+      if (!dismissGesture) return;
+      dismissGesture=false; markerInteraction(); dismissedMapTapUntil=activityTime()+350;
+    }
+    document.addEventListener('pointerdown',beginMapDismiss,true);
+    document.addEventListener('touchstart',beginMapDismiss,{capture:true,passive:true});
+    document.addEventListener('pointerup',endMapDismiss,true);
+    document.addEventListener('touchend',endMapDismiss,{capture:true,passive:true});
+    document.addEventListener('pointercancel',endMapDismiss,true);
+    document.addEventListener('touchcancel',endMapDismiss,{capture:true,passive:true});
     document.addEventListener('click',function(event) {
       if (!pickerState || picker && picker.contains(event.target) || event.target.closest && event.target.closest('.live-vehicle-marker')) return;
       var container=options.getMapContainer && options.getMapContainer();
-      if (container && container.contains(event.target)) markerInteraction();
+      if (container && container.contains(event.target)) {
+        if (dismissPickerForMapTap(event.target)) { event.preventDefault(); event.stopPropagation(); }
+        return;
+      }
       closePicker();
     },true);
     document.addEventListener('keydown',function(event) { if (event.key==='Escape') closePicker(true); });
     global.addEventListener('resize',positionPicker);
     document.addEventListener('scroll',positionPicker,true);
     function mapGesture() { closePicker(); renderMap(); }
-    function markerBounds(vehicle) {
+    function markerBounds(vehicle, vehicles) {
+      var cluster=vehicles && vehicles.length>1, clusterEstimate=cluster && clusterEta(vehicles);
       var first = vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '');
       var detail = [occupancyText(vehicle.occupancy), vehicle.live_eta ? '예상 ' + clock(vehicle.live_eta.eta_at) : ''].filter(Boolean).join(' · ');
       var badge = vehicle.display_stale ? (vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치') : '';
-      var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip]);
+      var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip,cluster && vehicles.length,clusterEstimate && clusterEstimate.eta_at]);
       if (markerSizeCache.has(key)) return markerSizeCache.get(key);
       var root = node('div','live-vehicle-marker');
       root.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:max-content;left:0;top:0;';
       var label = node('div','live-vehicle-label' + (vehicle.selected_trip ? ' is-selected' : ''));
       var image = node('img'); image.width = 20; image.height = 20; label.appendChild(image);
       var lines = node('div','live-vehicle-lines');
-      lines.appendChild(node('div','live-vehicle-line',first));
+      if (cluster) appendClusterLine(lines,vehicles); else lines.appendChild(node('div','live-vehicle-line',first));
       if (badge) lines.appendChild(node('span','live-vehicle-age-badge',badge));
-      if (detail) lines.appendChild(node('div','live-vehicle-line',detail));
+      if (!cluster && detail) lines.appendChild(node('div','live-vehicle-line',detail));
       label.appendChild(lines); root.appendChild(label); document.body.appendChild(root);
       var rect = root.getBoundingClientRect(); root.remove();
       var size = {width:rect.width || 150,height:rect.height || 50};
@@ -566,7 +639,11 @@
         var bounds = markerBounds(vehicle);
         var group = groups.find(function(g) { return Math.abs(g.x - point.x) < (g.width + bounds.width) / 2
           && Math.abs(g.y - point.y) < Math.max(g.height, bounds.height); });
-        if (group) group.vehicles.push(vehicle);
+        if (group) {
+          group.vehicles.push(vehicle);
+          var selectedVehicle=group.vehicles.find(function(v) { return v.selected_trip; }) || group.vehicles[0];
+          var summaryBounds=markerBounds(selectedVehicle,group.vehicles); group.width=summaryBounds.width; group.height=summaryBounds.height;
+        }
         else groups.push({x:point.x,y:point.y,width:bounds.width,height:bounds.height,vehicles:[vehicle]});
       });
       var pickerGroup = null;
@@ -595,22 +672,24 @@
         var root = node('div', 'live-vehicle-marker');
         var selectable = vehicles.some(selectionFor), resumable = vehicles.some(canResumeVehicle);
         var actionable = selectable || resumable;
-        var label = node(actionable ? 'button' : 'div', 'live-vehicle-label' + (selected ? ' is-selected' : '') + (stale ? ' is-stale' : '') + (actionable ? ' is-actionable' : ''));
+        // Use the same gesture surface and keyboard semantics as the other map labels.
+        var label = node('div', 'live-vehicle-label' + (selected ? ' is-selected' : '') + (stale ? ' is-stale' : '') + (actionable ? ' is-actionable' : ''));
         if (actionable) {
-          label.type='button';
+          label.setAttribute('role','button'); label.tabIndex=0;
           label.setAttribute('aria-label',selectable ? (vehicles.length>1 ? '이동 중인 버스 '+vehicles.length+'대 선택'
             : first.departure_time+' 출발 버스 선택'+(first.plate_suffix ? ' · '+first.plate_suffix : ''))
             +(resumable ? ' · 버스 위치 확인 재개' : '') : '버스 위치 확인 재개');
           if (resumable) label.title='버스 위치 확인 재개';
           if (selectable && vehicles.length>1) { label.setAttribute('aria-haspopup','dialog'); label.setAttribute('aria-expanded',String(!!pickerState && pickerState.key===key)); }
           else if (selectable) label.setAttribute('aria-pressed',String(selected));
-          bindMarkerButton(label,function() { activateGroup(key); });
         }
+        bindMarkerButton(label,actionable ? function() { activateGroup(key); } : function() {});
         var image = node('img'); image.src = '/images/app_main_icon.png'; image.alt = ''; image.width = 20; image.height = 20;
+        image.draggable=false;
         label.appendChild(image);
         var list = node('span', 'live-vehicle-lines');
         if (vehicles.length > 1) {
-          list.appendChild(node('div', 'live-vehicle-line', vehicles.length + '대 이동 중'));
+          appendClusterLine(list,vehicles);
           if (stale) list.appendChild(node('span','live-vehicle-age-badge',uncertain ? '위치 재확인 중' : '최근 위치'));
         } else {
           appendVehicleLines(list,first);
@@ -618,9 +697,8 @@
         label.appendChild(list);
         root.appendChild(label);
         root.addEventListener('click', function(event) { event.stopPropagation(); markerInteraction(); });
-        // Informational transfer markers must also consume native map taps.
-        root.addEventListener('touchend', function(event) { event.stopPropagation(); markerInteraction(); }, {passive:true});
-        var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: true, yAnchor: 1, zIndex: options.zIndex || 1000 });
+        // Let the SDK receive drag gestures; short taps are consumed by the label.
+        var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: false, yAnchor: 1, zIndex: options.zIndex || 1000 });
         if (existing) { overlay.setContent(root); overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon)); }
         if (!existing || existing.map !== map) overlay.setMap(map);
         updated[key] = {overlay:overlay,signature:signature,map:map,root:root,group:group};
@@ -918,6 +996,7 @@
       if (suspended) stop(true,'background'); else if (targets.length) select(targets.slice());
     });
     return { select: select, previewDeparture: previewDeparture, stop: function() { stop(false); }, ready: function() { return configPromise; },
+      dismissPickerForMapTap: dismissPickerForMapTap,
       diagnostics: function() { return config && config.gps_presentation_diagnostics ? diagnosticHistory.map(function(item) { return Object.assign({},item); }) : []; },
       configReady: function() { return config !== null; },
       evidenceMode: function() { return config && config.gps_dev_experiment ? 'gps-dev-v1' : 'gps-v1'; },
