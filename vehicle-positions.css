@@ -25,6 +25,7 @@
 .live-vehicle-lines { display: grid; gap: 3px; }
 .live-vehicle-line { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; }
 .live-vehicle-line small { color: #475569; font-size: inherit; }
+.live-vehicle-age-badge { color: #475569; font-size: 12px; line-height: 1.4; white-space: nowrap; }
 
 .route-live-eta { flex-wrap: wrap; max-width: 100%; }
 

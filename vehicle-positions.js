@@ -23,6 +23,29 @@
     if (!raw) return 0;
     return Math.max(0, /^[0-9]+$/.test(raw) ? Number(raw) * 1000 : Date.parse(raw) - Date.now()) || 0;
   }
+  function finiteNumber(value) { return typeof value === 'number' && isFinite(value); }
+  function readReference(data, begin, receipt) {
+    var duration = Math.max(0,receipt.mono-begin.mono), processing = data.read_processing_ms;
+    var supplied = data.age_reference_at != null || processing != null;
+    var precise = finiteNumber(processing) && processing >= 0 && processing <= duration+5 &&
+      typeof data.age_reference_at === 'string' && isFinite(Date.parse(data.age_reference_at));
+    return {mono:receipt.mono,wall:receipt.wall,epoch:receipt.epoch,
+      transport:precise ? Math.max(0,duration-processing) : duration,
+      precise:precise,uncertain:supplied && !precise || receipt.epoch!==begin.epoch};
+  }
+  function ageBounds(vehicle, reference, sample, occupancy) {
+    var prefix = occupancy ? 'occupancy' : 'gps', ms = vehicle[prefix+'_age_ms'], seconds = vehicle[prefix+'_age_seconds'];
+    var precise = reference && reference.precise && finiteNumber(ms) && ms >= 0;
+    var base = precise ? ms : finiteNumber(seconds) && seconds >= 0 ? seconds*1000 : NaN;
+    var elapsed = reference ? Math.max(0,sample.mono-reference.mono,sample.wall-reference.wall) : 0;
+    var lower = precise ? base : Math.max(0,base-999);
+    lower += elapsed;
+    var floor = vehicle[occupancy ? '__occupancyFloor' : '__gpsFloor'];
+    if (floor) lower = Math.max(lower,floor.lower+Math.max(0,sample.mono-floor.mono,sample.wall-floor.wall));
+    var upper = Math.max(lower,base+elapsed+(reference ? reference.transport : 0));
+    return {lower:lower,upper:upper,uncertain:!isFinite(upper) || !reference || reference.uncertain ||
+      reference.epoch!==sample.epoch || reference.precise && !precise};
+  }
   function start(options) {
     var generation = 0, entries = [], targets = [], overlays = {}, config = null, suspended = false;
     var mapListenerTarget = null;
@@ -34,6 +57,16 @@
     var etaRetentionMs = 90000;
     var markerSizeCache = new Map();
     var picker = null, pickerState = null;
+    var timeEpoch = 0, lastTimeSample = null;
+    var diagnosticHistory = [];
+    function timeSample() {
+      var sample = {mono:activityTime(),wall:Date.now(),epoch:timeEpoch};
+      if (lastTimeSample && Math.abs((sample.wall-lastTimeSample.wall)-(sample.mono-lastTimeSample.mono))>2000) {
+        sample.epoch=++timeEpoch;
+      }
+      lastTimeSample=sample;
+      return sample;
+    }
     function selectionScope(target, serviceDate, revision) {
       var c = target.context;
       return JSON.stringify([c.route_id,c.route_uuid,c.site_id,c.day_type,c.target_stop_uuid,
@@ -132,6 +165,8 @@
     }
     function appendVehicleLines(list, vehicle) {
       list.appendChild(node('span','live-vehicle-line',vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '')));
+      if (vehicle.display_stale) list.appendChild(node('span','live-vehicle-age-badge',
+        vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치'));
       var detailText = occupancyText(vehicle.occupancy), detail = node('span','live-vehicle-line');
       if (detailText) detail.appendChild(node('span','',detailText));
       if (vehicle.live_eta) {
@@ -197,7 +232,8 @@
     function markerBounds(vehicle) {
       var first = vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '');
       var detail = [occupancyText(vehicle.occupancy), vehicle.live_eta ? '예상 ' + clock(vehicle.live_eta.eta_at) : ''].filter(Boolean).join(' · ');
-      var key = JSON.stringify([first,detail,!!vehicle.selected_trip]);
+      var badge = vehicle.display_stale ? (vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치') : '';
+      var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip]);
       if (markerSizeCache.has(key)) return markerSizeCache.get(key);
       var root = node('div','live-vehicle-marker');
       root.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:max-content;left:0;top:0;';
@@ -205,6 +241,7 @@
       var image = node('img'); image.width = 20; image.height = 20; label.appendChild(image);
       var lines = node('div','live-vehicle-lines');
       lines.appendChild(node('div','live-vehicle-line',first));
+      if (badge) lines.appendChild(node('span','live-vehicle-age-badge',badge));
       if (detail) lines.appendChild(node('div','live-vehicle-line',detail));
       label.appendChild(lines); root.appendChild(label); document.body.appendChild(root);
       var rect = root.getBoundingClientRect(); root.remove();
@@ -288,18 +325,18 @@
     function positionHandoff(entry, target, resuming) {
       if (!entry || entry.target.option !== target.option || contextKey(entry.target,true) !== contextKey(target,true) ||
           (resuming ? contextKey(entry.target)!==contextKey(target) : !target.departureSelectable || !entry.target.departureSelectable)) return null;
-      var data = entry.data, at = entry.receivedAt;
-      if ((!data || !data.vehicles.length) && entry.handoff) { data=entry.handoff.data; at=entry.handoff.at; }
+      var data = entry.data, at = entry.receivedAt, reference=entry.timeReference;
+      if ((!data || !data.vehicles.length) && entry.handoff) { data=entry.handoff.data; at=entry.handoff.at; reference=entry.handoff.reference; }
       if (data && data.state==='unavailable' && !data.vehicles.length && entry.lastGood &&
           data.route_revision===entry.lastGood.route_revision && data.live_service_date===entry.lastGood.live_service_date) {
-        data=entry.lastGood; at=entry.lastGoodAt;
+        data=entry.lastGood; at=entry.lastGoodAt; reference=entry.lastGoodReference;
       }
       var today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul'}).format(new Date());
       var date = target.context.service_date || today;
       if (!data || !data.vehicles.length || !data.route_revision || date!==today || data.live_service_date!==date ||
           target.context.route_revision && target.context.route_revision!==data.route_revision) return null;
       // Keep the original age clock. Selecting another departure never refreshes a GPS fix.
-      return {data:data,at:at};
+      return {data:data,at:at,reference:reference};
     }
     function previewDeparture(option, departureTime) {
       entries.forEach(function(entry) {
@@ -333,8 +370,8 @@
       generation += 1; idlePaused = true;
       clearTimeout(idleTimer); clearInterval(countdownTimer); countdownTimer = null;
       var reason = 'idle';
+      var frame=derivePresentation(timeSample()); renderRows(frame); recordPresentation(frame);
       entries.forEach(function(entry) { clearEntry(entry, reason); });
-      renderRows();
       renderMap();
     }
     function resume() {
@@ -346,6 +383,9 @@
     }
     function activity(event) {
       if (!event.isTrusted || document.hidden || suspended || (event.type === 'pointermove' && !event.buttons)) return;
+      var before=timeEpoch; timeSample();
+      if (timeEpoch!==before) renderMap();
+      if (!idlePaused && idleExpired()) pauseIdle();
       lastSignal = activityTime();
       if (!idlePaused && targets.length) { lastActivity = lastSignal; lastActivityWall = Date.now(); armIdle(); }
     }
@@ -391,61 +431,54 @@
       mapListenerTarget = null;
       if (!keepTargets) { targets = []; idlePaused = false; lastActivity = null; lastActivityWall = null; }
     }
-    function renderMap() {
-      var map = options.getMap();
-      clearTimeout(expiryTimer);
-      if (!config || !config.enabled || !map || !global.kakao || !global.kakao.maps || document.hidden || suspended) { closePicker(); removeMap(); return; }
-      if (mapListenerTarget !== map) {
-        if (mapListenerTarget) {
-          global.kakao.maps.event.removeListener(mapListenerTarget, 'zoom_changed', mapGesture);
-          global.kakao.maps.event.removeListener(mapListenerTarget, 'dragstart', mapGesture);
-        }
-        global.kakao.maps.event.addListener(map, 'zoom_changed', mapGesture);
-        global.kakao.maps.event.addListener(map, 'dragstart', mapGesture);
-        mapListenerTarget = map;
-      }
-      var groups = [], projection = map.getProjection(), nextExpiry = Infinity;
-      var updated = {}, now = Date.now();
-      var seenVehicles = {}, uniqueVehicles = [];
+    function derivePresentation(sample) {
+      var now=sample.wall, nextExpiry=Infinity;
+      var seenVehicles = {}, uniqueVehicles = [], states = new Map();
       entries.forEach(function(entry) {
         if (!entry.target.card.isConnected || !entry.target.card.classList.contains('selected')) return;
-        var display = entry.data, displayAt = entry.receivedAt;
+        var display = entry.data, reference = entry.timeReference;
         if (display && display.state === 'unavailable' && !display.vehicles.length && entry.lastGood
-            && display.route_revision === entry.lastGood.route_revision && display.live_service_date === entry.lastGood.live_service_date) { display = entry.lastGood; displayAt = entry.lastGoodAt; }
+            && display.route_revision === entry.lastGood.route_revision && display.live_service_date === entry.lastGood.live_service_date) { display = entry.lastGood; reference = entry.lastGoodReference; }
         var handedOff = (!display || !display.vehicles.length) && entry.handoff;
-        if (handedOff) { display=entry.handoff.data; displayAt=entry.handoff.at; }
+        if (handedOff) { display=entry.handoff.data; reference=entry.handoff.reference; }
         var previewing = !!entry.previewDeparture && entry.previewDeparture!==entry.target.context.departure_time;
+        var presented = [];
         (display && display.vehicles || []).forEach(function(vehicle) {
-          var observed = new Date(vehicle.observed_at).getTime(), age = now - observed;
-          if (typeof vehicle.gps_age_seconds === 'number' && isFinite(vehicle.gps_age_seconds) && displayAt != null) {
-            if (vehicle.gps_age_seconds < 0 || vehicle.gps_age_seconds > 180) return;
-            age = vehicle.gps_age_seconds * 1000 + Math.max(0,activityTime()-displayAt);
-          }
+          var observed = new Date(vehicle.observed_at).getTime();
+          var bounds = ageBounds(vehicle,vehicle.__ageReference || reference,sample), age = bounds.upper;
+          var uncertain = bounds.uncertain || bounds.lower<=60000 && age>60000;
           var etaKey = predictionKey(entry,display,vehicle);
-          if (age>60000 && entry.predictions) delete entry.predictions[etaKey];
-          if (!isFinite(observed) || age > 180000) return;
+          if (age>60000 || uncertain) { if (entry.predictions) delete entry.predictions[etaKey]; }
+          if (!isFinite(observed) || !isFinite(age) || age > 180000) return;
           nextExpiry = Math.min(nextExpiry, now + 180001 - age);
-          if (!idlePaused && vehicle.live_eta && age <= 60000) nextExpiry = Math.min(nextExpiry, now + 60001 - age);
+          // Location expiry is independent of optional ETA/occupancy fields.
+          if (!idlePaused && age <= 60000) nextExpiry = Math.min(nextExpiry, now + 60001 - age);
+          if (!idlePaused && !bounds.uncertain && bounds.lower<=60000 && age>60000)
+            nextExpiry=Math.min(nextExpiry,now+60001-bounds.lower);
           var selected = vehicle.departure_time===(entry.previewDeparture || entry.target.context.departure_time);
-          var eta = !handedOff && !previewing && selected && !idlePaused && age <= 60000 ? vehicle.live_eta : null, held = false;
+          var eta = !handedOff && !previewing && selected && !idlePaused && !uncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
+          if (eta) {
+            var currentEtaAt=Date.parse(eta.eta_at);
+            if (!isFinite(currentEtaAt) || currentEtaAt<=now) eta=null;
+            else nextExpiry=Math.min(nextExpiry,currentEtaAt);
+          }
           var memory = entry.predictions && entry.predictions[etaKey];
           if (!eta && memory && !handedOff && !previewing) {
-            var rememberedAge = memory.age + Math.max(0,activityTime()-memory.at);
+            var rememberedAge = memory.age + Math.max(0,sample.mono-memory.at,sample.wall-memory.wall);
             var etaAt = new Date(memory.eta.eta_at).getTime();
             var temporary = ['warming_up','off_route','ambiguous_position','previous_position_unmatched','backward_progress','profile_missing'].includes(vehicle.live_eta_state);
-            if (!idlePaused && selected && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
+            if (!idlePaused && selected && !uncertain && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
               eta = memory.eta; held = true;
               nextExpiry = Math.min(nextExpiry,now+etaRetentionMs-rememberedAge,etaAt);
             }
           }
           vehicle = Object.assign({}, vehicle, {live_eta:eta,eta_retained:held,selected_trip:selected,
-            display_stale: idlePaused || age > 60000 || vehicle.position_state === 'stale'});
+            display_stale: idlePaused || uncertain || age > 60000 || vehicle.position_state === 'stale', display_uncertain:uncertain,
+            __bounds:bounds});
           var occupancy = vehicle.occupancy;
           if (occupancy) {
-            var occupancyAge = typeof vehicle.occupancy_age_seconds === 'number' && displayAt != null
-              ? vehicle.occupancy_age_seconds * 1000 + Math.max(0,activityTime()-displayAt)
-              : now-new Date(occupancy.received_at).getTime();
-            if (!isFinite(occupancyAge) || occupancyAge > 60000 || occupancyAge < -5000) vehicle.occupancy = null;
+            var occupancyBounds = ageBounds(vehicle,vehicle.__ageReference || reference,sample,true), occupancyAge = occupancyBounds.upper;
+            if (occupancyBounds.uncertain || !isFinite(occupancyAge) || occupancyAge > 60000 || occupancyAge < -5000) vehicle.occupancy = null;
             else nextExpiry = Math.min(nextExpiry, now+60001-Math.max(0,occupancyAge));
           }
           var lat = Number(vehicle.lat), lon = Number(vehicle.lon);
@@ -453,6 +486,7 @@
           var owner = {entry:entry,target:entry.target,generation:generation,serviceDate:display.live_service_date,
             revision:display.route_revision,scope:selectionScope(entry.target,display.live_service_date,display.route_revision)};
           vehicle.owners=[owner];
+          presented.push(vehicle);
           var identity = vehicle.vehicle_id ? JSON.stringify([vehicle.vehicle_id,vehicle.departure_time,display.live_service_date]) : '';
           vehicle.markerKey=identity || JSON.stringify([vehicle.departure_time,vehicle.plate_suffix,lat,lon,display.live_service_date]);
           if (identity && seenVehicles[identity]) {
@@ -468,7 +502,65 @@
           if (identity) seenVehicles[identity] = vehicle;
           uniqueVehicles.push(vehicle);
         });
+        var selectedVehicles = presented.filter(function(v) { return v.selected_trip; });
+        var state = selectedVehicles.some(function(v) { return !v.display_stale; }) ? 'fresh'
+          : selectedVehicles.some(function(v) { return v.display_uncertain; }) ? 'uncertain'
+          : selectedVehicles.length ? 'stale' : 'missing';
+        states.set(entry,{state:state,vehicles:presented});
       });
+      return {sample:sample,vehicles:uniqueVehicles,states:states,nextExpiry:nextExpiry};
+    }
+    function renderMap() {
+      clearTimeout(expiryTimer);
+      var frame=derivePresentation(timeSample());
+      renderRows(frame);
+      paintMap(frame);
+      recordPresentation(frame);
+      if (isFinite(frame.nextExpiry)) expiryTimer=setTimeout(renderMap,Math.max(1,frame.nextExpiry-frame.sample.wall));
+    }
+    function recordPresentation(frame) {
+      if (!config || !config.gps_presentation_diagnostics) return;
+      entries.forEach(function(entry) {
+        var info=frame.states.get(entry), view=statusViews.get(entry.target.card);
+        if (!info || !view || !entry.watch) return;
+        var chosen=info.vehicles.filter(function(v) { return v.selected_trip; });
+        var payload={card:view.statusState,marker:idlePaused ? 'idle' : info.state,
+          collection:entryState(entry),reason:info.state,selected_count:chosen.length,
+          http_ok:!entry.errorState,get_ms:entry.getMs || 0,watch_ms:entry.watchMs || 0};
+        var apiOrigin=new URL(options.apiBase || '/',global.location.href).origin;
+        if (['https://dev-cloud-api.shuttle-go.com','http://localhost:8080','http://127.0.0.1:8080'].includes(apiOrigin)) payload.api_origin=apiOrigin;
+        if (entry.data && entry.data.diagnostic_id) payload.diagnostic_id=entry.data.diagnostic_id;
+        if (chosen.length) {
+          payload.age_lower_ms=Math.min(86400000,Math.max.apply(null,chosen.map(function(v) { return v.__bounds.lower; })));
+          payload.age_upper_ms=Math.min(86400000,Math.max.apply(null,chosen.map(function(v) { return v.__bounds.upper; })));
+        }
+        if (entry.data && finiteNumber(entry.data.source_interval_seconds)) payload.source_interval_seconds=entry.data.source_interval_seconds;
+        var signature=JSON.stringify([payload.card,payload.marker,payload.collection,payload.reason]);
+        if (entry.diagnosticSignature===signature && frame.sample.mono-(entry.diagnosticAt || 0)<60000 ||
+            entry.diagnosticAt!=null && frame.sample.mono-entry.diagnosticAt<2000) return;
+        entry.diagnosticSignature=signature; entry.diagnosticAt=frame.sample.mono;
+        diagnosticHistory.push(Object.assign({at:new Date(frame.sample.wall).toISOString(),apiOrigin:apiOrigin,
+          version:typeof config.gps_presentation_version==='string' ? config.gps_presentation_version.slice(0,80) : ''},payload));
+        if (diagnosticHistory.length>100) diagnosticHistory.shift();
+        fetch(options.apiBase+'/api/vehicle-positions/diagnostics',{method:'POST',credentials:'include',keepalive:true,
+          headers:{'Content-Type':'application/json','X-Shuttle-Position-Capability':entry.watch.capability},body:JSON.stringify(payload)}).catch(function() {});
+      });
+    }
+    function paintMap(frame) {
+      var map = options.getMap();
+      if (!config || !config.enabled || !map || !global.kakao || !global.kakao.maps || document.hidden || suspended) { closePicker(); removeMap(); return; }
+      if (mapListenerTarget !== map) {
+        if (mapListenerTarget) {
+          global.kakao.maps.event.removeListener(mapListenerTarget, 'zoom_changed', mapGesture);
+          global.kakao.maps.event.removeListener(mapListenerTarget, 'dragstart', mapGesture);
+        }
+        global.kakao.maps.event.addListener(map, 'zoom_changed', mapGesture);
+        global.kakao.maps.event.addListener(map, 'dragstart', mapGesture);
+        mapListenerTarget = map;
+      }
+      var groups = [], projection = map.getProjection();
+      var updated = {}, now = Date.now();
+      var uniqueVehicles=frame.vehicles;
       uniqueVehicles.forEach(function(vehicle) {
         var point = projection.containerPointFromCoords(new global.kakao.maps.LatLng(vehicle.lat, vehicle.lon));
         var bounds = markerBounds(vehicle);
@@ -489,9 +581,11 @@
           return selection && selectionScope(selection.target,selection.serviceDate,selection.routeRevision)===pickerState.scope;
         })) pickerGroup=group;
         var selected = vehicles.some(function(v) { return v.selected_trip; });
-        var stale = vehicles.some(function(v) { return v.display_stale; });
-        var signature = JSON.stringify([selected,stale,generation,vehicles.map(function(v) { return [v.owners.map(function(o) { return [o.scope,o.target.card.getAttribute('data-route-card-token')]; }),
-          !!selectionFor(v),v.departure_time,v.plate_suffix,v.live_eta && v.live_eta.eta_at,v.eta_retained,v.occupancy]; })]);
+        var relevant = selected ? vehicles.filter(function(v) { return v.selected_trip; }) : vehicles;
+        var stale = relevant.every(function(v) { return v.display_stale; });
+        var uncertain = stale && relevant.some(function(v) { return v.display_uncertain; });
+        var signature = JSON.stringify([selected,stale,uncertain,generation,vehicles.map(function(v) { return [v.owners.map(function(o) { return [o.scope,o.target.card.getAttribute('data-route-card-token')]; }),
+          !!selectionFor(v),v.display_stale,v.display_uncertain,v.departure_time,v.plate_suffix,v.live_eta && v.live_eta.eta_at,v.eta_retained,v.occupancy]; })]);
         var existing = overlays[key];
         if (existing && existing.signature === signature) {
           existing.overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon));
@@ -517,6 +611,7 @@
         var list = node('span', 'live-vehicle-lines');
         if (vehicles.length > 1) {
           list.appendChild(node('div', 'live-vehicle-line', vehicles.length + '대 이동 중'));
+          if (stale) list.appendChild(node('span','live-vehicle-age-badge',uncertain ? '위치 재확인 중' : '최근 위치'));
         } else {
           appendVehicleLines(list,first);
         }
@@ -533,12 +628,12 @@
       Object.keys(overlays).forEach(function(key) { if (!updated[key]) overlays[key].overlay.setMap(null); });
       overlays = updated;
       renderPicker(pickerGroup);
-      if (isFinite(nextExpiry)) expiryTimer = setTimeout(renderMap, Math.max(1,nextExpiry-Date.now()));
     }
     function entryState(entry) {
       return entry.errorState || (entry.data && entry.data.state) || 'loading';
     }
-    function renderRows() {
+    function renderRows(frame) {
+      frame=frame || derivePresentation(timeSample());
       if (!config || !config.enabled) return;
       var groups = new Map();
       entries.forEach(function(entry) {
@@ -566,12 +661,25 @@
         var state = group.every(function(entry) { return entryState(entry)==='unsupported'; }) ? 'unsupported'
           : !working.length ? 'budget_paused'
           : working.every(function(entry) { return entryState(entry)==='unavailable'; }) ? 'unavailable' : 'available';
+        var freshness = group.map(function(entry) {
+          var info=frame.states.get(entry);
+          return entryState(entry)==='unavailable' ? 'uncertain' : info ? info.state : 'missing';
+        });
+        if (state==='available') {
+          var waiting = group.some(function(entry,index) {
+            return ['unsupported','budget_paused','usage_unknown','unavailable'].includes(entryState(entry)) ||
+              freshness[index]!=='fresh' && entryState(entry)!=='loading';
+          });
+          if (waiting) state=group.length>1 && freshness.some(function(x) { return x==='fresh'; }) ? 'partial'
+            : freshness.some(function(x) { return x==='uncertain'; }) ? 'unavailable' : 'waiting';
+        }
         var issues = group.filter(function(entry) { return ['unsupported','budget_paused','usage_unknown','unavailable'].includes(entryState(entry)); });
         hideReason(); view.row.replaceChildren(); view.statusState = state;
         var separator = node('span','route-live-separator',' · '); separator.setAttribute('aria-hidden','true');
         view.row.appendChild(separator);
         view.row.appendChild(node('span','route-live-status',state==='unsupported' ? '위치 확인 불가'
-          : state==='budget_paused' ? '버스 위치 갱신 일시 중단' : state==='unavailable' ? '위치 재확인 중' : '버스 위치 확인 중'));
+          : state==='budget_paused' ? '버스 위치 갱신 일시 중단' : state==='unavailable' ? '위치 재확인 중'
+          : state==='partial' ? '일부 버스 위치를 기다리는 중' : state==='waiting' ? '새 위치를 기다리는 중' : '버스 위치 확인 중'));
         if (issues.length) {
           var explanations = issues.map(function(entry) {
             var reason = entry.reason || (entryState(entry)==='unavailable' ? 'service_unavailable' : entryState(entry));
@@ -596,34 +704,55 @@
         data.route_revision,data.live_service_date]);
     }
     function rememberPredictions(entry,data) {
+      var sample=timeSample();
       var prior = entry.predictions || {}, next = {};
       if (data.state!=='available' && data.state!=='empty') return;
       (data.vehicles || []).forEach(function(vehicle) {
         var key = predictionKey(entry,data,vehicle), old = prior[key];
-        var age = typeof vehicle.gps_age_seconds==='number' ? vehicle.gps_age_seconds*1000 : Date.now()-new Date(vehicle.observed_at).getTime();
-        if (vehicle.selected_trip && vehicle.live_eta && age>=-5000 && age<=60000
+        var bounds=ageBounds(vehicle,vehicle.__ageReference || entry.timeReference,sample), age=bounds.upper;
+        if (!bounds.uncertain && vehicle.selected_trip && vehicle.live_eta && age>=-5000 && age<=60000
             && new Date(vehicle.live_eta.eta_at).getTime()>Date.now()) {
           // Re-reading the same GPS must not extend the prediction's lifetime.
           next[key] = old && old.observedAt===vehicle.observed_at ? Object.assign({},old,{eta:vehicle.live_eta})
-            : {eta:vehicle.live_eta,observedAt:vehicle.observed_at,age:Math.max(0,age),at:entry.receivedAt};
+            : {eta:vehicle.live_eta,observedAt:vehicle.observed_at,age:Math.max(0,age),at:sample.mono,wall:sample.wall};
         } else if (old && ['warming_up','off_route','ambiguous_position','previous_position_unmatched','backward_progress','profile_missing'].includes(vehicle.live_eta_state)) {
           next[key] = old;
         }
       });
       entry.predictions = next;
     }
-    function render(entry, data, transientState, receivedAt) {
+    function render(entry, data, transientState, reference) {
       if (!transientState) {
+        var priorHandoff=entry.handoff;
         if (entry.handoff && (['loading','unavailable'].indexOf(data.state)<0 || data.vehicles.length ||
             data.route_revision && data.route_revision!==entry.handoff.data.route_revision ||
             data.live_service_date && data.live_service_date!==entry.handoff.data.live_service_date)) entry.handoff=null;
-        if (data !== entry.data) entry.receivedAt = receivedAt == null ? activityTime() : receivedAt;
+        if (data !== entry.data) {
+          var sample=timeSample(), oldData=entry.data && entry.data.vehicles.length ? entry.data : priorHandoff && priorHandoff.data;
+          var oldReference=entry.data && entry.data.vehicles.length ? entry.timeReference : priorHandoff && priorHandoff.reference;
+          // A repeated/out-of-order fix cannot become younger because it was read again.
+          data=Object.assign({},data,{vehicles:data.vehicles.map(function(vehicle) {
+            var old=oldData && oldData.route_revision===data.route_revision && oldData.live_service_date===data.live_service_date &&
+              oldData.vehicles.find(function(v) { return v.vehicle_id===vehicle.vehicle_id && v.departure_time===vehicle.departure_time; });
+            if (old && Date.parse(vehicle.observed_at)<Date.parse(old.observed_at)) return Object.assign({},old,{__ageReference:old.__ageReference || oldReference});
+            var copy=Object.assign({},vehicle);
+            var oldClock=old && (old.__ageReference || oldReference);
+            if (old && oldClock && oldClock.epoch===sample.epoch && vehicle.observed_at===old.observed_at) {
+              copy.__gpsFloor={lower:ageBounds(old,old.__ageReference || oldReference,sample).lower,mono:sample.mono,wall:sample.wall};
+            }
+            if (old && oldClock && oldClock.epoch===sample.epoch && old.occupancy && vehicle.occupancy && old.occupancy.received_at===vehicle.occupancy.received_at) {
+              copy.__occupancyFloor={lower:ageBounds(old,old.__ageReference || oldReference,sample,true).lower,mono:sample.mono,wall:sample.wall};
+            }
+            return copy;
+          })});
+          entry.timeReference=reference || {mono:sample.mono,wall:sample.wall,epoch:sample.epoch,transport:0,precise:false,uncertain:false};
+          entry.receivedAt=entry.timeReference.mono;
+        }
         entry.data = data;
-        if (data.state === 'available' || data.state === 'empty') { entry.lastGood = data; entry.lastGoodAt = entry.receivedAt; }
+        if (data.state === 'available' || data.state === 'empty') { entry.lastGood = data; entry.lastGoodAt = entry.receivedAt; entry.lastGoodReference=entry.timeReference; }
         rememberPredictions(entry,data);
       }
       entry.errorState = transientState || '';
-      renderRows();
       renderMap();
     }
     function countdown(entry) {
@@ -641,6 +770,9 @@
       else view.row.title = next.seconds ? (next.first ? '버스 위치 확인까지 최대 ' : '버스 위치 갱신까지 ') + next.seconds + '초' : '버스 위치 확인 중';
     }
     function updateCountdownRows() {
+      var previousEpoch=timeEpoch;
+      timeSample();
+      if (timeEpoch!==previousEpoch) renderMap();
       statusViews.forEach(updateCountdown);
     }
     function schedulePoll(entry, token, delay) {
@@ -656,7 +788,7 @@
       entry.nextPollAt = entry.firstDone ? 0 : Date.now()+Math.max(0,entry.firstUntil-activityTime());
       updateCountdownRows();
       entry.abort = new AbortController();
-      var abort = entry.abort, signal = abort.signal, timedOut = false, startedAt = activityTime();
+      var abort = entry.abort, signal = abort.signal, timedOut = false, startedAt = activityTime(), getBegin=null, responseReference=null;
       var requestDeadline = setTimeout(function() { timedOut = true; abort.abort(); },15000);
       var renew = !entry.watch || Date.now() >= entry.renewAt || Date.now() >= entry.watchActiveUntil;
       var watchHeaders = { 'Content-Type': 'application/json' };
@@ -686,6 +818,7 @@
         if (token !== generation) return null;
         var headers = { 'X-Shuttle-Position-Capability': watch.capability };
         if (entry.etag) headers['If-None-Match'] = entry.etag;
+        getBegin=timeSample(); entry.watchMs=renew ? Math.max(0,getBegin.mono-startedAt) : 0;
         return fetch(options.apiBase + '/api/vehicle-positions', { credentials: 'include', signal: signal, headers: headers });
       }).then(function(r) {
         if (!r || token !== generation) return;
@@ -693,7 +826,9 @@
         if (!r.ok) { var error = new Error(r.status === 409 ? 'scope_changed' : 'temporary'); error.retryAfter = retryAfter(r); throw error; }
         return r.json().then(function(data) {
           if (data && data.enabled === false) throw new Error('disabled');
-          if (!data || !Array.isArray(data.vehicles) || typeof data.state !== 'string') throw new Error('temporary');
+          if (!data || !Array.isArray(data.vehicles) || !['available','loading','empty','unavailable','budget_paused','usage_unknown'].includes(data.state)) throw new Error('temporary');
+          var receipt=timeSample(); entry.getMs=Math.max(0,receipt.mono-getBegin.mono);
+          responseReference=readReference(data,getBegin,receipt);
           entry.etag = r.headers.get('ETag') || ''; entry.watchActiveUntil = Date.now() + 40000; return data;
         });
       }).then(function(data) {
@@ -702,7 +837,7 @@
         entry.failureCount = 0;
         var waitingFirst = !entry.firstDone && data.state==='loading' && activityTime()<entry.firstUntil;
         if (!waitingFirst) entry.firstDone = true;
-        render(entry, data, undefined, startedAt);
+        render(entry, data, undefined, responseReference);
         schedulePoll(entry, token, waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
           : Math.max(15000, Math.min(120000, Number(data.retry_after_seconds || 15) * 1000)));
       }).catch(function(error) {
@@ -741,7 +876,6 @@
       if (entries.length && same && !retryRequested && !resuming) {
         targets = wanted;
         entries.forEach(function(entry,index) { entry.target = wanted[index]; });
-        renderRows();
         renderMap(); return;
       }
       var wasPaused = idlePaused, priorActivity = lastActivity, priorWall = lastActivityWall, hadTargets = targets.length > 0;
@@ -764,7 +898,7 @@
         return {target:target,viewId:viewId,handoff:handoffs[index] || null};
       });
       // Rebind marker owners and selection immediately, before any asynchronous watch/read.
-      renderRows(); renderMap();
+      renderMap();
       configPromise.then(function(data) {
         if (token !== generation || document.hidden || suspended) return;
         if (!data.enabled) { stop(true); return; }
@@ -784,9 +918,10 @@
       if (suspended) stop(true,'background'); else if (targets.length) select(targets.slice());
     });
     return { select: select, previewDeparture: previewDeparture, stop: function() { stop(false); }, ready: function() { return configPromise; },
+      diagnostics: function() { return config && config.gps_presentation_diagnostics ? diagnosticHistory.map(function(item) { return Object.assign({},item); }) : []; },
       configReady: function() { return config !== null; },
       evidenceMode: function() { return config && config.gps_dev_experiment ? 'gps-dev-v1' : 'gps-v1'; },
       evidenceEnabled: function() { return !!(config && config.gps_evidence); } };
   }
-  global.ShuttleVehiclePositions = { start: start, formatClock: clock };
+  global.ShuttleVehiclePositions = { start: start, formatClock: clock, readReference:readReference, ageBounds:ageBounds };
 })(window);

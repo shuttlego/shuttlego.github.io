@@ -3139,6 +3139,26 @@
       margin: 0;
       padding: 0;
     }
+    .endpoint-picker-login-hint {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex-shrink: 0;
+      margin: 0;
+      padding: 10px 16px;
+      border-bottom: 1px solid #f2f2f2;
+      color: #666;
+      font-size: 13px;
+      line-height: 1.5;
+      word-break: keep-all;
+    }
+    .endpoint-picker-login-hint[hidden] { display: none; }
+    .endpoint-picker-login-hint img {
+      flex: 0 0 14px;
+      width: 14px;
+      height: 14px;
+      margin-top: 2px;
+    }
     .endpoint-picker-confirm-btn {
       flex-shrink: 0;
       height: 30px;
@@ -9806,7 +9826,7 @@
     }
   </style>
   <link rel="stylesheet" href="ads.css?v=4" />
-  <link rel="stylesheet" href="vehicle-positions.css?v=8" />
+  <link rel="stylesheet" href="vehicle-positions.css?v=9" />
 </head>
 <body>
   <header class="header">
@@ -9985,11 +10005,15 @@
   </div>
 
   <div class="endpoint-picker-backdrop" id="endpointPickerBackdrop" aria-hidden="true"></div>
-  <div class="endpoint-picker-modal" id="endpointPickerModal" role="dialog" aria-label="노선 endpoint 선택">
+  <div class="endpoint-picker-modal" id="endpointPickerModal" role="dialog" aria-labelledby="endpointPickerTitle">
     <div class="endpoint-picker-title-row">
       <h2 class="endpoint-picker-title" id="endpointPickerTitle">선택</h2>
       <button type="button" class="endpoint-picker-confirm-btn" id="endpointPickerConfirmBtn">확인</button>
     </div>
+    <p class="endpoint-picker-login-hint" id="endpointPickerLoginHint" role="note" hidden>
+      <img src="/images/lucide-info.svg" alt="" aria-hidden="true" />
+      <span>로그인하면 정류장 선택이 저장돼요. 우측 상단 ☰ 메뉴에서 로그인 해보세요.</span>
+    </p>
     <div class="endpoint-picker-search-wrap">
       <input
         type="text"
@@ -10361,7 +10385,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=15"></script>
+  <script src="vehicle-positions.js?v=17"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -10595,6 +10619,7 @@
       var endpointPickerBackdrop = document.getElementById('endpointPickerBackdrop');
       var endpointPickerModal = document.getElementById('endpointPickerModal');
       var endpointPickerTitle = document.getElementById('endpointPickerTitle');
+      var endpointPickerLoginHint = document.getElementById('endpointPickerLoginHint');
       var endpointPickerConfirmBtn = document.getElementById('endpointPickerConfirmBtn');
       var endpointPickerList = document.getElementById('endpointPickerList');
       var endpointPickerSearchInput = document.getElementById('endpointPickerSearchInput');
@@ -12618,8 +12643,15 @@
           });
       }
 
+      function updateEndpointPickerLoginHint() {
+        if (endpointPickerLoginHint) {
+          endpointPickerLoginHint.hidden = !!(authState && authState.logged_in && authState.user);
+        }
+      }
+
       function updateAccountMenuUi() {
         var isLoggedIn = !!(authState && authState.logged_in && authState.user);
+        updateEndpointPickerLoginHint();
         var nickname = isLoggedIn ? String(authState.user.nickname || '') : '';
         if (accountMenuUserLine) {
           accountMenuUserLine.textContent = nickname;
@@ -16885,6 +16917,7 @@
 
       function openEndpointPickerModal() {
         if (!routeModeDirection || !endpointPickerBackdrop || !endpointPickerModal || !endpointPickerList) return;
+        updateEndpointPickerLoginHint();
         var kindLabel = getEndpointKindLabel(routeModeDirection);
         if (endpointPickerTitle) endpointPickerTitle.textContent = kindLabel + ' 선택';
         endpointDraftEndpoints = cloneStringSet(selectedEndpoints);
@@ -28116,9 +28149,9 @@
         if (!value || typeof value !== 'object') return value;
         var output = {};
         var runtimeKeys = ['vehicle_positions','live_eta','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
-          'vehicle_ref','vehicle_id','public_vehicle_id','gps_age_seconds','trip_match_state','live_eta_state','source_interval_seconds',
+          'vehicle_ref','vehicle_id','public_vehicle_id','gps_age_seconds','gps_age_ms','age_reference_at','read_processing_ms','collection_policy','diagnostic_id','trip_match_state','live_eta_state','source_interval_seconds',
           'gps_status','gps_source_kind','source_key','upstream_key','customer','source_route_id','vehicle_assignment','vehicle_assignments',
-          'vehicle_number','run_status','vehicle_status_code','vehicle_status_label','occupancy','occupancy_age_seconds'];
+          'vehicle_number','run_status','vehicle_status_code','vehicle_status_label','occupancy','occupancy_age_seconds','occupancy_age_ms'];
         Object.keys(value).forEach(function(key) {
           if (key.indexOf('__') === 0 || runtimeKeys.indexOf(key) !== -1) return;
           output[key] = stripPrivateSnapshotFields(value[key]);
