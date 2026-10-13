@@ -246,9 +246,11 @@
       overflow: hidden;
       min-width: 0;
     }
-    .departure-trigger:hover {
-      border-color: #1428A0;
-      background: #e8edff;
+    @media (hover: hover) and (pointer: fine) {
+      .departure-trigger:hover {
+        border-color: #1428A0;
+        background: #e8edff;
+      }
     }
     .departure-trigger .trigger-text {
       overflow: hidden;
@@ -1411,9 +1413,11 @@
       width: 100%;
       max-width: none;
     }
-    .site-selector-trigger:hover {
-      border-color: #1428A0;
-      background: #e8edff;
+    @media (hover: hover) and (pointer: fine) {
+      .site-selector-trigger:hover {
+        border-color: #1428A0;
+        background: #e8edff;
+      }
     }
     .site-selector-trigger:disabled {
       opacity: 0.55;
@@ -8714,7 +8718,9 @@
     .crowding-vehicle { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
     .crowding-vehicle:focus-visible { outline: 2px solid #1428a0; outline-offset: 3px; }
     .crowding-summary { margin-bottom: 8px; font-size: 16px; font-weight: 700; }
-    .crowding-description, .crowding-context, .crowding-change { margin-bottom: 12px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .crowding-context, .crowding-change { margin-bottom: 12px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .crowding-description { display: none; flex-shrink: 0; margin: 0; padding: 14px 22px 0; color: #64748b; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+    .report-data-modal.crowding-detail .crowding-description { display: block; }
     .crowding-day-heading { grid-column: 1 / -1; padding: 14px 0 6px; color: #64748b; font-size: 12px; font-weight: 400; }
     .report-data-modal.crowding-detail .report-data-body { overflow-x: auto; }
     .report-table-note {
@@ -9694,6 +9700,10 @@
         padding-left: 16px;
         padding-right: 16px;
       }
+      .crowding-description {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
       .report-modal-title {
         font-size: 18px;
       }
@@ -9826,7 +9836,7 @@
     }
   </style>
   <link rel="stylesheet" href="ads.css?v=4" />
-  <link rel="stylesheet" href="vehicle-positions.css?v=9" />
+  <link rel="stylesheet" href="vehicle-positions.css?v=10" />
 </head>
 <body>
   <header class="header">
@@ -10297,6 +10307,7 @@
       <div class="report-modal-title report-modal-title-html" id="reportDataTitle">랭킹</div>
       <button type="button" class="report-modal-close-btn" id="reportDataCloseBtn" aria-label="닫기">×</button>
     </div>
+    <p class="crowding-description">이 정류장에 도착하기 전 확인한 혼잡도입니다. 타기 전 버스가 얼마나 붐빌지 참고해 주세요. 실제 상황은 다를 수 있습니다.</p>
     <div class="report-data-tabs" id="reportDataTabs"></div>
     <div class="report-data-body" id="reportDataBody"></div>
   </div>
@@ -10385,7 +10396,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=17"></script>
+  <script src="vehicle-positions.js?v=18"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -19850,6 +19861,10 @@
           }
         });
         kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
+          var projected = map.getProjection().containerPointFromCoords(mouseEvent.latLng);
+          var bounds = mapContainer.getBoundingClientRect();
+          var tappedNode = document.elementFromPoint(bounds.left + projected.x, bounds.top + projected.y);
+          if (liveVehicleController && typeof liveVehicleController.dismissPickerForMapTap==='function' && liveVehicleController.dismissPickerForMapTap(tappedNode)) return;
           var lat = mouseEvent.latLng.getLat();
           var lng = mouseEvent.latLng.getLng();
           setTimeout(function() {
@@ -19913,6 +19928,12 @@
         mapTouchStart = null;
         if (duration > 300 || dist > 15) return;
         var touchTarget = document.elementFromPoint(t.clientX, t.clientY);
+        if (liveVehicleController && typeof liveVehicleController.dismissPickerForMapTap==='function' && liveVehicleController.dismissPickerForMapTap(touchTarget)) {
+          e.preventDefault(); return;
+        }
+        if (touchTarget && touchTarget.closest('.live-vehicle-marker')) {
+          e.preventDefault(); markVehicleMapInteraction(); return;
+        }
         // 노선 라벨 위를 탭한 경우 — 라벨 click 이벤트에 위임
         var routeLabel = touchTarget && touchTarget.closest('.shuttle-label-anchor.clickable');
         if (routeLabel) {
@@ -22122,7 +22143,10 @@
           return {
             selected_departure_time: activeTime,
             route_stops: cloneJsonValue(option.route_stops || []),
-            selected_operator: String(option.operator || '')
+            selected_operator: String(option.operator || ''),
+            eta_reference_date: String(option.eta_reference_date || ''),
+            eta_day_bucket: String(option.eta_day_bucket || ''),
+            day_type: String(option.day_type || selectedDayType)
           };
         }
         return null;
@@ -40882,10 +40906,28 @@
         loadMyReportsData({ preserveView: false });
       }
 
-      function openEtaReportDetailModal(routeId, departureTime, stopId, stopName, routeUuid, stopUuid) {
+      function etaReportContext(option, departureTime) {
+        var detail=getOptionExistingVariantDetail(option,departureTime) || {};
+        var day=String(detail.day_type || option && option.day_type || selectedDayType);
+        var reference=String(detail.eta_reference_date || option && option.eta_reference_date || getTodayKstDateText());
+        var referenceClock=new Date(reference+'T00:00:00Z');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(reference) || !isFinite(referenceClock.getTime()) || referenceClock.toISOString().slice(0,10)!==reference)
+          reference=getTodayKstDateText();
+        var bucket=String(detail.eta_day_bucket || option && option.eta_day_bucket || '');
+        if (day!=='weekday') bucket='all';
+        else if (bucket!=='mon_thu' && bucket!=='friday') {
+          var date=new Date(reference+'T00:00:00Z');
+          var weekday=isFinite(date.getTime()) ? date.getUTCDay() : -1;
+          bucket=weekday===5 ? 'friday' : weekday>=1 && weekday<=4 ? 'mon_thu' : 'all';
+        }
+        return {dayType:day,referenceDate:reference,bucket:bucket};
+      }
+
+      function openEtaReportDetailModal(routeId, departureTime, stopId, stopName, routeUuid, stopUuid, etaContext) {
+        etaContext=etaContext || etaReportContext(null,departureTime);
         reportDataState.mode = 'eta-detail';
         reportDataState.etaDetailPayload = null;
-        reportDataState.etaDetailBucket = 'all';
+        reportDataState.etaDetailBucket = etaContext.bucket;
         reportDataState.etaDetailUrl = '';
         openReportDataModal(buildEtaReportTitleHtml(stopName), { htmlTitle: true });
         if (reportDataTabs) {
@@ -40894,10 +40936,10 @@
         }
         var url = API_BASE + '/api/reports/eta-detail' +
           '?route_id=' + encodeURIComponent(String(routeId)) +
-          '&day_type=' + encodeURIComponent(selectedDayType) +
+          '&day_type=' + encodeURIComponent(etaContext.dayType) +
           '&departure_time=' + encodeURIComponent(String(departureTime || '')) +
           '&stop_id=' + encodeURIComponent(String(stopId)) +
-          '&eta_reference_date=' + encodeURIComponent(getTodayKstDateText()) +
+          '&eta_reference_date=' + encodeURIComponent(etaContext.referenceDate) +
           '&response_version=2';
         var normalizedRouteUuid = String(routeUuid || '').trim();
         var normalizedStopUuid = String(stopUuid || '').trim();
@@ -40908,7 +40950,7 @@
           url += '&stop_uuid=' + encodeURIComponent(normalizedStopUuid);
         }
         reportDataState.etaDetailUrl = url;
-        loadEtaDetailPage('all', '');
+        loadEtaDetailPage(etaContext.bucket, '');
       }
 
       function loadEtaDetailPage(bucket, cursor) {
@@ -40947,6 +40989,7 @@
         var boardStopName = isDepart ? String(option && option.nearest_stop_name || '') : String(option && option.start_stop_name || '');
         var alightStopName = isDepart ? String(option && option.terminus_name || '') : String(option && option.getoff_stop_name || '');
         var routeUuid = String((option && (option.route_uuid || option.resolved_route_uuid)) || '').trim();
+        var etaContext=etaReportContext(option,departureTime);
         var html = rows.map(function(stop) {
           var stopName = String(stop.stop_name || '');
           var stopUuid = String(stop.stop_uuid || '').trim();
@@ -40968,6 +41011,9 @@
             ' data-stop-name="' + escapeAttr(stop.stop_name || '') + '"' +
             ' data-route-uuid="' + escapeAttr(routeUuid) + '"' +
             ' data-departure-time="' + escapeAttr(departureTime || '') + '"' +
+            ' data-eta-day-type="' + escapeAttr(etaContext.dayType) + '"' +
+            ' data-eta-reference-date="' + escapeAttr(etaContext.referenceDate) + '"' +
+            ' data-eta-day-bucket="' + escapeAttr(etaContext.bucket) + '"' +
             ' data-eta-clickable="' + (etaClickable ? '1' : '0') + '"' +
             ' data-eta-has-evidence="' + (etaHasEvidence ? '1' : '0') + '">' +
             escapeHtml(etaDisplay) +
@@ -41063,7 +41109,10 @@
               Number(node.getAttribute('data-stop-id') || 0),
               node.getAttribute('data-stop-name') || '',
               node.getAttribute('data-route-uuid') || option.route_uuid || option.resolved_route_uuid || '',
-              node.getAttribute('data-stop-uuid') || ''
+              node.getAttribute('data-stop-uuid') || '',
+              {dayType:node.getAttribute('data-eta-day-type') || selectedDayType,
+               referenceDate:node.getAttribute('data-eta-reference-date') || getTodayKstDateText(),
+               bucket:node.getAttribute('data-eta-day-bucket') || etaReportContext(option,node.getAttribute('data-departure-time')).bucket}
             );
           });
         });
@@ -41328,7 +41377,12 @@
         var normalizedDetail = {
           selected_departure_time: selectedTime,
           route_stops: cloneJsonValue(option.route_stops || []),
-          selected_operator: nextOperatorText
+          selected_operator: nextOperatorText,
+          eta_reference_date: String(detail.eta_reference_date || option.eta_reference_date || getTodayKstDateText()),
+          eta_day_bucket: String(detail.eta_day_bucket || ''),
+          eta_day_bucket_label: String(detail.eta_day_bucket_label || ''),
+          eta_fallback_used: !!detail.eta_fallback_used,
+          day_type: String(detail.day_type || option.day_type || selectedDayType)
         };
         setRouteDepartureVariantDetail(option, selectedTime, normalizedDetail);
         return normalizedDetail;
