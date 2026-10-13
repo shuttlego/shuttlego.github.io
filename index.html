@@ -8718,7 +8718,9 @@
     .crowding-vehicle { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
     .crowding-vehicle:focus-visible { outline: 2px solid #1428a0; outline-offset: 3px; }
     .crowding-summary { margin-bottom: 8px; font-size: 16px; font-weight: 700; }
-    .crowding-description, .crowding-context, .crowding-change { margin-bottom: 12px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .crowding-context, .crowding-change { margin-bottom: 12px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .crowding-description { display: none; flex-shrink: 0; margin: 0; padding: 14px 22px 0; color: #64748b; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+    .report-data-modal.crowding-detail .crowding-description { display: block; }
     .crowding-day-heading { grid-column: 1 / -1; padding: 14px 0 6px; color: #64748b; font-size: 12px; font-weight: 400; }
     .report-data-modal.crowding-detail .report-data-body { overflow-x: auto; }
     .report-table-note {
@@ -9698,6 +9700,10 @@
         padding-left: 16px;
         padding-right: 16px;
       }
+      .crowding-description {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
       .report-modal-title {
         font-size: 18px;
       }
@@ -10301,6 +10307,7 @@
       <div class="report-modal-title report-modal-title-html" id="reportDataTitle">랭킹</div>
       <button type="button" class="report-modal-close-btn" id="reportDataCloseBtn" aria-label="닫기">×</button>
     </div>
+    <p class="crowding-description">이 정류장에 도착하기 전 확인한 혼잡도입니다. 타기 전 버스가 얼마나 붐빌지 참고해 주세요. 실제 상황은 다를 수 있습니다.</p>
     <div class="report-data-tabs" id="reportDataTabs"></div>
     <div class="report-data-body" id="reportDataBody"></div>
   </div>
