@@ -24135,6 +24135,7 @@
         return hasCrowding ? '<div class="route-stop-table with-crowding">' + routeStopsColumnsHtml() + html + '</div>' : html;
       }
       function crowdingHtml(stop, reserveSpace) {
+        if (stop && stop.crowding_state === 'unavailable') return '<span class="route-stop-crowding-placeholder" role="status" aria-label="혼잡도 정보를 확인할 수 없습니다">–</span>';
         if (!hasStopCrowding(stop)) return reserveSpace ? '<span class="route-stop-crowding-placeholder" aria-hidden="true"></span>' : '';
         var value = stop.crowding;
         var detail = value.detail_ref && typeof value.detail_ref === 'object' ? Object.assign({}, value.detail_ref) : null;
@@ -24340,6 +24341,8 @@
                 throw new Error('variant_detail_mismatch');
               }
               leg.__variantDetail = cloneJsonValue(detail) || detail;
+              leg.__crowdProjectionEnabled = detail.crowding_projection_enabled === true;
+              leg.__crowdLoadedAt = Date.now();
               leg.__activeServiceDepartureTime = departureTime;
               applyRouteCollectorUpdatedAt(detail, option);
               return detail;
@@ -27231,6 +27234,81 @@
         return options[optionIndex] || options[fallbackIndex] || null;
       }
 
+      function refreshTransferCrowdingSummary(option, startedAt) {
+        var serial = routeRequestSerial, site = selectedSiteId, day = selectedDayType;
+        return Promise.all((option.legs || []).map(function(leg) {
+          var detail = getShuttleTransferLegDetail(leg), departure = getShuttleTransferLegDepartureTime(leg);
+          if (!detail || !leg.__crowdProjectionEnabled || (startedAt != null && Number(leg.__crowdLoadedAt || 0) >= startedAt)) return Promise.resolve();
+          if (leg.__crowdPending) return leg.__crowdPending;
+          var params = new URLSearchParams({day_type:day,departure_time:departure,eta_reference_date:detail.eta_reference_date || getTodayKstDateText()});
+          var pending = fetchJson(API_BASE + '/api/route/' + encodeURIComponent(leg.route_id) + '/crowding-summary?' + params.toString())
+            .then(function(result) {
+              if (serial !== routeRequestSerial || site !== selectedSiteId || day !== selectedDayType || departure !== getShuttleTransferLegDepartureTime(leg)) return;
+              if (!result.ok) throw new Error('Crowding unavailable');
+              if (!result.data.enabled) { leg.__crowdProjectionEnabled = false; return; }
+              if (!Array.isArray(detail.route_stops) || result.data.route_stops.length !== detail.route_stops.length ||
+                  result.data.route_stops.some(function(stop,index) { return stop.stop_uuid !== detail.route_stops[index].stop_uuid; })) return;
+              detail.route_stops.forEach(function(stop,index) {
+                delete stop.crowding; delete stop.crowding_state;
+                if (result.data.route_stops[index].crowding) stop.crowding = cloneJsonValue(result.data.route_stops[index].crowding);
+                stop.crowding_state = result.data.route_stops[index].crowding_state || 'empty';
+              });
+              leg.__variantDetail = cloneJsonValue(detail); leg.variant_detail = cloneJsonValue(detail); leg.__crowdLoadedAt = Date.now();
+              syncRenderedRouteCardsForOption(option,currentPlaceName,currentIsDepart);
+            })
+            .catch(function() {
+              if (serial !== routeRequestSerial || departure !== getShuttleTransferLegDepartureTime(leg)) return;
+              (detail.route_stops || []).forEach(function(stop) { delete stop.crowding; stop.crowding_state = 'unavailable'; });
+              leg.__variantDetail = cloneJsonValue(detail); leg.variant_detail = cloneJsonValue(detail);
+            })
+            .finally(function() { if (leg.__crowdPending === pending) leg.__crowdPending = null; });
+          leg.__crowdPending = pending;
+          return pending;
+        }));
+      }
+
+      function refreshRouteCrowdingSummary(option, startedAt) {
+        if (!option || sharedRouteState.active) return Promise.resolve();
+        if (isShuttleTransferOption(option)) return refreshTransferCrowdingSummary(option,startedAt);
+        if (!option.__crowdingProjectionEnabled) return Promise.resolve();
+        if (startedAt != null && Number(option.__crowdingLoadedAt || 0) >= startedAt) return Promise.resolve();
+        var departure = getOptionDisplayDepartureTime(option);
+        var day = selectedDayType, site = selectedSiteId, serial = routeRequestSerial;
+        var key = [day, departure, getTodayKstDateText()].join('|');
+        if (option.__crowdingPending && option.__crowdingPending.key === key) return option.__crowdingPending.promise;
+        var params = new URLSearchParams({day_type:day,departure_time:departure,eta_reference_date:getTodayKstDateText()});
+        var pending = fetchJson(API_BASE + '/api/route/' + encodeURIComponent(option.route_id) + '/crowding-summary?' + params.toString())
+          .then(function(result) {
+            if (serial !== routeRequestSerial || day !== selectedDayType || site !== selectedSiteId || departure !== getOptionDisplayDepartureTime(option)) return;
+            if (!result.ok) throw new Error('Crowding unavailable');
+            if (!result.data.enabled) { option.__crowdingProjectionEnabled = false; return; }
+            var detail = getActiveRouteVariantDetail(option);
+            if (!detail || !Array.isArray(detail.route_stops)) return;
+            if (result.data.route_uuid !== option.route_uuid || result.data.route_stops.length !== detail.route_stops.length ||
+                result.data.route_stops.some(function(stop,index) { return stop.stop_uuid !== detail.route_stops[index].stop_uuid; })) return;
+            detail.route_stops.forEach(function(stop,index) {
+              delete stop.crowding; delete stop.crowding_state;
+              var source = result.data.route_stops[index];
+              if (source.crowding) stop.crowding = cloneJsonValue(source.crowding);
+              stop.crowding_state = source.crowding_state || 'empty';
+            });
+            option.__crowdingLoadedAt = Date.now();
+            applyRouteVariantDetailToOption(option, detail, departure);
+            syncRenderedRouteCardsForOption(option,currentPlaceName,currentIsDepart);
+          })
+          .catch(function() {
+            if (serial !== routeRequestSerial || departure !== getOptionDisplayDepartureTime(option)) return;
+            var detail = getActiveRouteVariantDetail(option);
+            if (!detail || !Array.isArray(detail.route_stops)) return;
+            detail.route_stops.forEach(function(stop) { delete stop.crowding; stop.crowding_state = 'unavailable'; });
+            applyRouteVariantDetailToOption(option,detail,departure);
+            syncRenderedRouteCardsForOption(option,currentPlaceName,currentIsDepart);
+          })
+          .finally(function() { if (option.__crowdingPending && option.__crowdingPending.promise === pending) option.__crowdingPending = null; });
+        option.__crowdingPending = {key:key,promise:pending};
+        return pending;
+      }
+
       function activateRouteCardOptionView(card, option, placeName, isDepart) {
         if (!card || !option) return;
         var wasSelected = card.classList.contains('selected');
@@ -27243,7 +27321,8 @@
         if (!wasSelected) triggerRouteDetailButtonAttention(card);
         expandedOptionIndex = -1;
         drawOptionOnMap(option, placeName, isDepart, card);
-        ensureRouteTimeSummary(option, placeName, isDepart, card);
+        var crowdStartedAt = Date.now();
+        ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
         scheduleLiveVehiclePositions(option, card, isDepart);
       }
 
@@ -27271,7 +27350,8 @@
         } else {
           drawRouteDetailOnMap(option, placeName, isDepart, highlightTarget || null, fitViewport);
         }
-        ensureRouteTimeSummary(option, placeName, isDepart, card);
+        var crowdStartedAt = Date.now();
+        ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
         scheduleLiveVehiclePositions(option, card, isDepart);
         if (isFromMapLabel) {
           routeLabelTriggeredDetailState = {
@@ -35228,6 +35308,7 @@
               return null;
             });
           })
+          .then(function() { return refreshRouteCrowdingSummary(option); })
           .then(function() {
             var snapshot = buildRouteShareSnapshot(option, card);
             if (!snapshot) {
@@ -37984,7 +38065,7 @@
         });
         reportDataBody.innerHTML = buildLoadingStateHtml('report-empty-state', '불러오는 중...');
         var params = new URLSearchParams();
-        ['route_uuid', 'day_type', 'departure_time', 'stop_uuid', 'stop_visit_index', 'route_revision', 'eta_reference_date'].forEach(function(key) {
+        ['route_uuid', 'day_type', 'departure_time', 'stop_uuid', 'stop_visit_index', 'route_revision', 'eta_reference_date', 'basis_revision_version'].forEach(function(key) {
           if (reference[key] != null) params.set(key, String(reference[key]));
         });
         params.set('bucket', bucket);
@@ -41359,6 +41440,8 @@
       function applyRouteVariantDetailToOption(option, detail, fallbackDepartureTime) {
         if (!option || !detail || typeof detail !== 'object') return null;
         applyRouteCollectorUpdatedAt(detail, option);
+        if (typeof detail.crowding_projection_enabled === 'boolean') option.__crowdingProjectionEnabled = detail.crowding_projection_enabled;
+        if (option.__crowdingProjectionEnabled) option.__crowdingLoadedAt = Date.now();
         var selectedTime = String(
           detail.selected_departure_time ||
           fallbackDepartureTime ||
