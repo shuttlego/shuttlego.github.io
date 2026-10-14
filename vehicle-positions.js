@@ -15,8 +15,17 @@
     if (!value) return '';
     var count = Number.isInteger(value.onboard_count) ? value.onboard_count : null;
     var capacity = Number.isInteger(value.capacity) && value.capacity > 0 ? value.capacity : null;
-    return count == null && capacity == null ? '' : '탑승 ' + (count == null ? '–' : count)
+    return count == null && capacity == null ? '' : '탑승 집계 ' + (count == null ? '–' : count)
       + (capacity == null ? '' : '/' + capacity) + '명';
+  }
+  function etaTemporary(vehicle) {
+    return ['warming_up','off_route','ambiguous_position','previous_position_unmatched','backward_progress','profile_missing'].includes(vehicle.live_eta_state);
+  }
+  function etaDenied(vehicle) {
+    return ['target_passed','terminal_return_ambiguous','run_identity_uncertain','terminal_history_unavailable'].includes(vehicle.live_eta_state);
+  }
+  function lifecycleText(vehicle) {
+    return ['terminal_visit_observed','terminal_departure_observed'].includes(vehicle.lifecycle_state) ? '마지막 정류장 통과 확인' : '';
   }
   function retryAfter(response) {
     var raw = response.headers.get('Retry-After');
@@ -215,7 +224,12 @@
       if (vehicle.display_stale) list.appendChild(node('span','live-vehicle-age-badge',
         vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치'));
       var detailText = occupancyText(vehicle.occupancy), detail = node('span','live-vehicle-line');
-      if (detailText) detail.appendChild(node('span','',detailText));
+      if (detailText) {
+        var occupancyLabel=node('span','',detailText);
+        occupancyLabel.title='하차 반영 여부를 확인할 수 없는 제공 자료입니다.';
+        detail.appendChild(occupancyLabel);
+      }
+      if (lifecycleText(vehicle)) list.appendChild(node('span','live-vehicle-line',lifecycleText(vehicle)));
       if (vehicle.live_eta) {
         var estimate = node('small','',(detailText ? ' · ' : '') + '예상 ' + clock(vehicle.live_eta.eta_at));
         if (vehicle.eta_retained) estimate.title = '최근 계산한 도착 예상시각입니다.';
@@ -304,7 +318,7 @@
     function markerBounds(vehicle, vehicles) {
       var cluster=vehicles && vehicles.length>1, clusterEstimate=cluster && clusterEta(vehicles);
       var first = vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '');
-      var detail = [occupancyText(vehicle.occupancy), vehicle.live_eta ? '예상 ' + clock(vehicle.live_eta.eta_at) : ''].filter(Boolean).join(' · ');
+      var detail = [occupancyText(vehicle.occupancy), vehicle.live_eta ? '예상 ' + clock(vehicle.live_eta.eta_at) : '', lifecycleText(vehicle)].filter(Boolean).join(' · ');
       var badge = vehicle.display_stale ? (vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치') : '';
       var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip,cluster && vehicles.length,clusterEstimate && clusterEstimate.eta_at]);
       if (markerSizeCache.has(key)) return markerSizeCache.get(key);
@@ -539,7 +553,7 @@
           if (!eta && memory && !handedOff && !previewing) {
             var rememberedAge = memory.age + Math.max(0,sample.mono-memory.at,sample.wall-memory.wall);
             var etaAt = new Date(memory.eta.eta_at).getTime();
-            var temporary = ['warming_up','off_route','ambiguous_position','previous_position_unmatched','backward_progress','profile_missing'].includes(vehicle.live_eta_state);
+            var temporary = etaTemporary(vehicle);
             if (!idlePaused && selected && !uncertain && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
               eta = memory.eta; held = true;
               nextExpiry = Math.min(nextExpiry,now+etaRetentionMs-rememberedAge,etaAt);
@@ -779,7 +793,7 @@
     }
     function predictionKey(entry,data,vehicle) {
       return JSON.stringify([vehicle.vehicle_id,vehicle.departure_time,entry.target.context.target_stop_uuid,
-        data.route_revision,data.live_service_date]);
+        data.route_revision,data.live_service_date,vehicle.observation_epoch || '']);
     }
     function rememberPredictions(entry,data) {
       var sample=timeSample();
@@ -793,7 +807,7 @@
           // Re-reading the same GPS must not extend the prediction's lifetime.
           next[key] = old && old.observedAt===vehicle.observed_at ? Object.assign({},old,{eta:vehicle.live_eta})
             : {eta:vehicle.live_eta,observedAt:vehicle.observed_at,age:Math.max(0,age),at:sample.mono,wall:sample.wall};
-        } else if (old && ['warming_up','off_route','ambiguous_position','previous_position_unmatched','backward_progress','profile_missing'].includes(vehicle.live_eta_state)) {
+        } else if (old && etaTemporary(vehicle)) {
           next[key] = old;
         }
       });
@@ -801,6 +815,26 @@
     }
     function render(entry, data, transientState, reference) {
       if (!transientState) {
+        if ((data.state==='available' || data.state==='empty') && data!==entry.data) {
+          var priorDenials=entry.etaDenials || {}, denials={}, priorVehicles={};
+          ((entry.data && entry.data.vehicles) || []).forEach(function(vehicle) {
+            priorVehicles[predictionKey(entry,entry.data,vehicle)]=vehicle;
+          });
+          (data.vehicles || []).forEach(function(vehicle) {
+            var key=predictionKey(entry,data,vehicle);
+            var prior=priorVehicles[key];
+            var historyRecovered=priorDenials[key]==='terminal_history_unavailable' && prior
+              && vehicle.live_eta_state==='predicted' && vehicle.live_eta
+              && new Date(vehicle.observed_at).getTime()>new Date(prior.observed_at).getTime();
+            if (etaDenied(vehicle)) denials[key]=vehicle.live_eta_state;
+            else if (vehicle.observation_epoch && priorDenials[key] && !historyRecovered) denials[key]=priorDenials[key];
+          });
+          entry.etaDenials=denials;
+          data=Object.assign({},data,{vehicles:(data.vehicles || []).map(function(vehicle) {
+            var reason=denials[predictionKey(entry,data,vehicle)];
+            return reason ? Object.assign({},vehicle,{live_eta:null,live_eta_state:reason}) : vehicle;
+          })});
+        }
         var priorHandoff=entry.handoff;
         if (entry.handoff && (['loading','unavailable'].indexOf(data.state)<0 || data.vehicles.length ||
             data.route_revision && data.route_revision!==entry.handoff.data.route_revision ||
