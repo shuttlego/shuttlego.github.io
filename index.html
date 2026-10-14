@@ -24111,8 +24111,8 @@
         var value = stop && stop.crowding;
         return !!value && Number.isInteger(value.percentage) && value.percentage >= 0 && value.percentage <= 100 && value.kind === 'historical_incoming';
       }
-      var routeCrowdingExplanation = '선택한 출발 시간의 버스가 이 정류장에 도착하기 전에 확인한 탑승 인원 비율의 평균입니다. 최근 10개 운행일의 차량 기록을 사용하며, 실제 탑승 상황은 다를 수 있습니다.';
-      var routeArrivalExplanation = '이전 운행의 도착 기록과 도착 제보 등을 참고한 예상 도착 시간입니다. 교통 상황이나 운행 사정에 따라 실제 도착 시간은 달라질 수 있습니다.';
+      var routeCrowdingExplanation = '정류장에 도착하기 전 탑승 비율입니다. 타기 전에 버스가 얼마나 붐빌지 참고해 주세요.';
+      var routeArrivalExplanation = '예상 도착 시간입니다. 실제 상황은 다를 수 있습니다.';
       function routeStopsColumnsHtml() {
         function heading(label, text) {
           return '<span class="route-stop-metric-title"><button type="button" class="route-stop-info" data-metric-explanation="' + escapeAttr(text) + '" aria-label="' + label + ' 계산 안내" aria-expanded="false">' + label + '</button></span>';
