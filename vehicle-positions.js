@@ -15,7 +15,7 @@
     if (!value) return '';
     var count = Number.isInteger(value.onboard_count) ? value.onboard_count : null;
     var capacity = Number.isInteger(value.capacity) && value.capacity > 0 ? value.capacity : null;
-    return count == null && capacity == null ? '' : '탑승 집계 ' + (count == null ? '–' : count)
+    return count == null && capacity == null ? '' : '탑승 ' + (count == null ? '–' : count)
       + (capacity == null ? '' : '/' + capacity) + '명';
   }
   function etaTemporary(vehicle) {

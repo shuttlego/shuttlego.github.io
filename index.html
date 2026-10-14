@@ -10396,7 +10396,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=19"></script>
+  <script src="vehicle-positions.js?v=20"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -22051,23 +22051,11 @@
 
       function applySharedVariantDetailsSnapshotToOption(option, sharedVariantDetail) {
         if (!option || !sharedVariantDetail || typeof sharedVariantDetail !== 'object') return;
-        var routeId = Number(option.route_id || 0);
         var variants = getSharedVariantDetailsByDepartureTime(sharedVariantDetail);
         Object.keys(variants).forEach(function(timeText) {
-          var detail = variants[timeText];
-          setRouteDepartureVariantDetail(option, timeText, detail);
-          if (isFinite(routeId) && routeId > 0) {
-            setRouteVariantDetailCache(
-              buildRouteVariantDetailCacheKey(
-                routeId,
-                selectedDayType,
-                timeText,
-                '',
-                detail.eta_reference_date
-              ),
-              detail
-            );
-          }
+          // Frozen share details belong to this option only. They omit live
+          // route identity and must never satisfy a subsequent latest lookup.
+          setRouteDepartureVariantDetail(option, timeText, variants[timeText]);
         });
       }
 
