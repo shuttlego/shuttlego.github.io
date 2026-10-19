@@ -6,10 +6,12 @@
     if (text != null) el.textContent = String(text);
     return el;
   }
+  var clockFormatter = null;
   function clock(value) {
     var date = new Date(value);
     if (!isFinite(date.getTime())) return '';
-    return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul' }).format(date);
+    if (!clockFormatter) clockFormatter = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Seoul' });
+    return clockFormatter.format(date);
   }
   function occupancyText(value) {
     if (!value) return '';
@@ -68,6 +70,24 @@
     var picker = null, pickerState = null;
     var timeEpoch = 0, lastTimeSample = null;
     var diagnosticHistory = [];
+    var viewSlots=[];
+    var transport=global.ShuttleGPSV2Transport ? global.ShuttleGPSV2Transport({apiBase:options.apiBase,
+      config:function() { return config || {}; },timeSample:timeSample,
+      onSnapshot:function(entry,data,token,reference) {
+        if(token!==generation || document.hidden || suspended || idlePaused || entries.indexOf(entry)<0)return;
+        entry.reason=data.reason || '';entry.firstDone=true;entry.failureCount=0;
+        render(entry,data,undefined,reference);
+      },onFallback:function(group,token) {
+        if(token!==generation || document.hidden || suspended || idlePaused)return;
+        group.forEach(function(entry) {
+          if(entries.indexOf(entry)<0 || entry.pending)return;
+          clearTimeout(entry.timer);schedulePoll(entry,token,0);
+        });
+      },onConfirmation:function(entry,token) {
+        if(token!==generation || entries.indexOf(entry)<0)return;
+        entry.errorState='';entry.reason=entry.data.reason || '';entry.failureCount=0;
+        renderMap(); // Keep the original GPS age/reference and expiry boundaries.
+      }}) : null;
     function timeSample() {
       var sample = {mono:activityTime(),wall:Date.now(),epoch:timeEpoch};
       if (lastTimeSample && Math.abs((sample.wall-lastTimeSample.wall)-(sample.mono-lastTimeSample.mono))>2000) {
@@ -320,7 +340,7 @@
       var first = vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '');
       var detail = [occupancyText(vehicle.occupancy), vehicle.live_eta ? '예상 ' + clock(vehicle.live_eta.eta_at) : '', lifecycleText(vehicle)].filter(Boolean).join(' · ');
       var badge = vehicle.display_stale ? (vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치') : '';
-      var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip,cluster && vehicles.length,clusterEstimate && clusterEstimate.eta_at]);
+      var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip,cluster && vehicles.length,clusterEstimate && clock(clusterEstimate.eta_at)]);
       if (markerSizeCache.has(key)) return markerSizeCache.get(key);
       var root = node('div','live-vehicle-marker');
       root.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:max-content;left:0;top:0;';
@@ -440,6 +460,7 @@
       if (!idlePaused && entries.length && lastActivity != null) idleTimer = setTimeout(pauseIdle, Math.max(0, idleTimeout - idleElapsed()));
     }
     function renderIdle(view) {
+      view.renderSignature = null;
       view.row.removeAttribute('title'); view.statusState = 'idle';
       view.row.setAttribute('aria-busy','false');
       view.row.replaceChildren(node('span', 'route-live-separator', ' · '));
@@ -451,6 +472,18 @@
       button.appendChild(ring);
       button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); resume(); });
       view.row.appendChild(button); view.counter = null;
+    }
+    function renderBlocked(view, explanation) {
+      renderIdle(view);
+      view.statusState='blocked';
+      var button=view.row.querySelector('.route-live-resume');
+      button.addEventListener('click',function() {
+        if (!idlePaused && !document.hidden && !suspended) {
+          lastActivity=activityTime();lastActivityWall=Date.now();
+          select(targets.slice(),true);
+        }
+      });
+      addReason(view,explanation);
     }
     function pauseIdle() {
       if (!entries.length || idlePaused) return;
@@ -491,7 +524,7 @@
       entry.pending = false;
       clearTimeout(entry.timer);
       if (entry.abort) entry.abort.abort();
-      if (entry.watch) {
+      if (entry.watch && !entry.deferClose) {
         fetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(entry.watch.watch_id) + '/close', {
           method: 'POST', credentials: 'include', keepalive: true,
           headers: { 'X-Shuttle-Position-Capability': entry.watch.capability, 'Content-Type':'application/json' },
@@ -502,6 +535,7 @@
     }
     function stop(keepTargets, reason, keepPositions) {
       generation += 1;
+      if(transport)transport.stop();
       if (!keepTargets || reason && reason !== 'view_change') closePicker();
       entries.forEach(function(entry) { clearEntry(entry, reason || 'view_change'); });
       entries = [];
@@ -675,8 +709,9 @@
         var relevant = selected ? vehicles.filter(function(v) { return v.selected_trip; }) : vehicles;
         var stale = relevant.every(function(v) { return v.display_stale; });
         var uncertain = stale && relevant.some(function(v) { return v.display_uncertain; });
-        var signature = JSON.stringify([selected,stale,uncertain,generation,vehicles.map(function(v) { return [v.owners.map(function(o) { return [o.scope,o.target.card.getAttribute('data-route-card-token')]; }),
-          !!selectionFor(v),v.display_stale,v.display_uncertain,v.departure_time,v.plate_suffix,v.live_eta && v.live_eta.eta_at,v.eta_retained,v.occupancy]; })]);
+        var groupedEta = vehicles.length>1 ? clusterEta(vehicles) : null;
+        var signature = JSON.stringify([selected,stale,uncertain,generation,groupedEta && clock(groupedEta.eta_at),groupedEta && groupedEta.retained,vehicles.map(function(v) { return [v.owners.map(function(o) { return [o.scope,o.target.card.getAttribute('data-route-card-token')]; }),
+          !!selectionFor(v),v.display_stale,v.display_uncertain,v.departure_time,v.plate_suffix,v.live_eta && clock(v.live_eta.eta_at),v.eta_retained,occupancyText(v.occupancy),lifecycleText(v)]; })]);
         var existing = overlays[key];
         if (existing && existing.signature === signature) {
           existing.overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon));
@@ -766,28 +801,41 @@
             : freshness.some(function(x) { return x==='uncertain'; }) ? 'unavailable' : 'waiting';
         }
         var issues = group.filter(function(entry) { return ['unsupported','budget_paused','usage_unknown','unavailable'].includes(entryState(entry)); });
-        hideReason(); view.row.replaceChildren(); view.statusState = state;
+        var blocked=group.every(function(entry) { return ['unsupported','budget_paused'].includes(entryState(entry)) ||
+          entryState(entry)==='usage_unknown' && !(config && config.gps_batch_read); });
+        var lastingIssues=issues.filter(function(entry) { return ['unsupported','budget_paused'].includes(entryState(entry)); });
+        // State/expiry still advance on every frame. Preserve identical visible
+        // status nodes so map projection need not flush their layout again.
+        if (!blocked && !lastingIssues.length && view.renderSignature==='checking') {
+          view.statusState=state;
+          updateCountdown(view);
+          return;
+        }
+        hideReason();
+        if (blocked) {
+          var explanations=group.map(function(entry) { return reasonText(entry.reason || entryState(entry)); });
+          renderBlocked(view,Array.from(new Set(explanations)).join('\n'));
+          return;
+        }
+        view.row.replaceChildren(); view.statusState = state;
         var separator = node('span','route-live-separator',' · '); separator.setAttribute('aria-hidden','true');
         view.row.appendChild(separator);
-        view.row.appendChild(node('span','route-live-status',state==='unsupported' ? '위치 확인 불가'
-          : state==='budget_paused' ? '버스 위치 갱신 일시 중단' : state==='unavailable' ? '위치 재확인 중'
-          : state==='partial' ? '일부 버스 위치를 기다리는 중' : state==='waiting' ? '새 위치를 기다리는 중' : '버스 위치 확인 중'));
-        if (issues.length) {
-          var explanations = issues.map(function(entry) {
+        view.row.appendChild(node('span','route-live-status','버스 위치 확인 중'));
+        if (lastingIssues.length) {
+          var explanations = lastingIssues.map(function(entry) {
             var reason = entry.reason || (entryState(entry)==='unavailable' ? 'service_unavailable' : entryState(entry));
             return reasonText(reason);
           });
-          var sameReason = issues.length===group.length && explanations.every(function(text) { return text===explanations[0]; });
-          var text = group.length===1 || sameReason ? explanations[0] : issues.map(function(entry,index) {
+          var sameReason = lastingIssues.length===group.length && explanations.every(function(text) { return text===explanations[0]; });
+          var text = group.length===1 || sameReason ? explanations[0] : lastingIssues.map(function(entry,index) {
             return (group.indexOf(entry)+1) + '번째 셔틀' + (entry.target.context.departure_time ? ' ('+entry.target.context.departure_time+')' : '') + ': ' + explanations[index];
           }).join('\n');
           addReason(view,text);
         }
         view.counter = null;
-        if (working.length) {
-          var spinner = node('span','route-live-spinner'); spinner.setAttribute('aria-hidden','true');
-          view.counter = node('span','route-live-countdown','0'); spinner.appendChild(view.counter); view.row.appendChild(spinner);
-        }
+        var spinner = node('span','route-live-spinner'); spinner.setAttribute('aria-hidden','true');
+        view.row.appendChild(spinner);
+        view.renderSignature=lastingIssues.length ? null : 'checking';
         updateCountdown(view);
       });
     }
@@ -814,6 +862,8 @@
       entry.predictions = next;
     }
     function render(entry, data, transientState, reference) {
+      if(!transientState && entry.data && Number.isInteger(data.source_epoch) && Number.isInteger(entry.data.source_epoch) &&
+        (data.source_epoch<entry.data.source_epoch || data.source_epoch===entry.data.source_epoch && data.source_sequence<entry.data.source_sequence))return;
       if (!transientState) {
         if ((data.state==='available' || data.state==='empty') && data!==entry.data) {
           var priorDenials=entry.etaDenials || {}, denials={}, priorVehicles={};
@@ -867,19 +917,11 @@
       entry.errorState = transientState || '';
       renderMap();
     }
-    function countdown(entry) {
-      var first = !entry.firstDone && entry.firstUntil != null;
-      var seconds = Math.max(0,Math.ceil((first ? entry.firstUntil-activityTime() : (entry.nextPollAt || Date.now())-Date.now())/1000));
-      return {seconds:seconds,first:first};
-    }
     function updateCountdown(view) {
       if (idlePaused) return;
-      view.row.setAttribute('aria-busy',view.entries.some(function(entry) { return entry.pending; }) ? 'true' : 'false');
-      var next = view.entries.filter(function(entry) { return !['unsupported','budget_paused','usage_unknown'].includes(entryState(entry)); })
-        .map(countdown).sort(function(a,b) { return a.seconds-b.seconds; })[0] || {seconds:0};
-      if (view.counter) view.counter.textContent = String(next.seconds);
-      if (view.statusState!=='available' || view.row.querySelector('.route-live-info')) view.row.removeAttribute('title');
-      else view.row.title = next.seconds ? (next.first ? '버스 위치 확인까지 최대 ' : '버스 위치 갱신까지 ') + next.seconds + '초' : '버스 위치 확인 중';
+      var busy=view.statusState!=='blocked' && view.entries.some(function(entry) { return entry.pending; }) ? 'true' : 'false';
+      if (view.row.getAttribute('aria-busy')!==busy) view.row.setAttribute('aria-busy',busy);
+      view.row.removeAttribute('title');
     }
     function updateCountdownRows() {
       var previousEpoch=timeEpoch;
@@ -895,6 +937,9 @@
     function poll(entry, token) {
       if (token !== generation || document.hidden || suspended || idlePaused || !entry.target.card.isConnected) return;
       if (idleExpired()) { pauseIdle(); return; }
+      if(transport && transport.streaming(entry) && Date.now()<entry.renewAt && Date.now()<entry.watchActiveUntil) {
+        schedulePoll(entry,token,Math.min(5000,Math.max(1,entry.renewAt-Date.now())));return;
+      }
       entry.pending = true;
       if (entry.firstUntil == null) entry.firstUntil = activityTime()+15000;
       entry.nextPollAt = entry.firstDone ? 0 : Date.now()+Math.max(0,entry.firstUntil-activityTime());
@@ -906,6 +951,7 @@
       var watchHeaders = { 'Content-Type': 'application/json' };
       if (entry.watch) watchHeaders['X-Shuttle-Position-Capability'] = entry.watch.capability;
       var requestContext = Object.assign({}, entry.target.context, {view_id:entry.viewId});
+      if(config.gps_view_generations)requestContext.view_generation=entry.viewGeneration;
       if (!config.gps_shared_snapshots || !requestContext.shared_route_token) delete requestContext.shared_route_token;
       var ready = renew ? fetch(options.apiBase + '/api/vehicle-positions/watch', {
         method: 'POST', credentials: 'include', signal: signal, headers: watchHeaders,
@@ -923,6 +969,7 @@
           throw new Error('cancelled');
         }
         entry.watch = watch;
+        if(entry.deferredWatch) { closeDeferred(entry); }
         if (entry.handoff && watch.route_revision!==entry.handoff.data.route_revision) { entry.handoff=null; renderMap(); }
         entry.renewAt = Date.now() + 100000; entry.watchActiveUntil = Date.now() + 40000; entry.etag = ''; return watch;
       }) : Promise.resolve(entry.watch);
@@ -931,10 +978,18 @@
         var headers = { 'X-Shuttle-Position-Capability': watch.capability };
         if (entry.etag) headers['If-None-Match'] = entry.etag;
         getBegin=timeSample(); entry.watchMs=renew ? Math.max(0,getBegin.mono-startedAt) : 0;
+        if(transport && config.gps_batch_read) {
+          transport.update(entries,token);
+          return transport.read(watch,entry.data && entry.data.semantic_revision,signal);
+        }
         return fetch(options.apiBase + '/api/vehicle-positions', { credentials: 'include', signal: signal, headers: headers });
       }).then(function(r) {
         if (!r || token !== generation) return;
-        if (r.status === 304) { if (!entry.data) throw new Error('temporary'); entry.watchActiveUntil = Date.now() + 40000; return entry.data; }
+        if (r.status === 304 || r.unchanged) { if (!entry.data) throw new Error('temporary'); entry.watchActiveUntil = Date.now() + 40000;
+          if(r.confirmation) {
+            entry.data.last_success_at=r.confirmation.last_success_at;
+            if(r.confirmation.source_epoch===entry.data.source_epoch)entry.data.source_sequence=Math.max(entry.data.source_sequence || 0,r.confirmation.source_sequence || 0);
+          }return entry.data; }
         if (!r.ok) { var error = new Error(r.status === 409 ? 'scope_changed' : 'temporary'); error.retryAfter = retryAfter(r); throw error; }
         return r.json().then(function(data) {
           if (data && data.enabled === false) throw new Error('disabled');
@@ -950,10 +1005,11 @@
         var waitingFirst = !entry.firstDone && data.state==='loading' && activityTime()<entry.firstUntil;
         if (!waitingFirst) entry.firstDone = true;
         render(entry, data, undefined, responseReference);
-        schedulePoll(entry, token, waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
-          : Math.max(15000, Math.min(120000, Number(data.retry_after_seconds || 15) * 1000)));
+        schedulePoll(entry, token, waitingFirst ? (config.gps_batch_read ? 5000 : Math.min(1000,Math.max(1,entry.firstUntil-activityTime())))
+          : Math.max(config.gps_batch_read ? 5000 : 15000, Math.min(120000, Number(data.retry_after_seconds || (config.gps_batch_read ? 5 : 15)) * 1000)));
       }).catch(function(error) {
         if (token !== generation || (error.name === 'AbortError' && !timedOut) || error.message === 'cancelled') return;
+        closeDeferred(entry);
         if (error.message === 'scope_changed') {
           clearEntry(entry);
           entry.data = null; entry.lastGood = null; entry.handoff = null; entry.etag = '';
@@ -980,6 +1036,13 @@
         }
       });
     }
+    function closeDeferred(entry) {
+      var previous=entry.deferredWatch;entry.deferredWatch=null;
+      if(!previous)return;
+      fetch(options.apiBase+'/api/vehicle-positions/watch/'+encodeURIComponent(previous.watch_id)+'/close',{
+        method:'POST',credentials:'include',keepalive:true,headers:{'X-Shuttle-Position-Capability':previous.capability,'Content-Type':'application/json'},
+        body:JSON.stringify({reason:'view_change'})}).catch(function() {});
+    }
     function select(next, resuming) {
       var wanted = (next || []).slice(0, 3);
       if (!wanted.length) { stop(false); return; }
@@ -992,6 +1055,10 @@
       }
       var wasPaused = idlePaused, priorActivity = lastActivity, priorWall = lastActivityWall, hadTargets = targets.length > 0;
       var handoffs = wanted.length===entries.length ? wanted.map(function(target,index) { return positionHandoff(entries[index],target,resuming); }) : [];
+      var deferred=entries.map(function(entry,index) {
+        entry.deferClose=!!(config && config.gps_view_generations && index<wanted.length);
+        return entry.deferClose ? entry.watch : null;
+      });
       stop(true,undefined,handoffs.some(Boolean));
       targets = wanted;
       if (pickerState && !wanted.some(function(target) {
@@ -1007,7 +1074,9 @@
       entries = targets.map(function(target,index) {
         var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
         var viewId = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');
-        return {target:target,viewId:viewId,handoff:handoffs[index] || null};
+        if(!viewSlots[index])viewSlots[index]=viewId;
+        if(config && config.gps_view_generations)viewId=viewSlots[index] || (viewSlots[index]=viewId);
+        return {target:target,viewId:viewId,viewGeneration:token,deferredWatch:deferred[index],handoff:handoffs[index] || null};
       });
       // Rebind marker owners and selection immediately, before any asynchronous watch/read.
       renderMap();

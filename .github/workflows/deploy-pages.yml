@@ -32,7 +32,7 @@ jobs:
           cp auth-callback.html _site/auth-callback.html
           cp dev.config.js _site/dev.config.js
           cp ads.js ads.css _site/
-          cp vehicle-positions.js vehicle-positions.css _site/
+          cp vehicle-positions.js vehicle-position-transport.js vehicle-positions.css _site/
           cp -R fonts _site/fonts
           cp legal.css _site/legal.css
           cp robots.txt _site/robots.txt
