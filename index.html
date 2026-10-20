@@ -22486,6 +22486,7 @@
 
       function getWalkMinutesForSummary(walkInfo) {
         if (!walkInfo || walkInfo.has_route !== true) return null;
+        if (walkInfo.source === 'same_point' && walkInfo.distance_m === 0 && walkInfo.duration_sec === 0) return 0;
         var durationSec = Number(walkInfo && walkInfo.duration_sec);
         if (!isFinite(durationSec) || durationSec <= 0) return null;
         return Math.max(1, Math.round(durationSec / 60));
@@ -22768,10 +22769,12 @@
           flex_value: busValue,
           label_text: showLabels ? formatRouteSegmentDuration(busValue) : ''
         };
+        if (walkMinutes === 0) return [busSegment];
         return isDepart ? [walkSegment, busSegment] : [busSegment, walkSegment];
       }
 
       function buildWalkConnectorText(option, isDepart, walkInfo) {
+        if (getWalkMinutesForSummary(walkInfo) === 0) return '도보 0분';
         var fallbackInfo = walkInfo || buildStraightLineFallbackWalkInfo(option && option.positions || [], isDepart, 'card_preview');
         var distanceM = Number(fallbackInfo && fallbackInfo.distance_m);
         var durationSec = Number(fallbackInfo && fallbackInfo.duration_sec);
@@ -24603,10 +24606,12 @@
           normalized.path_points = encoded ? decodeEncodedPolyline(encoded) : [];
         }
         normalized.has_route = normalized.has_route === true;
+        var samePoint = normalized.has_route && normalized.source === 'same_point' &&
+          normalized.distance_m === 0 && normalized.duration_sec === 0;
         var distanceM = Number(normalized.distance_m);
         var durationSec = Number(normalized.duration_sec);
-        normalized.distance_m = isFinite(distanceM) && distanceM > 0 ? distanceM : null;
-        normalized.duration_sec = isFinite(durationSec) && durationSec > 0 ? durationSec : null;
+        normalized.distance_m = samePoint ? 0 : (isFinite(distanceM) && distanceM > 0 ? distanceM : null);
+        normalized.duration_sec = samePoint ? 0 : (isFinite(durationSec) && durationSec > 0 ? durationSec : null);
         return normalized;
       }
 
@@ -24644,7 +24649,16 @@
         }
       }
 
+      function buildSamePointWalkPath(fromPos, toPos) {
+        var from = getWalkingMetricPoint(fromPos), to = getWalkingMetricPoint(toPos);
+        if (!from || !to || from.lat !== to.lat || from.lng !== to.lng) return null;
+        return { has_route: true, status: 'ok', source: 'same_point', encoded_polyline: '',
+          path_points: [], distance_m: 0, duration_sec: 0 };
+      }
+
       function fetchWalkPathData(fromPos, toPos) {
+        var samePoint = buildSamePointWalkPath(fromPos, toPos);
+        if (samePoint) return Promise.resolve(samePoint);
         var key = buildWalkPathCacheKey(fromPos, toPos);
         if (!key) return Promise.resolve(null);
         if (walkPathCache.has(key)) return Promise.resolve(walkPathCache.get(key));
@@ -28330,6 +28344,8 @@
         var positions = Array.isArray(option && option.positions) ? option.positions : [];
         var leg = getOptionWalkLegPositions(positions, isDepart);
         if (!leg) return null;
+        var samePoint = buildSamePointWalkPath(leg.fromPos, leg.toPos);
+        if (samePoint) return samePoint;
         var key = buildWalkPathCacheKey(leg.fromPos, leg.toPos);
         if (!key || !walkPathCache.has(key)) return null;
         var walkInfo = walkPathCache.get(key);
