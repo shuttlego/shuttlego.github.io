@@ -937,7 +937,7 @@
       statusViews.forEach(updateCountdown);
     }
     function schedulePoll(entry, token, delay) {
-      entry.nextPollAt = Date.now() + delay;
+      entry.nextPollAt = activityTime() + delay;
       entry.pollToken = token;
       updateCountdownRows();
       armPollTimer();
@@ -948,12 +948,12 @@
       if (!due.length) return;
       var earliest = Math.min.apply(null,due.map(function(item) { return item.nextPollAt; }));
       pollTimer = setTimeout(function() {
-        var now = Date.now();
+        var now = activityTime();
         entries.filter(function(item) { return item.nextPollAt>0 && item.nextPollAt<=now+2; }).forEach(function(item) {
           item.nextPollAt = 0; poll(item,item.pollToken);
         });
         armPollTimer();
-      },Math.max(0,earliest-Date.now()));
+      },Math.max(0,earliest-activityTime()));
     }
     function poll(entry, token) {
       if (token !== generation || document.hidden || suspended || idlePaused || !entry.target.card.isConnected) return;
@@ -1014,7 +1014,7 @@
         if (!waitingFirst) entry.firstDone = true;
         render(entry, data, undefined, responseReference);
         var period = Math.max(5000, Math.min(120000, Number(data.retry_after_seconds || config.poll_seconds || 5) * 1000));
-        var now = Date.now();
+        var now = activityTime();
         schedulePoll(entry, token, waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
           : config.batch_reads ? Math.max(1,pollOrigin+(Math.floor((now-pollOrigin)/period)+1)*period-now) : period);
       }).catch(function(error) {
@@ -1069,7 +1069,7 @@
       lastActivity = !hadTargets || (wasPaused && !idlePaused) ? activityTime() : priorActivity;
       lastActivityWall = !hadTargets || (wasPaused && !idlePaused) ? Date.now() : priorWall;
       var token = generation;
-      pollOrigin = Date.now();
+      pollOrigin = activityTime();
       entries = targets.map(function(target,index) {
         var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
         var viewId = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');
