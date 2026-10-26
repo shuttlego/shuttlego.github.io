@@ -71,7 +71,8 @@
     var pendingReads = [], batchScheduled = false;
     function syncToggle() {
       if (!toggleButton) return;
-      toggleButton.hidden = !config || !config.enabled || !targets.length || !entries.length;
+      toggleButton.hidden = !config || !config.enabled || !targets.length || !entries.length ||
+        entries.every(function(entry) { return entryState(entry)==='unsupported'; });
       toggleButton.setAttribute('aria-pressed', String(positionsVisible));
       var label = '버스 위치 말풍선 ' + (positionsVisible ? '표시 중 · 숨기기' : '숨김 · 표시하기');
       toggleButton.setAttribute('aria-label', label); toggleButton.title = label;
