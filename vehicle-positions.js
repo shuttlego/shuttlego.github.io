@@ -842,7 +842,7 @@
           addReason(view,text);
         }
         view.counter = null;
-        if (working.length && !needsAction) {
+        if (!needsAction) {
           var spinner = node('span','route-live-spinner'); spinner.setAttribute('aria-hidden','true');
           view.row.appendChild(spinner);
         }
