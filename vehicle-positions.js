@@ -58,7 +58,7 @@
   function start(options) {
     var generation = 0, entries = [], targets = [], overlays = {}, config = null, suspended = false;
     var mapListenerTarget = null;
-    var countdownTimer = null, idleTimer = null, expiryTimer = null, idlePaused = false;
+    var countdownTimer = null, idleTimer = null, expiryTimer = null, idlePaused = false, pollTimer = null, pollOrigin = 0;
     var reasonTooltip = null, reasonTrigger = null;
     var statusViews = new Map();
     var lastActivity = null, lastActivityWall = null, lastSignal = -Infinity;
@@ -66,6 +66,57 @@
     var etaRetentionMs = 90000;
     var markerSizeCache = new Map();
     var picker = null, pickerState = null;
+    var positionsVisible = true;
+    var toggleButton = options.toggleButton;
+    var pendingReads = [], batchScheduled = false;
+    function syncToggle() {
+      if (!toggleButton) return;
+      toggleButton.hidden = !config || !config.enabled || !targets.length || !entries.length;
+      toggleButton.setAttribute('aria-pressed', String(positionsVisible));
+      var label = '버스 위치 말풍선 ' + (positionsVisible ? '표시 중 · 숨기기' : '숨김 · 표시하기');
+      toggleButton.setAttribute('aria-label', label); toggleButton.title = label;
+    }
+    if (toggleButton) toggleButton.addEventListener('click', function(event) {
+      event.preventDefault(); event.stopPropagation();
+      positionsVisible = !positionsVisible;
+      if (!positionsVisible) closePicker();
+      syncToggle(); renderMap();
+    });
+    function positionRead(watch, headers, signal) {
+      if (!config.batch_reads) return fetch(options.apiBase + '/api/vehicle-positions', {credentials:'include',signal:signal,headers:headers});
+      return new Promise(function(resolve,reject) {
+        pendingReads.push({watch:watch,signal:signal,resolve:resolve,reject:reject});
+        if (batchScheduled) return;
+        batchScheduled = true;
+        setTimeout(function() {
+          batchScheduled = false;
+          var reads = pendingReads; pendingReads = [];
+          reads = reads.filter(function(item) {
+            if (!item.signal.aborted) return true;
+            item.reject(new DOMException('Cancelled','AbortError')); return false;
+          });
+          if (!reads.length) return;
+          var controller = new AbortController();
+          function cancelIfEmpty() { if (reads.every(function(item) { return item.signal.aborted; })) controller.abort(); }
+          reads.forEach(function(item) { item.signal.addEventListener('abort',cancelIfEmpty,{once:true}); });
+          fetch(options.apiBase + '/api/vehicle-positions/batch', {method:'POST',credentials:'include',signal:controller.signal,
+            headers:{'Content-Type':'application/json','X-Shuttle-Position-Capability':reads[0].watch.capability},
+            body:JSON.stringify({capabilities:reads.map(function(item) { return item.watch.capability; })})
+          }).then(function(response) {
+            if (!response.ok) throw new Error('temporary');
+            return response.json();
+          }).then(function(body) {
+            if (!Array.isArray(body.items) || body.items.length!==reads.length) throw new Error('temporary');
+            reads.forEach(function(item,index) {
+              var result = body.items[index];
+              if (item.signal.aborted) item.reject(new DOMException('Cancelled','AbortError'));
+              else item.resolve(new Response(JSON.stringify(result.data || {}),{status:result.status,headers:{'Content-Type':'application/json'}}));
+            });
+          }).catch(function(error) { reads.forEach(function(item) { item.reject(error); }); })
+          .finally(function() { reads.forEach(function(item) { item.signal.removeEventListener('abort',cancelIfEmpty); }); });
+        },0);
+      });
+    }
     var timeEpoch = 0, lastTimeSample = null;
     var diagnosticHistory = [];
     function timeSample() {
@@ -439,7 +490,7 @@
       clearTimeout(idleTimer);
       if (!idlePaused && entries.length && lastActivity != null) idleTimer = setTimeout(pauseIdle, Math.max(0, idleTimeout - idleElapsed()));
     }
-    function renderIdle(view) {
+    function renderIdle(view, onResume) {
       view.row.removeAttribute('title'); view.statusState = 'idle';
       view.row.setAttribute('aria-busy','false');
       view.row.replaceChildren(node('span', 'route-live-separator', ' · '));
@@ -449,7 +500,7 @@
       var icon = node('img', 'route-live-play'); icon.src = '/images/lucide-play.svg'; icon.alt = ''; ring.appendChild(icon);
       button.appendChild(node('span', 'route-live-status', '버스 위치 확인 재개'));
       button.appendChild(ring);
-      button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); resume(); });
+      button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); (onResume || resume)(); });
       view.row.appendChild(button); view.counter = null;
     }
     function pauseIdle() {
@@ -481,7 +532,7 @@
     });
     var configPromise = fetch(options.apiBase + '/api/vehicle-positions/config', { credentials: 'include' })
       .then(function(r) { return r.ok ? r.json() : {}; })
-      .then(function(data) { config = data; return data; }).catch(function() { config = {}; return {}; });
+      .then(function(data) { config = data; syncToggle(); return data; }).catch(function() { config = {}; syncToggle(); return {}; });
     function removeMap() {
       Object.keys(overlays).forEach(function(key) { overlays[key].overlay.setMap(null); });
       overlays = {};
@@ -489,6 +540,7 @@
     function clearEntry(entry, reason) {
       hideReason();
       entry.pending = false;
+      entry.nextPollAt = 0;
       clearTimeout(entry.timer);
       if (entry.abort) entry.abort.abort();
       if (entry.watch) {
@@ -508,6 +560,7 @@
       statusViews.forEach(function(view) { view.row.remove(); });
       statusViews.clear();
       clearInterval(countdownTimer);
+      clearTimeout(pollTimer); pollTimer = null;
       clearTimeout(idleTimer); clearTimeout(expiryTimer);
       countdownTimer = null;
       if (!keepPositions) removeMap();
@@ -517,6 +570,7 @@
       }
       mapListenerTarget = null;
       if (!keepTargets) { targets = []; idlePaused = false; lastActivity = null; lastActivityWall = null; }
+      syncToggle();
     }
     function derivePresentation(sample) {
       var now=sample.wall, nextExpiry=Infinity;
@@ -635,7 +689,8 @@
     }
     function paintMap(frame) {
       var map = options.getMap();
-      if (!config || !config.enabled || !map || !global.kakao || !global.kakao.maps || document.hidden || suspended) { closePicker(); removeMap(); return; }
+      syncToggle();
+      if (!positionsVisible || !config || !config.enabled || !map || !global.kakao || !global.kakao.maps || document.hidden || suspended) { closePicker(); removeMap(); return; }
       if (mapListenerTarget !== map) {
         if (mapListenerTarget) {
           global.kakao.maps.event.removeListener(mapListenerTarget, 'zoom_changed', mapGesture);
@@ -769,9 +824,11 @@
         hideReason(); view.row.replaceChildren(); view.statusState = state;
         var separator = node('span','route-live-separator',' · '); separator.setAttribute('aria-hidden','true');
         view.row.appendChild(separator);
-        view.row.appendChild(node('span','route-live-status',state==='unsupported' ? '위치 확인 불가'
-          : state==='budget_paused' ? '버스 위치 갱신 일시 중단' : state==='unavailable' ? '위치 재확인 중'
-          : state==='partial' ? '일부 버스 위치를 기다리는 중' : state==='waiting' ? '새 위치를 기다리는 중' : '버스 위치 확인 중'));
+        var needsAction = group.some(function(entry) { return entryState(entry)==='unsupported'; });
+        if (needsAction) {
+          renderIdle(view,function() { select(targets.slice(),true); });
+          view.statusState = 'unsupported';
+        } else view.row.appendChild(node('span','route-live-status','버스 위치 확인 중'));
         if (issues.length) {
           var explanations = issues.map(function(entry) {
             var reason = entry.reason || (entryState(entry)==='unavailable' ? 'service_unavailable' : entryState(entry));
@@ -784,9 +841,9 @@
           addReason(view,text);
         }
         view.counter = null;
-        if (working.length) {
+        if (working.length && !needsAction) {
           var spinner = node('span','route-live-spinner'); spinner.setAttribute('aria-hidden','true');
-          view.counter = node('span','route-live-countdown','0'); spinner.appendChild(view.counter); view.row.appendChild(spinner);
+          view.row.appendChild(spinner);
         }
         updateCountdown(view);
       });
@@ -867,19 +924,10 @@
       entry.errorState = transientState || '';
       renderMap();
     }
-    function countdown(entry) {
-      var first = !entry.firstDone && entry.firstUntil != null;
-      var seconds = Math.max(0,Math.ceil((first ? entry.firstUntil-activityTime() : (entry.nextPollAt || Date.now())-Date.now())/1000));
-      return {seconds:seconds,first:first};
-    }
     function updateCountdown(view) {
       if (idlePaused) return;
       view.row.setAttribute('aria-busy',view.entries.some(function(entry) { return entry.pending; }) ? 'true' : 'false');
-      var next = view.entries.filter(function(entry) { return !['unsupported','budget_paused','usage_unknown'].includes(entryState(entry)); })
-        .map(countdown).sort(function(a,b) { return a.seconds-b.seconds; })[0] || {seconds:0};
-      if (view.counter) view.counter.textContent = String(next.seconds);
-      if (view.statusState!=='available' || view.row.querySelector('.route-live-info')) view.row.removeAttribute('title');
-      else view.row.title = next.seconds ? (next.first ? '버스 위치 확인까지 최대 ' : '버스 위치 갱신까지 ') + next.seconds + '초' : '버스 위치 확인 중';
+      view.row.removeAttribute('title');
     }
     function updateCountdownRows() {
       var previousEpoch=timeEpoch;
@@ -889,15 +937,29 @@
     }
     function schedulePoll(entry, token, delay) {
       entry.nextPollAt = Date.now() + delay;
+      entry.pollToken = token;
       updateCountdownRows();
-      entry.timer = setTimeout(function() { poll(entry, token); }, delay);
+      armPollTimer();
+    }
+    function armPollTimer() {
+      clearTimeout(pollTimer);
+      var due = entries.filter(function(item) { return item.nextPollAt>0; });
+      if (!due.length) return;
+      var earliest = Math.min.apply(null,due.map(function(item) { return item.nextPollAt; }));
+      pollTimer = setTimeout(function() {
+        var now = Date.now();
+        entries.filter(function(item) { return item.nextPollAt>0 && item.nextPollAt<=now+2; }).forEach(function(item) {
+          item.nextPollAt = 0; poll(item,item.pollToken);
+        });
+        armPollTimer();
+      },Math.max(0,earliest-Date.now()));
     }
     function poll(entry, token) {
       if (token !== generation || document.hidden || suspended || idlePaused || !entry.target.card.isConnected) return;
       if (idleExpired()) { pauseIdle(); return; }
       entry.pending = true;
       if (entry.firstUntil == null) entry.firstUntil = activityTime()+15000;
-      entry.nextPollAt = entry.firstDone ? 0 : Date.now()+Math.max(0,entry.firstUntil-activityTime());
+      entry.nextPollAt = 0;
       updateCountdownRows();
       entry.abort = new AbortController();
       var abort = entry.abort, signal = abort.signal, timedOut = false, startedAt = activityTime(), getBegin=null, responseReference=null;
@@ -931,7 +993,7 @@
         var headers = { 'X-Shuttle-Position-Capability': watch.capability };
         if (entry.etag) headers['If-None-Match'] = entry.etag;
         getBegin=timeSample(); entry.watchMs=renew ? Math.max(0,getBegin.mono-startedAt) : 0;
-        return fetch(options.apiBase + '/api/vehicle-positions', { credentials: 'include', signal: signal, headers: headers });
+        return positionRead(watch, headers, signal);
       }).then(function(r) {
         if (!r || token !== generation) return;
         if (r.status === 304) { if (!entry.data) throw new Error('temporary'); entry.watchActiveUntil = Date.now() + 40000; return entry.data; }
@@ -950,8 +1012,10 @@
         var waitingFirst = !entry.firstDone && data.state==='loading' && activityTime()<entry.firstUntil;
         if (!waitingFirst) entry.firstDone = true;
         render(entry, data, undefined, responseReference);
+        var period = Math.max(5000, Math.min(120000, Number(data.retry_after_seconds || config.poll_seconds || 5) * 1000));
+        var now = Date.now();
         schedulePoll(entry, token, waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
-          : Math.max(15000, Math.min(120000, Number(data.retry_after_seconds || 15) * 1000)));
+          : config.batch_reads ? Math.max(1,pollOrigin+(Math.floor((now-pollOrigin)/period)+1)*period-now) : period);
       }).catch(function(error) {
         if (token !== generation || (error.name === 'AbortError' && !timedOut) || error.message === 'cancelled') return;
         if (error.message === 'scope_changed') {
@@ -1004,6 +1068,7 @@
       lastActivity = !hadTargets || (wasPaused && !idlePaused) ? activityTime() : priorActivity;
       lastActivityWall = !hadTargets || (wasPaused && !idlePaused) ? Date.now() : priorWall;
       var token = generation;
+      pollOrigin = Date.now();
       entries = targets.map(function(target,index) {
         var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
         var viewId = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');

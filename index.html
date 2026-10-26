@@ -10366,6 +10366,9 @@
         <div class="map-action-row">
           <button type="button" class="btn-arrival-report" id="btnArrivalReport">도착 시간 제보하기</button>
           <div class="map-side-actions">
+            <button type="button" class="btn-rank-floating btn-vehicle-toggle" id="btnVehiclePositions" aria-label="버스 위치 말풍선 표시 중 · 숨기기" aria-pressed="true" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 3h14v12H9l-4 4V3Z"/><rect x="8" y="6" width="8" height="5" rx="1"/><path d="M9 11v2m6-2v2M8 8h8"/></svg>
+            </button>
             <button type="button" class="btn-rank-floating" id="btnMapLeaderboard" title="랭킹">
               <img src="/images/rank_icon.png" alt="" />
             </button>
@@ -41730,6 +41733,7 @@
       }
       if (window.ShuttleVehiclePositions) {
         liveVehicleController = window.ShuttleVehiclePositions.start({ apiBase: API_BASE, zIndex: ROUTE_OVERLAY_LAYERS.vehicle,
+          toggleButton: document.getElementById('btnVehiclePositions'),
           getMap: function() { return map; }, getMapContainer: function() { return mapContainer; },
           onSelectDeparture: selectRouteDepartureFromVehicle,
           canSelectDeparture: function(selection) {
