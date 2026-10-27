@@ -963,12 +963,13 @@
       entry.nextPollAt = 0;
       updateCountdownRows();
       entry.abort = new AbortController();
-      var abort = entry.abort, signal = abort.signal, timedOut = false, startedAt = activityTime(), getBegin=null, responseReference=null;
+      var abort = entry.abort, signal = abort.signal, timedOut = false, watchBegin=timeSample(), startedAt = activityTime(), getBegin=null, responseReference=null;
       var requestDeadline = setTimeout(function() { timedOut = true; abort.abort(); },15000);
       var renew = !entry.watch || Date.now() >= entry.renewAt || Date.now() >= entry.watchActiveUntil;
       var watchHeaders = { 'Content-Type': 'application/json' };
       if (entry.watch) watchHeaders['X-Shuttle-Position-Capability'] = entry.watch.capability;
       var requestContext = Object.assign({}, entry.target.context, {view_id:entry.viewId});
+      if (Number(config.poll_seconds) === 1) requestContext.include_initial_position = true;
       if (!config.gps_shared_snapshots || !requestContext.shared_route_token) delete requestContext.shared_route_token;
       var ready = renew ? fetch(options.apiBase + '/api/vehicle-positions/watch', {
         method: 'POST', credentials: 'include', signal: signal, headers: watchHeaders,
@@ -989,22 +990,27 @@
         if (entry.handoff && watch.route_revision!==entry.handoff.data.route_revision) { entry.handoff=null; renderMap(); }
         entry.renewAt = Date.now() + 100000; entry.watchActiveUntil = Date.now() + 40000; entry.etag = ''; return watch;
       }) : Promise.resolve(entry.watch);
-      ready.then(function(watch) {
-        if (token !== generation) return null;
-        var headers = { 'X-Shuttle-Position-Capability': watch.capability };
-        if (entry.etag) headers['If-None-Match'] = entry.etag;
-        getBegin=timeSample(); entry.watchMs=renew ? Math.max(0,getBegin.mono-startedAt) : 0;
-        return positionRead(watch, headers, signal);
-      }).then(function(r) {
-        if (!r || token !== generation) return;
-        if (r.status === 304) { if (!entry.data) throw new Error('temporary'); entry.watchActiveUntil = Date.now() + 40000; return entry.data; }
-        if (!r.ok) { var error = new Error(r.status === 409 ? 'scope_changed' : 'temporary'); error.retryAfter = retryAfter(r); throw error; }
-        return r.json().then(function(data) {
+      function acceptRead(data, begin, etag) {
           if (data && data.enabled === false) throw new Error('disabled');
           if (!data || !Array.isArray(data.vehicles) || !['available','loading','empty','unavailable','budget_paused','usage_unknown'].includes(data.state)) throw new Error('temporary');
-          var receipt=timeSample(); entry.getMs=Math.max(0,receipt.mono-getBegin.mono);
-          responseReference=readReference(data,getBegin,receipt);
-          entry.etag = r.headers.get('ETag') || ''; entry.watchActiveUntil = Date.now() + 40000; return data;
+          var receipt=timeSample(); entry.getMs=Math.max(0,receipt.mono-begin.mono);
+          responseReference=readReference(data,begin,receipt);
+          entry.etag = etag || ''; entry.watchActiveUntil = Date.now() + 40000; return data;
+      }
+      ready.then(function(watch) {
+        if (token !== generation) return null;
+        entry.watchMs=renew ? Math.max(0,activityTime()-startedAt) : 0;
+        if (renew && watch.initial_position && watch.initial_position.watch_id === watch.watch_id) {
+          return acceptRead(watch.initial_position,watchBegin,'');
+        }
+        var headers = { 'X-Shuttle-Position-Capability': watch.capability };
+        if (entry.etag) headers['If-None-Match'] = entry.etag;
+        getBegin=timeSample();
+        return positionRead(watch, headers, signal).then(function(r) {
+          if (!r || token !== generation) return;
+          if (r.status === 304) { if (!entry.data) throw new Error('temporary'); entry.watchActiveUntil = Date.now() + 40000; return entry.data; }
+          if (!r.ok) { var error = new Error(r.status === 409 ? 'scope_changed' : 'temporary'); error.retryAfter = retryAfter(r); throw error; }
+          return r.json().then(function(data) { return acceptRead(data,getBegin,r.headers.get('ETag')); });
         });
       }).then(function(data) {
         if (!data || token !== generation || document.hidden || suspended || idlePaused) return;
@@ -1015,7 +1021,8 @@
         render(entry, data, undefined, responseReference);
         var period = Math.max(1000, Math.min(120000, Number(data.retry_after_seconds || config.poll_seconds || 5) * 1000));
         var now = activityTime();
-        schedulePoll(entry, token, waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
+        var overdue = period === 1000 && now-startedAt >= period;
+        schedulePoll(entry, token, overdue ? 1 : waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
           : config.batch_reads ? Math.max(1,pollOrigin+(Math.floor((now-pollOrigin)/period)+1)*period-now) : period);
       }).catch(function(error) {
         if (token !== generation || (error.name === 'AbortError' && !timedOut) || error.message === 'cancelled') return;
