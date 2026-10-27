@@ -1013,7 +1013,7 @@
         var waitingFirst = !entry.firstDone && data.state==='loading' && activityTime()<entry.firstUntil;
         if (!waitingFirst) entry.firstDone = true;
         render(entry, data, undefined, responseReference);
-        var period = Math.max(5000, Math.min(120000, Number(data.retry_after_seconds || config.poll_seconds || 5) * 1000));
+        var period = Math.max(1000, Math.min(120000, Number(data.retry_after_seconds || config.poll_seconds || 5) * 1000));
         var now = activityTime();
         schedulePoll(entry, token, waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
           : config.batch_reads ? Math.max(1,pollOrigin+(Math.floor((now-pollOrigin)/period)+1)*period-now) : period);
