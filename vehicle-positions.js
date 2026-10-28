@@ -59,6 +59,7 @@
     var generation = 0, entries = [], targets = [], overlays = {}, config = null, suspended = false;
     var mapListenerTarget = null;
     var countdownTimer = null, idleTimer = null, expiryTimer = null, idlePaused = false, pollTimer = null, pollOrigin = 0;
+    var initialMapIntent = 0;
     var reasonTooltip = null, reasonTrigger = null;
     var statusViews = new Map();
     var lastActivity = null, lastActivityWall = null, lastSignal = -Infinity;
@@ -657,8 +658,27 @@
       var frame=derivePresentation(timeSample());
       renderRows(frame);
       paintMap(frame);
+      ensureFirstPositionVisible(frame);
       recordPresentation(frame);
       if (isFinite(frame.nextExpiry)) expiryTimer=setTimeout(renderMap,Math.max(1,frame.nextExpiry-frame.sample.wall));
+    }
+    function ensureFirstPositionVisible(frame) {
+      if (!positionsVisible || !options.ensureInitialPositionsVisible || document.hidden || suspended || idlePaused) return;
+      var intent = options.getMapInteractionVersion ? options.getMapInteractionVersion() : 0;
+      if (intent !== initialMapIntent) {
+        entries.forEach(function(entry) { entry.initialCameraDone = true; });
+        return;
+      }
+      var first = false, positions = [];
+      entries.forEach(function(entry) {
+        var info = frame.states.get(entry);
+        var chosen = info ? info.vehicles.filter(function(v) { return v.selected_trip && !v.display_stale && !v.display_uncertain; }) : [];
+        if (chosen.length && !entry.initialCameraDone) { entry.initialCameraDone = true; first = true; }
+        positions = positions.concat(chosen);
+      });
+      // Mark the first read before moving the map: SDK zoom events can render
+      // synchronously. Subsequent GPS updates never recenter a user's view.
+      if (first) options.ensureInitialPositionsVisible(positions);
     }
     function recordPresentation(frame) {
       if (!config || !config.gps_presentation_diagnostics) return;
@@ -1079,6 +1099,7 @@
       lastActivityWall = !hadTargets || (wasPaused && !idlePaused) ? Date.now() : priorWall;
       var token = generation;
       pollOrigin = activityTime();
+      initialMapIntent = options.getMapInteractionVersion ? options.getMapInteractionVersion() : 0;
       entries = targets.map(function(target,index) {
         var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
         var viewId = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');

@@ -10399,7 +10399,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=23"></script>
+  <script src="vehicle-positions.js?v=24"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -10772,6 +10772,7 @@
       var mapClickIgnore = false;
       var mapTouchStart = null;
       var mapDragStartedAt = 0;
+      var liveVehicleMapIntentVersion = 0;
       var bubbleOpenedAt = 0;
       var bubbleClosedByOutsideAt = 0;
       var lastMobileCardTouchSelectAt = 0;
@@ -11344,6 +11345,7 @@
 
       function markUserMapIntent(reason) {
         var normalizedReason = String(reason || 'user-interaction');
+        if (['map-interaction','map-drag','zoom-in','zoom-out','location-button','sheet-drag'].indexOf(normalizedReason)>=0) liveVehicleMapIntentVersion += 1;
         cancelStartupCurrentLocationAutoCenter(normalizedReason);
         if (normalizedReason !== 'location-button') {
           stopNativeLocationFollow(normalizedReason);
@@ -21012,7 +21014,7 @@
 
         if (opts.useVisibleViewportPadding) {
           var insets = getMapOverlayInsets();
-          var edgePadding = 16;
+          var edgePadding = Math.max(16, Number(opts.extraPadding) || 16);
           map.setBounds(
             bounds,
             Math.max(edgePadding, Math.round(Number(insets.top) || 0) + edgePadding),
@@ -34922,6 +34924,21 @@
         vehicleMapClickIgnoreTimer = setTimeout(function() { mapClickIgnore = false; }, 350);
       }
 
+      function ensureInitialVehiclePositionsVisible(vehicles) {
+        if (!map || !vehicles || !vehicles.length) return false;
+        var rect = getVisibleMapRectForRoute(), projection = map.getProjection();
+        if (!rect || !projection) return false;
+        var margin = 90;
+        var visible = vehicles.every(function(vehicle) {
+          var point = projection.containerPointFromCoords(new kakao.maps.LatLng(vehicle.lat, vehicle.lon));
+          return point.x>=rect.left+margin && point.x<=rect.right-margin && point.y>=rect.top+margin && point.y<=rect.bottom-margin;
+        });
+        if (visible) return false;
+        cancelRouteVisualFitOnUserMapInteraction();
+        var points = shuttlePositions.slice().concat(vehicles.map(function(vehicle) { return {lat:vehicle.lat,lng:vehicle.lon}; }));
+        return setInitialRouteBounds(points, {useVisibleViewportPadding:true,extraPadding:margin});
+      }
+
       function scheduleLiveVehiclePositions(option, card, isDepart) {
         clearTimeout(liveVehicleTimer);
         if (!liveVehicleController || !option || !card) return;
@@ -41740,6 +41757,8 @@
             return canSelectRouteDeparture(selection.target.option, selection.departureTime);
           },
           onMarkerInteraction: markVehicleMapInteraction,
+          getMapInteractionVersion: function() { return liveVehicleMapIntentVersion; },
+          ensureInitialPositionsVisible: ensureInitialVehiclePositionsVisible,
           mapDraggedRecently: function() { return mapDragStartedAt > 0 && Date.now() - mapDragStartedAt < 350; }
         });
       }
