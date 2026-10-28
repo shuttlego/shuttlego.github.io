@@ -959,7 +959,7 @@
       if (token !== generation || document.hidden || suspended || idlePaused || !entry.target.card.isConnected) return;
       if (idleExpired()) { pauseIdle(); return; }
       entry.pending = true;
-      if (entry.firstUntil == null) entry.firstUntil = activityTime()+15000;
+      if (entry.firstUntil == null) entry.firstUntil = activityTime()+Math.max(1000,Math.min(15000,Number(config.initial_poll_window_seconds || 15)*1000));
       entry.nextPollAt = 0;
       updateCountdownRows();
       entry.abort = new AbortController();
@@ -969,7 +969,7 @@
       var watchHeaders = { 'Content-Type': 'application/json' };
       if (entry.watch) watchHeaders['X-Shuttle-Position-Capability'] = entry.watch.capability;
       var requestContext = Object.assign({}, entry.target.context, {view_id:entry.viewId});
-      if (Number(config.poll_seconds) === 1) requestContext.include_initial_position = true;
+      if (config.initial_position || Number(config.poll_seconds) === 1) requestContext.include_initial_position = true;
       if (!config.gps_shared_snapshots || !requestContext.shared_route_token) delete requestContext.shared_route_token;
       var ready = renew ? fetch(options.apiBase + '/api/vehicle-positions/watch', {
         method: 'POST', credentials: 'include', signal: signal, headers: watchHeaders,
@@ -1016,13 +1016,14 @@
         if (!data || token !== generation || document.hidden || suspended || idlePaused) return;
         entry.reason = data.reason || '';
         entry.failureCount = 0;
-        var waitingFirst = !entry.firstDone && data.state==='loading' && activityTime()<entry.firstUntil;
+        var hasFirstPosition = data.vehicles.some(function(vehicle) { return vehicle.selected_trip && vehicle.position_state==='fresh'; });
+        var waitingFirst = !entry.firstDone && !hasFirstPosition && ['available','loading','empty','unavailable'].indexOf(data.state)>=0 && activityTime()<entry.firstUntil;
         if (!waitingFirst) entry.firstDone = true;
         render(entry, data, undefined, responseReference);
         var period = Math.max(1000, Math.min(120000, Number(data.retry_after_seconds || config.poll_seconds || 5) * 1000));
         var now = activityTime();
-        var overdue = period === 1000 && now-startedAt >= period;
-        schedulePoll(entry, token, overdue ? 1 : waitingFirst ? Math.min(1000,Math.max(1,entry.firstUntil-activityTime()))
+        var overdue = now-startedAt >= period;
+        schedulePoll(entry, token, waitingFirst ? Math.min(Number(config.initial_poll_seconds || 1)*1000,Math.max(1,entry.firstUntil-activityTime())) : overdue ? 1
           : config.batch_reads ? Math.max(1,pollOrigin+(Math.floor((now-pollOrigin)/period)+1)*period-now) : period);
       }).catch(function(error) {
         if (token !== generation || (error.name === 'AbortError' && !timedOut) || error.message === 'cancelled') return;
@@ -1036,13 +1037,14 @@
         }
         var permanent = error.message === 'unsupported' || error.message === 'disabled';
         var state = permanent ? 'unsupported' : 'unavailable';
-        entry.firstDone = true;
+        if (permanent) entry.firstDone = true;
         entry.reason = error.reason || (error.message==='disabled' ? 'feature_disabled' : timedOut ? 'timeout' : permanent ? 'invalid_request' : 'network_error');
         if (state === 'unsupported') { entry.data = null; entry.lastGood = null; entry.handoff = null; entry.etag = ''; entry.permanentAt = lastSignal; clearEntry(entry); }
         render(entry, entry.data || {state:state,vehicles:[]}, state);
         if (!permanent) {
           entry.failureCount = (entry.failureCount || 0) + 1;
-          schedulePoll(entry, token, Math.max(error.retryAfter || 0, [5000,15000,30000][Math.min(2,entry.failureCount - 1)]));
+          var firstRetry = !entry.firstDone && activityTime()<entry.firstUntil;
+          schedulePoll(entry, token, Math.max(error.retryAfter || 0, firstRetry ? 1000 : [5000,15000,30000][Math.min(2,entry.failureCount - 1)]));
         }
       }).finally(function() {
         clearTimeout(requestDeadline);
