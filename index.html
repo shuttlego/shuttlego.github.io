@@ -10399,7 +10399,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=24"></script>
+  <script src="vehicle-positions.js?v=25"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -27316,7 +27316,7 @@
         drawOptionOnMap(option, placeName, isDepart, card);
         var crowdStartedAt = Date.now();
         ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
-        scheduleLiveVehiclePositions(option, card, isDepart);
+        scheduleLiveVehiclePositions(option, card, isDepart, {resetInitialCamera:true});
       }
 
       function triggerRouteDetailButtonAttention(card) {
@@ -27345,7 +27345,7 @@
         }
         var crowdStartedAt = Date.now();
         ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
-        scheduleLiveVehiclePositions(option, card, isDepart);
+        scheduleLiveVehiclePositions(option, card, isDepart, {resetInitialCamera:fitViewport !== false});
         if (isFromMapLabel) {
           routeLabelTriggeredDetailState = {
             card: card,
@@ -34933,13 +34933,17 @@
           var point = projection.containerPointFromCoords(new kakao.maps.LatLng(vehicle.lat, vehicle.lon));
           return point.x>=rect.left+margin && point.x<=rect.right-margin && point.y>=rect.top+margin && point.y<=rect.bottom-margin;
         });
-        if (visible) return false;
+        // A queued route-only zoom can hide a bus that is visible right now.
+        // Finish the first route-and-bus fit together, then leave later GPS
+        // updates and user camera changes alone.
+        var pendingRouteFit = !!(routeVisualFitIdleHandler || routeVisualFitSettleTimer);
         cancelRouteVisualFitOnUserMapInteraction();
+        if (visible && !pendingRouteFit) return false;
         var points = shuttlePositions.slice().concat(vehicles.map(function(vehicle) { return {lat:vehicle.lat,lng:vehicle.lon}; }));
         return setInitialRouteBounds(points, {useVisibleViewportPadding:true,extraPadding:margin});
       }
 
-      function scheduleLiveVehiclePositions(option, card, isDepart) {
+      function scheduleLiveVehiclePositions(option, card, isDepart, selectionOptions) {
         clearTimeout(liveVehicleTimer);
         if (!liveVehicleController || !option || !card) return;
         liveVehicleTimer = setTimeout(function() {
@@ -34978,7 +34982,7 @@
               shared_route_token: sharedRouteState.active ? String(sharedRouteState.token || '') : ''
             } };
           }).filter(function(target) { return target && target.context.route_id > 0; });
-          liveVehicleController.select(targets);
+          liveVehicleController.select(targets, false, selectionOptions);
         }, 80);
       }
 

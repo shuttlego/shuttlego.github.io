@@ -1074,7 +1074,7 @@
         }
       });
     }
-    function select(next, resuming) {
+    function select(next, resuming, selectionOptions) {
       var wanted = (next || []).slice(0, 3);
       if (!wanted.length) { stop(false); return; }
       var same = targets.length === wanted.length && wanted.every(function(target,index) { return contextKey(targets[index]) === contextKey(target); });
@@ -1082,6 +1082,12 @@
       if (entries.length && same && !retryRequested && !resuming) {
         targets = wanted;
         entries.forEach(function(entry,index) { entry.target = wanted[index]; });
+        if (selectionOptions && selectionOptions.resetInitialCamera === true) {
+          // Opening the card can redraw the route map while the same watch is
+          // reused. Reveal its cached GPS again after that explicit map reset.
+          initialMapIntent = options.getMapInteractionVersion ? options.getMapInteractionVersion() : 0;
+          entries.forEach(function(entry) { entry.initialCameraDone = false; });
+        }
         renderMap(); return;
       }
       var wasPaused = idlePaused, priorActivity = lastActivity, priorWall = lastActivityWall, hadTargets = targets.length > 0;
