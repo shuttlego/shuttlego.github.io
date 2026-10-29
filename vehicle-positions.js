@@ -848,7 +848,14 @@
         if (needsAction) {
           renderIdle(view,function() { select(targets.slice(),true); });
           view.statusState = 'unsupported';
-        } else view.row.appendChild(node('span','route-live-status','버스 위치 확인 중'));
+        } else {
+          var sourceEmpty = state==='waiting' && group.every(function(entry) {
+            return !entry.errorState && entry.data && ['empty','available'].includes(entry.data.state)
+              && !(entry.data.vehicles || []).length;
+          });
+          view.row.appendChild(node('span','route-live-status', sourceEmpty
+            ? '현재 표시할 버스 위치가 없습니다. 자동으로 다시 확인합니다.' : '버스 위치 확인 중'));
+        }
         if (issues.length) {
           var explanations = issues.map(function(entry) {
             var reason = entry.reason || (entryState(entry)==='unavailable' ? 'service_unavailable' : entryState(entry));
