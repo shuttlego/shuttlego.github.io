@@ -59,7 +59,6 @@
     var generation = 0, entries = [], targets = [], overlays = {}, config = null, suspended = false;
     var mapListenerTarget = null;
     var countdownTimer = null, idleTimer = null, expiryTimer = null, idlePaused = false, pollTimer = null, pollOrigin = 0;
-    var initialMapIntent = 0;
     var reasonTooltip = null, reasonTrigger = null;
     var statusViews = new Map();
     var lastActivity = null, lastActivityWall = null, lastSignal = -Infinity;
@@ -70,6 +69,25 @@
     var positionsVisible = true;
     var toggleButton = options.toggleButton;
     var pendingReads = [], batchScheduled = false;
+    var networkHistory = [];
+    function gpsFetch(url, init) {
+      if (!config || !config.gps_request_timing) return fetch(url, init);
+      var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
+      var id = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');
+      var request = Object.assign({},init), headers = new Headers(request.headers || {});
+      headers.set('X-SG-Request-Id',id); request.headers=headers;
+      var began = activityTime(), at = Date.now(), path = new URL(url,global.location.href).pathname;
+      var operation = path.endsWith('/close') ? 'watch_close' : path.split('/').pop();
+      function record(values) {
+        networkHistory.push(Object.assign({request_id:id,operation:operation,at:at,elapsed_ms:activityTime()-began},values));
+        if (networkHistory.length>100) networkHistory.shift();
+      }
+      return fetch(url,request).then(function(response) {
+        record({status:response.status,server_timing:response.headers.get('Server-Timing') || '',
+          server_request_id:response.headers.get('X-SG-Request-Id') || ''});
+        return response;
+      },function(error) { record({error_type:error.name || 'Error'}); throw error; });
+    }
     function syncToggle() {
       if (!toggleButton) return;
       toggleButton.hidden = !config || !config.enabled || !targets.length || !entries.length ||
@@ -85,7 +103,7 @@
       syncToggle(); renderMap();
     });
     function positionRead(watch, headers, signal) {
-      if (!config.batch_reads) return fetch(options.apiBase + '/api/vehicle-positions', {credentials:'include',signal:signal,headers:headers});
+      if (!config.batch_reads) return gpsFetch(options.apiBase + '/api/vehicle-positions', {credentials:'include',signal:signal,headers:headers});
       return new Promise(function(resolve,reject) {
         pendingReads.push({watch:watch,signal:signal,resolve:resolve,reject:reject});
         if (batchScheduled) return;
@@ -101,7 +119,7 @@
           var controller = new AbortController();
           function cancelIfEmpty() { if (reads.every(function(item) { return item.signal.aborted; })) controller.abort(); }
           reads.forEach(function(item) { item.signal.addEventListener('abort',cancelIfEmpty,{once:true}); });
-          fetch(options.apiBase + '/api/vehicle-positions/batch', {method:'POST',credentials:'include',signal:controller.signal,
+          gpsFetch(options.apiBase + '/api/vehicle-positions/batch', {method:'POST',credentials:'include',signal:controller.signal,
             headers:{'Content-Type':'application/json','X-Shuttle-Position-Capability':reads[0].watch.capability},
             body:JSON.stringify({capabilities:reads.map(function(item) { return item.watch.capability; })})
           }).then(function(response) {
@@ -546,7 +564,7 @@
       clearTimeout(entry.timer);
       if (entry.abort) entry.abort.abort();
       if (entry.watch) {
-        fetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(entry.watch.watch_id) + '/close', {
+        gpsFetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(entry.watch.watch_id) + '/close', {
           method: 'POST', credentials: 'include', keepalive: true,
           headers: { 'X-Shuttle-Position-Capability': entry.watch.capability, 'Content-Type':'application/json' },
           body:JSON.stringify({reason:reason || 'view_change'})
@@ -658,27 +676,8 @@
       var frame=derivePresentation(timeSample());
       renderRows(frame);
       paintMap(frame);
-      ensureFirstPositionVisible(frame);
       recordPresentation(frame);
       if (isFinite(frame.nextExpiry)) expiryTimer=setTimeout(renderMap,Math.max(1,frame.nextExpiry-frame.sample.wall));
-    }
-    function ensureFirstPositionVisible(frame) {
-      if (!positionsVisible || !options.ensureInitialPositionsVisible || document.hidden || suspended || idlePaused) return;
-      var intent = options.getMapInteractionVersion ? options.getMapInteractionVersion() : 0;
-      if (intent !== initialMapIntent) {
-        entries.forEach(function(entry) { entry.initialCameraDone = true; });
-        return;
-      }
-      var first = false, positions = [];
-      entries.forEach(function(entry) {
-        var info = frame.states.get(entry);
-        var chosen = info ? info.vehicles.filter(function(v) { return v.selected_trip && !v.display_stale && !v.display_uncertain; }) : [];
-        if (chosen.length && !entry.initialCameraDone) { entry.initialCameraDone = true; first = true; }
-        positions = positions.concat(chosen);
-      });
-      // Mark the first read before moving the map: SDK zoom events can render
-      // synchronously. Subsequent GPS updates never recenter a user's view.
-      if (first) options.ensureInitialPositionsVisible(positions);
     }
     function recordPresentation(frame) {
       if (!config || !config.gps_presentation_diagnostics) return;
@@ -991,7 +990,7 @@
       var requestContext = Object.assign({}, entry.target.context, {view_id:entry.viewId});
       if (config.initial_position || Number(config.poll_seconds) === 1) requestContext.include_initial_position = true;
       if (!config.gps_shared_snapshots || !requestContext.shared_route_token) delete requestContext.shared_route_token;
-      var ready = renew ? fetch(options.apiBase + '/api/vehicle-positions/watch', {
+      var ready = renew ? gpsFetch(options.apiBase + '/api/vehicle-positions/watch', {
         method: 'POST', credentials: 'include', signal: signal, headers: watchHeaders,
         body: JSON.stringify(requestContext)
       }).then(function(r) {
@@ -1003,7 +1002,7 @@
       }).then(function(watch) {
         if (!watch.enabled) throw new Error('disabled');
         if (token !== generation) {
-          fetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(watch.watch_id) + '/close', { method: 'POST', credentials: 'include', keepalive: true, headers: { 'X-Shuttle-Position-Capability': watch.capability } }).catch(function() {});
+          gpsFetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(watch.watch_id) + '/close', { method: 'POST', credentials: 'include', keepalive: true, headers: { 'X-Shuttle-Position-Capability': watch.capability } }).catch(function() {});
           throw new Error('cancelled');
         }
         entry.watch = watch;
@@ -1036,7 +1035,12 @@
         if (!data || token !== generation || document.hidden || suspended || idlePaused) return;
         entry.reason = data.reason || '';
         entry.failureCount = 0;
-        var hasFirstPosition = data.vehicles.some(function(vehicle) { return vehicle.selected_trip && vehicle.position_state==='fresh'; });
+        var sample = timeSample();
+        var hasFirstPosition = data.vehicles.some(function(vehicle) {
+          var bounds = ageBounds(vehicle,responseReference,sample);
+          return isFinite(Number(vehicle.lat)) && isFinite(Number(vehicle.lon)) &&
+            isFinite(Date.parse(vehicle.observed_at)) && isFinite(bounds.upper) && bounds.upper<=180000;
+        });
         var waitingFirst = !entry.firstDone && !hasFirstPosition && ['available','loading','empty','unavailable'].indexOf(data.state)>=0 && activityTime()<entry.firstUntil;
         if (!waitingFirst) entry.firstDone = true;
         render(entry, data, undefined, responseReference);
@@ -1082,12 +1086,6 @@
       if (entries.length && same && !retryRequested && !resuming) {
         targets = wanted;
         entries.forEach(function(entry,index) { entry.target = wanted[index]; });
-        if (selectionOptions && selectionOptions.resetInitialCamera === true) {
-          // Opening the card can redraw the route map while the same watch is
-          // reused. Reveal its cached GPS again after that explicit map reset.
-          initialMapIntent = options.getMapInteractionVersion ? options.getMapInteractionVersion() : 0;
-          entries.forEach(function(entry) { entry.initialCameraDone = false; });
-        }
         renderMap(); return;
       }
       var wasPaused = idlePaused, priorActivity = lastActivity, priorWall = lastActivityWall, hadTargets = targets.length > 0;
@@ -1105,7 +1103,6 @@
       lastActivityWall = !hadTargets || (wasPaused && !idlePaused) ? Date.now() : priorWall;
       var token = generation;
       pollOrigin = activityTime();
-      initialMapIntent = options.getMapInteractionVersion ? options.getMapInteractionVersion() : 0;
       entries = targets.map(function(target,index) {
         var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
         var viewId = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');
@@ -1134,6 +1131,7 @@
     return { select: select, previewDeparture: previewDeparture, stop: function() { stop(false); }, ready: function() { return configPromise; },
       dismissPickerForMapTap: dismissPickerForMapTap,
       diagnostics: function() { return config && config.gps_presentation_diagnostics ? diagnosticHistory.map(function(item) { return Object.assign({},item); }) : []; },
+      networkDiagnostics: function() { return networkHistory.map(function(item) { return Object.assign({},item); }); },
       configReady: function() { return config !== null; },
       evidenceMode: function() { return config && config.gps_dev_experiment ? 'gps-dev-v1' : 'gps-v1'; },
       evidenceEnabled: function() { return !!(config && config.gps_evidence); } };

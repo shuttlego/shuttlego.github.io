@@ -10399,7 +10399,7 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=25"></script>
+  <script src="vehicle-positions.js?v=26"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -34924,25 +34924,6 @@
         vehicleMapClickIgnoreTimer = setTimeout(function() { mapClickIgnore = false; }, 350);
       }
 
-      function ensureInitialVehiclePositionsVisible(vehicles) {
-        if (!map || !vehicles || !vehicles.length) return false;
-        var rect = getVisibleMapRectForRoute(), projection = map.getProjection();
-        if (!rect || !projection) return false;
-        var margin = 90;
-        var visible = vehicles.every(function(vehicle) {
-          var point = projection.containerPointFromCoords(new kakao.maps.LatLng(vehicle.lat, vehicle.lon));
-          return point.x>=rect.left+margin && point.x<=rect.right-margin && point.y>=rect.top+margin && point.y<=rect.bottom-margin;
-        });
-        // A queued route-only zoom can hide a bus that is visible right now.
-        // Finish the first route-and-bus fit together, then leave later GPS
-        // updates and user camera changes alone.
-        var pendingRouteFit = !!(routeVisualFitIdleHandler || routeVisualFitSettleTimer);
-        cancelRouteVisualFitOnUserMapInteraction();
-        if (visible && !pendingRouteFit) return false;
-        var points = shuttlePositions.slice().concat(vehicles.map(function(vehicle) { return {lat:vehicle.lat,lng:vehicle.lon}; }));
-        return setInitialRouteBounds(points, {useVisibleViewportPadding:true,extraPadding:margin});
-      }
-
       function scheduleLiveVehiclePositions(option, card, isDepart, selectionOptions) {
         clearTimeout(liveVehicleTimer);
         if (!liveVehicleController || !option || !card) return;
@@ -41761,8 +41742,6 @@
             return canSelectRouteDeparture(selection.target.option, selection.departureTime);
           },
           onMarkerInteraction: markVehicleMapInteraction,
-          getMapInteractionVersion: function() { return liveVehicleMapIntentVersion; },
-          ensureInitialPositionsVisible: ensureInitialVehiclePositionsVisible,
           mapDraggedRecently: function() { return mapDragStartedAt > 0 && Date.now() - mapDragStartedAt < 350; }
         });
       }
