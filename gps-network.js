@@ -1,6 +1,7 @@
 (function(global) {
   'use strict';
   var history=[];
+  var TOTAL_MS=6000,FIRST_MS=2000;
   function id() {
     var bytes=new Uint8Array(16);
     if(global.crypto && global.crypto.getRandomValues)global.crypto.getRandomValues(bytes);
@@ -27,27 +28,68 @@
     var path=new URL(url,global.location.href).pathname,canRetry=allowed(path,init);
     var headers=new Headers(init.headers || {}),requestId=headers.get('X-SG-Request-Id') || id();
     headers.set('X-SG-Request-Id',requestId);
+    var deadline=global.performance.now()+TOTAL_MS;
+    function timeoutError() { return new DOMException('GPS request timed out','TimeoutError'); }
+    function abortError() { return new DOMException('Aborted','AbortError'); }
+    function discard(response) {
+      if(response && response.body && response.body.cancel)response.body.cancel().catch(function() {});
+    }
     function attempt(n) {
-      var began=global.performance.now();
-      function observe(extra) { record(Object.assign({request_id:requestId,attempt:n,path:path,at:Date.now(),elapsed_ms:global.performance.now()-began},extra)); }
+      if(init.signal && init.signal.aborted)return Promise.reject(abortError());
+      var began=global.performance.now(),controller=canRetry && global.AbortController ? new global.AbortController() : null;
+      var budget=Math.max(0,Math.min(n===1?FIRST_MS:TOTAL_MS,deadline-began));
+      var timer=null,response=null,timedOut=false,cancelled=false,rejectDeadline;
+      function observe(extra) { record(Object.assign({request_id:requestId,attempt:n,path:path,at:Date.now(),elapsed_ms:global.performance.now()-began,
+        deadline_supported:!!controller,attempt_budget_ms:controller?budget:null,total_budget_ms:controller?TOTAL_MS:null},extra)); }
+      function onAbort() { cancelled=true;controller.abort();rejectDeadline(abortError()); }
+      function cleanup() {
+        if(timer!==null)clearTimeout(timer);
+        if(controller && init.signal && init.signal.removeEventListener)init.signal.removeEventListener('abort',onAbort);
+      }
       function retry() {
+        var delay=100+Math.floor(Math.random()*100);
+        if(controller && deadline-global.performance.now()<=delay)return Promise.reject(timeoutError());
         return new Promise(function(resolve,reject) {
           setTimeout(function() {
-            if(init.signal && init.signal.aborted) { reject(new DOMException('Aborted','AbortError'));return; }
+            if(init.signal && init.signal.aborted) { reject(abortError());return; }
             resolve(attempt(2));
-          },100+Math.floor(Math.random()*100));
+          },delay);
         });
       }
-      return global.fetch(url,Object.assign({},init,{headers:headers})).then(function(response) {
-        observe({status:response.status});
-        if(n===1 && canRetry && [502,503,504,520,521,522,523,524,525,526].includes(response.status) && !response.headers.get('Retry-After')) {
-          if(response.body && response.body.cancel)response.body.cancel().catch(function() {});
+      var options=Object.assign({},init,{headers:headers});
+      if(controller)options.signal=controller.signal;
+      var work=Promise.resolve().then(function() { return global.fetch(url,options); }).then(function(value) {
+        response=value;
+        if(timedOut || cancelled) { discard(response);throw timedOut?timeoutError():abortError(); }
+        var gateway=n===1 && canRetry && [502,503,504,520,521,522,523,524,525,526].includes(response.status) && !response.headers.get('Retry-After');
+        // Wait for the JSON body too: headers alone must not end the deadline.
+        // The original response stays unread and retains URL/status/header metadata.
+        var read=controller && !gateway && response.body && response.clone ? response.clone().arrayBuffer() : Promise.resolve();
+        return Promise.resolve(read).then(function() { return {response:response,retry:gateway}; });
+      });
+      if(controller) {
+        var expiration=new Promise(function(resolve,reject) {
+          rejectDeadline=reject;
+          timer=setTimeout(function() { timedOut=true;controller.abort();reject(timeoutError()); },budget);
+          if(init.signal && init.signal.addEventListener)init.signal.addEventListener('abort',onAbort,{once:true});
+          if(init.signal && init.signal.aborted)onAbort();
+        });
+        work=Promise.race([work,expiration]);
+      }
+      return work.then(function(value) {
+        cleanup();observe({status:value.response.status,phase:'complete'});
+        if(value.retry) {
+          discard(value.response);
           return retry();
         }
-        return response;
+        return value.response;
       },function(error) {
-        observe({error_type:error.name || 'Error'});
-        if(n===1 && canRetry && error.name!=='AbortError' && !(init.signal && init.signal.aborted))return retry();
+        cleanup();discard(response);
+        if(init.signal && init.signal.aborted)error=abortError();
+        else if(timedOut)error=timeoutError();
+        observe({error_type:error.name || 'Error',status:response?response.status:null,phase:response?'body':'headers',timed_out:timedOut});
+        var retryableResponse=!response || (response.status<400 && !response.headers.get('Retry-After'));
+        if(n===1 && canRetry && retryableResponse && !(init.signal && init.signal.aborted) && (timedOut || error.name!=='AbortError'))return retry();
         throw error;
       });
     }
