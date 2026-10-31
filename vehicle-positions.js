@@ -90,7 +90,8 @@
       });
     }
     function gpsFetch(url, init) {
-      if (!config || !config.gps_request_timing) return global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,init) : fetch(url,init);
+      var features={attemptHeader:!!(config && config.gps_attempt_header)};
+      if (!config || !config.gps_request_timing) return global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,init,features) : fetch(url,init);
       var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
       var id = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');
       var request = Object.assign({},init), headers = new Headers(request.headers || {});
@@ -101,7 +102,7 @@
         networkHistory.push(Object.assign({request_id:id,operation:operation,at:at,elapsed_ms:activityTime()-began},values));
         if (networkHistory.length>100) networkHistory.shift();
       }
-      return (global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,request) : fetch(url,request)).then(function(response) {
+      return (global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,request,features) : fetch(url,request)).then(function(response) {
         record({status:response.status,server_timing:response.headers.get('Server-Timing') || '',
           server_request_id:response.headers.get('X-SG-Request-Id') || ''});
         return response;

@@ -23,7 +23,7 @@
     history.push(event);if(history.length>100)history.shift();
     if(global.dispatchEvent && global.CustomEvent)global.dispatchEvent(new CustomEvent('shuttle:gps-network-attempt',{detail:event}));
   }
-  function request(url,init) {
+  function request(url,init,features) {
     init=init || {};
     var path=new URL(url,global.location.href).pathname,canRetry=allowed(path,init);
     var headers=new Headers(init.headers || {}),requestId=headers.get('X-SG-Request-Id') || id();
@@ -57,7 +57,8 @@
           },delay);
         });
       }
-      var attemptHeaders=new Headers(headers);attemptHeaders.set('X-SG-Attempt',String(n));
+      var attemptHeaders=new Headers(headers);
+      if(features && features.attemptHeader)attemptHeaders.set('X-SG-Attempt',String(n));
       var options=Object.assign({},init,{headers:attemptHeaders});
       if(controller)options.signal=controller.signal;
       var work=Promise.resolve().then(function() { return global.fetch(url,options); }).then(function(value) {
