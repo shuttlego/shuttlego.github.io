@@ -57,6 +57,8 @@
   }
   function start(options) {
     var generation = 0, entries = [], targets = [], overlays = {}, config = null, suspended = false;
+    // A disable response wins over older in-flight replies for this page session.
+    var liveEtaDisabled = false;
     var mapListenerTarget = null;
     var countdownTimer = null, idleTimer = null, expiryTimer = null, idlePaused = false, pollTimer = null, pollOrigin = 0;
     var reasonTooltip = null, reasonTrigger = null;
@@ -70,6 +72,23 @@
     var toggleButton = options.toggleButton;
     var pendingReads = [], batchScheduled = false;
     var networkHistory = [];
+    function withoutLiveEta(data) {
+      if (!data || !Array.isArray(data.vehicles)) return data;
+      return Object.assign({},data,{live_eta_enabled:false,selected_trip_eta:null,
+        vehicles:data.vehicles.map(function(vehicle) {
+          return Object.assign({},vehicle,{live_eta:null,live_eta_state:'disabled',eta_retained:false});
+        })});
+    }
+    function observeLiveEtaPolicy(data) {
+      if (!data || data.live_eta_enabled !== false || liveEtaDisabled) return;
+      liveEtaDisabled = true;
+      entries.forEach(function(entry) {
+        entry.predictions = {};
+        entry.data = withoutLiveEta(entry.data);
+        entry.lastGood = withoutLiveEta(entry.lastGood);
+        if (entry.handoff) entry.handoff.data = withoutLiveEta(entry.handoff.data);
+      });
+    }
     function gpsFetch(url, init) {
       if (!config || !config.gps_request_timing) return global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,init) : fetch(url,init);
       var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
@@ -265,6 +284,7 @@
       }
     }
     function clusterEta(vehicles) {
+      if (liveEtaDisabled) return null;
       var chosen=vehicles.filter(function(v) { return v.selected_trip; });
       var scope=null, departure=null;
       for (var i=0;i<chosen.length;i++) {
@@ -301,7 +321,7 @@
         detail.appendChild(occupancyLabel);
       }
       if (lifecycleText(vehicle)) list.appendChild(node('span','live-vehicle-line',lifecycleText(vehicle)));
-      if (vehicle.live_eta) {
+      if (!liveEtaDisabled && vehicle.live_eta) {
         var estimate = node('small','',(detailText ? ' · ' : '') + '예상 ' + clock(vehicle.live_eta.eta_at));
         if (vehicle.eta_retained) estimate.title = '최근 계산한 도착 예상시각입니다.';
         detail.appendChild(estimate);
@@ -552,7 +572,7 @@
     });
     var configPromise = fetch(options.apiBase + '/api/vehicle-positions/config', { credentials: 'include' })
       .then(function(r) { return r.ok ? r.json() : {}; })
-      .then(function(data) { config = data; syncToggle(); return data; }).catch(function() { config = {}; syncToggle(); return {}; });
+      .then(function(data) { config = data; observeLiveEtaPolicy(data); syncToggle(); return data; }).catch(function() { config = {}; syncToggle(); return {}; });
     function removeMap() {
       Object.keys(overlays).forEach(function(key) { overlays[key].overlay.setMap(null); });
       overlays = {};
@@ -617,14 +637,14 @@
           if (!idlePaused && !bounds.uncertain && bounds.lower<=60000 && age>60000)
             nextExpiry=Math.min(nextExpiry,now+60001-bounds.lower);
           var selected = vehicle.departure_time===(entry.previewDeparture || entry.target.context.departure_time);
-          var eta = !handedOff && !previewing && selected && !idlePaused && !uncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
+          var eta = !liveEtaDisabled && !handedOff && !previewing && selected && !idlePaused && !uncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
           if (eta) {
             var currentEtaAt=Date.parse(eta.eta_at);
             if (!isFinite(currentEtaAt) || currentEtaAt<=now) eta=null;
             else nextExpiry=Math.min(nextExpiry,currentEtaAt);
           }
           var memory = entry.predictions && entry.predictions[etaKey];
-          if (!eta && memory && !handedOff && !previewing) {
+          if (!liveEtaDisabled && !eta && memory && !handedOff && !previewing) {
             var rememberedAge = memory.age + Math.max(0,sample.mono-memory.at,sample.wall-memory.wall);
             var etaAt = new Date(memory.eta.eta_at).getTime();
             var temporary = etaTemporary(vehicle);
@@ -880,6 +900,7 @@
         data.route_revision,data.live_service_date,vehicle.observation_epoch || '']);
     }
     function rememberPredictions(entry,data) {
+      if (liveEtaDisabled) { entry.predictions = {}; return; }
       var sample=timeSample();
       var prior = entry.predictions || {}, next = {};
       if (data.state!=='available' && data.state!=='empty') return;
@@ -898,6 +919,8 @@
       entry.predictions = next;
     }
     function render(entry, data, transientState, reference) {
+      observeLiveEtaPolicy(data);
+      if (liveEtaDisabled) data = withoutLiveEta(data);
       if (!transientState) {
         if ((data.state==='available' || data.state==='empty') && data!==entry.data) {
           var priorDenials=entry.etaDenials || {}, denials={}, priorVehicles={};
@@ -1007,6 +1030,8 @@
           error.reason = body.reason || (r.status>=500 ? 'service_unavailable' : 'invalid_request'); error.retryAfter = retryAfter(r); throw error;
         });
       }).then(function(watch) {
+        observeLiveEtaPolicy(watch);
+        if (liveEtaDisabled) renderMap();
         if (!watch.enabled) throw new Error('disabled');
         if (token !== generation) {
           gpsFetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(watch.watch_id) + '/close', { method: 'POST', credentials: 'include', keepalive: true, headers: { 'X-Shuttle-Position-Capability': watch.capability } }).catch(function() {});

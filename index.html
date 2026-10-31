@@ -10400,7 +10400,7 @@
 
   <script src="ads.js?v=4"></script>
   <script src="gps-network.js?v=2"></script>
-  <script src="vehicle-positions.js?v=26"></script>
+  <script src="vehicle-positions.js?v=27"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -28246,7 +28246,7 @@
         if (Array.isArray(value)) return value.map(stripPrivateSnapshotFields);
         if (!value || typeof value !== 'object') return value;
         var output = {};
-        var runtimeKeys = ['vehicle_positions','live_eta','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
+        var runtimeKeys = ['vehicle_positions','live_eta','live_eta_enabled','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
           'vehicle_ref','vehicle_id','public_vehicle_id','gps_age_seconds','gps_age_ms','age_reference_at','read_processing_ms','collection_policy','diagnostic_id','trip_match_state','live_eta_state','source_interval_seconds',
           'gps_status','gps_source_kind','source_key','upstream_key','customer','source_route_id','vehicle_assignment','vehicle_assignments',
           'vehicle_number','run_status','vehicle_status_code','vehicle_status_label','occupancy','occupancy_age_seconds','occupancy_age_ms',
