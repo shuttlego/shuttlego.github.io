@@ -9836,7 +9836,7 @@
     }
   </style>
   <link rel="stylesheet" href="ads.css?v=4" />
-  <link rel="stylesheet" href="vehicle-positions.css?v=10" />
+  <link rel="stylesheet" href="vehicle-positions.css?v=11" />
 </head>
 <body>
   <header class="header">
@@ -10366,6 +10366,9 @@
         <div class="map-action-row">
           <button type="button" class="btn-arrival-report" id="btnArrivalReport">도착 시간 제보하기</button>
           <div class="map-side-actions">
+            <button type="button" class="btn-rank-floating btn-vehicle-toggle" id="btnVehiclePositions" aria-label="버스 위치 말풍선 표시 중 · 숨기기" aria-pressed="true" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 3h14v12H9l-4 4V3Z"/><rect x="8" y="6" width="8" height="5" rx="1"/><path d="M9 11v2m6-2v2M8 8h8"/></svg>
+            </button>
             <button type="button" class="btn-rank-floating" id="btnMapLeaderboard" title="랭킹">
               <img src="/images/rank_icon.png" alt="" />
             </button>
@@ -10396,7 +10399,8 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=20"></script>
+  <script src="gps-network.js?v=2"></script>
+  <script src="vehicle-positions.js?v=27"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -10769,6 +10773,7 @@
       var mapClickIgnore = false;
       var mapTouchStart = null;
       var mapDragStartedAt = 0;
+      var liveVehicleMapIntentVersion = 0;
       var bubbleOpenedAt = 0;
       var bubbleClosedByOutsideAt = 0;
       var lastMobileCardTouchSelectAt = 0;
@@ -11341,6 +11346,7 @@
 
       function markUserMapIntent(reason) {
         var normalizedReason = String(reason || 'user-interaction');
+        if (['map-interaction','map-drag','zoom-in','zoom-out','location-button','sheet-drag'].indexOf(normalizedReason)>=0) liveVehicleMapIntentVersion += 1;
         cancelStartupCurrentLocationAutoCenter(normalizedReason);
         if (normalizedReason !== 'location-button') {
           stopNativeLocationFollow(normalizedReason);
@@ -21009,7 +21015,7 @@
 
         if (opts.useVisibleViewportPadding) {
           var insets = getMapOverlayInsets();
-          var edgePadding = 16;
+          var edgePadding = Math.max(16, Number(opts.extraPadding) || 16);
           map.setBounds(
             bounds,
             Math.max(edgePadding, Math.round(Number(insets.top) || 0) + edgePadding),
@@ -27311,7 +27317,7 @@
         drawOptionOnMap(option, placeName, isDepart, card);
         var crowdStartedAt = Date.now();
         ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
-        scheduleLiveVehiclePositions(option, card, isDepart);
+        scheduleLiveVehiclePositions(option, card, isDepart, {resetInitialCamera:true});
       }
 
       function triggerRouteDetailButtonAttention(card) {
@@ -27340,7 +27346,7 @@
         }
         var crowdStartedAt = Date.now();
         ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
-        scheduleLiveVehiclePositions(option, card, isDepart);
+        scheduleLiveVehiclePositions(option, card, isDepart, {resetInitialCamera:fitViewport !== false});
         if (isFromMapLabel) {
           routeLabelTriggeredDetailState = {
             card: card,
@@ -28240,7 +28246,7 @@
         if (Array.isArray(value)) return value.map(stripPrivateSnapshotFields);
         if (!value || typeof value !== 'object') return value;
         var output = {};
-        var runtimeKeys = ['vehicle_positions','live_eta','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
+        var runtimeKeys = ['vehicle_positions','live_eta','live_eta_enabled','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
           'vehicle_ref','vehicle_id','public_vehicle_id','gps_age_seconds','gps_age_ms','age_reference_at','read_processing_ms','collection_policy','diagnostic_id','trip_match_state','live_eta_state','source_interval_seconds',
           'gps_status','gps_source_kind','source_key','upstream_key','customer','source_route_id','vehicle_assignment','vehicle_assignments',
           'vehicle_number','run_status','vehicle_status_code','vehicle_status_label','occupancy','occupancy_age_seconds','occupancy_age_ms',
@@ -34919,7 +34925,7 @@
         vehicleMapClickIgnoreTimer = setTimeout(function() { mapClickIgnore = false; }, 350);
       }
 
-      function scheduleLiveVehiclePositions(option, card, isDepart) {
+      function scheduleLiveVehiclePositions(option, card, isDepart, selectionOptions) {
         clearTimeout(liveVehicleTimer);
         if (!liveVehicleController || !option || !card) return;
         liveVehicleTimer = setTimeout(function() {
@@ -34958,7 +34964,7 @@
               shared_route_token: sharedRouteState.active ? String(sharedRouteState.token || '') : ''
             } };
           }).filter(function(target) { return target && target.context.route_id > 0; });
-          liveVehicleController.select(targets);
+          liveVehicleController.select(targets, false, selectionOptions);
         }, 80);
       }
 
@@ -41730,6 +41736,7 @@
       }
       if (window.ShuttleVehiclePositions) {
         liveVehicleController = window.ShuttleVehiclePositions.start({ apiBase: API_BASE, zIndex: ROUTE_OVERLAY_LAYERS.vehicle,
+          toggleButton: document.getElementById('btnVehiclePositions'),
           getMap: function() { return map; }, getMapContainer: function() { return mapContainer; },
           onSelectDeparture: selectRouteDepartureFromVehicle,
           canSelectDeparture: function(selection) {
