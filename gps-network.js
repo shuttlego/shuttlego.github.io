@@ -38,8 +38,9 @@
       if(init.signal && init.signal.aborted)return Promise.reject(abortError());
       var began=global.performance.now(),controller=canRetry && global.AbortController ? new global.AbortController() : null;
       var budget=Math.max(0,Math.min(n===1?FIRST_MS:TOTAL_MS,deadline-began));
-      var timer=null,response=null,timedOut=false,cancelled=false,rejectDeadline;
+      var timer=null,response=null,timedOut=false,cancelled=false,rejectDeadline,headersMs=null,bodyMs=null;
       function observe(extra) { record(Object.assign({request_id:requestId,attempt:n,path:path,at:Date.now(),elapsed_ms:global.performance.now()-began,
+        headers_ms:headersMs,body_ms:bodyMs,
         deadline_supported:!!controller,attempt_budget_ms:controller?budget:null,total_budget_ms:controller?TOTAL_MS:null},extra)); }
       function onAbort() { cancelled=true;controller.abort();rejectDeadline(abortError()); }
       function cleanup() {
@@ -56,16 +57,21 @@
           },delay);
         });
       }
-      var options=Object.assign({},init,{headers:headers});
+      var attemptHeaders=new Headers(headers);attemptHeaders.set('X-SG-Attempt',String(n));
+      var options=Object.assign({},init,{headers:attemptHeaders});
       if(controller)options.signal=controller.signal;
       var work=Promise.resolve().then(function() { return global.fetch(url,options); }).then(function(value) {
         response=value;
+        headersMs=global.performance.now()-began;
         if(timedOut || cancelled) { discard(response);throw timedOut?timeoutError():abortError(); }
         var gateway=n===1 && canRetry && [502,503,504,520,521,522,523,524,525,526].includes(response.status) && !response.headers.get('Retry-After');
         // Wait for the JSON body too: headers alone must not end the deadline.
         // The original response stays unread and retains URL/status/header metadata.
         var read=controller && !gateway && response.body && response.clone ? response.clone().arrayBuffer() : Promise.resolve();
-        return Promise.resolve(read).then(function() { return {response:response,retry:gateway}; });
+        return Promise.resolve(read).then(function() {
+          bodyMs=global.performance.now()-began-headersMs;
+          return {response:response,retry:gateway};
+        });
       });
       if(controller) {
         var expiration=new Promise(function(resolve,reject) {

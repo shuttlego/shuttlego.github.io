@@ -1,6 +1,6 @@
 .route-option-card .card-title-wrap .route-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .route-live-eta { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: #1e5a8e; font: inherit; line-height: 1.5; }
-.route-live-status { white-space: nowrap; }
+.route-live-status { white-space: normal; }
 .route-live-info { display: inline-flex; align-items: center; justify-content: center; position: relative; width: 22px; height: 22px; flex: 0 0 22px; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .route-live-info::after { content: ''; position: absolute; inset: -5px; }
 .route-live-info img { width: 15px; height: 15px; }
@@ -46,3 +46,5 @@ button.live-vehicle-choice { cursor: pointer; }
 .live-vehicle-choice:disabled { cursor: wait; opacity: .6; }
 .live-vehicle-choice .live-vehicle-line { white-space: normal; overflow-wrap: anywhere; }
 .route-departure-notice { position: fixed; z-index: 100000; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 24px); padding: 10px 14px; border-radius: 6px; background: #17212ef5; color: #fff; font-family: var(--shuttle-font-sans); font-size: 14px; }
+
+.route-live-eta[hidden] { display: none; }

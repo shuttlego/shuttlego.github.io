@@ -301,7 +301,7 @@
       return {eta_at:new Date(mean).toISOString(),retained:estimates.some(function(v) { return v.eta_retained; })};
     }
     function appendClusterLine(list,vehicles) {
-      var line=node('span','live-vehicle-line',vehicles.length+'대 이동 중'), eta=clusterEta(vehicles);
+      var line=node('span','live-vehicle-line','버스 '+vehicles.length+'대'), eta=clusterEta(vehicles);
       if (eta) {
         var estimate=node('small','','· 예상 '+clock(eta.eta_at));
         estimate.setAttribute('aria-label','선택한 출발편의 평균 도착 예상시각 '+clock(eta.eta_at));
@@ -313,7 +313,7 @@
     function appendVehicleLines(list, vehicle) {
       list.appendChild(node('span','live-vehicle-line',vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '')));
       if (vehicle.display_stale) list.appendChild(node('span','live-vehicle-age-badge',
-        vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치'));
+        '마지막 확인 위치'));
       var detailText = occupancyText(vehicle.occupancy), detail = node('span','live-vehicle-line');
       if (detailText) {
         var occupancyLabel=node('span','',detailText);
@@ -410,7 +410,7 @@
       var cluster=vehicles && vehicles.length>1, clusterEstimate=cluster && clusterEta(vehicles);
       var first = vehicle.departure_time + (vehicle.plate_suffix ? ' · ' + vehicle.plate_suffix : '');
       var detail = [occupancyText(vehicle.occupancy), vehicle.live_eta ? '예상 ' + clock(vehicle.live_eta.eta_at) : '', lifecycleText(vehicle)].filter(Boolean).join(' · ');
-      var badge = vehicle.display_stale ? (vehicle.display_uncertain ? '위치 재확인 중' : '최근 위치') : '';
+      var badge = vehicle.display_stale ? ('마지막 확인 위치') : '';
       var key = JSON.stringify([first,detail,badge,!!vehicle.selected_trip,cluster && vehicles.length,clusterEstimate && clusterEstimate.eta_at]);
       if (markerSizeCache.has(key)) return markerSizeCache.get(key);
       var root = node('div','live-vehicle-marker');
@@ -457,24 +457,15 @@
       trigger.setAttribute('aria-expanded','true');
       reasonTooltip.textContent = text; reasonTooltip.hidden = false; positionReason();
     }
+    function needsReselection(reason) {
+      return ['different_service_date','different_day_type','historical_snapshot','route_changed',
+        'stop_unavailable','departure_unavailable','invalid_request'].includes(reason);
+    }
     function reasonText(reason) {
-      return {
-        different_service_date:'오늘 운행하는 버스만 확인할 수 있습니다.',
-        different_day_type:'오늘 운행하는 버스가 없습니다.',
-        historical_snapshot:'현재 노선으로 다시 검색해 주세요.',
-        route_unavailable:'이 노선의 버스 위치를 확인할 수 없습니다.',
-        route_changed:'노선이 변경되었습니다. 다시 검색해 주세요.',
-        stop_unavailable:'정류장이 변경되었습니다. 다시 검색해 주세요.',
-        departure_unavailable:'이 출발 시간에는 운행하는 버스가 없습니다.',
-        source_unavailable:'이 노선은 버스 위치를 제공하지 않습니다.',
-        too_many_views:'잠시 후 버스 위치를 다시 확인합니다.',
-        feature_disabled:'버스 위치 안내를 제공하지 않습니다.',
-        budget_paused:'버스 위치 갱신이 잠시 중단되었습니다.',
-        usage_unknown:'버스 위치 갱신이 잠시 중단되었습니다.',
-        timeout:'응답이 늦어지고 있습니다. 잠시 후 다시 확인합니다.',
-        network_error:'연결이 원활하지 않습니다. 잠시 후 다시 확인합니다.',
-        service_unavailable:'버스 위치를 불러오지 못했습니다. 잠시 후 다시 확인합니다.'
-      }[reason] || '버스 위치를 확인할 수 없습니다. 다시 검색해 주세요.';
+      if (needsReselection(reason)) return '현재 운행편을 다시 선택해 주세요.';
+      if (['route_unavailable','source_unavailable','feature_disabled','unsupported'].includes(reason))
+        return '이 노선의 버스 위치를 확인할 수 없습니다.';
+      return '자동으로 다시 확인합니다.';
     }
     function addReason(view,text) {
       var button = node('button','route-live-info');
@@ -530,17 +521,19 @@
       clearTimeout(idleTimer);
       if (!idlePaused && entries.length && lastActivity != null) idleTimer = setTimeout(pauseIdle, Math.max(0, idleTimeout - idleElapsed()));
     }
-    function renderIdle(view, onResume) {
-      view.row.removeAttribute('title'); view.statusState = 'idle';
+    function renderIdle(view) {
+      view.row.hidden = false;
+      view.row.removeAttribute('title'); view.statusState = 'idle'; view.renderSignature = null;
       view.row.setAttribute('aria-busy','false');
       view.row.replaceChildren(node('span', 'route-live-separator', ' · '));
+      view.row.appendChild(node('span','route-live-status','위치 확인 일시정지'));
       var button = node('button', 'route-live-resume');
-      button.type = 'button'; button.title = '버스 위치 확인 재개';
+      button.type = 'button'; button.title = '버스 위치 계속 보기';
+      button.appendChild(node('span','','계속 보기'));
       var ring = node('span', 'route-live-spinner is-paused');
       var icon = node('img', 'route-live-play'); icon.src = '/images/lucide-play.svg'; icon.alt = ''; ring.appendChild(icon);
-      button.appendChild(node('span', 'route-live-status', '버스 위치 확인 재개'));
       button.appendChild(ring);
-      button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); (onResume || resume)(); });
+      button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); resume(); });
       view.row.appendChild(button); view.counter = null;
     }
     function pauseIdle() {
@@ -785,10 +778,10 @@
         var label = node('div', 'live-vehicle-label' + (selected ? ' is-selected' : '') + (stale ? ' is-stale' : '') + (actionable ? ' is-actionable' : ''));
         if (actionable) {
           label.setAttribute('role','button'); label.tabIndex=0;
-          label.setAttribute('aria-label',selectable ? (vehicles.length>1 ? '이동 중인 버스 '+vehicles.length+'대 선택'
+          label.setAttribute('aria-label',selectable ? (vehicles.length>1 ? '버스 '+vehicles.length+'대 선택'
             : first.departure_time+' 출발 버스 선택'+(first.plate_suffix ? ' · '+first.plate_suffix : ''))
-            +(resumable ? ' · 버스 위치 확인 재개' : '') : '버스 위치 확인 재개');
-          if (resumable) label.title='버스 위치 확인 재개';
+            +(resumable ? ' · 버스 위치 계속 보기' : '') : '버스 위치 계속 보기');
+          if (resumable) label.title='버스 위치 계속 보기';
           if (selectable && vehicles.length>1) { label.setAttribute('aria-haspopup','dialog'); label.setAttribute('aria-expanded',String(!!pickerState && pickerState.key===key)); }
           else if (selectable) label.setAttribute('aria-pressed',String(selected));
         }
@@ -799,7 +792,7 @@
         var list = node('span', 'live-vehicle-lines');
         if (vehicles.length > 1) {
           appendClusterLine(list,vehicles);
-          if (stale) list.appendChild(node('span','live-vehicle-age-badge',uncertain ? '위치 재확인 중' : '최근 위치'));
+          if (stale) list.appendChild(node('span','live-vehicle-age-badge','마지막 확인 위치'));
         } else {
           appendVehicleLines(list,first);
         }
@@ -843,56 +836,44 @@
         card.querySelectorAll('.route-live-eta').forEach(function(row) { if (row!==view.row) row.remove(); });
         view.entries = group;
         if (idlePaused) { renderIdle(view); return; }
-        // A failed leg must not hide the other legs' live positions or countdown.
-        var working = group.filter(function(entry) { return !['unsupported','budget_paused','usage_unknown'].includes(entryState(entry)); });
-        var state = group.every(function(entry) { return entryState(entry)==='unsupported'; }) ? 'unsupported'
-          : !working.length ? 'budget_paused'
-          : working.every(function(entry) { return entryState(entry)==='unavailable'; }) ? 'unavailable' : 'available';
-        var freshness = group.map(function(entry) {
-          var info=frame.states.get(entry);
-          return entryState(entry)==='unavailable' ? 'uncertain' : info ? info.state : 'missing';
+        var states = group.map(function(entry) {
+          var state=entryState(entry), info=frame.states.get(entry);
+          if (state==='unsupported') return needsReselection(entry.reason) ? 'reselect' : 'unsupported';
+          if (['unavailable','budget_paused','usage_unknown'].includes(state)) return 'delayed';
+          if (info && info.state==='fresh') return 'normal';
+          if (info && ['stale','uncertain'].includes(info.state)) return 'delayed';
+          if (entry.data && ['empty','available'].includes(entry.data.state)) return 'empty';
+          return 'loading';
         });
-        if (state==='available') {
-          var waiting = group.some(function(entry,index) {
-            return ['unsupported','budget_paused','usage_unknown','unavailable'].includes(entryState(entry)) ||
-              freshness[index]!=='fresh' && entryState(entry)!=='loading';
-          });
-          if (waiting) state=group.length>1 && freshness.some(function(x) { return x==='fresh'; }) ? 'partial'
-            : freshness.some(function(x) { return x==='uncertain'; }) ? 'unavailable' : 'waiting';
+        var state=['reselect','unsupported','delayed','loading','empty'].find(function(value) { return states.includes(value); }) || 'normal';
+        var messages={loading:'버스 위치 확인 중…',empty:'아직 버스 위치 정보가 없습니다.',
+          delayed:'위치 갱신이 지연되고 있습니다.',unsupported:'이 노선은 버스 위치를 확인할 수 없습니다.',
+          reselect:'운행편을 다시 선택해 주세요.'};
+        var partial=group.length>1 && states.some(function(value) { return value!==state; });
+        var text=state==='normal' ? '' : (partial ? '일부 구간: ' : '')+messages[state];
+        var explanations=group.map(function(entry,index) {
+          if (states[index]==='normal') return '';
+          var detail=reasonText(entry.reason || states[index]);
+          return group.length===1 ? detail : (index+1)+'번째 셔틀'+
+            (entry.target.context.departure_time ? ' ('+entry.target.context.departure_time+')' : '')+': '+detail;
+        }).filter(Boolean).join('\n');
+        var signature=JSON.stringify([state,text,explanations]);
+        view.statusState=state;
+        // Polls and expiry still advance, but unchanged labels keep their DOM.
+        if (view.renderSignature!==signature) {
+          hideReason(); view.row.replaceChildren(); view.row.hidden=state==='normal';
+          if (state!=='normal') {
+            var separator=node('span','route-live-separator',' · ');separator.setAttribute('aria-hidden','true');
+            view.row.appendChild(separator);
+          }
+          view.row.appendChild(node('span','route-live-status',text));
+          if (explanations) addReason(view,explanations);
+          if (['loading','delayed'].includes(state)) {
+            var spinner=node('span','route-live-spinner');spinner.setAttribute('aria-hidden','true');view.row.appendChild(spinner);
+          }
+          view.renderSignature=signature;
         }
-        var issues = group.filter(function(entry) { return ['unsupported','budget_paused','usage_unknown','unavailable'].includes(entryState(entry)); });
-        hideReason(); view.row.replaceChildren(); view.statusState = state;
-        var separator = node('span','route-live-separator',' · '); separator.setAttribute('aria-hidden','true');
-        view.row.appendChild(separator);
-        var needsAction = group.some(function(entry) { return entryState(entry)==='unsupported'; });
-        if (needsAction) {
-          renderIdle(view,function() { select(targets.slice(),true); });
-          view.statusState = 'unsupported';
-        } else {
-          var sourceEmpty = state==='waiting' && group.every(function(entry) {
-            return !entry.errorState && entry.data && ['empty','available'].includes(entry.data.state)
-              && !(entry.data.vehicles || []).length;
-          });
-          view.row.appendChild(node('span','route-live-status', sourceEmpty
-            ? '현재 표시할 버스 위치가 없습니다. 자동으로 다시 확인합니다.' : '버스 위치 확인 중'));
-        }
-        if (issues.length) {
-          var explanations = issues.map(function(entry) {
-            var reason = entry.reason || (entryState(entry)==='unavailable' ? 'service_unavailable' : entryState(entry));
-            return reasonText(reason);
-          });
-          var sameReason = issues.length===group.length && explanations.every(function(text) { return text===explanations[0]; });
-          var text = group.length===1 || sameReason ? explanations[0] : issues.map(function(entry,index) {
-            return (group.indexOf(entry)+1) + '번째 셔틀' + (entry.target.context.departure_time ? ' ('+entry.target.context.departure_time+')' : '') + ': ' + explanations[index];
-          }).join('\n');
-          addReason(view,text);
-        }
-        view.counter = null;
-        if (!needsAction) {
-          var spinner = node('span','route-live-spinner'); spinner.setAttribute('aria-hidden','true');
-          view.row.appendChild(spinner);
-        }
-        updateCountdown(view);
+        view.counter=null;updateCountdown(view);
       });
     }
     function predictionKey(entry,data,vehicle) {
