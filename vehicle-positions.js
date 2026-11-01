@@ -318,7 +318,7 @@
       var detailText = occupancyText(vehicle.occupancy), detail = node('span','live-vehicle-line');
       if (detailText) {
         var occupancyLabel=node('span','',detailText);
-        occupancyLabel.title='하차 반영 여부를 확인할 수 없는 제공 자료입니다.';
+        occupancyLabel.title='하차 여부는 확인할 수 없습니다.';
         detail.appendChild(occupancyLabel);
       }
       if (lifecycleText(vehicle)) list.appendChild(node('span','live-vehicle-line',lifecycleText(vehicle)));
@@ -459,19 +459,40 @@
       reasonTooltip.textContent = text; reasonTooltip.hidden = false; positionReason();
     }
     function needsReselection(reason) {
-      return ['different_service_date','different_day_type','historical_snapshot','route_changed',
+      return ['historical_snapshot','route_changed',
         'stop_unavailable','departure_unavailable','invalid_request'].includes(reason);
     }
-    function reasonText(reason) {
-      if (needsReselection(reason)) return '현재 운행편을 다시 선택해 주세요.';
-      if (['route_unavailable','source_unavailable','feature_disabled','unsupported'].includes(reason))
-        return '이 노선의 버스 위치를 확인할 수 없습니다.';
-      return '자동으로 다시 확인합니다.';
+    function isOtherServiceDay(reason) {
+      return ['different_service_date','different_day_type'].includes(reason);
     }
-    function addReason(view,text) {
+    function dayTypeLabel(code) {
+      return {weekday:'평일',monday:'월요일',saturday:'토요일',holiday:'휴일',familyday:'패밀리데이'}[code] || '';
+    }
+    function reasonText(entry,state) {
+      var reason=entry.reason, context=entry.target.context, departure=context.departure_time || '';
+      if (reason==='different_day_type') {
+        var selected=dayTypeLabel(context.day_type), current=dayTypeLabel((entry.reasonDetails || {}).current_day_type);
+        return '선택한 운행편은 '+(selected ? selected+' 시간표입니다.' : '현재 운행일과 다른 시간표입니다.')+
+          (current ? ' 오늘은 '+current+' 시간표가 적용되어 실시간 위치를 확인할 수 없습니다.' : ' 현재 운행일의 실시간 위치만 확인할 수 있습니다.');
+      }
+      if (reason==='different_service_date') {
+        var date=/^\d{4}-(\d{2})-(\d{2})$/.exec(context.service_date || '');
+        return (date ? '선택한 운행편은 '+Number(date[1])+'월 '+Number(date[2])+'일 기준입니다. ' : '')+
+          '현재 운행일의 실시간 위치만 확인할 수 있습니다.';
+      }
+      if (needsReselection(reason)) return '선택한 운행편 정보를 확인할 수 없습니다. 노선을 다시 검색해 주세요.';
+      if (['route_unavailable','source_unavailable','feature_disabled','unsupported'].includes(reason))
+        return '선택한 '+(departure ? departure+' 출발편의 ' : '출발편의 ')+'위치를 현재 확인할 수 없습니다.';
+      if (state==='delayed') return '위치 확인이 지연되고 있습니다. 다시 시도하고 있으니 잠시만 기다려 주세요.';
+      if (state==='empty') return '선택한 '+(departure ? departure+' 출발편의 ' : '출발편의 ')+
+        '위치가 아직 확인되지 않았습니다. 확인 중이니 잠시만 기다려 주세요.';
+      if (state==='normal') return '버스 위치를 계속 확인하고 있습니다. 숫자는 다음 확인까지 남은 시간(초)입니다.';
+      return '버스 위치를 확인하고 있습니다. 잠시만 기다려 주세요.';
+    }
+    function addReason(view,text,warning) {
       var button = node('button','route-live-info');
-      button.type = 'button'; button.setAttribute('aria-label','버스 위치 안내'); button.setAttribute('aria-expanded','false');
-      var icon = node('img'); icon.src = '/images/lucide-info.svg'; icon.alt = ''; button.appendChild(icon);
+      button.type = 'button'; button.setAttribute('aria-label',warning ? '버스 위치 지연 안내' : '버스 위치 안내'); button.setAttribute('aria-expanded','false');
+      var icon = node('img'); icon.src = warning ? '/images/location-info-warning.svg' : '/images/lucide-info.svg'; icon.alt = ''; button.appendChild(icon);
       var fine = function() { return global.matchMedia('(hover: hover) and (pointer: fine)').matches; };
       button.addEventListener('mouseenter',function() { if (fine()) showReason(button,text); });
       button.addEventListener('mouseleave',function() { if (fine() && reasonTrigger===button) hideReason(); });
@@ -480,6 +501,9 @@
       button.addEventListener('click',function(event) {
         event.preventDefault(); event.stopPropagation();
         if (reasonTrigger===button && !reasonTooltip.hidden && !fine()) hideReason(); else showReason(button,text);
+      });
+      button.addEventListener('keydown',function(event) {
+        if (event.key==='Escape') { event.preventDefault(); hideReason(); }
       });
       view.row.appendChild(button);
     }
@@ -523,19 +547,21 @@
       if (!idlePaused && entries.length && lastActivity != null) idleTimer = setTimeout(pauseIdle, Math.max(0, idleTimeout - idleElapsed()));
     }
     function renderIdle(view) {
+      if (view.statusState==='idle' && view.row.isConnected) return;
       view.row.hidden = false;
       view.row.removeAttribute('title'); view.statusState = 'idle'; view.renderSignature = null;
       view.row.setAttribute('aria-busy','false');
       view.row.replaceChildren(node('span', 'route-live-separator', ' · '));
-      view.row.appendChild(node('span','route-live-status','위치 확인 일시정지'));
+      view.row.appendChild(node('span','route-live-status','버스 위치 재개'));
       var button = node('button', 'route-live-resume');
-      button.type = 'button'; button.title = '버스 위치 계속 보기';
-      button.appendChild(node('span','','계속 보기'));
+      button.type = 'button'; button.title = '버스 위치 재개'; button.setAttribute('aria-label','버스 위치 재개');
       var ring = node('span', 'route-live-spinner is-paused');
       var icon = node('img', 'route-live-play'); icon.src = '/images/lucide-play.svg'; icon.alt = ''; ring.appendChild(icon);
       button.appendChild(ring);
       button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); resume(); });
-      view.row.appendChild(button); view.counter = null;
+      view.row.appendChild(button);
+      addReason(view,'5분 동안 조작이 없어 위치 확인을 잠시 멈췄습니다.');
+      view.counter = null;
     }
     function pauseIdle() {
       if (!entries.length || idlePaused) return;
@@ -804,6 +830,9 @@
         var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: false, yAnchor: 1, zIndex: options.zIndex || 1000 });
         if (existing) { overlay.setContent(root); overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon)); }
         if (!existing || existing.map !== map) overlay.setMap(map);
+        vehicles.forEach(function(vehicle) {
+          if (vehicle.selected_trip) (vehicle.owners || []).forEach(function(owner) { owner.entry.hasDisplayedPosition=true; });
+        });
         updated[key] = {overlay:overlay,signature:signature,map:map,root:root,group:group};
       });
       Object.keys(overlays).forEach(function(key) { if (!updated[key]) overlays[key].overlay.setMap(null); });
@@ -839,22 +868,20 @@
         if (idlePaused) { renderIdle(view); return; }
         var states = group.map(function(entry) {
           var state=entryState(entry), info=frame.states.get(entry);
-          if (state==='unsupported') return needsReselection(entry.reason) ? 'reselect' : 'unsupported';
+          if (state==='unsupported') return isOtherServiceDay(entry.reason) ? 'otherday' : needsReselection(entry.reason) ? 'reselect' : 'unsupported';
           if (['unavailable','budget_paused','usage_unknown'].includes(state)) return 'delayed';
           if (info && info.state==='fresh') return 'normal';
           if (info && ['stale','uncertain'].includes(info.state)) return 'delayed';
           if (entry.data && ['empty','available'].includes(entry.data.state)) return 'empty';
           return 'loading';
         });
-        var state=['reselect','unsupported','delayed','loading','empty'].find(function(value) { return states.includes(value); }) || 'normal';
-        var messages={loading:'버스 위치 확인 중…',empty:'아직 버스 위치 정보가 없습니다.',
-          delayed:'위치 갱신이 지연되고 있습니다.',unsupported:'이 노선은 버스 위치를 확인할 수 없습니다.',
-          reselect:'운행편을 다시 선택해 주세요.'};
+        var state=['reselect','otherday','unsupported','delayed','loading','empty'].find(function(value) { return states.includes(value); }) || 'normal';
+        var messages={loading:'버스 위치 갱신 중',normal:'버스 위치 갱신 중',empty:'버스 위치 갱신 중',
+          delayed:'버스 위치 갱신 중',unsupported:'버스 위치 미지원',otherday:'오늘 운행편 아님',reselect:'운행편 정보 없음'};
         var partial=group.length>1 && states.some(function(value) { return value!==state; });
-        var text=state==='normal' ? '' : (partial ? '일부 구간: ' : '')+messages[state];
+        var text=(partial && ['reselect','otherday','unsupported'].includes(state) ? '일부 구간: ' : '')+messages[state];
         var explanations=group.map(function(entry,index) {
-          if (states[index]==='normal') return '';
-          var detail=reasonText(entry.reason || states[index]);
+          var detail=reasonText(entry,states[index]);
           return group.length===1 ? detail : (index+1)+'번째 셔틀'+
             (entry.target.context.departure_time ? ' ('+entry.target.context.departure_time+')' : '')+': '+detail;
         }).filter(Boolean).join('\n');
@@ -862,19 +889,20 @@
         view.statusState=state;
         // Polls and expiry still advance, but unchanged labels keep their DOM.
         if (view.renderSignature!==signature) {
-          hideReason(); view.row.replaceChildren(); view.row.hidden=state==='normal';
-          if (state!=='normal') {
-            var separator=node('span','route-live-separator',' · ');separator.setAttribute('aria-hidden','true');
-            view.row.appendChild(separator);
-          }
+          if (reasonTrigger && view.row.contains(reasonTrigger)) hideReason();
+          view.row.replaceChildren(); view.row.hidden=false;
+          var separator=node('span','route-live-separator',' · ');separator.setAttribute('aria-hidden','true');
+          view.row.appendChild(separator);
           view.row.appendChild(node('span','route-live-status',text));
-          if (explanations) addReason(view,explanations);
-          if (['loading','delayed'].includes(state)) {
-            var spinner=node('span','route-live-spinner');spinner.setAttribute('aria-hidden','true');view.row.appendChild(spinner);
+          if (explanations) addReason(view,explanations,states.includes('delayed'));
+          view.counter=null;
+          if (group.some(function(entry,index) { return ['loading','delayed','empty','normal'].includes(states[index]); })) {
+            var spinner=node('span','route-live-spinner');spinner.setAttribute('aria-hidden','true');
+            view.counter=node('span','route-live-countdown');spinner.appendChild(view.counter);view.row.appendChild(spinner);
           }
           view.renderSignature=signature;
         }
-        view.counter=null;updateCountdown(view);
+        updateCountdown(view);
       });
     }
     function predictionKey(entry,data,vehicle) {
@@ -960,6 +988,12 @@
       if (idlePaused) return;
       view.row.setAttribute('aria-busy',view.entries.some(function(entry) { return entry.pending; }) ? 'true' : 'false');
       view.row.removeAttribute('title');
+      if (view.counter) {
+        var active=view.entries.filter(function(entry) { return entry.hasDisplayedPosition && !entry.pending && entry.nextPollAt>0; });
+        var seconds=active.length ? Math.max(1,Math.ceil((Math.min.apply(null,active.map(function(entry) { return entry.nextPollAt; }))-activityTime())/1000)) : null;
+        var text=seconds===null ? '' : String(seconds);
+        if (view.counter.textContent!==text) view.counter.textContent=text;
+      }
     }
     function updateCountdownRows() {
       var previousEpoch=timeEpoch;
@@ -1009,7 +1043,7 @@
         if (r.ok) return r.json();
         return r.json().catch(function() { return {}; }).then(function(body) {
           var error = new Error(r.status === 429 || r.status >= 500 ? 'temporary' : 'unsupported');
-          error.reason = body.reason || (r.status>=500 ? 'service_unavailable' : 'invalid_request'); error.retryAfter = retryAfter(r); throw error;
+          error.reason = body.reason || (r.status>=500 ? 'service_unavailable' : 'invalid_request'); error.details=body; error.retryAfter = retryAfter(r); throw error;
         });
       }).then(function(watch) {
         observeLiveEtaPolicy(watch);
@@ -1048,6 +1082,7 @@
       }).then(function(data) {
         if (!data || token !== generation || document.hidden || suspended || idlePaused) return;
         entry.reason = data.reason || '';
+        entry.reasonDetails=null;
         entry.failureCount = 0;
         var sample = timeSample();
         var hasFirstPosition = data.vehicles.some(function(vehicle) {
@@ -1077,6 +1112,7 @@
         var state = permanent ? 'unsupported' : 'unavailable';
         if (permanent) entry.firstDone = true;
         entry.reason = error.reason || (error.message==='disabled' ? 'feature_disabled' : timedOut ? 'timeout' : permanent ? 'invalid_request' : 'network_error');
+        entry.reasonDetails=error.details || null;
         if (state === 'unsupported') { entry.data = null; entry.lastGood = null; entry.handoff = null; entry.etag = ''; entry.permanentAt = lastSignal; clearEntry(entry); }
         render(entry, entry.data || {state:state,vehicles:[]}, state);
         if (!permanent) {

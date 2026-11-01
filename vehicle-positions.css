@@ -8,6 +8,7 @@
 .route-live-reason-tooltip { position: fixed; z-index: 100000; padding: 8px 10px; border-radius: 6px; background: #17212ef5; color: #fff; font-family: var(--shuttle-font-sans, sans-serif); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; box-shadow: 0 4px 14px #0003; }
 .route-live-spinner { display: inline-grid; position: relative; place-items: center; width: 22px; height: 22px; flex: 0 0 22px; overflow: hidden; border-radius: 50%; }
 .route-live-spinner::before { content: ""; position: absolute; inset: 0; border: 2px solid #b9c9f3; border-top-color: #1428a0; border-radius: 50%; animation: live-vehicle-spin 1s linear infinite; }
+.route-live-countdown { font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; }
 .btn-vehicle-toggle[hidden] { display: none; }
 .btn-vehicle-toggle svg { width: 26px; height: 26px; }
 .btn-vehicle-toggle[aria-pressed="false"] { color: #64748b; background: #eef2f6; }
