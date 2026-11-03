@@ -590,8 +590,24 @@
     ['pointerdown','pointermove','touchstart','wheel','keydown'].forEach(function(name) {
       document.addEventListener(name, activity, {capture:true,passive:true});
     });
-    var configPromise = fetch(options.apiBase + '/api/vehicle-positions/config', { credentials: 'include' })
-      .then(function(r) { return r.ok ? r.json() : {}; })
+    function fetchConfig(attempt) {
+      var abort = global.AbortController ? new global.AbortController() : null;
+      var timer;
+      var work = fetch(options.apiBase + '/api/vehicle-positions/config', {
+        credentials: 'include', signal: abort ? abort.signal : undefined
+      }).then(function(r) { if (!r.ok) throw new Error('config_unavailable'); return r.json(); });
+      var limit = new Promise(function(resolve, reject) {
+        timer = setTimeout(function() {
+          if (abort) abort.abort();
+          reject(new Error('config_timeout'));
+        }, 3000);
+      });
+      return Promise.race([work, limit]).finally(function() { clearTimeout(timer); }).catch(function(error) {
+        if (attempt) throw error;
+        return new Promise(function(resolve) { setTimeout(resolve, 250); }).then(function() { return fetchConfig(1); });
+      });
+    }
+    var configPromise = fetchConfig(0)
       .then(function(data) { config = data; observeLiveEtaPolicy(data); syncToggle(); return data; }).catch(function() { config = {}; syncToggle(); return {}; });
     function removeMap() {
       Object.keys(overlays).forEach(function(key) { overlays[key].overlay.setMap(null); });

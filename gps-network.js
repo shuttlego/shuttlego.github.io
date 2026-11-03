@@ -23,6 +23,26 @@
     history.push(event);if(history.length>100)history.shift();
     if(global.dispatchEvent && global.CustomEvent)global.dispatchEvent(new CustomEvent('shuttle:gps-network-attempt',{detail:event}));
   }
+  function resourceTiming(url,began) {
+    try {
+      if(!global.performance.getEntriesByName)return null;
+      var entries=global.performance.getEntriesByName(new URL(url,global.location.href).href);
+      for(var i=entries.length-1;i>=0;i--) {
+        var e=entries[i];
+        if(e.startTime<began-5 || e.startTime>began+TOTAL_MS)continue;
+        // Cross-origin details can be hidden. Zero must not be presented as
+        // evidence that a connection or the edge did no work.
+        var visible=e.requestStart>0;
+        return {details_available:visible,protocol:e.nextHopProtocol || null,
+          pre_request_ms:visible?Math.max(0,e.requestStart-e.startTime):null,
+          connect_ms:visible?Math.max(0,e.connectEnd-e.connectStart):null,
+          tls_ms:visible && e.secureConnectionStart>0?Math.max(0,e.connectEnd-e.secureConnectionStart):null,
+          response_wait_ms:visible?Math.max(0,e.responseStart-e.requestStart):null,
+          transfer_ms:visible && e.responseStart>0 && e.responseEnd>0?Math.max(0,e.responseEnd-e.responseStart):null};
+      }
+    } catch(error) {}
+    return null;
+  }
   function request(url,init,features) {
     init=init || {};
     var path=new URL(url,global.location.href).pathname,canRetry=allowed(path,init);
@@ -41,7 +61,10 @@
       var timer=null,response=null,timedOut=false,cancelled=false,rejectDeadline,headersMs=null,bodyMs=null;
       function observe(extra) { record(Object.assign({request_id:requestId,attempt:n,path:path,at:Date.now(),elapsed_ms:global.performance.now()-began,
         headers_ms:headersMs,body_ms:bodyMs,
-        deadline_supported:!!controller,attempt_budget_ms:controller?budget:null,total_budget_ms:controller?TOTAL_MS:null},extra)); }
+        deadline_supported:!!controller,attempt_budget_ms:controller?budget:null,total_budget_ms:controller?TOTAL_MS:null,
+        transport:resourceTiming(url,began),
+        server_timing:response && response.headers?response.headers.get('Server-Timing'):null,
+        cf_ray:response && response.headers?response.headers.get('CF-Ray'):null},extra)); }
       function onAbort() { cancelled=true;controller.abort();rejectDeadline(abortError()); }
       function cleanup() {
         if(timer!==null)clearTimeout(timer);
