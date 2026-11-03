@@ -9836,7 +9836,7 @@
     }
   </style>
   <link rel="stylesheet" href="ads.css?v=4" />
-  <link rel="stylesheet" href="vehicle-positions.css?v=10" />
+  <link rel="stylesheet" href="vehicle-positions.css?v=11" />
 </head>
 <body>
   <header class="header">
@@ -10396,7 +10396,8 @@
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
   <script src="ads.js?v=4"></script>
-  <script src="vehicle-positions.js?v=20"></script>
+  <script src="gps-network.js?v=2"></script>
+  <script src="vehicle-positions.js?v=27"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -10519,12 +10520,13 @@
         var gpsEvidenceRequest = requestedUrl.indexOf(API_BASE + '/api/shuttle/') === 0 ||
           requestedUrl.indexOf(API_BASE + '/api/route/') === 0 || requestedUrl.indexOf(API_BASE + '/api/reports/eta-detail') === 0 ||
           requestedUrl === API_BASE + '/api/vehicle-positions' || requestedUrl.indexOf(API_BASE + '/api/vehicle-positions?') === 0;
-        if (gpsEvidenceRequest && liveVehicleController && typeof liveVehicleController.configReady === 'function' && !liveVehicleController.configReady()) {
-          return liveVehicleController.ready().then(function() { return window.fetch(input, nextInit); });
-        }
-        if (liveVehicleController && liveVehicleController.evidenceEnabled() && gpsEvidenceRequest) {
+        // Ordinary searches must work before GPS configuration is available.
+        // This header is only meaningful for the authorized Dev preview.
+        if (gpsEvidenceRequest && liveVehicleController && liveVehicleController.evidenceEnabled() &&
+            typeof liveVehicleController.evidenceMode === 'function' &&
+            liveVehicleController.evidenceMode() === 'gps-dev-v1') {
           var headers = new Headers(nextInit.headers || (input && input.headers) || {});
-          headers.set('X-Shuttle-GPS-Evidence', typeof liveVehicleController.evidenceMode === 'function' ? liveVehicleController.evidenceMode() : 'gps-v1');
+          headers.set('X-Shuttle-GPS-Evidence', 'gps-dev-v1');
           nextInit.headers = headers;
         }
         return nativeFetch(input, nextInit).then(function(response) {
@@ -10769,6 +10771,7 @@
       var mapClickIgnore = false;
       var mapTouchStart = null;
       var mapDragStartedAt = 0;
+      var liveVehicleMapIntentVersion = 0;
       var bubbleOpenedAt = 0;
       var bubbleClosedByOutsideAt = 0;
       var lastMobileCardTouchSelectAt = 0;
@@ -10989,6 +10992,7 @@
       var shuttleTransferTransitOptionsPending = new Map();
       var routeVariantDetailCache = new Map();
       var routeVariantDetailPending = new Map();
+      var routeTimingRequestControllers = new Map();
       var routeTimeSummaryCache = new Map();
       var routeTimeSummaryPrefetchTimers = [];
       var routeTimeSummaryPrefetchGeneration = 0;
@@ -11341,6 +11345,7 @@
 
       function markUserMapIntent(reason) {
         var normalizedReason = String(reason || 'user-interaction');
+        if (['map-interaction','map-drag','zoom-in','zoom-out','location-button','sheet-drag'].indexOf(normalizedReason)>=0) liveVehicleMapIntentVersion += 1;
         cancelStartupCurrentLocationAutoCenter(normalizedReason);
         if (normalizedReason !== 'location-button') {
           stopNativeLocationFollow(normalizedReason);
@@ -21009,7 +21014,7 @@
 
         if (opts.useVisibleViewportPadding) {
           var insets = getMapOverlayInsets();
-          var edgePadding = 16;
+          var edgePadding = Math.max(16, Number(opts.extraPadding) || 16);
           map.setBounds(
             bounds,
             Math.max(edgePadding, Math.round(Number(insets.top) || 0) + edgePadding),
@@ -21845,6 +21850,7 @@
       }
 
       function clearRouteTimeSummaryPrefetchTimers() {
+        abortObsoleteRouteTimingRequests();
         routeTimeSummaryPrefetchGeneration += 1;
         routeTimeSummaryPrefetchTimers.forEach(function(timerId) {
           clearTimeout(timerId);
@@ -22059,7 +22065,14 @@
         });
       }
 
-      function fetchRouteVariantDetailData(routeId, departureTime, variantId) {
+      function abortObsoleteRouteTimingRequests() {
+        routeTimingRequestControllers.forEach(function(scope, controller) {
+          if (scope.serial !== routeRequestSerial || scope.site !== selectedSiteId || scope.day !== selectedDayType || scope.date !== getTodayKstDateText()) controller.abort();
+        });
+      }
+
+      function fetchRouteVariantDetailData(routeId, departureTime, variantId, timingOnly) {
+        if (timingOnly) abortObsoleteRouteTimingRequests();
         var timeText = String(departureTime || '').trim() || getDepartureTimeStr();
         var etaReferenceDate = getTodayKstDateText();
         var normalizedVariantId = Number(variantId || 0);
@@ -22070,6 +22083,7 @@
           isFinite(normalizedVariantId) && normalizedVariantId > 0 ? normalizedVariantId : '',
           etaReferenceDate
         );
+        if (timingOnly) cacheKey = 'timing:' + cacheKey;
         var cached = getRouteVariantDetailCache(cacheKey);
         if (cached) return Promise.resolve(cached);
         if (routeVariantDetailPending.has(cacheKey)) {
@@ -22081,10 +22095,12 @@
           '?day_type=' + encodeURIComponent(selectedDayType) +
           '&departure_time=' + encodeURIComponent(timeText) +
           '&eta_reference_date=' + encodeURIComponent(etaReferenceDate);
+        if (timingOnly) detailUrl += '&view=timing';
         if (isFinite(normalizedVariantId) && normalizedVariantId > 0) {
           detailUrl += '&variant_id=' + encodeURIComponent(String(normalizedVariantId));
         }
         var abort = new AbortController();
+        if (timingOnly) routeTimingRequestControllers.set(abort, {serial:routeRequestSerial,site:selectedSiteId,day:selectedDayType,date:etaReferenceDate});
         var deadline = setTimeout(function() { abort.abort(); }, 15000);
         var pending = fetchJson(detailUrl, { signal: abort.signal })
           .then(function(result) {
@@ -22097,6 +22113,7 @@
           })
           .finally(function() {
             clearTimeout(deadline);
+            if (timingOnly) routeTimingRequestControllers.delete(abort);
             routeVariantDetailPending.delete(cacheKey);
           });
         routeVariantDetailPending.set(cacheKey, pending);
@@ -24071,6 +24088,13 @@
           ].forEach(function(key) {
             if (detailStop[key] != null) merged[key] = detailStop[key];
           });
+          // The selected-trip detail is authoritative for optional display data.
+          if (detailByIdentity[stopIdentity(call)]) {
+            ['next_encoded_polyline', 'next_polyline_source', 'geometry_revision', 'crowding', 'crowding_state'].forEach(function(key) {
+              if (detailStop[key] != null) merged[key] = detailStop[key];
+              else delete merged[key];
+            });
+          }
           merged.arrival_time = call.arrival_time;
           merged.arrival_min = call.arrival_min;
           merged.arrival_day_offset = call.arrival_day_offset;
@@ -24312,6 +24336,7 @@
           });
         }
         var transitEntries = getShuttleTransferTransitEntries(option);
+        var detailRequestSerial = routeRequestSerial;
         var requests = transitEntries.map(function(entry) {
           var leg = entry.leg || {};
           var routeId = Number(leg.route_id || 0);
@@ -24321,6 +24346,7 @@
           return fetchRouteVariantDetailData(routeId, departureTime, variantId)
             .then(function(detail) {
               if (!detail || typeof detail !== 'object') return null;
+              if (detailRequestSerial !== routeRequestSerial || departureTime !== getShuttleTransferLegDepartureTime(leg)) return null;
               if (
                 isFinite(variantId) &&
                 variantId > 0 &&
@@ -24341,7 +24367,11 @@
         });
         option.__transferTimetablePromise = Promise.all(requests)
           .then(function(results) {
-            option.__transferTimetableHydrated = true;
+            if (detailRequestSerial !== routeRequestSerial) return results;
+            option.__transferTimetableHydrated = transitEntries.length > 0 && transitEntries.every(function(entry) {
+              var detail = getShuttleTransferLegDetail(entry.leg);
+              return !!(detail && Array.isArray(detail.route_stops) && detail.route_stops.length > 0);
+            });
             refreshShuttleTransferTimetable(card, option, placeName, isDepart);
             return results;
           })
@@ -24444,6 +24474,31 @@
         drawOptionOnMap(option, placeName, isDepart, selectedCard, { preserveViewport: true });
       }
 
+      function hydrateRouteTimeSummaryExtras(option, placeName, isDepart, departureTime) {
+        if (!option || sharedRouteState.active || !isRouteOptionCurrentlySelected(option) ||
+            getOptionExistingVariantDetail(option, departureTime)) return Promise.resolve();
+        var serial = routeRequestSerial, site = selectedSiteId, day = selectedDayType, date = getTodayKstDateText();
+        var key = [serial, site, day, date, departureTime].join('|');
+        if (option.__summaryExtras && option.__summaryExtras.key === key) return option.__summaryExtras.promise;
+        function current() {
+          return serial === routeRequestSerial && site === selectedSiteId && day === selectedDayType &&
+            date === getTodayKstDateText() &&
+            departureTime === getOptionDisplayDepartureTime(option) && isRouteOptionCurrentlySelected(option);
+        }
+        // Let the duration reach the screen before requesting optional details.
+        var pending = new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); })
+          .then(function() { return current() ? fetchRouteVariantDetailData(option.route_id, departureTime) : null; })
+          .then(function(detail) {
+            if (!detail || !current()) return;
+            applyRouteVariantDetailToOption(option, detail, departureTime);
+            syncRenderedRouteCardsForOption(option, placeName, isDepart);
+            refreshSelectedRouteOptionMap(option, placeName, isDepart);
+          }).catch(function() { /* Optional details do not discard a valid duration. */ })
+          .finally(function() { if (option.__summaryExtras && option.__summaryExtras.promise === pending) delete option.__summaryExtras; });
+        option.__summaryExtras = {key:key,promise:pending};
+        return pending;
+      }
+
       function ensureRouteTimeSummary(option, placeName, isDepart, card, opts) {
         opts = opts || {};
         if (!option) return Promise.resolve(null);
@@ -24468,11 +24523,13 @@
             summary: cachedSummary
           });
           syncRenderedRouteCardsForOption(option, placeName, isDepart);
+          hydrateRouteTimeSummaryExtras(option, placeName, isDepart, departureTime);
           return Promise.resolve(cachedSummary);
         }
         var existingEntry = getRouteTimeSummaryEntry(option, departureTime);
         if (existingEntry && existingEntry.status === 'ready' && existingEntry.summary) {
           syncRenderedRouteCardsForOption(option, placeName, isDepart);
+          hydrateRouteTimeSummaryExtras(option, placeName, isDepart, departureTime);
           return Promise.resolve(existingEntry.summary);
         }
         if (existingEntry && existingEntry.status === 'invalid') {
@@ -24500,20 +24557,27 @@
           : (function() {
               var localDetail = getOptionExistingVariantDetail(option, departureTime);
               if (localDetail) return Promise.resolve(localDetail);
-              return fetchRouteVariantDetailData(option.route_id, departureTime);
+              return fetchRouteVariantDetailData(option.route_id, departureTime, null, true);
             })();
         var summarySelection = routeDepartureSelections.get(option);
-        var summaryRequest = routeRequestSerial, summarySite = selectedSiteId, summaryDay = selectedDayType;
+        var summaryRequest = routeRequestSerial, summarySite = selectedSiteId, summaryDay = selectedDayType, summaryDate = getTodayKstDateText();
         var walkPromise = fetchWalkPathData(walkLeg.fromPos, walkLeg.toPos);
         var pending = Promise.all([detailPromise, walkPromise])
           .then(function(values) {
             var detail = values[0] || null;
             var walkInfo = values[1] || null;
-            if (summaryRequest !== routeRequestSerial || summarySite !== selectedSiteId || summaryDay !== selectedDayType) return null;
+            if (summaryRequest !== routeRequestSerial || summarySite !== selectedSiteId || summaryDay !== selectedDayType || summaryDate !== getTodayKstDateText()) {
+              if (getRouteTimeSummaryEntry(option, departureTime) === existingEntry ||
+                  (getRouteTimeSummaryEntry(option, departureTime) || {}).promise === pending) clearRouteTimeSummaryEntry(option, departureTime);
+              return null;
+            }
             var stillActive = getOptionDisplayDepartureTime(option) === departureTime &&
               routeDepartureSelections.get(option) === summarySelection;
             var summaryOption = stillActive ? option : (cloneJsonValue(option) || {});
-            var normalizedDetail = applyRouteVariantDetailToOption(summaryOption, detail, departureTime) || detail;
+            // A timing response omits geometry and crowding; it must never
+            // satisfy a later full timetable/map lookup.
+            var normalizedDetail = detail && detail.timing_only ? detail :
+              (applyRouteVariantDetailToOption(summaryOption, detail, departureTime) || detail);
             if (walkInfo) {
               setRouteOptionWalkingInfo(summaryOption, walkInfo, departureTime, walkLeg);
             }
@@ -24549,10 +24613,11 @@
             setCachedRouteTimeSummary(option, departureTime, placeName, isDepart, summary);
             syncRenderedRouteCardsForOption(option, placeName, isDepart);
             refreshSelectedRouteOptionMap(option, placeName, isDepart);
+            if (detail && detail.timing_only && stillActive) hydrateRouteTimeSummaryExtras(option, placeName, isDepart, departureTime);
             return summary;
           })
           .catch(function() {
-            clearRouteTimeSummaryEntry(option, departureTime);
+            if ((getRouteTimeSummaryEntry(option, departureTime) || {}).promise === pending) clearRouteTimeSummaryEntry(option, departureTime);
             syncRenderedRouteCardsForOption(option, placeName, isDepart);
             return null;
           });
@@ -24569,7 +24634,14 @@
         clearRouteTimeSummaryPrefetchTimers();
         if (!Array.isArray(options) || options.length === 0) return;
         var generation = routeTimeSummaryPrefetchGeneration;
-        var queue = options.filter(function(option) { return !!option; }).slice();
+        var queue = options.filter(function(option) { return !!option; }).map(function(option,index) {
+          var card = getLiveRouteCardForOption(option);
+          var bounds = card ? card.getBoundingClientRect() : null;
+          var priority = card && card.classList.contains('selected') ? 2 :
+            bounds && bounds.bottom > 0 && bounds.top < window.innerHeight ? 1 : 0;
+          return {option:option,index:index,priority:priority};
+        }).sort(function(a,b) { return b.priority-a.priority || a.index-b.index; })
+          .map(function(entry) { return entry.option; });
         var activeCount = 0;
         function pumpQueue() {
           if (generation !== routeTimeSummaryPrefetchGeneration) return;
@@ -27311,7 +27383,7 @@
         drawOptionOnMap(option, placeName, isDepart, card);
         var crowdStartedAt = Date.now();
         ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
-        scheduleLiveVehiclePositions(option, card, isDepart);
+        scheduleLiveVehiclePositions(option, card, isDepart, {resetInitialCamera:true});
       }
 
       function triggerRouteDetailButtonAttention(card) {
@@ -27340,7 +27412,7 @@
         }
         var crowdStartedAt = Date.now();
         ensureRouteTimeSummary(option, placeName, isDepart, card).then(function() { return refreshRouteCrowdingSummary(option,crowdStartedAt); });
-        scheduleLiveVehiclePositions(option, card, isDepart);
+        scheduleLiveVehiclePositions(option, card, isDepart, {resetInitialCamera:fitViewport !== false});
         if (isFromMapLabel) {
           routeLabelTriggeredDetailState = {
             card: card,
@@ -28240,7 +28312,7 @@
         if (Array.isArray(value)) return value.map(stripPrivateSnapshotFields);
         if (!value || typeof value !== 'object') return value;
         var output = {};
-        var runtimeKeys = ['vehicle_positions','live_eta','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
+        var runtimeKeys = ['vehicle_positions','live_eta','live_eta_enabled','selected_trip_eta','watch_id','capability','position_state','snapshot_revision',
           'vehicle_ref','vehicle_id','public_vehicle_id','gps_age_seconds','gps_age_ms','age_reference_at','read_processing_ms','collection_policy','diagnostic_id','trip_match_state','live_eta_state','source_interval_seconds',
           'gps_status','gps_source_kind','source_key','upstream_key','customer','source_route_id','vehicle_assignment','vehicle_assignments',
           'vehicle_number','run_status','vehicle_status_code','vehicle_status_label','occupancy','occupancy_age_seconds','occupancy_age_ms',
@@ -34105,7 +34177,8 @@
           max_transfers: normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers),
           search_mode: normalizeRouteSearchMode(activeRouteSearchMode),
           search_source: String(params.searchSource || currentSearchSource || 'manual_search'),
-          include_transit: !!selectedTransitSearch
+          include_transit: !!selectedTransitSearch,
+          defer_display_extras: true
         };
         if (params.sessionId) payload.session_id = String(params.sessionId);
         return payload;
@@ -34919,7 +34992,7 @@
         vehicleMapClickIgnoreTimer = setTimeout(function() { mapClickIgnore = false; }, 350);
       }
 
-      function scheduleLiveVehiclePositions(option, card, isDepart) {
+      function scheduleLiveVehiclePositions(option, card, isDepart, selectionOptions) {
         clearTimeout(liveVehicleTimer);
         if (!liveVehicleController || !option || !card) return;
         liveVehicleTimer = setTimeout(function() {
@@ -34958,7 +35031,7 @@
               shared_route_token: sharedRouteState.active ? String(sharedRouteState.token || '') : ''
             } };
           }).filter(function(target) { return target && target.context.route_id > 0; });
-          liveVehicleController.select(targets);
+          liveVehicleController.select(targets, false, selectionOptions);
         }, 80);
       }
 
