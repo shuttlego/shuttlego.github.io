@@ -9405,6 +9405,46 @@
       cursor: pointer;
       text-decoration: none;
     }
+    .route-detail-panel .departure-times .time-item.pending {
+      position: relative;
+      color: #1428a0;
+      font-weight: 700;
+    }
+    .route-option-card.is-departure-pending .route-detail-panel .departure-times .time-item.current:not(.pending) {
+      color: #94a3b8;
+      font-weight: 400;
+    }
+    .route-departure-pending-note {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #1428a0;
+      opacity: 0;
+      animation: route-departure-pending-show 0s linear 0.3s forwards;
+    }
+    .route-departure-pending-spinner {
+      width: 12px;
+      height: 12px;
+      flex: 0 0 12px;
+      border: 2px solid #b9c9f3;
+      border-top-color: #1428a0;
+      border-radius: 50%;
+      animation: route-departure-pending-spin 0.8s linear infinite;
+    }
+    .route-option-card.is-departure-pending .route-time-summary-head,
+    .route-option-card.is-departure-pending .route-time-summary-body,
+    .route-option-card.is-departure-pending .route-detail-selected,
+    .route-option-card.is-departure-pending .route-stops-list {
+      opacity: 0.5;
+      transition: opacity 0.15s ease 0.3s;
+    }
+    @keyframes route-departure-pending-show { to { opacity: 1; } }
+    @keyframes route-departure-pending-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .route-departure-pending-spinner { animation: none; }
+    }
     .route-detail-panel .departure-times .time-item.origin {
       text-decoration: underline;
       text-underline-offset: 3px;
@@ -9836,7 +9876,7 @@
     }
   </style>
   <link rel="stylesheet" href="ads.css?v=4" />
-  <link rel="stylesheet" href="vehicle-positions.css?v=11" />
+  <link rel="stylesheet" href="vehicle-positions.css?v=12" />
 </head>
 <body>
   <header class="header">
@@ -10397,7 +10437,7 @@
 
   <script src="ads.js?v=4"></script>
   <script src="gps-network.js?v=2"></script>
-  <script src="vehicle-positions.js?v=27"></script>
+  <script src="vehicle-positions.js?v=28"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
@@ -41214,7 +41254,7 @@
                   nextSharedDetail.route_stops.length > 0 &&
                   routeStopsHaveVariantDetail(nextSharedDetail.route_stops)
                 ) {
-                  selectRouteDeparture(card, option, placeName, isDepart, timeText);
+                  selectRouteDeparture(card, option, placeName, isDepart, timeText, { sourceNode: node });
                   return;
                 }
                 promptLatestSearchFromSharedRouteForDepartureTime(timeText);
@@ -41227,7 +41267,7 @@
               }
               evt.preventDefault();
               evt.stopPropagation();
-              selectRouteDeparture(card, option, placeName, isDepart, timeText);
+              selectRouteDeparture(card, option, placeName, isDepart, timeText, { sourceNode: node });
             });
           });
         }
@@ -41373,11 +41413,15 @@
         syncRouteCardTimeSummary(card, option, placeName, isDepart);
         syncRenderedRouteCardsForOption(option, placeName, isDepart);
         syncRouteUpdatedInfo(panel, getRouteCardUpdatedAt(option));
-        ensureRouteTimeSummary(option, placeName, isDepart, card, {
+        var timeSummaryPromise = ensureRouteTimeSummary(option, placeName, isDepart, card, {
           departureTime: selectedTime,
           detail: normalizedDetail
         });
-        if (!isRouteOptionCurrentlySelected(option)) return;
+        // Callers that show a pending departure wait for every follow-up calculation.
+        var followUps = Promise.all([timeSummaryPromise, arrivalRefreshPromise].map(function(promise) {
+          return Promise.resolve(promise).catch(function() { return null; });
+        }));
+        if (!isRouteOptionCurrentlySelected(option)) return followUps;
         rerenderCurrentRouteOptions(option, placeName, isDepart, rerenderOpts);
         if (
           normalizeRouteTimeBasis(currentRouteTimeBasisUsed) === 'arrive_by' &&
@@ -41400,6 +41444,7 @@
             });
           });
         }
+        return followUps;
       }
 
       function showRouteDepartureFailure() {
@@ -41424,6 +41469,126 @@
         if (!sharedRouteState.active) return true;
         var detail = getOptionExistingVariantDetail(option, departureTime);
         return !!(detail && routeStopsHaveVariantDetail(detail.route_stops || []));
+      }
+
+      // A departure change re-renders the selected card in several steps, so the list would
+      // otherwise jump (native scroll anchoring loses its node, and the card-top anchor is taken
+      // after the first step). Hold the timetable row the user tapped at its on-screen position
+      // until every follow-up has applied, and show that the new departure is being calculated.
+      // Live ETA and operator rows re-render up to about a second after the results apply.
+      var ROUTE_DEPARTURE_SETTLE_MS = 1500;
+      var ROUTE_DEPARTURE_SESSION_MAX_MS = 15000;
+
+      function startRouteDepartureSession(option, departureTime, sourceNode) {
+        // The active session lives on the function so the page keeps no extra global state.
+        endRouteDepartureSession(startRouteDepartureSession.active);
+        var scrollKeys = { PageUp: 1, PageDown: 1, ArrowUp: 1, ArrowDown: 1, Home: 1, End: 1, ' ': 1 };
+        var owner = getRouteListScrollOwner();
+        var row = sourceNode && sourceNode.closest ? sourceNode.closest('.departure-times') : null;
+        var windowOwner = owner === document.scrollingElement || owner === document.documentElement || owner === document.body;
+        var session = {
+          option: option, departureTime: departureTime, owner: owner, ended: false,
+          locked: !!(row && owner), top: row ? row.getBoundingClientRect().top : 0,
+          previousAnchor: owner && owner.style ? owner.style.overflowAnchor : ''
+        };
+        function liveCard() { return getLiveRouteCardForOption(option); }
+        session.hold = function() {
+          if (!session.locked || session.ended) return;
+          var card = liveCard();
+          var node = card && card.querySelector('.route-detail-panel .departure-times');
+          if (!node || !node.isConnected) return;
+          var delta = node.getBoundingClientRect().top - session.top;
+          if (!isFinite(delta) || Math.abs(delta) < 0.5) return;
+          if (windowOwner) window.scrollBy(0, delta);
+          else owner.scrollTop += delta;
+        };
+        session.mark = function() {
+          if (session.ended || session.settled) return;
+          var card = liveCard();
+          if (!card) return;
+          if (!card.classList.contains('is-departure-pending')) card.classList.add('is-departure-pending');
+          card.querySelectorAll('.route-detail-panel .departure-times .time-item').forEach(function(node) {
+            var on = String(node.getAttribute('data-time') || node.textContent || '').trim() === departureTime;
+            if (node.classList.contains('pending') !== on) node.classList.toggle('pending', on);
+            if (on && node.getAttribute('aria-busy') !== 'true') node.setAttribute('aria-busy', 'true');
+          });
+          var timesRow = card.querySelector('.route-detail-panel .departure-times');
+          var next = timesRow && timesRow.nextElementSibling;
+          if (timesRow && !(next && next.classList.contains('route-departure-pending-note'))) {
+            var note = document.createElement('div');
+            note.className = 'route-departure-pending-note';
+            note.setAttribute('role', 'status');
+            note.innerHTML = '<span class="route-departure-pending-spinner" aria-hidden="true"></span>' +
+              escapeHtml(departureTime) + ' 출발 기준으로 다시 계산 중…';
+            timesRow.parentNode.insertBefore(note, next);
+          }
+        };
+        // Any scroll the user starts wins over the hold; programmatic scrolls do not release it.
+        session.onUserScroll = function() { session.locked = false; };
+        session.onKey = function(evt) { if (scrollKeys[evt.key]) session.locked = false; };
+        session.scrollTarget = windowOwner ? window : owner;
+        if (session.scrollTarget) {
+          session.scrollTarget.addEventListener('wheel', session.onUserScroll, { passive: true });
+          session.scrollTarget.addEventListener('touchstart', session.onUserScroll, { passive: true });
+        }
+        window.addEventListener('keydown', session.onKey);
+        if (owner && owner.style) owner.style.overflowAnchor = 'none';
+        if (routeOptionsWrap && typeof MutationObserver === 'function') {
+          session.observer = new MutationObserver(function() { session.mark(); session.hold(); });
+          session.observer.observe(routeOptionsWrap, { childList: true, subtree: true, characterData: true,
+            attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+        }
+        if (routeOptionsWrap && typeof ResizeObserver === 'function') {
+          session.resize = new ResizeObserver(function() { session.hold(); });
+          session.resize.observe(routeOptionsWrap);
+        }
+        session.maxTimer = setTimeout(function() { endRouteDepartureSession(session); }, ROUTE_DEPARTURE_SESSION_MAX_MS);
+        session.mark();
+        startRouteDepartureSession.active = session;
+        return session;
+      }
+
+      function clearRouteDeparturePendingMarks() {
+        if (!routeOptionsWrap) return;
+        routeOptionsWrap.querySelectorAll('.route-option-card.is-departure-pending').forEach(function(node) {
+          node.classList.remove('is-departure-pending');
+        });
+        routeOptionsWrap.querySelectorAll('.departure-times .time-item.pending').forEach(function(node) {
+          node.classList.remove('pending');
+          node.removeAttribute('aria-busy');
+        });
+        routeOptionsWrap.querySelectorAll('.route-departure-pending-note').forEach(function(node) {
+          if (node.parentNode) node.parentNode.removeChild(node);
+        });
+      }
+
+      function settleRouteDepartureSession(session) {
+        if (!session || session.ended) return;
+        // Results are in: drop the pending marks now, but keep holding the row while late
+        // renders (live ETA, operator info) still land, unless the user scrolls first.
+        session.settled = true;
+        clearRouteDeparturePendingMarks();
+        session.hold();
+        clearTimeout(session.settleTimer);
+        session.settleTimer = setTimeout(function() { endRouteDepartureSession(session); }, ROUTE_DEPARTURE_SETTLE_MS);
+      }
+
+      function endRouteDepartureSession(session) {
+        if (!session || session.ended) return;
+        session.hold();
+        session.ended = true;
+        clearTimeout(session.settleTimer);
+        clearTimeout(session.maxTimer);
+        if (session.observer) session.observer.disconnect();
+        if (session.resize) session.resize.disconnect();
+        if (session.scrollTarget) {
+          session.scrollTarget.removeEventListener('wheel', session.onUserScroll);
+          session.scrollTarget.removeEventListener('touchstart', session.onUserScroll);
+        }
+        window.removeEventListener('keydown', session.onKey);
+        if (session.owner && session.owner.style) session.owner.style.overflowAnchor = session.previousAnchor || '';
+        clearRouteDeparturePendingMarks();
+        if (startRouteDepartureSession.active === session) startRouteDepartureSession.active = null;
       }
 
       function selectRouteDeparture(card, option, placeName, isDepart, requestedTime, opts) {
@@ -41451,6 +41616,7 @@
             (currentRouteOptions || []).indexOf(option) >= 0 && isRouteOptionCurrentlySelected(option);
         };
         routeDepartureSelections.set(option, ticket);
+        var session = opts.hydrate ? null : startRouteDepartureSession(option, departureTime, opts.sourceNode);
         if (!opts.hydrate && liveVehicleController) liveVehicleController.previewDeparture(option,departureTime);
         var saved = sharedRouteState.active ? getOptionExistingVariantDetail(option, departureTime) : null;
         ticket.promise = (sharedRouteState.active ? Promise.resolve(saved) : fetchRouteVariantDetailData(option.route_id, departureTime))
@@ -41464,17 +41630,20 @@
               routeVariantDetailCache.delete(buildRouteVariantDetailCacheKey(option.route_id, day, departureTime, '', date));
               throw new Error('departure_mismatch');
             }
-            applyRouteVariantDetailToCard(getLiveRouteCardForOption(option), option, placeName, isDepart, detail, {
+            var followUps = applyRouteVariantDetailToCard(getLiveRouteCardForOption(option), option, placeName, isDepart, detail, {
               isCurrent: ticket.isCurrent, preserveMapViewport: opts.preserveMapViewport === true
             });
-            return true;
+            return Promise.resolve(followUps).then(function() { return true; });
           }).catch(function() {
             if (!opts.hydrate && ticket.isCurrent()) {
               if (liveVehicleController) liveVehicleController.previewDeparture(option,null);
               showRouteDepartureFailure();
             }
             return false;
-          }).finally(function() { ticket.pending = false; });
+          }).finally(function() {
+            ticket.pending = false;
+            settleRouteDepartureSession(session);
+          });
         return ticket.promise;
       }
 

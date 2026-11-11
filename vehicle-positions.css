@@ -16,6 +16,8 @@
 .live-vehicle-label.is-selected { border: 2px solid #1428a0; background: #e8edff; }
 .live-vehicle-label.is-stale { opacity: .7; }
 .live-vehicle-marker { user-select: none; -webkit-user-select: none; }
+/* Bottom-center on the bus position, independent of the size the map SDK measured. */
+.live-vehicle-marker { transform: translate(-50%, -100%); }
 .live-vehicle-label img { pointer-events: none; }
 .route-live-spinner.is-paused::before { animation: none; border-color: #9aa8e0; }
 .route-live-play { width: 12px; height: 12px; }

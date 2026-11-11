@@ -64,7 +64,12 @@
     var reasonTooltip = null, reasonTrigger = null;
     var statusViews = new Map();
     var lastActivity = null, lastActivityWall = null, lastSignal = -Infinity;
-    var idleTimeout = 300000;
+    // Positions keep updating while a card stays selected. An optional server
+    // policy (config.idle_timeout_seconds > 0) can restore an inactivity pause.
+    function idleTimeout() {
+      var seconds = Number(config && config.idle_timeout_seconds);
+      return isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+    }
     var etaRetentionMs = 90000;
     var markerSizeCache = new Map();
     var picker = null, pickerState = null;
@@ -541,10 +546,11 @@
       renderMap();
     }
     function idleElapsed() { return lastActivity == null ? 0 : Math.max(activityTime()-lastActivity,Date.now()-lastActivityWall,0); }
-    function idleExpired() { return lastActivity != null && idleElapsed() >= idleTimeout; }
+    function idleExpired() { var limit = idleTimeout(); return limit > 0 && lastActivity != null && idleElapsed() >= limit; }
     function armIdle() {
       clearTimeout(idleTimer);
-      if (!idlePaused && entries.length && lastActivity != null) idleTimer = setTimeout(pauseIdle, Math.max(0, idleTimeout - idleElapsed()));
+      var limit = idleTimeout();
+      if (limit > 0 && !idlePaused && entries.length && lastActivity != null) idleTimer = setTimeout(pauseIdle, Math.max(0, limit - idleElapsed()));
     }
     function renderIdle(view) {
       if (view.statusState==='idle' && view.row.isConnected) return;
@@ -560,7 +566,7 @@
       button.appendChild(ring);
       button.addEventListener('click', function(event) { event.preventDefault(); event.stopPropagation(); resume(); });
       view.row.appendChild(button);
-      addReason(view,'5분 동안 조작이 없어 위치 확인을 잠시 멈췄습니다.');
+      addReason(view,Math.max(1,Math.round(idleTimeout()/60000))+'분 동안 조작이 없어 위치 확인을 잠시 멈췄습니다.');
       view.counter = null;
     }
     function pauseIdle() {
@@ -843,7 +849,10 @@
         root.appendChild(label);
         root.addEventListener('click', function(event) { event.stopPropagation(); markerInteraction(); });
         // Let the SDK receive drag gestures; short taps are consumed by the label.
-        var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: false, yAnchor: 1, zIndex: options.zIndex || 1000 });
+        // Anchor with CSS, not xAnchor/yAnchor: the SDK converts anchors into margins from the
+        // content size it measures when content changes. During a touch pinch zoom it hides the
+        // overlay layer, so a refresh then measures 0x0 and the bubble stays shifted by its own size.
+        var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: false, xAnchor: 0, yAnchor: 0, zIndex: options.zIndex || 1000 });
         if (existing) { overlay.setContent(root); overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon)); }
         if (!existing || existing.map !== map) overlay.setMap(map);
         vehicles.forEach(function(vehicle) {
