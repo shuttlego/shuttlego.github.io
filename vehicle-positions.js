@@ -849,7 +849,10 @@
         root.appendChild(label);
         root.addEventListener('click', function(event) { event.stopPropagation(); markerInteraction(); });
         // Let the SDK receive drag gestures; short taps are consumed by the label.
-        var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: false, yAnchor: 1, zIndex: options.zIndex || 1000 });
+        // Anchor with CSS, not xAnchor/yAnchor: the SDK converts anchors into margins from the
+        // content size it measures when content changes. During a touch pinch zoom it hides the
+        // overlay layer, so a refresh then measures 0x0 and the bubble stays shifted by its own size.
+        var overlay = existing ? existing.overlay : new global.kakao.maps.CustomOverlay({ content: root, position: new global.kakao.maps.LatLng(first.lat, first.lon), clickable: false, xAnchor: 0, yAnchor: 0, zIndex: options.zIndex || 1000 });
         if (existing) { overlay.setContent(root); overlay.setPosition(new global.kakao.maps.LatLng(first.lat,first.lon)); }
         if (!existing || existing.map !== map) overlay.setMap(map);
         vehicles.forEach(function(vehicle) {
