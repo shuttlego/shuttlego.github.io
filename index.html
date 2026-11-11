@@ -41475,14 +41475,14 @@
       // otherwise jump (native scroll anchoring loses its node, and the card-top anchor is taken
       // after the first step). Hold the timetable row the user tapped at its on-screen position
       // until every follow-up has applied, and show that the new departure is being calculated.
-      var activeRouteDepartureSession = null;
       // Live ETA and operator rows re-render up to about a second after the results apply.
       var ROUTE_DEPARTURE_SETTLE_MS = 1500;
       var ROUTE_DEPARTURE_SESSION_MAX_MS = 15000;
-      var ROUTE_SCROLL_KEYS = { PageUp: 1, PageDown: 1, ArrowUp: 1, ArrowDown: 1, Home: 1, End: 1, ' ': 1 };
 
       function startRouteDepartureSession(option, departureTime, sourceNode) {
-        endRouteDepartureSession(activeRouteDepartureSession);
+        // The active session lives on the function so the page keeps no extra global state.
+        endRouteDepartureSession(startRouteDepartureSession.active);
+        var scrollKeys = { PageUp: 1, PageDown: 1, ArrowUp: 1, ArrowDown: 1, Home: 1, End: 1, ' ': 1 };
         var owner = getRouteListScrollOwner();
         var row = sourceNode && sourceNode.closest ? sourceNode.closest('.departure-times') : null;
         var windowOwner = owner === document.scrollingElement || owner === document.documentElement || owner === document.body;
@@ -41525,7 +41525,7 @@
         };
         // Any scroll the user starts wins over the hold; programmatic scrolls do not release it.
         session.onUserScroll = function() { session.locked = false; };
-        session.onKey = function(evt) { if (ROUTE_SCROLL_KEYS[evt.key]) session.locked = false; };
+        session.onKey = function(evt) { if (scrollKeys[evt.key]) session.locked = false; };
         session.scrollTarget = windowOwner ? window : owner;
         if (session.scrollTarget) {
           session.scrollTarget.addEventListener('wheel', session.onUserScroll, { passive: true });
@@ -41544,7 +41544,7 @@
         }
         session.maxTimer = setTimeout(function() { endRouteDepartureSession(session); }, ROUTE_DEPARTURE_SESSION_MAX_MS);
         session.mark();
-        activeRouteDepartureSession = session;
+        startRouteDepartureSession.active = session;
         return session;
       }
 
@@ -41588,7 +41588,7 @@
         window.removeEventListener('keydown', session.onKey);
         if (session.owner && session.owner.style) session.owner.style.overflowAnchor = session.previousAnchor || '';
         clearRouteDeparturePendingMarks();
-        if (activeRouteDepartureSession === session) activeRouteDepartureSession = null;
+        if (startRouteDepartureSession.active === session) startRouteDepartureSession.active = null;
       }
 
       function selectRouteDeparture(card, option, placeName, isDepart, requestedTime, opts) {
