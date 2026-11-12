@@ -89,7 +89,7 @@
     function lsSet(key, value) { try { global.localStorage.setItem(key, value); } catch (e) {} }
     function liveEvent(name) { try { if (global.__sgTelemetry && global.__sgTelemetry.event) global.__sgTelemetry.event(name); } catch (e) {} }
     function liveBucket() {
-      var bucket = Number(lsGet('sg_device_bucket'));
+      var raw = lsGet('sg_device_bucket'), bucket = raw === null || raw === '' ? NaN : Number(raw);
       if (!(bucket >= 0 && bucket < 100)) { bucket = Math.floor(Math.random() * 100); lsSet('sg_device_bucket', String(bucket)); }
       return bucket;
     }

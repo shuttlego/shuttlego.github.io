@@ -13315,6 +13315,7 @@
           return;
         }
         showProviderLoginProgress();
+        saveReturnSnapshot();
         var callbackUrl = location.origin + '/auth-callback.html';
         var loginUrl = API_BASE + '/api/auth/' + normalizedProvider + '/start?next=' + encodeURIComponent(callbackUrl);
         if (
@@ -38260,6 +38261,110 @@
         crowdingDetailState.controller = null;
       }
 
+      // ── P2 (switch: routing): browser/OS back closes the top layer; web login returns to the same search ──
+      var historyGuardInstalled = false;
+      function routingEnabled() { return !!(window.__SG_FLAGS && window.__SG_FLAGS.routing); }
+      function installHistoryBackGuard() {
+        // Android already routes its back key through ShuttleGoAppBackHandler, so the
+        // guard is only for browsers and the iOS swipe-back gesture.
+        if (historyGuardInstalled || !routingEnabled() || getAppContext().platform === 'android') return;
+        if (!window.history || typeof window.history.pushState !== 'function') return;
+        historyGuardInstalled = true;
+        try {
+          window.history.replaceState(Object.assign({}, window.history.state || {}, { sgRoot: true }), '');
+          window.history.pushState({ sgGuard: true }, '');
+        } catch (e) { historyGuardInstalled = false; return; }
+        window.addEventListener('popstate', function(event) {
+          if (event.state && event.state.sgGuard) return;
+          var handled = false;
+          try { handled = typeof window.shuttleGoBack === 'function' && window.shuttleGoBack() === true; } catch (e) {}
+          if (handled) {
+            try { window.history.pushState({ sgGuard: true }, ''); } catch (e) {}
+            try { if (window.__sgTelemetry) window.__sgTelemetry.event('routing_back_closed'); } catch (e) {}
+          } else {
+            window.history.back();
+          }
+        });
+      }
+      function buildReturnSnapshot() {
+        if (!lastPlace || !lastShuttleType) return null;
+        var lat = Number(lastPlace.y != null ? lastPlace.y : lastPlace.lat);
+        var lng = Number(lastPlace.x != null ? lastPlace.x : lastPlace.lng);
+        if (!isFinite(lat) || !isFinite(lng)) return null;
+        return {
+          direction: lastShuttleType === 'arrive' ? 'arrive' : 'depart',
+          site_id: selectedSiteId, day_type: selectedDayType, time_basis: selectedRouteTimeBasis,
+          route_kind: selectedRouteKind, search_time: getDepartureTimeStr(), search_mode: activeRouteSearchMode,
+          max_distance_km: maxDistanceKm, selected_endpoints: [],
+          place_name: String(lastPlace.place_name || lastPlace.name || ''), place_id: String(lastPlace.id || lastPlace.place_id || ''),
+          address_name: String(lastPlace.address_name || ''), road_address_name: String(lastPlace.road_address_name || ''),
+          category_name: String(lastPlace.category_name || ''), lat: lat, lng: lng, source: 'search'
+        };
+      }
+      function saveReturnSnapshot() {
+        if (!routingEnabled()) return;
+        try {
+          sessionStorage.setItem('sg_return_snapshot', JSON.stringify({ at: Date.now(), search: buildReturnSnapshot() }));
+        } catch (e) {}
+      }
+      function maybeRestoreReturnSnapshot() {
+        var raw = null;
+        try { raw = sessionStorage.getItem('sg_return_snapshot'); sessionStorage.removeItem('sg_return_snapshot'); } catch (e) { return; }
+        if (!raw || !routingEnabled() || pendingSharedRouteToken || sharedRouteState.active) return;
+        var snapshot = null;
+        try { snapshot = JSON.parse(raw); } catch (e) { return; }
+        if (!snapshot || !snapshot.search || !(Date.now() - Number(snapshot.at || 0) < 15 * 60 * 1000)) return;
+        if (snapshot.search.site_id && !siteOptionExists(String(snapshot.search.site_id))) return;
+        try { if (window.__sgTelemetry) window.__sgTelemetry.event('routing_login_return'); } catch (e) {}
+        replayRecentRouteSearch(snapshot.search);
+      }
+      if (window.__SG_BOOT && window.__SG_BOOT.promise) {
+        window.__SG_BOOT.promise.then(function() { installHistoryBackGuard(); });
+      }
+
+      // Generic "close the top layer" used by browser/OS back (routing switch). It presses
+      // the same close/back control a user would, from the top-most layer down. With the
+      // switch off it does nothing, so Android keeps its current back behavior.
+      (function bindGenericLayerBack() {
+        var previous = window.ShuttleGoAppBackHandler;
+        var legacy = window.shuttleGoBack;
+        function shown(el) {
+          if (!el || el.hidden) return false;
+          var style = window.getComputedStyle(el);
+          return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
+        }
+        var LAYERS = [
+          ['issueDetailBackBtn'], ['noticeDetailBackBtn'],
+          ['arrivalReportConfirmCloseBtn', 'arrivalReportConfirmBackdrop'],
+          ['arrivalReportScheduleCloseBtn', 'arrivalReportScheduleBackdrop'],
+          ['arrivalReportCloseBtn', 'arrivalReportBackdrop'],
+          ['reportDataCloseBtn', 'reportDataBackdrop'],
+          ['issueModalCloseBtn', 'issueModalBackdrop'],
+          ['noticeModalCloseBtn', 'noticeModalBackdrop'],
+          ['settingsModalCloseBtn', 'settingsModalBackdrop'],
+          [null, 'profileModalBackdrop'], [null, 'sitePickerBackdrop'], [null, 'timePickerBackdrop'],
+          [null, 'endpointPickerBackdrop'], [null, 'accountMenuBackdrop'], [null, 'locationPermissionBackdrop'],
+          ['routeHeaderBackBtn'], ['btnBackFromRoutes']
+        ];
+        function closeTopLayer() {
+          for (var i = 0; i < LAYERS.length; i++) {
+            var button = LAYERS[i][0] ? document.getElementById(LAYERS[i][0]) : null;
+            var backdrop = LAYERS[i][1] ? document.getElementById(LAYERS[i][1]) : null;
+            if (backdrop && !shown(backdrop)) continue;
+            if (button && shown(button)) { button.click(); return true; }
+            if (backdrop) { backdrop.click(); return true; }
+          }
+          return false;
+        }
+        function handleBack() {
+          if (previous && typeof previous.handleBack === 'function' && previous.handleBack.apply(previous, arguments) === true) return true;
+          if (typeof legacy === 'function' && legacy.apply(window, arguments) === true) return true;
+          return routingEnabled() ? closeTopLayer() : false;
+        }
+        window.ShuttleGoAppBackHandler = Object.assign({}, previous || {}, { handleBack: handleBack });
+        window.shuttleGoBack = handleBack;
+      })();
+
       (function bindCrowdingNativeBack() {
         var previous = window.ShuttleGoAppBackHandler;
         var legacy = window.shuttleGoBack;
@@ -42163,6 +42268,7 @@
             }
             maybeShowOnboardingGuide();
             scheduleStartupCurrentLocation();
+            try { maybeRestoreReturnSnapshot(); } catch (e) {}
           });
       } else {
         mapContainer.innerHTML = '<p style="padding:20px">지도 API 키를 설정해주세요. (KAKAO_JAVASCRIPT_KEY)</p>';
