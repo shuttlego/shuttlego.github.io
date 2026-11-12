@@ -4,58 +4,58 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script>
-    // Client telemetry (errors + a few timings). Runs first so early errors are kept.
-    // Sent with sendBeacon as text/plain (no CORS preflight). See client_telemetry.py.
-    (function() {
-      var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, events: {}, flags: null, sent: false, timer: null };
-      var timingSample = Math.random() * 100;
-      function api() { var env = window.__SHUTTLE_ENV; return env && env.API_BASE ? env.API_BASE : ''; }
-      function flagOn(name, fallback) { return T.flags && (name in T.flags) ? T.flags[name] : fallback; }
-      T.setRoute = function(name) { if (typeof name === 'string' && name) T.route = name; };
-      T.setFlags = function(flags) { T.flags = flags || {}; };
-      T.mark = function(name, value) {
-        if (typeof value !== 'number') value = (window.performance && performance.now) ? performance.now() : 0;
-        if (!(name in T.timings)) T.timings[name] = Math.round(value);
-      };
-      T.event = function(name) {
-        if (typeof name !== 'string' || !/^[a-z0-9_]{1,48}$/.test(name)) return;
-        T.events[name] = (T.events[name] || 0) + 1;
-      };
-      T.error = function(kind, msg, src, line) {
-        if (!flagOn('telemetry_errors', true)) return;
-        var key = kind + '|' + String(msg || '').slice(0, 160) + '|' + String(src || '').slice(-80) + '|' + (line || 0);
-        if (T.errors[key]) { T.errors[key].count++; return; }
-        if (T.errorCount >= 20) return;
-        T.errorCount++;
-        T.errors[key] = { kind: kind, msg: String(msg || '').slice(0, 200), src: String(src || '').slice(-120), line: line || 0, count: 1 };
-        if (!T.timer) T.timer = setTimeout(function() { T.timer = null; T.flush(false); }, 5000);
-      };
-      T.flush = function(final) {
-        var base = api(); if (!base || !navigator.sendBeacon) return;
-        var errs = Object.keys(T.errors).map(function(k) { return T.errors[k]; });
-        var sendTimings = final && !T.sent && timingSample < flagOn('telemetry_timing_percent', 10);
-        var hasEvents = Object.keys(T.events).length > 0;
-        if (!errs.length && !sendTimings && !hasEvents) return;
-        var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
-        if (sendTimings && nav) { T.mark('ttfb_ms', nav.responseStart); T.mark('dom_interactive_ms', nav.domInteractive); }
-        if (sendTimings && performance.getEntriesByType) {
-          performance.getEntriesByType('paint').forEach(function(p) { if (p.name === 'first-contentful-paint') T.mark('fcp_ms', p.startTime); });
-        }
-        var flags = []; if (T.flags) Object.keys(T.flags).forEach(function(k) { var v = T.flags[k]; if (v === true || (typeof v === 'number' && v > 0 && k.indexOf('telemetry') < 0)) flags.push(k); });
-        var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', flags: flags, errors: errs, timings: sendTimings ? T.timings : {}, events: T.events };
-        try { navigator.sendBeacon(base + '/api/client-telemetry', new Blob([JSON.stringify(body)], { type: 'text/plain' })); } catch (e) {}
-        T.errors = {}; T.errorCount = 0; T.events = {}; if (sendTimings) T.sent = true;
-      };
-      window.addEventListener('error', function(e) {
-        if (e && e.target && e.target !== window && (e.target.src || e.target.href)) { T.error('resource', 'load failed', e.target.src || e.target.href, 0); return; }
-        T.error('error', e && e.message, e && e.filename, e && e.lineno);
-      }, true);
-      window.addEventListener('unhandledrejection', function(e) {
-        var r = e && e.reason; T.error('unhandledrejection', r && (r.message || String(r)), r && r.stack ? String(r.stack).split('\n')[1] : '', 0);
-      });
-      document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'hidden') T.flush(true); });
-      window.addEventListener('pagehide', function() { T.flush(true); });
-    })();
+      // Client telemetry (errors + a few timings). Runs first so early errors are kept.
+      // Sent with sendBeacon as text/plain (no CORS preflight). See client_telemetry.py.
+      (function() {
+        var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, events: {}, flags: null, sent: false, timer: null };
+        var timingSample = Math.random() * 100;
+        function api() { var env = window.__SHUTTLE_ENV; return env && env.API_BASE ? env.API_BASE : ''; }
+        function flagOn(name, fallback) { return T.flags && (name in T.flags) ? T.flags[name] : fallback; }
+        T.setRoute = function(name) { if (typeof name === 'string' && name) T.route = name; };
+        T.setFlags = function(flags) { T.flags = flags || {}; };
+        T.mark = function(name, value) {
+          if (typeof value !== 'number') value = (window.performance && performance.now) ? performance.now() : 0;
+          if (!(name in T.timings)) T.timings[name] = Math.round(value);
+        };
+        T.event = function(name) {
+          if (typeof name !== 'string' || !/^[a-z0-9_]{1,48}$/.test(name)) return;
+          T.events[name] = (T.events[name] || 0) + 1;
+        };
+        T.error = function(kind, msg, src, line) {
+          if (!flagOn('telemetry_errors', true)) return;
+          var key = kind + '|' + String(msg || '').slice(0, 160) + '|' + String(src || '').slice(-80) + '|' + (line || 0);
+          if (T.errors[key]) { T.errors[key].count++; return; }
+          if (T.errorCount >= 20) return;
+          T.errorCount++;
+          T.errors[key] = { kind: kind, msg: String(msg || '').slice(0, 200), src: String(src || '').slice(-120), line: line || 0, count: 1 };
+          if (!T.timer) T.timer = setTimeout(function() { T.timer = null; T.flush(false); }, 5000);
+        };
+        T.flush = function(final) {
+          var base = api(); if (!base || !navigator.sendBeacon) return;
+          var errs = Object.keys(T.errors).map(function(k) { return T.errors[k]; });
+          var sendTimings = final && !T.sent && timingSample < flagOn('telemetry_timing_percent', 10);
+          var hasEvents = Object.keys(T.events).length > 0;
+          if (!errs.length && !sendTimings && !hasEvents) return;
+          var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+          if (sendTimings && nav) { T.mark('ttfb_ms', nav.responseStart); T.mark('dom_interactive_ms', nav.domInteractive); }
+          if (sendTimings && performance.getEntriesByType) {
+            performance.getEntriesByType('paint').forEach(function(p) { if (p.name === 'first-contentful-paint') T.mark('fcp_ms', p.startTime); });
+          }
+          var flags = []; if (T.flags) Object.keys(T.flags).forEach(function(k) { var v = T.flags[k]; if (v === true || (typeof v === 'number' && v > 0 && k.indexOf('telemetry') < 0)) flags.push(k); });
+          var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', flags: flags, errors: errs, timings: sendTimings ? T.timings : {}, events: T.events };
+          try { navigator.sendBeacon(base + '/api/client-telemetry', new Blob([JSON.stringify(body)], { type: 'text/plain' })); } catch (e) {}
+          T.errors = {}; T.errorCount = 0; T.events = {}; if (sendTimings) T.sent = true;
+        };
+        window.addEventListener('error', function(e) {
+          if (e && e.target && e.target !== window && (e.target.src || e.target.href)) { T.error('resource', 'load failed', e.target.src || e.target.href, 0); return; }
+          T.error('error', e && e.message, e && e.filename, e && e.lineno);
+        }, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          var r = e && e.reason; T.error('unhandledrejection', r && (r.message || String(r)), r && r.stack ? String(r.stack).split('\n')[1] : '', 0);
+        });
+        document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'hidden') T.flush(true); });
+        window.addEventListener('pagehide', function() { T.flush(true); });
+      })();
   </script>
   <link rel="preload" href="/fonts/wanted-sans/WantedSansVariable.core.woff2?v=2.0" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/fonts/wanted-sans.css?v=20261112-font-subset" />
@@ -10538,7 +10538,7 @@
       (function installBootShim() {
         if (!window.fetch || !window.Promise) return;
         var apiBase = ENV.API_BASE;
-        var nativeFetch = window.fetch.bind(window);
+        var shimFetch = window.fetch.bind(window);
         var COALESCE = /^\/api\/(ads|home|sites|app-config|auth\/providers|auth\/me|vehicle-positions\/config|notices\/hint|shuttle\/day-types)$/;
         var WINDOW_MS = 2000;
         var recent = {};
@@ -10569,7 +10569,7 @@
         var bootUrl = apiBase + '/api/bootstrap?site_id=' + encodeURIComponent(bootSite) +
           '&reference_date=' + refDate + '&platform=' + bootPlatform() +
           '&layout=' + (window.innerWidth <= 768 ? 'mobile' : 'desktop');
-        var bootPromise = nativeFetch(bootUrl, { credentials: 'include' })
+        var bootPromise = shimFetch(bootUrl, { credentials: 'include' })
           .then(function(r) { return r.ok ? r.json() : null; })
           .catch(function() { return null; })
           .then(function(data) {
@@ -10601,10 +10601,10 @@
           try {
             var url = typeof input === 'string' ? input : (input && input.url) || '';
             var method = String((init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
-            if (method !== 'GET' || url.indexOf(apiBase + '/api/') !== 0) return nativeFetch(input, init);
+            if (method !== 'GET' || url.indexOf(apiBase + '/api/') !== 0) return shimFetch(input, init);
             var key = normalize(url);
             var path = key.split('?')[0];
-            if (!key || !COALESCE.test(path)) return nativeFetch(input, init);
+            if (!key || !COALESCE.test(path)) return shimFetch(input, init);
             var now = Date.now();
             var hit = recent[key];
             if (hit && now - hit.at < WINDOW_MS) {
@@ -10613,14 +10613,14 @@
             var netInit = Object.assign({}, init || {});
             delete netInit.signal;
             var shared = (bootSettled || !bootExpected ? Promise.resolve() : Promise.race([bootPromise, new Promise(function(r) { setTimeout(r, 2500); })]))
-              .then(function() { return fromBoot(key) || nativeFetch(input, netInit); });
+              .then(function() { return fromBoot(key) || shimFetch(input, netInit); });
             // Login state can change without a reload (native sign-in), so auth/me is
             // served from the bootstrap once but never shared between callers.
             if (path !== '/api/auth/me') recent[key] = { at: now, promise: shared };
             shared.catch(function() { if (recent[key] && recent[key].promise === shared) delete recent[key]; });
             return withSignal(shared.then(function(r) { return r.clone(); }), init && init.signal);
           } catch (e) {
-            return nativeFetch(input, init);
+            return shimFetch(input, init);
           }
         };
       })();
@@ -38263,7 +38263,9 @@
 
       // ── P2 (switch: routing): browser/OS back closes the top layer; web login returns to the same search ──
       var historyGuardInstalled = false;
-      function routingEnabled() { return !!(window.__SG_FLAGS && window.__SG_FLAGS.routing); }
+      function routingEnabled() {
+        return !!(window.__SG_FLAGS && window.__SG_FLAGS.routing);
+      }
       function installHistoryBackGuard() {
         // Android already routes its back key through ShuttleGoAppBackHandler, so the
         // guard is only for browsers and the iOS swipe-back gesture.
