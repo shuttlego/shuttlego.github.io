@@ -10539,6 +10539,9 @@
         var recent = {};
         var bootEntries = null;
         var bootSettled = false;
+        // Only wait for the bootstrap payload when the last visit saw it enabled;
+        // otherwise legacy calls go out at once (no added latency while it is off).
+        var bootExpected = false;
         function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
         function normalize(url) {
           try {
@@ -10555,6 +10558,7 @@
           var ua = navigator.userAgent || '';
           return ua.indexOf('ShuttleGoAndroidWebView/') >= 0 ? 'android' : ua.indexOf('ShuttleGoIOSWebView/') >= 0 ? 'ios' : 'web';
         }
+        bootExpected = lsGet('sg_boot_enabled') === '1';
         var bootSite = lsGet('sg_last_site_id') || '0000011';
         var refDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
         var bootUrl = apiBase + '/api/bootstrap?site_id=' + encodeURIComponent(bootSite) +
@@ -10569,6 +10573,7 @@
             window.__SG_FLAGS = flags;
             if (window.__sgTelemetry) window.__sgTelemetry.setFlags(flags);
             if (data && data.enabled && data.responses) bootEntries = data.responses;
+            try { if (data) localStorage.setItem('sg_boot_enabled', data.enabled ? '1' : '0'); } catch (e) {}
             try { window.dispatchEvent(new CustomEvent('sg:flags', { detail: flags })); } catch (e) {}
             return data;
           });
@@ -10602,7 +10607,7 @@
             }
             var netInit = Object.assign({}, init || {});
             delete netInit.signal;
-            var shared = (bootSettled ? Promise.resolve() : Promise.race([bootPromise, new Promise(function(r) { setTimeout(r, 2500); })]))
+            var shared = (bootSettled || !bootExpected ? Promise.resolve() : Promise.race([bootPromise, new Promise(function(r) { setTimeout(r, 2500); })]))
               .then(function() { return fromBoot(key) || nativeFetch(input, netInit); });
             // Login state can change without a reload (native sign-in), so auth/me is
             // served from the bootstrap once but never shared between callers.

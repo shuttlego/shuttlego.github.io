@@ -25,25 +25,16 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Prepare site artifact
-        run: |
-          mkdir -p _site
-          cp index.html _site/index.html
-          cp auth-callback.html _site/auth-callback.html
-          cp dev.config.js _site/dev.config.js
-          cp ads.js ads.css _site/
-          cp gps-network.js vehicle-positions.js vehicle-positions.css _site/
-          cp -R fonts _site/fonts
-          cp legal.css _site/legal.css
-          cp robots.txt _site/robots.txt
-          cp sitemap.xml _site/sitemap.xml
-          cp -R auth _site/auth
-          cp -R page _site/page
-          cp -R images _site/images
-          cp -R privacy _site/privacy
-          cp -R terms _site/terms
-          if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
-          touch _site/.nojekyll
+      - name: Set up Node (esbuild via npx)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build site artifact
+        # index.html stays the single source; the build moves its large inline
+        # script/style into content-hashed /assets/ files and hashes the other
+        # scripts it loads. See scripts/build_site.py.
+        run: python3 scripts/build_site.py --out _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
