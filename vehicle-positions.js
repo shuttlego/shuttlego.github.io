@@ -77,6 +77,101 @@
     var toggleButton = options.toggleButton;
     var pendingReads = [], batchScheduled = false;
     var networkHistory = [];
+    // ── Live stream (P4) ────────────────────────────────────────────────
+    // One streamed POST /api/vehicle-positions/live per capability set replaces
+    // the /batch polls while it is healthy. The polling loop, renewals and
+    // rendering stay as they are; positionRead just answers from the stream.
+    // Anything odd (switch off, server busy, proxy buffering/cutting streams)
+    // falls back to /batch, and repeated failures are remembered for 6 hours.
+    var live = {key:'', caps:[], ctrl:null, healthy:false, cache:{}, startedAt:0, lastRead:0,
+      failures:[], watchdog:null, firstTimer:null, idleTimer:null};
+    function lsGet(key) { try { return global.localStorage.getItem(key); } catch (e) { return null; } }
+    function lsSet(key, value) { try { global.localStorage.setItem(key, value); } catch (e) {} }
+    function liveEvent(name) { try { if (global.__sgTelemetry && global.__sgTelemetry.event) global.__sgTelemetry.event(name); } catch (e) {} }
+    function liveBucket() {
+      var bucket = Number(lsGet('sg_device_bucket'));
+      if (!(bucket >= 0 && bucket < 100)) { bucket = Math.floor(Math.random() * 100); lsSet('sg_device_bucket', String(bucket)); }
+      return bucket;
+    }
+    function liveWanted() {
+      var percent = Number((global.__SG_FLAGS || {}).live_stream_percent || 0);
+      if (!(percent > 0) || !config || !config.batch_reads) return false;
+      if (!global.ReadableStream || !global.TextDecoder || !global.AbortController) return false;
+      if (Number(lsGet('sg_live_off_until') || 0) > Date.now()) return false;
+      return liveBucket() < percent;
+    }
+    function liveStop() {
+      if (live.ctrl) { try { live.ctrl.abort(); } catch (e) {} }
+      clearTimeout(live.watchdog); clearTimeout(live.firstTimer); clearInterval(live.idleTimer);
+      live.ctrl = null; live.healthy = false; live.key = ''; live.caps = []; live.cache = {};
+    }
+    function liveFail(reason) {
+      liveEvent('live_fallback_' + reason);
+      var now = Date.now();
+      live.failures = live.failures.filter(function(at) { return now - at < 600000; });
+      live.failures.push(now);
+      if (reason === 'no_first_event' || reason === 'blocked' || live.failures.length >= 3) {
+        lsSet('sg_live_off_until', String(now + 6 * 3600 * 1000));
+      }
+      liveStop();
+    }
+    function liveEnsure(caps) {
+      var key = caps.slice().sort().join('|');
+      live.lastRead = Date.now();
+      if (live.key === key && live.ctrl) return;
+      liveStop();
+      var ctrl = new AbortController();
+      live.key = key; live.caps = caps.slice(); live.ctrl = ctrl; live.startedAt = Date.now();
+      live.firstTimer = setTimeout(function() { if (live.ctrl === ctrl && !live.healthy) liveFail('no_first_event'); }, 5000);
+      live.idleTimer = setInterval(function() { if (live.ctrl === ctrl && Date.now() - live.lastRead > 20000) liveStop(); }, 5000);
+      function arm() {
+        clearTimeout(live.watchdog);
+        live.watchdog = setTimeout(function() { if (live.ctrl === ctrl) liveFail('stalled'); }, 45000);
+      }
+      arm();
+      fetch(options.apiBase + '/api/vehicle-positions/live', {method:'POST', credentials:'include', signal:ctrl.signal,
+        headers:{'Content-Type':'application/json', 'Accept':'text/event-stream', 'X-Shuttle-Position-Capability':caps[0]},
+        body:JSON.stringify({capabilities:caps})
+      }).then(function(response) {
+        if (live.ctrl !== ctrl) return;
+        if (response.status === 404 || response.status === 503) { liveEvent('live_unavailable_' + response.status); liveStop(); return; }
+        var type = String(response.headers.get('content-type') || '');
+        if (!response.ok || !response.body || type.indexOf('text/event-stream') < 0) { liveFail('blocked'); return; }
+        var reader = response.body.getReader(), decoder = new TextDecoder(), buffer = '';
+        function pump() {
+          return reader.read().then(function(chunk) {
+            if (live.ctrl !== ctrl) return;
+            if (chunk.done) {
+              if (Date.now() - live.startedAt < 30000) liveFail('cut'); else liveStop();
+              return;
+            }
+            arm();
+            buffer += decoder.decode(chunk.value, {stream:true});
+            var blocks = buffer.split('\n\n'); buffer = blocks.pop();
+            for (var i = 0; i < blocks.length && live.ctrl === ctrl; i++) {
+              var block = blocks[i];
+              if (block.indexOf('event: ') !== 0) continue;
+              var newline = block.indexOf('\n'), name = block.slice(7, newline), data;
+              try { data = JSON.parse(block.slice(newline + 7)); } catch (e) { continue; }
+              if (name === 'positions' && Array.isArray(data.items) && data.items.length === live.caps.length) {
+                if (!live.healthy) { live.healthy = true; clearTimeout(live.firstTimer); liveEvent('live_stream_ok'); }
+                var at = Date.now();
+                data.items.forEach(function(item, index) {
+                  live.cache[live.caps[index]] = {status:item.status, data:item.data || {}, at:at};
+                });
+              } else if (name === 'end') {
+                liveStop();
+              }
+            }
+            return pump();
+          });
+        }
+        return pump();
+      }).catch(function(error) {
+        if (live.ctrl !== ctrl || (error && error.name === 'AbortError')) return;
+        liveFail(live.healthy ? 'cut' : 'blocked');
+      });
+    }
     function withoutLiveEta(data) {
       if (!data || !Array.isArray(data.vehicles)) return data;
       return Object.assign({},data,{live_eta_enabled:false,selected_trip_eta:null,
@@ -128,6 +223,16 @@
       syncToggle(); renderMap();
     });
     function positionRead(watch, headers, signal) {
+      if (watch && watch.capability && liveWanted()) {
+        var caps = entries.filter(function(entry) { return entry.watch && entry.watch.capability; })
+          .map(function(entry) { return entry.watch.capability; });
+        if (caps.indexOf(watch.capability) < 0) caps.unshift(watch.capability);
+        liveEnsure(caps.slice(0, 3));
+        var cached = live.healthy && live.cache[watch.capability];
+        if (cached) {
+          return Promise.resolve(new Response(JSON.stringify(cached.data), {status:cached.status, headers:{'Content-Type':'application/json'}}));
+        }
+      }
       if (!config.batch_reads) return gpsFetch(options.apiBase + '/api/vehicle-positions', {credentials:'include',signal:signal,headers:headers});
       return new Promise(function(resolve,reject) {
         pendingReads.push({watch:watch,signal:signal,resolve:resolve,reject:reject});

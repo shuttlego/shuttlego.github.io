@@ -7,7 +7,7 @@
     // Client telemetry (errors + a few timings). Runs first so early errors are kept.
     // Sent with sendBeacon as text/plain (no CORS preflight). See client_telemetry.py.
     (function() {
-      var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, flags: null, sent: false, timer: null };
+      var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, events: {}, flags: null, sent: false, timer: null };
       var timingSample = Math.random() * 100;
       function api() { var env = window.__SHUTTLE_ENV; return env && env.API_BASE ? env.API_BASE : ''; }
       function flagOn(name, fallback) { return T.flags && (name in T.flags) ? T.flags[name] : fallback; }
@@ -16,6 +16,10 @@
       T.mark = function(name, value) {
         if (typeof value !== 'number') value = (window.performance && performance.now) ? performance.now() : 0;
         if (!(name in T.timings)) T.timings[name] = Math.round(value);
+      };
+      T.event = function(name) {
+        if (typeof name !== 'string' || !/^[a-z0-9_]{1,48}$/.test(name)) return;
+        T.events[name] = (T.events[name] || 0) + 1;
       };
       T.error = function(kind, msg, src, line) {
         if (!flagOn('telemetry_errors', true)) return;
@@ -30,16 +34,17 @@
         var base = api(); if (!base || !navigator.sendBeacon) return;
         var errs = Object.keys(T.errors).map(function(k) { return T.errors[k]; });
         var sendTimings = final && !T.sent && timingSample < flagOn('telemetry_timing_percent', 10);
-        if (!errs.length && !sendTimings) return;
+        var hasEvents = Object.keys(T.events).length > 0;
+        if (!errs.length && !sendTimings && !hasEvents) return;
         var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
         if (sendTimings && nav) { T.mark('ttfb_ms', nav.responseStart); T.mark('dom_interactive_ms', nav.domInteractive); }
         if (sendTimings && performance.getEntriesByType) {
           performance.getEntriesByType('paint').forEach(function(p) { if (p.name === 'first-contentful-paint') T.mark('fcp_ms', p.startTime); });
         }
         var flags = []; if (T.flags) Object.keys(T.flags).forEach(function(k) { var v = T.flags[k]; if (v === true || (typeof v === 'number' && v > 0 && k.indexOf('telemetry') < 0)) flags.push(k); });
-        var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', flags: flags, errors: errs, timings: sendTimings ? T.timings : {} };
+        var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', flags: flags, errors: errs, timings: sendTimings ? T.timings : {}, events: T.events };
         try { navigator.sendBeacon(base + '/api/client-telemetry', new Blob([JSON.stringify(body)], { type: 'text/plain' })); } catch (e) {}
-        T.errors = {}; T.errorCount = 0; if (sendTimings) T.sent = true;
+        T.errors = {}; T.errorCount = 0; T.events = {}; if (sendTimings) T.sent = true;
       };
       window.addEventListener('error', function(e) {
         if (e && e.target && e.target !== window && (e.target.src || e.target.href)) { T.error('resource', 'load failed', e.target.src || e.target.href, 0); return; }
@@ -10484,9 +10489,9 @@
   </main>
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
-  <script src="ads.js?v=4"></script>
+  <script src="ads.js?v=5"></script>
   <script src="gps-network.js?v=2"></script>
-  <script src="vehicle-positions.js?v=28"></script>
+  <script src="vehicle-positions.js?v=29"></script>
   <script src="dev.config.js"></script>
   <script>
     // ── 환경 설정 (dev / prd) ──────────────────────────────
