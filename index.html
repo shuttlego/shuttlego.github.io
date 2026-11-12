@@ -3,8 +3,57 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="preload" href="/fonts/wanted-sans/WantedSansVariable.woff2?v=1.196" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="/fonts/wanted-sans.css?v=20261003-typography-v3" />
+  <script>
+    // Client telemetry (errors + a few timings). Runs first so early errors are kept.
+    // Sent with sendBeacon as text/plain (no CORS preflight). See client_telemetry.py.
+    (function() {
+      var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, flags: null, sent: false, timer: null };
+      var timingSample = Math.random() * 100;
+      function api() { var env = window.__SHUTTLE_ENV; return env && env.API_BASE ? env.API_BASE : ''; }
+      function flagOn(name, fallback) { return T.flags && (name in T.flags) ? T.flags[name] : fallback; }
+      T.setRoute = function(name) { if (typeof name === 'string' && name) T.route = name; };
+      T.setFlags = function(flags) { T.flags = flags || {}; };
+      T.mark = function(name, value) {
+        if (typeof value !== 'number') value = (window.performance && performance.now) ? performance.now() : 0;
+        if (!(name in T.timings)) T.timings[name] = Math.round(value);
+      };
+      T.error = function(kind, msg, src, line) {
+        if (!flagOn('telemetry_errors', true)) return;
+        var key = kind + '|' + String(msg || '').slice(0, 160) + '|' + String(src || '').slice(-80) + '|' + (line || 0);
+        if (T.errors[key]) { T.errors[key].count++; return; }
+        if (T.errorCount >= 20) return;
+        T.errorCount++;
+        T.errors[key] = { kind: kind, msg: String(msg || '').slice(0, 200), src: String(src || '').slice(-120), line: line || 0, count: 1 };
+        if (!T.timer) T.timer = setTimeout(function() { T.timer = null; T.flush(false); }, 5000);
+      };
+      T.flush = function(final) {
+        var base = api(); if (!base || !navigator.sendBeacon) return;
+        var errs = Object.keys(T.errors).map(function(k) { return T.errors[k]; });
+        var sendTimings = final && !T.sent && timingSample < flagOn('telemetry_timing_percent', 10);
+        if (!errs.length && !sendTimings) return;
+        var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+        if (sendTimings && nav) { T.mark('ttfb_ms', nav.responseStart); T.mark('dom_interactive_ms', nav.domInteractive); }
+        if (sendTimings && performance.getEntriesByType) {
+          performance.getEntriesByType('paint').forEach(function(p) { if (p.name === 'first-contentful-paint') T.mark('fcp_ms', p.startTime); });
+        }
+        var flags = []; if (T.flags) Object.keys(T.flags).forEach(function(k) { var v = T.flags[k]; if (v === true || (typeof v === 'number' && v > 0 && k.indexOf('telemetry') < 0)) flags.push(k); });
+        var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', flags: flags, errors: errs, timings: sendTimings ? T.timings : {} };
+        try { navigator.sendBeacon(base + '/api/client-telemetry', new Blob([JSON.stringify(body)], { type: 'text/plain' })); } catch (e) {}
+        T.errors = {}; T.errorCount = 0; if (sendTimings) T.sent = true;
+      };
+      window.addEventListener('error', function(e) {
+        if (e && e.target && e.target !== window && (e.target.src || e.target.href)) { T.error('resource', 'load failed', e.target.src || e.target.href, 0); return; }
+        T.error('error', e && e.message, e && e.filename, e && e.lineno);
+      }, true);
+      window.addEventListener('unhandledrejection', function(e) {
+        var r = e && e.reason; T.error('unhandledrejection', r && (r.message || String(r)), r && r.stack ? String(r.stack).split('\n')[1] : '', 0);
+      });
+      document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'hidden') T.flush(true); });
+      window.addEventListener('pagehide', function() { T.flush(true); });
+    })();
+  </script>
+  <link rel="preload" href="/fonts/wanted-sans/WantedSansVariable.core.woff2?v=2.0" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/fonts/wanted-sans.css?v=20261112-font-subset" />
   <base href="/" />
   <title>셔틀Go | 삼성계열사 셔틀 검색</title>
   <meta name="description" content="삼성전자, 삼성디스플레이, 삼성SDI 등 삼성 주요 계열사의 출퇴근 통근 셔틀 버스를 손쉽게 검색해보세요." />
@@ -5274,7 +5323,7 @@
       top: 0;
       width: 100%;
       height: 100%;
-      background: url('/images/current_position_icon.png') center/contain no-repeat;
+      background: url('/images/current_position_icon.png?v=2') center/contain no-repeat;
       z-index: 2;
     }
     .current-location-pulse {
@@ -10475,6 +10524,96 @@
           : 'https://cloud-api.shuttle-go.com'  // prd: Traefik HTTPS
       };
       window.__SHUTTLE_ENV = ENV;
+      // ── 부팅 API 미리 받기 + 같은 GET 묶기 ─────────────────────
+      // /api/bootstrap starts now, while the map SDK is still loading. It always
+      // returns runtime feature flags; when the "bootstrap" switch is on it also
+      // carries the first-screen GET responses, which the shim below serves
+      // locally. Identical boot-time GETs issued within 2s share one network
+      // request. Anything not found goes to the network unchanged.
+      (function installBootShim() {
+        if (!window.fetch || !window.Promise) return;
+        var apiBase = ENV.API_BASE;
+        var nativeFetch = window.fetch.bind(window);
+        var COALESCE = /^\/api\/(ads|home|sites|app-config|auth\/providers|auth\/me|vehicle-positions\/config|notices\/hint|shuttle\/day-types)$/;
+        var WINDOW_MS = 2000;
+        var recent = {};
+        var bootEntries = null;
+        var bootSettled = false;
+        function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+        function normalize(url) {
+          try {
+            var u = new URL(url, location.href);
+            var pairs = [];
+            u.searchParams.forEach(function(v, k) { if (v !== '') pairs.push([k, v]); });
+            pairs.sort(function(a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0); });
+            var q = new URLSearchParams(); pairs.forEach(function(p) { q.append(p[0], p[1]); });
+            var qs = q.toString();
+            return u.pathname + (qs ? '?' + qs : '');
+          } catch (e) { return ''; }
+        }
+        function bootPlatform() {
+          var ua = navigator.userAgent || '';
+          return ua.indexOf('ShuttleGoAndroidWebView/') >= 0 ? 'android' : ua.indexOf('ShuttleGoIOSWebView/') >= 0 ? 'ios' : 'web';
+        }
+        var bootSite = lsGet('sg_last_site_id') || '0000011';
+        var refDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        var bootUrl = apiBase + '/api/bootstrap?site_id=' + encodeURIComponent(bootSite) +
+          '&reference_date=' + refDate + '&platform=' + bootPlatform() +
+          '&layout=' + (window.innerWidth <= 768 ? 'mobile' : 'desktop');
+        var bootPromise = nativeFetch(bootUrl, { credentials: 'include' })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .catch(function() { return null; })
+          .then(function(data) {
+            bootSettled = true;
+            var flags = (data && data.flags) || {};
+            window.__SG_FLAGS = flags;
+            if (window.__sgTelemetry) window.__sgTelemetry.setFlags(flags);
+            if (data && data.enabled && data.responses) bootEntries = data.responses;
+            try { window.dispatchEvent(new CustomEvent('sg:flags', { detail: flags })); } catch (e) {}
+            return data;
+          });
+        window.__SG_BOOT = { promise: bootPromise, site: bootSite };
+        function fromBoot(key) {
+          var entry = bootEntries && bootEntries[key];
+          if (!entry) return null;
+          delete bootEntries[key];
+          return new Response(JSON.stringify(entry.body), { status: entry.status || 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        function withSignal(promise, signal) {
+          if (!signal) return promise;
+          if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+          return new Promise(function(resolve, reject) {
+            signal.addEventListener('abort', function() { reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+            promise.then(resolve, reject);
+          });
+        }
+        window.fetch = function(input, init) {
+          try {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            var method = String((init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+            if (method !== 'GET' || url.indexOf(apiBase + '/api/') !== 0) return nativeFetch(input, init);
+            var key = normalize(url);
+            var path = key.split('?')[0];
+            if (!key || !COALESCE.test(path)) return nativeFetch(input, init);
+            var now = Date.now();
+            var hit = recent[key];
+            if (hit && now - hit.at < WINDOW_MS) {
+              return withSignal(hit.promise.then(function(r) { return r.clone(); }), init && init.signal);
+            }
+            var netInit = Object.assign({}, init || {});
+            delete netInit.signal;
+            var shared = (bootSettled ? Promise.resolve() : Promise.race([bootPromise, new Promise(function(r) { setTimeout(r, 2500); })]))
+              .then(function() { return fromBoot(key) || nativeFetch(input, netInit); });
+            // Login state can change without a reload (native sign-in), so auth/me is
+            // served from the bootstrap once but never shared between callers.
+            if (path !== '/api/auth/me') recent[key] = { at: now, promise: shared };
+            shared.catch(function() { if (recent[key] && recent[key].promise === shared) delete recent[key]; });
+            return withSignal(shared.then(function(r) { return r.clone(); }), init && init.signal);
+          } catch (e) {
+            return nativeFetch(input, init);
+          }
+        };
+      })();
       var bootState = window.__SHUTTLE_APP_BOOT || { sdkReady: false, started: false };
       window.__SHUTTLE_APP_BOOT = bootState;
       if (window.Promise && !Promise.prototype.finally) {
@@ -10549,6 +10688,7 @@
   </script>
   <script>
     window.__initShuttleApp = function() {
+      try { if (window.__sgTelemetry) window.__sgTelemetry.mark('boot_ready_ms'); } catch (e) {}
       var ENV = window.__SHUTTLE_ENV;
       var API_BASE = ENV.API_BASE;
       var adsController = null;
@@ -14560,6 +14700,7 @@
           .then(function(result) {
             if (requestId !== homeRequestSerial) return recentFavoriteItems;
             if (!result.ok) throw new Error(result.data && result.data.error || '홈 정보를 불러오지 못했습니다.');
+            try { if (window.__sgTelemetry) window.__sgTelemetry.mark('home_ready_ms'); } catch (e) {}
             recentSearchItems = Array.isArray(result.data && result.data.recent_searches) ? result.data.recent_searches : [];
             homeMicroFeed = result.data && result.data.micro_feed && typeof result.data.micro_feed === 'object'
               ? result.data.micro_feed
@@ -17995,6 +18136,7 @@
         if (!siteOptionExists(nextSiteId)) return false;
         if (siteSelect && siteSelect.value !== nextSiteId) siteSelect.value = nextSiteId;
         selectedSiteId = nextSiteId;
+        try { localStorage.setItem('sg_last_site_id', nextSiteId); } catch (e) {}
         if (adsController) adsController.contextChanged();
         updateSiteTriggerText();
         return true;
@@ -36184,6 +36326,7 @@
       }
 
       function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage, timeBasis, renderOpts) {
+        try { if (window.__sgTelemetry) { window.__sgTelemetry.mark('first_result_ms'); window.__sgTelemetry.setRoute('results'); } } catch (e) {}
         options = Array.isArray(options) ? options : [];
         renderOpts = renderOpts || {};
         if (!renderOpts.skipTransferMerge && selectedShuttleTransferSearch && currentShuttleTransferOptions.length > 0) {

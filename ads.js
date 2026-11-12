@@ -264,7 +264,9 @@
           var liveKeys = new Set(data.candidates.map(key));
           nodes.forEach(function (node, id) { if (!liveKeys.has(id)) { observer.unobserve(node); observed.delete(node); node.remove(); nodes.delete(id); loaded.delete(id); } });
           clearTimeout(expiryTimer); expiryTimer = setTimeout(function () { hide(); refresh(); }, Math.max(0, validAt - performance.now()));
-          render(); schedule(30000);
+          // Refresh shortly before the manifest expires instead of every 30s; the
+          // expiry timer above still hides anything that outlives its validity.
+          render(); schedule(Math.max(30000, validAt - performance.now() - 5000));
         })
         .catch(function () { if (currentGeneration !== generation) return; failureCount += 1; if (!manifest || performance.now() >= validAt) hide(); schedule(Math.min(60000, 5000 * Math.pow(2, Math.min(failureCount - 1, 4))) + Math.random() * 1000); })
         .finally(function () { clearTimeout(timeout); if (currentGeneration === generation) requestController = null; });
@@ -286,7 +288,16 @@
     }, 250);
     setInterval(flush, 3000);
     var resizeTimer;
-    window.addEventListener('resize', function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(function () { render(); if (authReady) refresh(); }, 180); });
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        render();
+        // Only a layout change (mobile <-> desktop) needs a new manifest; keyboards and
+        // address-bar resizes on phones used to refetch on every viewport change.
+        var ctx = context(), ctxKey = ctx.siteId + '|' + ctx.platform + '|' + (window.innerWidth <= 768 ? 'mobile' : 'desktop');
+        if (authReady && ctxKey !== lastContext) refresh();
+      }, 180);
+    });
     if (window.visualViewport) window.visualViewport.addEventListener('resize', render);
     document.addEventListener('focusin', function (event) { if (menu && !menu.node.contains(event.target) && event.target !== menu.trigger) closeMenu(false); render(); }); document.addEventListener('focusout', function () { setTimeout(render, 100); });
     document.addEventListener('pointerdown', function (event) { touching = true; if (menu && !menu.node.contains(event.target) && !menu.trigger.contains(event.target)) closeMenu(false); }, { passive: true });
