@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://dapi.kakao.com" />
+  <link rel="preconnect" href="https://t1.kakaocdn.net" />
+  <link rel="preconnect" href="https://mts.kakaocdn.net" />
   <script>
       // Client telemetry (errors + a few timings). Runs first so early errors are kept.
       // Sent with sendBeacon as text/plain (no CORS preflight). See client_telemetry.py.
@@ -42,7 +45,14 @@
             performance.getEntriesByType('paint').forEach(function(p) { if (p.name === 'first-contentful-paint') T.mark('fcp_ms', p.startTime); });
           }
           var flags = []; if (T.flags) Object.keys(T.flags).forEach(function(k) { var v = T.flags[k]; if (v === true || (typeof v === 'number' && v > 0 && k.indexOf('telemetry') < 0)) flags.push(k); });
-          var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', flags: flags, errors: errs, timings: sendTimings ? T.timings : {}, events: T.events };
+          // How the page shell arrived: 'sw' (service worker), 'repeat' (HTTP cache), 'first' (network).
+          var visit = '';
+          try {
+            if (nav && nav.workerStart > 0) visit = 'sw';
+            else if (nav && (nav.transferSize === 0 || (nav.encodedBodySize > 0 && nav.transferSize < nav.encodedBodySize))) visit = 'repeat';
+            else if (nav) visit = 'first';
+          } catch (e) {}
+          var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', visit: visit, flags: flags, errors: errs, timings: sendTimings ? T.timings : {}, events: T.events };
           try { navigator.sendBeacon(base + '/api/client-telemetry', new Blob([JSON.stringify(body)], { type: 'text/plain' })); } catch (e) {}
           T.errors = {}; T.errorCount = 0; T.events = {}; if (sendTimings) T.sent = true;
         };
@@ -55,6 +65,367 @@
         });
         document.addEventListener('visibilitychange', function() { if (document.visibilityState === 'hidden') T.flush(true); });
         window.addEventListener('pagehide', function() { T.flush(true); });
+      })();
+  </script>
+  <script src="dev.config.js"></script>
+  <script data-sg-boot>
+    // ── 환경 설정 (dev / prd) ──────────────────────────────
+    // v0.9.6: this block lives in <head>, before any stylesheet, so that the
+    // bootstrap request and the map SDK start as soon as the HTML arrives.
+    // The site build keeps it inline (data-sg-boot) and drops the dev.config.js
+    // tag above from production pages.
+    (function() {
+      var host = location.hostname;
+      var isDev = (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host.indexOf('192.168.') === 0
+      );
+      var devConfig = window.__SHUTTLE_DEV_CONFIG || {};
+      var apiBaseOverride = (typeof devConfig.API_BASE_OVERRIDE === 'string')
+        ? devConfig.API_BASE_OVERRIDE.trim()
+        : '';
+      var kakaoJsKeyOverride = (typeof devConfig.KAKAO_JS_KEY === 'string')
+        ? devConfig.KAKAO_JS_KEY.trim()
+        : '';
+      function resolveDevApiBase() {
+        var useHttps = (location.protocol === 'https:');
+        var scheme = useHttps ? 'https' : 'http';
+        var defaultPort = useHttps ? 443 : 80;
+        var port = Number(useHttps ? devConfig.API_HTTPS_PORT : devConfig.API_HTTP_PORT);
+        if (!port) port = defaultPort;
+        if (!isFinite(port) || port < 1 || port > 65535) port = defaultPort;
+        return (port === defaultPort) ? (scheme + '://' + host) : (scheme + '://' + host + ':' + port);
+      }
+      var ENV = {
+        // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
+        KAKAO_JS_KEY: isDev
+          ? kakaoJsKeyOverride   // dev: run_dev.py가 dev.config.js에 주입
+          : '39fb0eced397ffdd52bc40427d8a1d91',  // prd: shuttlego.github.io 허용
+        // 백엔드 API base URL
+        API_BASE: isDev
+          ? (apiBaseOverride || resolveDevApiBase()) // dev: override or Traefik
+          : 'https://cloud-api.shuttle-go.com'  // prd: Traefik HTTPS
+      };
+      window.__SHUTTLE_ENV = ENV;
+      // ── 부팅 API 미리 받기 + 같은 GET 묶기 ─────────────────────
+      // /api/bootstrap starts now, while the map SDK is still loading. It always
+      // returns runtime feature flags; when the "bootstrap" switch is on it also
+      // carries the first-screen GET responses, which the shim below serves
+      // locally. Identical boot-time GETs issued within 2s share one network
+      // request. Anything not found goes to the network unchanged.
+      (function installBootShim() {
+        if (!window.fetch || !window.Promise) return;
+        var apiBase = ENV.API_BASE;
+        var shimFetch = window.fetch.bind(window);
+        var COALESCE = /^\/api\/(ads|home|sites|app-config|auth\/providers|auth\/me|vehicle-positions\/config|notices\/hint|shuttle\/day-types)$/;
+        var WINDOW_MS = 2000;
+        var recent = {};
+        var bootEntries = null;
+        var bootSettled = false;
+        // Wait for the bootstrap payload unless the last visit saw it disabled. A first
+        // visit waits too (v0.9.6): the request already left with the HTML, and the
+        // 2.5s cap below keeps a slow or disabled bootstrap from blocking the page.
+        var bootExpected = false;
+        function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+        function lsSet(key, value) { try { localStorage.setItem(key, value); return true; } catch (e) { return false; } }
+        function lsDel(key) { try { localStorage.removeItem(key); } catch (e) {} }
+        function tEvent(name) { try { if (window.__sgTelemetry) window.__sgTelemetry.event(name); } catch (e) {} }
+        // One stable 0-99 number per device; percent switches compare against it
+        // (same key vehicle-positions.js uses, so a device stays in one arm).
+        function deviceBucket() {
+          var raw = lsGet('sg_device_bucket'), bucket = raw === null || raw === '' ? NaN : Number(raw);
+          if (!(bucket >= 0 && bucket < 100)) { bucket = Math.floor(Math.random() * 100); lsSet('sg_device_bucket', String(bucket)); }
+          return bucket;
+        }
+        function normalize(url) {
+          try {
+            var u = new URL(url, location.href);
+            var pairs = [];
+            u.searchParams.forEach(function(v, k) { if (v !== '') pairs.push([k, v]); });
+            pairs.sort(function(a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0); });
+            var q = new URLSearchParams(); pairs.forEach(function(p) { q.append(p[0], p[1]); });
+            var qs = q.toString();
+            return u.pathname + (qs ? '?' + qs : '');
+          } catch (e) { return ''; }
+        }
+        function bootPlatform() {
+          var ua = navigator.userAgent || '';
+          return ua.indexOf('ShuttleGoAndroidWebView/') >= 0 ? 'android' : ua.indexOf('ShuttleGoIOSWebView/') >= 0 ? 'ios' : 'web';
+        }
+        bootExpected = lsGet('sg_boot_enabled') !== '0';
+        var bootSite = lsGet('sg_last_site_id') || '0000011';
+        var bootLayout = window.innerWidth <= 768 ? 'mobile' : 'desktop';
+        var refDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        var bootUrl = apiBase + '/api/bootstrap?site_id=' + encodeURIComponent(bootSite) +
+          '&reference_date=' + refDate + '&platform=' + bootPlatform() +
+          '&layout=' + bootLayout;
+        // ── 부팅 응답 스냅숏 (v0.9.6, P1-B 1층) ─────────────────────
+        // The previous visit's bootstrap responses are kept in localStorage. On the
+        // next visit the shim answers the first-screen GETs from that copy at once
+        // while the fresh bootstrap is still on its way, then switches to the fresh
+        // one. Login state (auth/me) and ads are never answered from the copy.
+        // Devices outside the "boot_snapshot_percent" switch keep no copy.
+        var SNAP_KEY = 'sg_boot_snapshot_v1';
+        var SNAP_MAX_AGE_MS = 24 * 3600 * 1000;
+        var SNAP_NEVER = /^\/api\/(auth\/me|ads)$/;
+        var buildId = window.__SG_BUILD || 'src';
+        var snapEntries = null;   // stored responses usable on this visit
+        var snapServed = {};      // key -> body text that was answered from the copy
+        var snapWho = '';         // login identity the stored copy belongs to
+        (function loadSnapshot() {
+          var raw = lsGet(SNAP_KEY);
+          if (!raw) return;
+          try {
+            var snap = JSON.parse(raw);
+            var usable = snap && snap.build === buildId && snap.site === bootSite && snap.platform === bootPlatform() &&
+              snap.layout === bootLayout && Date.now() - Number(snap.savedAt) < SNAP_MAX_AGE_MS &&
+              Date.now() >= Number(snap.savedAt) && snap.responses && typeof snap.responses === 'object';
+            if (!usable || !bootExpected) { lsDel(SNAP_KEY); return; }
+            snapEntries = snap.responses;
+            snapWho = String(snap.who || '');
+          } catch (e) { lsDel(SNAP_KEY); }
+        })();
+        function whoOf(body) {
+          if (!body) return '';
+          var user = body.logged_in ? body.user : null;
+          return user ? 'u:' + String(user.id || user.user_id || user.nickname || '1') : 'anon';
+        }
+        function finishSnapshot(data, flags) {
+          var fresh = data && data.enabled && data.responses ? data.responses : null;
+          var served = Object.keys(snapServed), changed = [];
+          served.forEach(function(key) {
+            if (!fresh) return;
+            if (!fresh[key] || JSON.stringify(fresh[key].body) !== snapServed[key]) changed.push(key.split('?')[0]);
+            delete recent[key];  // the next read gets the fresh response, not the stored copy
+          });
+          if (data) snapEntries = null;  // from here on the server's answer is the only source
+          if (fresh) {
+            // Fresh responses answer the reads that follow right away (the app reloads
+            // the home feed once login state is known). Later reads must hit the network.
+            setTimeout(function() { bootEntries = null; }, 10000);
+            if (Number(flags.boot_snapshot_percent || 0) > deviceBucket()) {
+              var keep = {};
+              Object.keys(fresh).forEach(function(key) { if (!SNAP_NEVER.test(key.split('?')[0])) keep[key] = fresh[key]; });
+              snapWho = whoOf(fresh['/api/auth/me'] && fresh['/api/auth/me'].body);
+              if (!lsSet(SNAP_KEY, JSON.stringify({ build: buildId, site: bootSite, platform: bootPlatform(), layout: bootLayout,
+                                                    savedAt: Date.now(), who: snapWho, responses: keep }))) lsDel(SNAP_KEY);
+            } else {
+              lsDel(SNAP_KEY);
+            }
+          } else if (data) {
+            lsDel(SNAP_KEY);  // bootstrap switched off on the server
+          }
+          if (served.length) {
+            tEvent('boot_snapshot_used');
+            if (changed.length) tEvent('boot_snapshot_changed');
+            try { window.dispatchEvent(new CustomEvent('sg:boot-refresh', { detail: { changed: changed } })); } catch (e) {}
+          }
+        }
+        var bootPromise = shimFetch(bootUrl, { credentials: 'include' })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .catch(function() { return null; })
+          .then(function(data) {
+            bootSettled = true;
+            var flags = (data && data.flags) || {};
+            window.__SG_FLAGS = flags;
+            if (window.__sgTelemetry) window.__sgTelemetry.setFlags(flags);
+            if (data && data.enabled && data.responses) bootEntries = data.responses;
+            try { if (data) localStorage.setItem('sg_boot_enabled', data.enabled ? '1' : '0'); } catch (e) {}
+            try { finishSnapshot(data, flags); } catch (e) { lsDel(SNAP_KEY); }
+            try { window.dispatchEvent(new CustomEvent('sg:flags', { detail: flags })); } catch (e) {}
+            return data;
+          });
+        window.__SG_BOOT = {
+          promise: bootPromise, site: bootSite,
+          // true while first-screen reads are being answered from the stored copy
+          snapshotActive: function() { return !!snapEntries && !bootSettled; },
+          // The app reports login state changes; a copy saved for another identity is dropped.
+          noteAuth: function(state) {
+            var who = whoOf(state);
+            if (who && snapWho && who !== snapWho) { snapWho = who; lsDel(SNAP_KEY); }
+          },
+          dropSnapshot: function() { snapEntries = null; lsDel(SNAP_KEY); }
+        };
+        function fromBoot(key) {
+          var entry = bootEntries && bootEntries[key];
+          if (!entry) return null;
+          delete bootEntries[key];
+          return new Response(JSON.stringify(entry.body), { status: entry.status || 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        function withSignal(promise, signal) {
+          if (!signal) return promise;
+          if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+          return new Promise(function(resolve, reject) {
+            signal.addEventListener('abort', function() { reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+            promise.then(resolve, reject);
+          });
+        }
+        window.fetch = function(input, init) {
+          try {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            var method = String((init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+            if (method !== 'GET' || url.indexOf(apiBase + '/api/') !== 0) return shimFetch(input, init);
+            var key = normalize(url);
+            var path = key.split('?')[0];
+            if (!key || !COALESCE.test(path)) return shimFetch(input, init);
+            var now = Date.now();
+            var hit = recent[key];
+            if (hit && now - hit.at < WINDOW_MS) {
+              return withSignal(hit.promise.then(function(r) { return r.clone(); }), init && init.signal);
+            }
+            var netInit = Object.assign({}, init || {});
+            delete netInit.signal;
+            var stored = !bootSettled && snapEntries && !SNAP_NEVER.test(path) ? snapEntries[key] : null;
+            var shared;
+            if (stored && stored.body !== undefined) {
+              snapServed[key] = JSON.stringify(stored.body);
+              shared = Promise.resolve(new Response(snapServed[key], { status: stored.status || 200, headers: { 'Content-Type': 'application/json' } }));
+            } else {
+              shared = (bootSettled || !bootExpected ? Promise.resolve() : Promise.race([bootPromise, new Promise(function(r) { setTimeout(r, 2500); })]))
+                .then(function() { return fromBoot(key) || shimFetch(input, netInit); });
+            }
+            // Login state can change without a reload (native sign-in), so auth/me is
+            // served from the bootstrap once but never shared between callers.
+            if (path !== '/api/auth/me') recent[key] = { at: now, promise: shared };
+            shared.catch(function() { if (recent[key] && recent[key].promise === shared) delete recent[key]; });
+            return withSignal(shared.then(function(r) { return r.clone(); }), init && init.signal);
+          } catch (e) {
+            return shimFetch(input, init);
+          }
+        };
+      })();
+      var bootState = window.__SHUTTLE_APP_BOOT || { sdkReady: false, started: false };
+      window.__SHUTTLE_APP_BOOT = bootState;
+      if (window.Promise && !Promise.prototype.finally) {
+        Promise.prototype.finally = function(onFinally) {
+          var Ctor = this.constructor || Promise;
+          return this.then(
+            function(value) {
+              return Ctor.resolve(typeof onFinally === 'function' ? onFinally() : onFinally)
+                .then(function() { return value; });
+            },
+            function(reason) {
+              return Ctor.resolve(typeof onFinally === 'function' ? onFinally() : onFinally)
+                .then(function() { throw reason; });
+            }
+          );
+        };
+      }
+      if (window.Promise && !Promise.allSettled) {
+        Promise.allSettled = function(values) {
+          return Promise.all(Array.prototype.map.call(values, function(value) {
+            return Promise.resolve(value).then(
+              function(result) { return { status: 'fulfilled', value: result }; },
+              function(reason) { return { status: 'rejected', reason: reason }; }
+            );
+          }));
+        };
+      }
+      window.__SHUTTLE_EARLY_NATIVE_LOCATION = window.__SHUTTLE_EARLY_NATIVE_LOCATION || null;
+      window.__shuttleGoNativeLocationChanged = function(payload) {
+        if (!payload || !payload.ok) return;
+        window.__SHUTTLE_EARLY_NATIVE_LOCATION = payload;
+      };
+      try {
+        if (window.ShuttleGoAndroid) {
+          if (typeof window.ShuttleGoAndroid.locationBridgeReady === 'function') {
+            window.ShuttleGoAndroid.locationBridgeReady();
+          }
+          if (typeof window.ShuttleGoAndroid.startLocationUpdates === 'function') {
+            window.ShuttleGoAndroid.startLocationUpdates();
+          }
+          if (typeof window.ShuttleGoAndroid.reportLocationMilestone === 'function') {
+            window.ShuttleGoAndroid.reportLocationMilestone('early_bridge_ready', '');
+          }
+        }
+      } catch (e) {}
+      // This block now runs in <head> (v0.9.6) so /api/bootstrap and the map SDK
+      // start with the HTML. The app itself starts only after the document is
+      // parsed and the deferred scripts (ads.js, vehicle-positions.js, the app
+      // script) have run, whichever of "SDK ready" and "DOM ready" comes last.
+      document.addEventListener('DOMContentLoaded', function() {
+        bootState.domReady = true;
+        window.__startShuttleAppIfReady();
+      });
+      window.__startShuttleAppIfReady = function() {
+        if (bootState.started || !bootState.sdkReady || !bootState.domReady || typeof window.__initShuttleApp !== 'function') return;
+        bootState.started = true;
+        window.__initShuttleApp();
+      };
+      function showMapSdkLoadError() {
+        var mapEl = document.getElementById('map');
+        if (mapEl) mapEl.innerHTML = '<p style="padding:20px">지도 API를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.</p>';
+      }
+
+      // 카카오 지도 SDK 동적 로드
+      var script = document.createElement('script');
+      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + ENV.KAKAO_JS_KEY + '&autoload=false';
+      script.onload = function() {
+        if (typeof kakao === 'undefined' || !kakao.maps || typeof kakao.maps.load !== 'function') {
+          showMapSdkLoadError();
+          return;
+        }
+        kakao.maps.load(function() {
+          bootState.sdkReady = true;
+          window.__startShuttleAppIfReady();
+        });
+      };
+      script.onerror = showMapSdkLoadError;
+      document.head.appendChild(script);
+    })();
+  </script>
+  <script data-sg-boot>
+      // ── 서비스 워커 (v0.9.6, P1-B 2층) + 긴급 갱신 ─────────────────
+      // Devices inside "service_worker_percent" register /sw.js, which serves the
+      // page shell and hashed assets from its cache on the next visit. Every other
+      // device unregisters it and deletes its caches, so setting the switch to 0
+      // turns the feature off on each device's next visit.
+      (function serviceWorkerControl() {
+        var SW_CACHES = ['sg-shell-v1', 'sg-assets-v1', 'sg-meta-v1'];
+        function event(name) { try { if (window.__sgTelemetry) window.__sgTelemetry.event(name); } catch (e) {} }
+        function bucket() {
+          try {
+            var raw = localStorage.getItem('sg_device_bucket'), value = raw === null || raw === '' ? NaN : Number(raw);
+            if (!(value >= 0 && value < 100)) { value = Math.floor(Math.random() * 100); localStorage.setItem('sg_device_bucket', String(value)); }
+            return value;
+          } catch (e) { return 100; }
+        }
+        // "web_min_build_time": a page built before this moment refreshes the cached
+        // shell and reloads once (per value, per tab), for an urgent fix.
+        function enforceMinBuild(flags) {
+          var min = Number(flags.web_min_build_time || 0), built = Number(window.__SG_BUILD_TIME || 0);
+          if (!(min > 0) || !(built > 0) || built >= min) return;
+          try {
+            if (sessionStorage.getItem('sg_min_build_reload') === String(min)) return;
+            sessionStorage.setItem('sg_min_build_reload', String(min));
+          } catch (e) { return; }
+          event('sw_forced_refresh');
+          function reload() { location.reload(); }
+          var controller = navigator.serviceWorker && navigator.serviceWorker.controller;
+          if (!controller || !window.MessageChannel) { reload(); return; }
+          var channel = new MessageChannel(), timer = setTimeout(reload, 8000);
+          channel.port1.onmessage = function() { clearTimeout(timer); reload(); };
+          try { controller.postMessage({ type: 'sg-refresh-shell' }, [channel.port2]); } catch (e) { clearTimeout(timer); reload(); }
+        }
+        function apply(flags) {
+          enforceMinBuild(flags);
+          if (!('serviceWorker' in navigator) || !window.caches) return;
+          if (Number(flags.service_worker_percent || 0) > bucket()) {
+            navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+              .then(function() { event('sw_registered'); }, function() { event('sw_register_failed'); });
+          } else {
+            navigator.serviceWorker.getRegistrations().then(function(list) {
+              if (list.length) event('sw_unregistered');
+              list.forEach(function(registration) { registration.unregister(); });
+            }).catch(function() {});
+            SW_CACHES.forEach(function(name) { try { window.caches.delete(name).catch(function() {}); } catch (e) {} });
+          }
+        }
+        var flagsSeen = null, loaded = document.readyState === 'complete';
+        function maybeApply() { if (flagsSeen && loaded) { var flags = flagsSeen; flagsSeen = null; try { apply(flags); } catch (e) {} } }
+        window.addEventListener('sg:flags', function(e) { flagsSeen = (e && e.detail) || {}; maybeApply(); });
+        window.addEventListener('load', function() { loaded = true; maybeApply(); });
       })();
   </script>
   <link rel="preload" href="/fonts/wanted-sans/WantedSansVariable.core.woff2?v=2.0" as="font" type="font/woff2" crossorigin />
@@ -10489,213 +10860,11 @@
   </main>
   <section class="ads-bottom" id="adsBottom" aria-label="광고" hidden></section>
 
-  <script src="ads.js?v=5"></script>
-  <script src="gps-network.js?v=2"></script>
-  <script src="vehicle-positions.js?v=29"></script>
-  <script src="dev.config.js"></script>
-  <script>
-    // ── 환경 설정 (dev / prd) ──────────────────────────────
-    (function() {
-      var host = location.hostname;
-      var isDev = (
-        host === 'localhost' ||
-        host === '127.0.0.1' ||
-        host.indexOf('192.168.') === 0
-      );
-      var devConfig = window.__SHUTTLE_DEV_CONFIG || {};
-      var apiBaseOverride = (typeof devConfig.API_BASE_OVERRIDE === 'string')
-        ? devConfig.API_BASE_OVERRIDE.trim()
-        : '';
-      var kakaoJsKeyOverride = (typeof devConfig.KAKAO_JS_KEY === 'string')
-        ? devConfig.KAKAO_JS_KEY.trim()
-        : '';
-      function resolveDevApiBase() {
-        var useHttps = (location.protocol === 'https:');
-        var scheme = useHttps ? 'https' : 'http';
-        var defaultPort = useHttps ? 443 : 80;
-        var port = Number(useHttps ? devConfig.API_HTTPS_PORT : devConfig.API_HTTP_PORT);
-        if (!port) port = defaultPort;
-        if (!isFinite(port) || port < 1 || port > 65535) port = defaultPort;
-        return (port === defaultPort) ? (scheme + '://' + host) : (scheme + '://' + host + ':' + port);
-      }
-      var ENV = {
-        // 카카오 JavaScript 키: 각각 카카오 콘솔에서 허용 URL을 다르게 설정
-        KAKAO_JS_KEY: isDev
-          ? kakaoJsKeyOverride   // dev: run_dev.py가 dev.config.js에 주입
-          : '39fb0eced397ffdd52bc40427d8a1d91',  // prd: shuttlego.github.io 허용
-        // 백엔드 API base URL
-        API_BASE: isDev
-          ? (apiBaseOverride || resolveDevApiBase()) // dev: override or Traefik
-          : 'https://cloud-api.shuttle-go.com'  // prd: Traefik HTTPS
-      };
-      window.__SHUTTLE_ENV = ENV;
-      // ── 부팅 API 미리 받기 + 같은 GET 묶기 ─────────────────────
-      // /api/bootstrap starts now, while the map SDK is still loading. It always
-      // returns runtime feature flags; when the "bootstrap" switch is on it also
-      // carries the first-screen GET responses, which the shim below serves
-      // locally. Identical boot-time GETs issued within 2s share one network
-      // request. Anything not found goes to the network unchanged.
-      (function installBootShim() {
-        if (!window.fetch || !window.Promise) return;
-        var apiBase = ENV.API_BASE;
-        var shimFetch = window.fetch.bind(window);
-        var COALESCE = /^\/api\/(ads|home|sites|app-config|auth\/providers|auth\/me|vehicle-positions\/config|notices\/hint|shuttle\/day-types)$/;
-        var WINDOW_MS = 2000;
-        var recent = {};
-        var bootEntries = null;
-        var bootSettled = false;
-        // Only wait for the bootstrap payload when the last visit saw it enabled;
-        // otherwise legacy calls go out at once (no added latency while it is off).
-        var bootExpected = false;
-        function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
-        function normalize(url) {
-          try {
-            var u = new URL(url, location.href);
-            var pairs = [];
-            u.searchParams.forEach(function(v, k) { if (v !== '') pairs.push([k, v]); });
-            pairs.sort(function(a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0); });
-            var q = new URLSearchParams(); pairs.forEach(function(p) { q.append(p[0], p[1]); });
-            var qs = q.toString();
-            return u.pathname + (qs ? '?' + qs : '');
-          } catch (e) { return ''; }
-        }
-        function bootPlatform() {
-          var ua = navigator.userAgent || '';
-          return ua.indexOf('ShuttleGoAndroidWebView/') >= 0 ? 'android' : ua.indexOf('ShuttleGoIOSWebView/') >= 0 ? 'ios' : 'web';
-        }
-        bootExpected = lsGet('sg_boot_enabled') === '1';
-        var bootSite = lsGet('sg_last_site_id') || '0000011';
-        var refDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-        var bootUrl = apiBase + '/api/bootstrap?site_id=' + encodeURIComponent(bootSite) +
-          '&reference_date=' + refDate + '&platform=' + bootPlatform() +
-          '&layout=' + (window.innerWidth <= 768 ? 'mobile' : 'desktop');
-        var bootPromise = shimFetch(bootUrl, { credentials: 'include' })
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .catch(function() { return null; })
-          .then(function(data) {
-            bootSettled = true;
-            var flags = (data && data.flags) || {};
-            window.__SG_FLAGS = flags;
-            if (window.__sgTelemetry) window.__sgTelemetry.setFlags(flags);
-            if (data && data.enabled && data.responses) bootEntries = data.responses;
-            try { if (data) localStorage.setItem('sg_boot_enabled', data.enabled ? '1' : '0'); } catch (e) {}
-            try { window.dispatchEvent(new CustomEvent('sg:flags', { detail: flags })); } catch (e) {}
-            return data;
-          });
-        window.__SG_BOOT = { promise: bootPromise, site: bootSite };
-        function fromBoot(key) {
-          var entry = bootEntries && bootEntries[key];
-          if (!entry) return null;
-          delete bootEntries[key];
-          return new Response(JSON.stringify(entry.body), { status: entry.status || 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        function withSignal(promise, signal) {
-          if (!signal) return promise;
-          if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
-          return new Promise(function(resolve, reject) {
-            signal.addEventListener('abort', function() { reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
-            promise.then(resolve, reject);
-          });
-        }
-        window.fetch = function(input, init) {
-          try {
-            var url = typeof input === 'string' ? input : (input && input.url) || '';
-            var method = String((init && init.method) || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
-            if (method !== 'GET' || url.indexOf(apiBase + '/api/') !== 0) return shimFetch(input, init);
-            var key = normalize(url);
-            var path = key.split('?')[0];
-            if (!key || !COALESCE.test(path)) return shimFetch(input, init);
-            var now = Date.now();
-            var hit = recent[key];
-            if (hit && now - hit.at < WINDOW_MS) {
-              return withSignal(hit.promise.then(function(r) { return r.clone(); }), init && init.signal);
-            }
-            var netInit = Object.assign({}, init || {});
-            delete netInit.signal;
-            var shared = (bootSettled || !bootExpected ? Promise.resolve() : Promise.race([bootPromise, new Promise(function(r) { setTimeout(r, 2500); })]))
-              .then(function() { return fromBoot(key) || shimFetch(input, netInit); });
-            // Login state can change without a reload (native sign-in), so auth/me is
-            // served from the bootstrap once but never shared between callers.
-            if (path !== '/api/auth/me') recent[key] = { at: now, promise: shared };
-            shared.catch(function() { if (recent[key] && recent[key].promise === shared) delete recent[key]; });
-            return withSignal(shared.then(function(r) { return r.clone(); }), init && init.signal);
-          } catch (e) {
-            return shimFetch(input, init);
-          }
-        };
-      })();
-      var bootState = window.__SHUTTLE_APP_BOOT || { sdkReady: false, started: false };
-      window.__SHUTTLE_APP_BOOT = bootState;
-      if (window.Promise && !Promise.prototype.finally) {
-        Promise.prototype.finally = function(onFinally) {
-          var Ctor = this.constructor || Promise;
-          return this.then(
-            function(value) {
-              return Ctor.resolve(typeof onFinally === 'function' ? onFinally() : onFinally)
-                .then(function() { return value; });
-            },
-            function(reason) {
-              return Ctor.resolve(typeof onFinally === 'function' ? onFinally() : onFinally)
-                .then(function() { throw reason; });
-            }
-          );
-        };
-      }
-      if (window.Promise && !Promise.allSettled) {
-        Promise.allSettled = function(values) {
-          return Promise.all(Array.prototype.map.call(values, function(value) {
-            return Promise.resolve(value).then(
-              function(result) { return { status: 'fulfilled', value: result }; },
-              function(reason) { return { status: 'rejected', reason: reason }; }
-            );
-          }));
-        };
-      }
-      window.__SHUTTLE_EARLY_NATIVE_LOCATION = window.__SHUTTLE_EARLY_NATIVE_LOCATION || null;
-      window.__shuttleGoNativeLocationChanged = function(payload) {
-        if (!payload || !payload.ok) return;
-        window.__SHUTTLE_EARLY_NATIVE_LOCATION = payload;
-      };
-      try {
-        if (window.ShuttleGoAndroid) {
-          if (typeof window.ShuttleGoAndroid.locationBridgeReady === 'function') {
-            window.ShuttleGoAndroid.locationBridgeReady();
-          }
-          if (typeof window.ShuttleGoAndroid.startLocationUpdates === 'function') {
-            window.ShuttleGoAndroid.startLocationUpdates();
-          }
-          if (typeof window.ShuttleGoAndroid.reportLocationMilestone === 'function') {
-            window.ShuttleGoAndroid.reportLocationMilestone('early_bridge_ready', '');
-          }
-        }
-      } catch (e) {}
-      window.__startShuttleAppIfReady = function() {
-        if (bootState.started || !bootState.sdkReady || typeof window.__initShuttleApp !== 'function') return;
-        bootState.started = true;
-        window.__initShuttleApp();
-      };
-      function showMapSdkLoadError() {
-        var mapEl = document.getElementById('map');
-        if (mapEl) mapEl.innerHTML = '<p style="padding:20px">지도 API를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.</p>';
-      }
-
-      // 카카오 지도 SDK 동적 로드
-      var script = document.createElement('script');
-      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + ENV.KAKAO_JS_KEY + '&autoload=false';
-      script.onload = function() {
-        if (typeof kakao === 'undefined' || !kakao.maps || typeof kakao.maps.load !== 'function') {
-          showMapSdkLoadError();
-          return;
-        }
-        kakao.maps.load(function() {
-          bootState.sdkReady = true;
-          window.__startShuttleAppIfReady();
-        });
-      };
-      script.onerror = showMapSdkLoadError;
-      document.head.appendChild(script);
-    })();
-  </script>
+  <!-- defer keeps the order; fetchpriority keeps the download priority these
+       scripts had as parser-blocking tags (browsers fetch deferred scripts last). -->
+  <script defer fetchpriority="high" src="ads.js?v=5"></script>
+  <script defer fetchpriority="high" src="gps-network.js?v=3"></script>
+  <script defer fetchpriority="high" src="vehicle-positions.js?v=30"></script>
   <script>
     window.__initShuttleApp = function() {
       try { if (window.__sgTelemetry) window.__sgTelemetry.mark('boot_ready_ms'); } catch (e) {}
@@ -12901,6 +13070,8 @@
           .then(function(result) {
             if (!result.ok) throw new Error(result.data.error || '로그인 상태 조회 실패');
             authState = result.data || { logged_in: false, user: null, preferences: {} };
+            // A stored first-screen copy saved for another login identity is dropped (v0.9.6).
+            try { if (window.__SG_BOOT && window.__SG_BOOT.noteAuth) window.__SG_BOOT.noteAuth(authState); } catch (e) {}
             if (adsController) adsController.setAuthReady(true);
             if (!authState.preferences) authState.preferences = {};
             applyRouteSearchPreferences(authState.preferences);
@@ -20254,7 +20425,18 @@
             setSelectedSiteValue(resolveInitialSiteId());
             siteListLoaded = true;
             setSiteSelectorEnabled(true);
+            // v0.9.6 (P1-B): while the stored first-screen copy is answering, the day
+            // types of a new date still wait for the server. The home feed does not
+            // depend on them, so it is shown without waiting.
+            var earlyHome = null;
+            try {
+              if (window.__SG_BOOT && window.__SG_BOOT.snapshotActive && window.__SG_BOOT.snapshotActive() &&
+                  !lastPlace && !sharedRouteState.active && !favoriteRouteState.active) {
+                earlyHome = loadRecentRouteFavorites();
+              }
+            } catch (e) { earlyHome = null; }
             return refreshDayTypeOptionsForSite(selectedSiteId).then(function(result) {
+              if (earlyHome) return earlyHome.then(function() { return result; });
               if (!lastPlace && !sharedRouteState.active && !favoriteRouteState.active) {
                 return loadRecentRouteFavorites().then(function() {
                   return result;
@@ -22295,11 +22477,19 @@
         var abort = new AbortController();
         if (timingOnly) routeTimingRequestControllers.set(abort, {serial:routeRequestSerial,site:selectedSiteId,day:selectedDayType,date:etaReferenceDate});
         var deadline = setTimeout(function() { abort.abort(); }, 15000);
+        var detailStartedAt = 0;
+        try { detailStartedAt = performance.now(); } catch (e) {}
         var pending = fetchJson(detailUrl, { signal: abort.signal })
           .then(function(result) {
             if (!result.ok) {
               throw new Error(result.data && result.data.error || '노선 상세를 불러오지 못했습니다.');
             }
+            // v0.9.6 (P1-G): time until the route detail data is in hand (not a cache hit).
+            try {
+              if (!timingOnly && detailStartedAt > 0 && window.__sgTelemetry) {
+                window.__sgTelemetry.mark('route_detail_ms', performance.now() - detailStartedAt);
+              }
+            } catch (e) {}
             var detail = cloneJsonValue(result.data || {}) || {};
             setRouteVariantDetailCache(cacheKey, detail);
             return detail;
@@ -35410,7 +35600,7 @@
         if (!activeTargets.length) return;
         fetchJson(API_BASE + '/api/route-vehicle-assignments/batch', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': simpleJsonContentType() },
           body: JSON.stringify({
             items: activeTargets.map(function(target) {
               return {
@@ -35528,7 +35718,7 @@
         ));
         return fetchJson(API_BASE + '/api/route-result-actions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': simpleJsonContentType() },
           body: JSON.stringify({
             request_id: requestId,
             route_id: routeId,
@@ -36338,6 +36528,12 @@
 
       function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage, timeBasis, renderOpts) {
         try { if (window.__sgTelemetry) { window.__sgTelemetry.mark('first_result_ms'); window.__sgTelemetry.setRoute('results'); } } catch (e) {}
+        try {
+          if (window.__sgTelemetry && window.__sgSearchStartedAt > 0) {
+            window.__sgTelemetry.mark('search_ms', performance.now() - window.__sgSearchStartedAt);
+          }
+          window.__sgSearchStartedAt = 0;
+        } catch (e) {}
         options = Array.isArray(options) ? options : [];
         renderOpts = renderOpts || {};
         if (!renderOpts.skipTransferMerge && selectedShuttleTransferSearch && currentShuttleTransferOptions.length > 0) {
@@ -36820,6 +37016,8 @@
         var routeInput = getActiveRouteModePlaceInput();
         var q = routeInput ? String(routeInput.value || '').trim() : searchInput.value.trim();
         if (!q) return;
+        // v0.9.6 (P1-G): time from pressing search to the first route results.
+        try { window.__sgSearchStartedAt = performance.now(); } catch (e) {}
         var searchSurface = routeInput ? 'route_mode' : 'home_search';
         var requestId = ++placeSearchRequestSerial;
         if (isMobile()) setSheetState('sheet-half');
@@ -37860,6 +38058,12 @@
           e.preventDefault();
           e.stopPropagation();
         }, true);
+      }
+
+      // v0.9.6 (P1-D): with the "simple_requests" switch on, JSON bodies for the
+      // endpoints that accept it go out as text/plain, which needs no CORS preflight.
+      function simpleJsonContentType() {
+        return (window.__SG_FLAGS && window.__SG_FLAGS.simple_requests) ? 'text/plain' : 'application/json';
       }
 
       function fetchJson(url, init) {
