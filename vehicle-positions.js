@@ -88,6 +88,33 @@
     function lsGet(key) { try { return global.localStorage.getItem(key); } catch (e) { return null; } }
     function lsSet(key, value) { try { global.localStorage.setItem(key, value); } catch (e) {} }
     function liveEvent(name) { try { if (global.__sgTelemetry && global.__sgTelemetry.event) global.__sgTelemetry.event(name); } catch (e) {} }
+    // v0.9.6 (P1-D): with the "simple_requests" switch on, POST bodies go out as
+    // text/plain and capabilities travel in the body, so the browser sends no
+    // CORS preflight. The server checks Origin for these (simple_requests.py).
+    function simpleOn() { return !!((global.__SG_FLAGS || {}).simple_requests); }
+    function jsonHeaders(capability, extra) {
+      var headers = Object.assign({}, extra || {});
+      if (simpleOn()) { headers['Content-Type'] = 'text/plain'; return headers; }
+      headers['Content-Type'] = 'application/json';
+      if (capability) headers['X-Shuttle-Position-Capability'] = capability;
+      return headers;
+    }
+    function closeWatch(watch, reason) {
+      if (simpleOn()) {
+        var payload = JSON.stringify({watch_id:watch.watch_id, capability:watch.capability, reason:reason || 'unknown'});
+        var url = options.apiBase + '/api/vehicle-positions/watch/close';
+        try {
+          if (global.navigator && global.navigator.sendBeacon &&
+              global.navigator.sendBeacon(url, new Blob([payload], {type:'text/plain'}))) return;
+        } catch (e) {}
+        fetch(url, {method:'POST', credentials:'include', keepalive:true, headers:{'Content-Type':'text/plain'}, body:payload}).catch(function() {});
+        return;
+      }
+      var init = { method: 'POST', credentials: 'include', keepalive: true,
+        headers: { 'X-Shuttle-Position-Capability': watch.capability } };
+      if (reason) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify({reason:reason}); }
+      gpsFetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(watch.watch_id) + '/close', init).catch(function() {});
+    }
     function liveBucket() {
       var raw = lsGet('sg_device_bucket'), bucket = raw === null || raw === '' ? NaN : Number(raw);
       if (!(bucket >= 0 && bucket < 100)) { bucket = Math.floor(Math.random() * 100); lsSet('sg_device_bucket', String(bucket)); }
@@ -130,7 +157,7 @@
       }
       arm();
       fetch(options.apiBase + '/api/vehicle-positions/live', {method:'POST', credentials:'include', signal:ctrl.signal,
-        headers:{'Content-Type':'application/json', 'Accept':'text/event-stream', 'X-Shuttle-Position-Capability':caps[0]},
+        headers:jsonHeaders(caps[0], {'Accept':'text/event-stream'}),
         body:JSON.stringify({capabilities:caps})
       }).then(function(response) {
         if (live.ctrl !== ctrl) return;
@@ -191,7 +218,8 @@
     }
     function gpsFetch(url, init) {
       var features={attemptHeader:!!(config && config.gps_attempt_header)};
-      if (!config || !config.gps_request_timing) return global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,init,features) : fetch(url,init);
+      var plainPost = !!(init && init.headers && /^text\/plain/i.test(String(init.headers['Content-Type'] || '')));
+      if (!config || !config.gps_request_timing || plainPost) return global.ShuttleGPSNetwork ? global.ShuttleGPSNetwork.fetch(url,init,features) : fetch(url,init);
       var bytes = new Uint8Array(16); global.crypto.getRandomValues(bytes);
       var id = Array.from(bytes, function(b) { return b.toString(16).padStart(2,'0'); }).join('');
       var request = Object.assign({},init), headers = new Headers(request.headers || {});
@@ -250,7 +278,7 @@
           function cancelIfEmpty() { if (reads.every(function(item) { return item.signal.aborted; })) controller.abort(); }
           reads.forEach(function(item) { item.signal.addEventListener('abort',cancelIfEmpty,{once:true}); });
           gpsFetch(options.apiBase + '/api/vehicle-positions/batch', {method:'POST',credentials:'include',signal:controller.signal,
-            headers:{'Content-Type':'application/json','X-Shuttle-Position-Capability':reads[0].watch.capability},
+            headers:jsonHeaders(reads[0].watch.capability),
             body:JSON.stringify({capabilities:reads.map(function(item) { return item.watch.capability; })})
           }).then(function(response) {
             if (!response.ok) throw new Error('temporary');
@@ -731,11 +759,7 @@
       clearTimeout(entry.timer);
       if (entry.abort) entry.abort.abort();
       if (entry.watch) {
-        gpsFetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(entry.watch.watch_id) + '/close', {
-          method: 'POST', credentials: 'include', keepalive: true,
-          headers: { 'X-Shuttle-Position-Capability': entry.watch.capability, 'Content-Type':'application/json' },
-          body:JSON.stringify({reason:reason || 'view_change'})
-        }).catch(function() {});
+        closeWatch(entry.watch, reason || 'view_change');
         entry.watch = null;
       }
     }
@@ -1161,9 +1185,10 @@
       var abort = entry.abort, signal = abort.signal, timedOut = false, watchBegin=timeSample(), startedAt = activityTime(), getBegin=null, responseReference=null;
       var requestDeadline = setTimeout(function() { timedOut = true; abort.abort(); },15000);
       var renew = !entry.watch || Date.now() >= entry.renewAt || Date.now() >= entry.watchActiveUntil;
-      var watchHeaders = { 'Content-Type': 'application/json' };
-      if (entry.watch) watchHeaders['X-Shuttle-Position-Capability'] = entry.watch.capability;
+      var watchHeaders = jsonHeaders(entry.watch ? entry.watch.capability : '');
       var requestContext = Object.assign({}, entry.target.context, {view_id:entry.viewId});
+      if (simpleOn() && entry.watch) requestContext.capability = entry.watch.capability;
+      if (entry.openedAt == null) entry.openedAt = activityTime();
       if (config.initial_position || Number(config.poll_seconds) === 1) requestContext.include_initial_position = true;
       if (!config.gps_shared_snapshots || !requestContext.shared_route_token) delete requestContext.shared_route_token;
       var ready = renew ? gpsFetch(options.apiBase + '/api/vehicle-positions/watch', {
@@ -1180,7 +1205,7 @@
         if (liveEtaDisabled) renderMap();
         if (!watch.enabled) throw new Error('disabled');
         if (token !== generation) {
-          gpsFetch(options.apiBase + '/api/vehicle-positions/watch/' + encodeURIComponent(watch.watch_id) + '/close', { method: 'POST', credentials: 'include', keepalive: true, headers: { 'X-Shuttle-Position-Capability': watch.capability } }).catch(function() {});
+          closeWatch(watch, '');
           throw new Error('cancelled');
         }
         entry.watch = watch;
@@ -1192,6 +1217,11 @@
           if (!data || !Array.isArray(data.vehicles) || !['available','loading','empty','unavailable','budget_paused','usage_unknown'].includes(data.state)) throw new Error('temporary');
           var receipt=timeSample(); entry.getMs=Math.max(0,receipt.mono-begin.mono);
           responseReference=readReference(data,begin,receipt);
+          // v0.9.6 (P1-G): from opening the position view to its first position read.
+          if (!entry.firstReadMarked && entry.openedAt != null) {
+            entry.firstReadMarked = true;
+            try { if (global.__sgTelemetry && global.__sgTelemetry.mark) global.__sgTelemetry.mark('live_first_position_ms', Math.max(0, activityTime() - entry.openedAt)); } catch (e) {}
+          }
           entry.etag = etag || ''; entry.watchActiveUntil = Date.now() + 40000; return data;
       }
       ready.then(function(watch) {

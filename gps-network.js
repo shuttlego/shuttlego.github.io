@@ -47,7 +47,10 @@
     init=init || {};
     var path=new URL(url,global.location.href).pathname,canRetry=allowed(path,init);
     var headers=new Headers(init.headers || {}),requestId=headers.get('X-SG-Request-Id') || id();
-    headers.set('X-SG-Request-Id',requestId);
+    // v0.9.6 (P1-D): a text/plain POST is a CORS "simple" request. Adding our trace
+    // headers would bring the preflight back, so such requests carry none.
+    var simple=String(init.method || 'GET').toUpperCase()==='POST' && /^text\/plain/i.test(headers.get('Content-Type') || '');
+    if(!simple)headers.set('X-SG-Request-Id',requestId);
     var deadline=global.performance.now()+TOTAL_MS;
     function timeoutError() { return new DOMException('GPS request timed out','TimeoutError'); }
     function abortError() { return new DOMException('Aborted','AbortError'); }
@@ -81,7 +84,7 @@
         });
       }
       var attemptHeaders=new Headers(headers);
-      if(features && features.attemptHeader)attemptHeaders.set('X-SG-Attempt',String(n));
+      if(!simple && features && features.attemptHeader)attemptHeaders.set('X-SG-Attempt',String(n));
       var options=Object.assign({},init,{headers:attemptHeaders});
       if(controller)options.signal=controller.signal;
       var work=Promise.resolve().then(function() { return global.fetch(url,options); }).then(function(value) {
