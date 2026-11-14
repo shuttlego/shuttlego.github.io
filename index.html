@@ -229,6 +229,8 @@
             bootSettled = true;
             var flags = (data && data.flags) || {};
             window.__SG_FLAGS = flags;
+            // v0.9.7 (P1-E): only the fresh bootstrap names the catalog version; a stored copy never does.
+            window.__SG_CATALOG_VERSION = String((data && data.catalog_version) || '');
             if (window.__sgTelemetry) window.__sgTelemetry.setFlags(flags);
             if (data && data.enabled && data.responses) bootEntries = data.responses;
             try { if (data) localStorage.setItem('sg_boot_enabled', data.enabled ? '1' : '0'); } catch (e) {}
@@ -16559,6 +16561,14 @@
         updateEndpointTriggerText();
       }
 
+      // v0.9.7 (P1-E, switch: catalog_versioned_urls): a catalog GET that names the catalog
+      // version is cached by the browser until the catalog changes. '' keeps the old URL.
+      function catalogVersionQuery() {
+        var flags = window.__SG_FLAGS || {};
+        var version = String(window.__SG_CATALOG_VERSION || '');
+        return flags.catalog_versioned_urls && /^[0-9a-f]{8,64}$/.test(version) ? '&cv=' + version : '';
+      }
+
       function fetchResolvedEndpointSelection(siteId, dayType, direction, selectedEndpoints, routeKind) {
         var url = API_BASE + '/api/shuttle/endpoint-options' +
           '?site_id=' + encodeURIComponent(String(siteId || '')) +
@@ -16569,6 +16579,7 @@
         if (Array.isArray(selectedEndpoints)) {
           url += '&selected_endpoints=' + encodeURIComponent(selectedEndpoints.join(','));
         }
+        url += catalogVersionQuery();
         return fetchJson(url).then(function(result) {
           if (!result.ok) {
             throw new Error(result.data && result.data.error || 'endpoint 옵션을 불러오지 못했습니다.');
@@ -17424,7 +17435,8 @@
         var url = API_BASE + '/api/shuttle/endpoint-options' +
           '?site_id=' + encodeURIComponent(siteId) +
           '&day_type=' + encodeURIComponent(dayType) +
-          '&route_kind=' + encodeURIComponent(selectedRouteKind);
+          '&route_kind=' + encodeURIComponent(selectedRouteKind) +
+          catalogVersionQuery();
 
         var pending = fetch(url)
           .then(function(r) {
@@ -25104,11 +25116,16 @@
         if (walkPathCache.has(key)) return Promise.resolve(walkPathCache.get(key));
         if (walkPathPending.has(key)) return walkPathPending.get(key);
 
+        // With a catalog version in the URL the coordinates are fixed to 5 decimals (about
+        // 1 m) so the same walk maps to the same cached URL.
+        var versionQuery = catalogVersionQuery();
+        var coord = function(value) { return versionQuery ? Number(value).toFixed(5) : String(value); };
         var url = API_BASE + '/api/shuttle/walk-path' +
-          '?from_lat=' + encodeURIComponent(String(fromPos.lat)) +
-          '&from_lng=' + encodeURIComponent(String(fromPos.lng)) +
-          '&to_lat=' + encodeURIComponent(String(toPos.lat)) +
-          '&to_lng=' + encodeURIComponent(String(toPos.lng));
+          '?from_lat=' + encodeURIComponent(coord(fromPos.lat)) +
+          '&from_lng=' + encodeURIComponent(coord(fromPos.lng)) +
+          '&to_lat=' + encodeURIComponent(coord(toPos.lat)) +
+          '&to_lng=' + encodeURIComponent(coord(toPos.lng)) +
+          versionQuery;
         var pending = fetch(url)
           .then(function(r) {
             return r.json().catch(function() { return {}; }).then(function(data) {
@@ -38485,7 +38502,12 @@
           var handled = false;
           try { handled = typeof window.shuttleGoBack === 'function' && window.shuttleGoBack() === true; } catch (e) {}
           if (handled) {
-            try { window.history.pushState({ sgGuard: true }, ''); } catch (e) {}
+            // Re-arm only after this popstate dispatch has returned. WebKit reports a pushState
+            // made inside the handler before the pop itself; the iOS swipe-back snapshot then
+            // never sees the pop and stays on screen until its watchdog fires (about 3 s).
+            setTimeout(function() {
+              try { window.history.pushState({ sgGuard: true }, ''); } catch (e) {}
+            }, 0);
             try { if (window.__sgTelemetry) window.__sgTelemetry.event('routing_back_closed'); } catch (e) {}
           } else {
             window.history.back();
