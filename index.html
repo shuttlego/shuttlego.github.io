@@ -38494,11 +38494,25 @@
         if (!window.history || typeof window.history.pushState !== 'function') return;
         historyGuardInstalled = true;
         try {
-          window.history.replaceState(Object.assign({}, window.history.state || {}, { sgRoot: true }), '');
-          window.history.pushState({ sgGuard: true }, '');
+          var entryState = window.history.state || {};
+          if (entryState.sgGuard && !entryState.sgRoot) {
+            // The page was loaded again on the guard entry of an earlier load (reload, tab
+            // restore, Back from another site). history.state survives that, and the root
+            // entry is still right below. Adding another root/guard pair here would cost
+            // one more Back press per reload before a layer closes.
+          } else {
+            // A state that carries sgGuard as well comes from an older build that merged
+            // the two markers on reload; it becomes a plain root again.
+            var rootState = Object.assign({}, entryState, { sgRoot: true });
+            delete rootState.sgGuard;
+            window.history.replaceState(rootState, '');
+            window.history.pushState({ sgGuard: true }, '');
+          }
         } catch (e) { historyGuardInstalled = false; return; }
         window.addEventListener('popstate', function(event) {
-          if (event.state && event.state.sgGuard) return;
+          // Arriving on a guard entry (Forward) closes nothing. An entry that is a root
+          // as well (older build, see above) is a root.
+          if (event.state && event.state.sgGuard && !event.state.sgRoot) return;
           var handled = false;
           try { handled = typeof window.shuttleGoBack === 'function' && window.shuttleGoBack() === true; } catch (e) {}
           if (handled) {
