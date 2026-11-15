@@ -39978,6 +39978,7 @@
         if (historyGuardInstalled || !routingEnabled() || getAppContext().platform === 'android') return;
         if (!window.history || typeof window.history.pushState !== 'function') return;
         historyGuardInstalled = true;
+        if (historyLayersEnabled()) { installHistoryLayers(); return; }
         try {
           var entryState = window.history.state || {};
           if (entryState.sgGuard && !entryState.sgRoot) {
@@ -40011,6 +40012,80 @@
           } else {
             window.history.back();
           }
+        });
+      }
+      // ── History layers (switch: history_layers) ─────────────────────────────────────────
+      // The guard above adds a history entry right after a Back press. Browsers treat that
+      // as a page trapping the Back button: Chrome skips every entry of a document that
+      // added one without a new user activation after a Back (history manipulation
+      // intervention), and Safari skips entries scripted without user interaction. The
+      // next Back then left the site.
+      //
+      // Here each open layer has its own entry, added while the user's action that opened
+      // it is still honoured, and a Back press only closes: nothing is added afterwards.
+      var historyOpenDepth = function() { return 0; };  // set by bindGenericLayerBack
+      var historyLayers = { installed: false, ignore: 0, holdPush: false };
+      function historyLayersEnabled() {
+        return !!(window.__SG_FLAGS && window.__SG_FLAGS.history_layers);
+      }
+      function historyStateDepth(state) {
+        if (!state) return 0;
+        if (typeof state.sgDepth === 'number' && state.sgDepth > 0) return Math.floor(state.sgDepth);
+        return state.sgGuard && !state.sgRoot ? 1 : 0;  // an entry the older guard left
+      }
+      // Makes the number of entries above the root equal to the number of open layers.
+      function syncHistoryLayers() {
+        // A step of our own is still on its way (history.go answers later with a popstate).
+        if (!historyLayers.installed || historyLayers.ignore > 0) return;
+        var have = historyStateDepth(window.history.state), open = historyOpenDepth();
+        if (open > have) {
+          // Never right after a Back press: wait for the user's next action.
+          if (historyLayers.holdPush) return;
+          for (var depth = have + 1; depth <= open; depth++) {
+            try { window.history.pushState({ sgDepth: depth }, ''); } catch (e) { return; }
+          }
+        } else if (open < have) {
+          // Layers were closed on the page itself: drop their entries. That pop closes nothing.
+          historyLayers.ignore += 1;
+          try { window.history.go(open - have); } catch (e) { historyLayers.ignore -= 1; }
+        }
+      }
+      function installHistoryLayers() {
+        historyLayers.installed = true;
+        // Loaded again on an entry of an earlier load (reload, tab restore): nothing is open now.
+        var stale = historyStateDepth(window.history.state);
+        if (stale > 0) {
+          historyLayers.ignore += 1;
+          try { window.history.go(-stale); } catch (e) { historyLayers.ignore -= 1; }
+        }
+        window.addEventListener('popstate', function(event) {
+          if (historyLayers.ignore > 0) { historyLayers.ignore -= 1; return; }
+          historyLayers.holdPush = true;
+          var target = historyStateDepth(event.state), open = historyOpenDepth(), closed = 0;
+          while (open > target && closed < 8) {
+            var handled = false;
+            try { handled = typeof window.shuttleGoBack === 'function' && window.shuttleGoBack() === true; } catch (e) {}
+            if (!handled) break;
+            closed += 1;
+            var next = historyOpenDepth();
+            if (next >= open) break;
+            open = next;
+          }
+          if (closed) { try { if (window.__sgTelemetry) window.__sgTelemetry.event('routing_back_closed'); } catch (e) {} }
+          // Forward onto the entry of a layer that is no longer open: step back to the screen.
+          if (target > open) {
+            historyLayers.ignore += 1;
+            try { window.history.go(open - target); } catch (e) { historyLayers.ignore -= 1; }
+          }
+        });
+        var onUserAction = function(event) {
+          if (event && event.isTrusted === false) return;
+          historyLayers.holdPush = false;
+          // Layers open right away, after an animation, or when a search answers.
+          [0, 350, 1500, 5000].forEach(function(delay) { setTimeout(syncHistoryLayers, delay); });
+        };
+        ['click', 'keydown', 'touchend'].forEach(function(name) {
+          document.addEventListener(name, onUserAction, true);
         });
       }
       function buildReturnSnapshot() {
@@ -40083,6 +40158,28 @@
           }
           return false;
         }
+        // history_layers: how many Back presses it takes to close everything that is open.
+        function panelDepth() {
+          var back = document.getElementById('btnBackFromRoutes');
+          var open = (back && back.style.display !== 'none' && shown(back)) || shown(document.getElementById('routeHeaderBackBtn'));
+          if (!open) return 0;
+          var routeView = !!(routeOptionsWrap && routeOptionsWrap.classList.contains('show'));
+          // Leaving a route view lands on the place results when there are any, else on home.
+          var depth = (routeView || !isPlaceSearchResultsState()) ? 1 + (places.length > 0 ? 1 : 0) : 1;
+          return depth + (activeTransitPickerState ? 1 : 0);
+        }
+        function openDepth() {
+          var depth = 0;
+          for (var i = 0; i < LAYERS.length; i++) {
+            var id = LAYERS[i][0], backdropId = LAYERS[i][1];
+            if (id === 'routeHeaderBackBtn' || id === 'btnBackFromRoutes') continue;
+            var button = id ? document.getElementById(id) : null;
+            var backdrop = backdropId ? document.getElementById(backdropId) : null;
+            if (backdrop ? shown(backdrop) : (button && shown(button))) depth += 1;
+          }
+          return depth + panelDepth();
+        }
+        historyOpenDepth = openDepth;
         function handleBack() {
           if (previous && typeof previous.handleBack === 'function' && previous.handleBack.apply(previous, arguments) === true) return true;
           if (typeof legacy === 'function' && legacy.apply(window, arguments) === true) return true;
