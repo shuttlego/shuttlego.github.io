@@ -783,6 +783,10 @@
       if (!keepTargets) { targets = []; idlePaused = false; lastActivity = null; lastActivityWall = null; }
       syncToggle();
     }
+    function positionStaleMs() {
+      var seconds = Number(config && config.stale_after_seconds);
+      return isFinite(seconds) && seconds >= 60 && seconds <= 150 ? seconds * 1000 : 60000;
+    }
     function derivePresentation(sample) {
       var now=sample.wall, nextExpiry=Infinity;
       var seenVehicles = {}, uniqueVehicles = [], states = new Map();
@@ -798,17 +802,25 @@
         (display && display.vehicles || []).forEach(function(vehicle) {
           var observed = new Date(vehicle.observed_at).getTime();
           var bounds = ageBounds(vehicle,vehicle.__ageReference || reference,sample), age = bounds.upper;
-          var uncertain = bounds.uncertain || bounds.lower<=60000 && age>60000;
+          // Two limits: a live ETA needs a fix of 60 s or newer; the position itself is shown as
+          // current up to the server's stale_after_seconds (60 unless the server says otherwise).
+          var staleMs = positionStaleMs();
+          var uncertain = bounds.uncertain || bounds.lower<=staleMs && age>staleMs;
+          var etaUncertain = bounds.uncertain || bounds.lower<=60000 && age>60000;
           var etaKey = predictionKey(entry,display,vehicle);
-          if (age>60000 || uncertain) { if (entry.predictions) delete entry.predictions[etaKey]; }
+          if (age>60000 || etaUncertain) { if (entry.predictions) delete entry.predictions[etaKey]; }
           if (!isFinite(observed) || !isFinite(age) || age > 180000) return;
           nextExpiry = Math.min(nextExpiry, now + 180001 - age);
           // Location expiry is independent of optional ETA/occupancy fields.
           if (!idlePaused && age <= 60000) nextExpiry = Math.min(nextExpiry, now + 60001 - age);
           if (!idlePaused && !bounds.uncertain && bounds.lower<=60000 && age>60000)
             nextExpiry=Math.min(nextExpiry,now+60001-bounds.lower);
+          if (staleMs !== 60000 && !idlePaused) {
+            if (age <= staleMs) nextExpiry = Math.min(nextExpiry, now + staleMs + 1 - age);
+            else if (!bounds.uncertain && bounds.lower<=staleMs) nextExpiry = Math.min(nextExpiry, now + staleMs + 1 - bounds.lower);
+          }
           var selected = vehicle.departure_time===(entry.previewDeparture || entry.target.context.departure_time);
-          var eta = !liveEtaDisabled && !handedOff && !previewing && selected && !idlePaused && !uncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
+          var eta = !liveEtaDisabled && !handedOff && !previewing && selected && !idlePaused && !etaUncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
           if (eta) {
             var currentEtaAt=Date.parse(eta.eta_at);
             if (!isFinite(currentEtaAt) || currentEtaAt<=now) eta=null;
@@ -819,13 +831,13 @@
             var rememberedAge = memory.age + Math.max(0,sample.mono-memory.at,sample.wall-memory.wall);
             var etaAt = new Date(memory.eta.eta_at).getTime();
             var temporary = etaTemporary(vehicle);
-            if (!idlePaused && selected && !uncertain && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
+            if (!idlePaused && selected && !etaUncertain && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
               eta = memory.eta; held = true;
               nextExpiry = Math.min(nextExpiry,now+etaRetentionMs-rememberedAge,etaAt);
             }
           }
           vehicle = Object.assign({}, vehicle, {live_eta:eta,eta_retained:held,selected_trip:selected,
-            display_stale: idlePaused || uncertain || age > 60000 || vehicle.position_state === 'stale', display_uncertain:uncertain,
+            display_stale: idlePaused || uncertain || age > staleMs || vehicle.position_state === 'stale', display_uncertain:uncertain,
             __bounds:bounds});
           var occupancy = vehicle.occupancy;
           if (occupancy) {
