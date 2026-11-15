@@ -1952,6 +1952,146 @@
       font-weight: 600;
       color: #1a1a1a;
     }
+    /* v0.9.8 (#102, switch: multi_site): several sites at once */
+    .site-selector-trigger .site-trigger-more {
+      flex-shrink: 0;
+      color: #1428A0;
+    }
+    .site-selector-trigger .site-trigger-more:empty { display: none; }
+    .site-picker-toolbar[hidden], .site-picker-footer[hidden], .endpoint-picker-site-tabs[hidden] { display: none; }
+    .site-picker-toolbar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid #f2f2f2;
+    }
+    .site-picker-hint { font-size: 12px; color: #6b7280; text-align: right; }
+    .site-picker-item.multi {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-sizing: border-box;
+    }
+    .site-picker-item.multi.selected { background: #eef2ff; }
+    .site-picker-check {
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      border: 1.5px solid #c4c9d4;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      color: transparent;
+      background: #fff;
+      box-sizing: border-box;
+    }
+    .site-picker-item.multi.selected .site-picker-check {
+      background: #1428A0;
+      border-color: #1428A0;
+      color: #fff;
+    }
+    .site-picker-item-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .site-picker-primary {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      border-radius: 999px;
+      padding: 5px 8px;
+      border: 1px solid #1428A0;
+      color: #1428A0;
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .site-picker-primary.is-primary {
+      background: #1428A0;
+      color: #fff;
+      cursor: default;
+    }
+    .site-picker-footer {
+      flex-shrink: 0;
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid #eee;
+    }
+    .site-picker-apply {
+      width: 100%;
+      height: 42px;
+      border: none;
+      border-radius: 8px;
+      background: #1428A0;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .site-picker-apply:disabled { background: #c4c9d4; cursor: not-allowed; }
+    .endpoint-picker-site-tabs {
+      flex-shrink: 0;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 8px 16px 4px;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .endpoint-picker-site-tabs::-webkit-scrollbar { display: none; }
+    .endpoint-picker-site-tab {
+      flex: 0 0 auto;
+      border: 1px solid #ddd;
+      border-radius: 999px;
+      background: #fff;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      white-space: nowrap;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .endpoint-picker-site-tab.no-service { color: #9ca3af; }
+    .endpoint-picker-site-tab.selected {
+      background: #1428A0;
+      border-color: #1428A0;
+      color: #fff;
+    }
+    .route-site-chip {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #eef2ff;
+      color: #1428A0;
+      font-size: 11px;
+      font-weight: 700;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .route-multi-site-notice {
+      margin: 0 0 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #f3f4f6;
+      color: #4b5563;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    @media (max-width: 768px) {
+      .site-picker-modal.multi { max-height: 72vh; }
+    }
     .account-menu-backdrop {
       display: none;
       position: fixed;
@@ -2308,6 +2448,69 @@
     .home-section-heading.with-gap {
       margin-top: 38px;
     }
+    /* v0.9.8 (#99): "더보기" sits at the right end of the heading row. */
+    .home-section-more {
+      margin-left: auto;
+      padding: 4px 2px 4px 8px;
+      border: 0;
+      background: transparent;
+      color: #1428a0;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .home-section-more:hover { text-decoration: underline; }
+    .home-section-more:focus-visible { outline: 2px solid #1428a0; outline-offset: 2px; border-radius: 4px; }
+    .home-section-more[disabled] { color: #94a3b8; cursor: default; text-decoration: none; }
+    /* Restaurant ranking pins: the rank is written in the pin, the colour changes every ten ranks. */
+    .pin-marker.rank-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      box-sizing: border-box;
+      background: var(--rank-color, #d32f2f);
+      border: 2px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0,0,0,.35);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .rank-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      height: 20px;
+      margin-right: 6px;
+      padding: 0 5px;
+      box-sizing: border-box;
+      border-radius: 10px;
+      background: var(--rank-color, #d32f2f);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      vertical-align: 1px;
+    }
+    .rank-trend { margin-left: 6px; font-size: 11px; font-weight: 700; color: #64748b; }
+    .rank-trend.up { color: #d32f2f; }
+    .rank-trend.down { color: #1565c0; }
+    .rank-trend.new { color: #2e7d32; }
+    .rank-tier-0 { --rank-color: #d32f2f; }
+    .rank-tier-1 { --rank-color: #e65100; }
+    .rank-tier-2 { --rank-color: #b7791f; }
+    .rank-tier-3 { --rank-color: #558b2f; }
+    .rank-tier-4 { --rank-color: #1b7f4b; }
+    .rank-tier-5 { --rank-color: #00838f; }
+    .rank-tier-6 { --rank-color: #0277bd; }
+    .rank-tier-7 { --rank-color: #3949ab; }
+    .rank-tier-8 { --rank-color: #8e24aa; }
+    .rank-tier-9 { --rank-color: #6d4c41; }
     .home-section-title {
       margin: 0;
       color: #0f172a;
@@ -4816,6 +5019,24 @@
       white-space: normal;
     }
     .shuttle-message.show { display: block; }
+    /* 설명 박스 닫기(×): 같은 검색을 보는 동안에는 닫힌 채로 둔다. */
+    .shuttle-message.has-close { padding-right: 48px; }
+    .shuttle-message-close {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: #5f6b7a;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .shuttle-message-close:hover,
+    .shuttle-message-close:focus-visible { background: rgba(0,0,0,.07); color: #1f2933; }
     .shuttle-message.dimmed { opacity: 0.35; transition: opacity 0.15s; }
     .shuttle-message .hl {
       font-weight: 700;
@@ -5533,6 +5754,151 @@
     }
     .btn-rank-floating.shared-route-hidden {
       display: none !important;
+    }
+    /* v0.9.8 (#97, switch: map_stops): every stop that still has service, on the map */
+    .btn-map-stops[hidden] { display: none !important; }
+    .btn-map-stops {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: none;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s, box-shadow .15s;
+    }
+    .btn-map-stops img { width: 24px; height: 24px; object-fit: contain; display: block; }
+    .btn-map-stops:hover { background: #f5f5f5; box-shadow: 0 2px 12px rgba(0,0,0,.2); }
+    .btn-map-stops.active { background: #1428A0; }
+    .btn-map-stops.active img { filter: brightness(0) invert(1); }
+    .btn-map-stops.loading { opacity: .6; }
+    .btn-map-stops.shared-route-hidden { display: none !important; }
+    @media (max-width: 768px) {
+      .btn-map-stops { width: 44px; height: 44px; }
+      .btn-map-stops img { width: 22px; height: 22px; }
+    }
+    .map-stop-dot {
+      width: 14px;
+      height: 14px;
+      box-sizing: border-box;
+      border-radius: 50%;
+      background: #1428A0;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.35);
+      cursor: pointer;
+    }
+    .map-stop-dot.alight-only { background: #c2410c; }
+    .map-stop-dot.selected { width: 20px; height: 20px; border-width: 3px; }
+    .map-stop-cluster {
+      min-width: 30px;
+      height: 30px;
+      padding: 0 6px;
+      box-sizing: border-box;
+      border-radius: 15px;
+      background: rgba(20, 40, 160, .88);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 5px rgba(0,0,0,.3);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 26px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .map-stop-name {
+      max-width: 120px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(255,255,255,.92);
+      color: #1f2937;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+      box-shadow: 0 1px 2px rgba(0,0,0,.15);
+    }
+    .map-stops-notice {
+      position: absolute;
+      left: 50%;
+      top: 12px;
+      transform: translateX(-50%);
+      z-index: 6;
+      max-width: calc(100% - 24px);
+      padding: 8px 12px;
+      border-radius: 18px;
+      background: rgba(17, 24, 39, .88);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .map-stops-notice.show { opacity: 1; }
+    .bubble-container .bubble-box.stop-bubble { min-width: 230px; max-width: 290px; }
+    .bubble-stop-routes {
+      margin: 0 0 10px;
+      max-height: 168px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      border-top: 1px solid #eef0f4;
+    }
+    .bubble-stop-routes .stop-route-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 6px 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .bubble-stop-routes .stop-route-role {
+      flex: 0 0 auto;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #eef2ff;
+      color: #1428A0;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .bubble-stop-routes .stop-route-role.alight { background: #fff1e6; color: #c2410c; }
+    .bubble-stop-routes .stop-route-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: #111827;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bubble-stop-routes .stop-route-time { flex: 0 0 auto; color: #374151; font-weight: 700; white-space: nowrap; }
+    .bubble-stop-routes .stop-route-time small { color: #6b7280; font-weight: 500; }
+    .bubble-stop-routes .stop-route-empty { padding: 8px 0; color: #6b7280; font-size: 12px; }
+    .bubble-stop-routes .stop-route-more {
+      display: block;
+      width: 100%;
+      margin: 6px 0 2px;
+      padding: 5px 0;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #routeTopPlaceLabel.is-stop-place,
+    #routeBottomPlaceLabel.is-stop-place {
+      background-image: url('/images/stop_icon.png');
     }
 
     .pin-marker {
@@ -10319,6 +10685,7 @@
           </select>
           <button type="button" class="site-selector-trigger" id="siteSelectTrigger" title="사업장 선택" aria-expanded="false" aria-haspopup="listbox">
             <span class="site-trigger-text">삼성전자(기흥/화성)</span>
+            <span class="site-trigger-more"></span>
             <span class="site-trigger-arrow"></span>
           </button>
         </div>
@@ -10478,7 +10845,14 @@
   <div class="site-picker-backdrop" id="sitePickerBackdrop" aria-hidden="true"></div>
   <div class="site-picker-modal" id="sitePickerModal" role="dialog" aria-label="사업장 선택">
     <h2 class="site-picker-title">사업장 선택</h2>
+    <div class="site-picker-toolbar" id="sitePickerToolbar" hidden>
+      <button type="button" class="endpoint-picker-all-toggle" id="sitePickerAllBtn">전체 선택</button>
+      <span class="site-picker-hint" id="sitePickerHint"></span>
+    </div>
     <div class="site-picker-list" id="sitePickerList" role="listbox"></div>
+    <div class="site-picker-footer" id="sitePickerFooter" hidden>
+      <button type="button" class="site-picker-apply" id="sitePickerApplyBtn">적용</button>
+    </div>
   </div>
 
   <div class="endpoint-picker-backdrop" id="endpointPickerBackdrop" aria-hidden="true"></div>
@@ -10500,6 +10874,7 @@
         autocomplete="off"
       />
     </div>
+    <div class="endpoint-picker-site-tabs" id="endpointPickerSiteTabs" role="tablist" hidden></div>
     <div class="endpoint-picker-list" id="endpointPickerList" role="listbox"></div>
   </div>
 
@@ -10570,6 +10945,7 @@
       <div class="settings-field">
         <p class="settings-field-label">검색 방식 기본값</p>
         <div class="settings-mode-options">
+          <button type="button" class="settings-mode-btn" id="settingsSearchModeRecommendedBtn" data-mode="recommended" hidden>추천</button>
           <button type="button" class="settings-mode-btn active" id="settingsSearchModeDistanceBtn" data-mode="distance">거리 우선</button>
           <button type="button" class="settings-mode-btn" id="settingsSearchModeTimeBtn" data-mode="time">시간 우선</button>
         </div>
@@ -10818,6 +11194,7 @@
       <div id="map"></div>
       <div class="shuttle-message" id="shuttleMessage"></div>
       <div class="shuttle-error-overlay" id="shuttleErrorOverlay"></div>
+      <div class="map-stops-notice" id="mapStopsNotice" role="status" aria-live="polite"></div>
       <div class="map-controls">
         <button type="button" class="btn-zoom" id="btnZoomIn" title="확대">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -10833,6 +11210,9 @@
         <div class="map-action-row">
           <button type="button" class="btn-arrival-report" id="btnArrivalReport">도착 시간 제보하기</button>
           <div class="map-side-actions">
+            <button type="button" class="btn-map-stops" id="btnMapStops" title="정류장 보기" aria-label="정류장 보기" aria-pressed="false" hidden>
+              <img src="/images/stop_icon.png" alt="" />
+            </button>
             <button type="button" class="btn-rank-floating" id="btnMapLeaderboard" title="랭킹">
               <img src="/images/rank_icon.png" alt="" />
             </button>
@@ -10911,12 +11291,25 @@
       var panelTitle = document.getElementById('panelTitle');
       var headerEl = document.querySelector('.header');
       var btnMapLeaderboard = document.getElementById('btnMapLeaderboard');
+      var btnMapStops = document.getElementById('btnMapStops');
+      var mapStopsNotice = document.getElementById('mapStopsNotice');
+      // v0.9.8 (#97, switch: map_stops). lists: "site|day" -> rows [id, lat, lng, name, boardLast, alightLast].
+      var mapStops = {
+        active: false, lists: {}, pending: {}, overlays: [], renderTimer: null, noticeTimer: null,
+        selectedKey: '', infoSeq: 0, loadSeq: 0
+      };
       var btnLocation = document.getElementById('btnLocation');
       var siteSelect = document.getElementById('siteSelect');
       var siteSelectTrigger = document.getElementById('siteSelectTrigger');
       var sitePickerBackdrop = document.getElementById('sitePickerBackdrop');
       var sitePickerModal = document.getElementById('sitePickerModal');
       var sitePickerList = document.getElementById('sitePickerList');
+      var sitePickerToolbar = document.getElementById('sitePickerToolbar');
+      var sitePickerAllBtn = document.getElementById('sitePickerAllBtn');
+      var sitePickerHint = document.getElementById('sitePickerHint');
+      var sitePickerFooter = document.getElementById('sitePickerFooter');
+      var sitePickerApplyBtn = document.getElementById('sitePickerApplyBtn');
+      var endpointPickerSiteTabs = document.getElementById('endpointPickerSiteTabs');
       var departureTrigger = document.getElementById('departureTrigger');
       var departureTriggerText = document.getElementById('departureTriggerText');
       var timeBasisDepartBtn = document.getElementById('timeBasisDepartBtn');
@@ -11028,6 +11421,7 @@
       var settingsModalSaveBtn = document.getElementById('settingsModalSaveBtn');
       var settingsSearchModeDistanceBtn = document.getElementById('settingsSearchModeDistanceBtn');
       var settingsSearchModeTimeBtn = document.getElementById('settingsSearchModeTimeBtn');
+      var settingsSearchModeRecommendedBtn = document.getElementById('settingsSearchModeRecommendedBtn');
       var settingsSearchModeHelp = document.getElementById('settingsSearchModeHelp');
       var settingsMaxDistanceSlider = document.getElementById('settingsMaxDistanceSlider');
       var settingsMaxDistanceValue = document.getElementById('settingsMaxDistanceValue');
@@ -11083,6 +11477,14 @@
       var places = [];
       var resultsPanelState = 'idle';
       var selectedSiteId = '0000011';
+      // v0.9.8 (#102, switch: multi_site). The stored selection, primary first. It is used
+      // only while it contains selectedSiteId; see getActiveSiteIds().
+      var selectedSiteIds = [];
+      var siteDayTypesById = {};
+      var sitePickerDraftIds = null;
+      var currentRouteSearchSites = null;
+      var endpointPickerSiteTab = '';
+      var siteEndpointTabState = {};
       var selectedDayType = 'weekday';
       var selectedRouteTimeBasis = 'depart_at';
       var selectedRouteKind = 'all';
@@ -11152,7 +11554,7 @@
       if (routeSortMenu) document.body.appendChild(routeSortMenu);
       var routeWalkingSortRefreshTimer = null;
       var routeSearchModeIndicator = document.getElementById('routeSearchModeIndicator');
-      var currentSortMode = 'distance';
+      var currentSortMode = '';  // unset: the first search picks the order that matches its search mode
       var defaultRouteSearchMode = 'distance';
       var activeRouteSearchMode = 'distance';
       var currentRouteSearchModeUsed = 'distance';
@@ -12105,6 +12507,8 @@
       function updateMapActionButtonVisibility() {
         var hideForSharedRoute = isSharedRouteMapActionSuppressed();
         if (btnMapLeaderboard) btnMapLeaderboard.classList.toggle('shared-route-hidden', hideForSharedRoute);
+        if (btnMapStops) btnMapStops.classList.toggle('shared-route-hidden', hideForSharedRoute);
+        if (hideForSharedRoute && mapStops.active) exitMapStops({ redraw: false });
         updateArrivalReportButtonVisibility();
       }
 
@@ -14136,6 +14540,15 @@
         routeRefreshConfirmModal.onConfirm = null;
       }
 
+      // #102: a route found by a search over several sites belongs to its own site.
+      function getRouteOptionSiteId(option) {
+        var own = option && !isShuttleTransferOption(option) ? String(option.site_id || '').trim() : '';
+        return own || String(selectedSiteId || '');
+      }
+      function isRouteOptionOfOtherSite(option) {
+        return getRouteOptionSiteId(option) !== String(selectedSiteId || '');
+      }
+
       function getSiteNameById(siteId) {
         var value = String(siteId || '').trim();
         if (!value || !siteSelect || !siteSelect.options) return value;
@@ -14215,6 +14628,8 @@
           _place_source: placeSource,
           place_source: placeSource
         };
+        // #97: a place picked from a stop on the map keeps that mark (header icon).
+        if (place._stop) normalized._stop = true;
         rememberRoutePlaceAlias(normalized);
         return normalized;
       }
@@ -14568,6 +14983,15 @@
           });
           row.appendChild(actionBtn);
         }
+        if (options.moreLabel && typeof options.onMore === 'function') {
+          var more = document.createElement('button');
+          more.type = 'button';
+          more.className = 'home-section-more';
+          more.textContent = String(options.moreLabel);
+          more.setAttribute('aria-label', String(titleText || '') + ' ' + String(options.moreLabel));
+          more.addEventListener('click', function() { options.onMore(more); });
+          row.appendChild(more);
+        }
         container.appendChild(row);
         if (captionText) {
           var caption = document.createElement('div');
@@ -14672,6 +15096,85 @@
           card.appendChild(buildHomeRecentSearchRow(item));
         });
         return card;
+      }
+
+      // v0.9.8 (#99, switch: restaurant_more). The home response says how many places the
+      // ranking holds; the whole list (up to 100) is fetched only when "더보기" is pressed and
+      // kept for the snapshot's day.
+      var homeRestaurantMoreCache = { key: '', items: null };
+      function homeRestaurantRankingHasMore() {
+        var ranking = homeRestaurantRanking || {};
+        return Number(ranking.total_count || 0) > 5 && Array.isArray(ranking.items) && ranking.items.length > 0;
+      }
+      function rankTierClass(rank) {
+        var value = Math.max(1, Math.floor(Number(rank) || 1));
+        return 'rank-tier-' + String(Math.min(9, Math.floor((value - 1) / 10)));
+      }
+      function showHomeRestaurantRankingPlaces(items, titleText) {
+        var list = [];
+        (items || []).forEach(function(item) {
+          var lat = Number(item && item.lat);
+          var lng = Number(item && item.lng);
+          if (!isFinite(lat) || !isFinite(lng)) return;
+          var name = String(item.place_name || '추천 장소');
+          var place = normalizeRoutePlace({
+            place_name: name,
+            address_name: String(item.address_name || ''),
+            road_address_name: String(item.road_address_name || ''),
+            id: String(item.place_id || ''),
+            place_id: String(item.place_id || ''),
+            category_name: String(item.category_name || ''),
+            category_group_code: String(item.category_group_code || ''),
+            category_group_name: String(item.category_group_name || ''),
+            place_selection_token: String(item.place_selection_token || ''),
+            x: String(lng),
+            y: String(lat),
+            _place_source: 'search',
+            place_source: 'search'
+          }, { placeSource: 'search', placeName: name });
+          if (!place) return;
+          place._rank = Math.max(1, Math.floor(Number(item.rank) || list.length + 1));
+          place._rankTrend = getHomeRestaurantTrendInfo(item);
+          list.push(place);
+        });
+        if (!list.length) return false;
+        currentSearchSource = 'restaurant_rank';
+        places = list;
+        clearSearchOverlays();
+        list.forEach(function(place, index) { addMarker(parseFloat(place.y), parseFloat(place.x), index); });
+        fitBounds();
+        renderResults(places);
+        setResultsPanelTitle(String(titleText || '삼성인의 인기 맛집'));
+        if (isMobile()) setSheetState('sheet-half');
+        return true;
+      }
+      function openHomeRestaurantRankingMore(button) {
+        var ranking = homeRestaurantRanking || {};
+        var siteId = String(ranking.site_id || selectedSiteId || '').trim();
+        var version = String(ranking.snapshot_date || '').trim();
+        if (!siteId) return;
+        var key = siteId + '|' + version;
+        if (homeRestaurantMoreCache.key === key && homeRestaurantMoreCache.items) {
+          showHomeRestaurantRankingPlaces(homeRestaurantMoreCache.items, ranking.title);
+          return;
+        }
+        if (button) { button.disabled = true; button.textContent = '불러오는 중…'; }
+        var url = API_BASE + '/api/home/restaurants?site_id=' + encodeURIComponent(siteId) +
+          (version ? '&v=' + encodeURIComponent(version) : '');
+        fetch(url, { credentials: 'include' })
+          .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('restaurant list ' + r.status)); })
+          .then(function(data) {
+            var items = Array.isArray(data && data.items) ? data.items : [];
+            if (!items.length) throw new Error('empty restaurant list');
+            homeRestaurantMoreCache = { key: key, items: items };
+            // Show it only if the user is still on the home panel that asked for it.
+            if (!button || !button.isConnected) return;
+            showHomeRestaurantRankingPlaces(items, (data && data.title) || ranking.title);
+          })
+          .catch(function() {
+            if (button && button.isConnected) { button.disabled = false; button.textContent = '더보기'; }
+            showShuttleError('인기 맛집 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+          });
       }
 
       function getHomeRestaurantTrendInfo(item) {
@@ -14820,7 +15323,10 @@
           resultsList,
           String(homeRestaurantRanking && homeRestaurantRanking.title || '삼성인의 인기 맛집'),
           '',
-          { iconHtml: getHomeRestaurantIconHtml(), explanation: '최근 2개월 동안 이 사업장에서 노선을 검색할 때 많이 찾은 음식점 순위입니다.' }
+          Object.assign(
+            { iconHtml: getHomeRestaurantIconHtml(), explanation: '최근 2개월 동안 이 사업장에서 노선을 검색할 때 많이 찾은 음식점 순위입니다.' },
+            homeRestaurantRankingHasMore() ? { moreLabel: '더보기', onMore: openHomeRestaurantRankingMore } : {}
+          )
         );
         if (
           homeRestaurantRanking &&
@@ -16095,6 +16601,48 @@
           (selectedRouteKind === 'all' ? '' : '|' + selectedRouteKind);
       }
 
+      function getEndpointContextKeyForSite(siteId, direction) {
+        return String(siteId || '') + '|' + selectedDayType + '|' + direction +
+          (selectedRouteKind === 'all' ? '' : '|' + selectedRouteKind);
+      }
+      // #102: the endpoint choice of every site the user has touched, kept on the device so
+      // a search can name the choice of sites other than the primary one without a request.
+      var SITE_ENDPOINT_STORE_KEY = 'sg_site_endpoints_v1';
+      function readSiteEndpointStore() {
+        try {
+          var raw = JSON.parse(localStorage.getItem(SITE_ENDPOINT_STORE_KEY) || '{}');
+          return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+        } catch (e) { return {}; }
+      }
+      function writeSiteEndpointStore(contextKey, names, all) {
+        if (!contextKey) return;
+        try {
+          var store = readSiteEndpointStore();
+          delete store[contextKey];
+          store[contextKey] = { all: !!all, names: all ? [] : (names || []).slice(0, 200) };
+          var keys = Object.keys(store);
+          while (keys.length > 120) delete store[keys.shift()];
+          localStorage.setItem(SITE_ENDPOINT_STORE_KEY, JSON.stringify(store));
+        } catch (e) {}
+      }
+      // null = every endpoint of that site; otherwise the chosen names (may be empty).
+      function getSiteEndpointSelectionForSearch(siteId, direction) {
+        if (String(siteId || '') === String(selectedSiteId || '')) {
+          return isAllEndpointsSelected() ? null : getSelectedEndpointNamesSorted();
+        }
+        var contextKey = getEndpointContextKeyForSite(siteId, direction);
+        var memory = endpointSelectionByContext[contextKey];
+        if (memory && typeof memory.all === 'boolean' && memory.selected) {
+          if (memory.all) return null;
+          var names = [];
+          memory.selected.forEach(function(name) { names.push(name); });
+          return names;
+        }
+        var stored = readSiteEndpointStore()[contextKey];
+        if (!stored || stored.all || !Array.isArray(stored.names)) return null;
+        return stored.names.slice();
+      }
+
       function isAllEndpointsSelected(selectionSet) {
         var setRef = selectionSet || selectedEndpoints;
         if (endpointOptionsAll.length === 0) return false;
@@ -16876,6 +17424,7 @@
       }
 
       function beginFavoriteRouteView() {
+        if (mapStops.active) exitMapStops({ redraw: false });
         if (activeCombinedSearchCoordinator && typeof activeCombinedSearchCoordinator.dispose === 'function') {
           activeCombinedSearchCoordinator.dispose();
         }
@@ -17170,15 +17719,20 @@
         opts = opts || {};
         if (!endpointContextKey) return;
         endpointSelectionByContext[endpointContextKey] = {
-          selected: cloneStringSet(selectedEndpoints)
+          selected: cloneStringSet(selectedEndpoints),
+          all: isAllEndpointsSelected()
         };
+        if (multiSiteEnabled() && endpointOptionsAll.length > 0) {
+          writeSiteEndpointStore(endpointContextKey, getSelectedEndpointNamesSorted(), isAllEndpointsSelected());
+        }
         if (opts.saveRemote === true) {
           saveEndpointSelectionPreference();
         }
       }
 
       function applyEndpointPickerSelection() {
-        if (!endpointDraftEndpoints) return false;
+        var otherSitesChanged = applySiteEndpointTabDrafts();
+        if (!endpointDraftEndpoints) return otherSitesChanged;
         var changed = !areStringSetsEqual(selectedEndpoints, endpointDraftEndpoints);
         if (changed) {
           selectedEndpoints = cloneStringSet(endpointDraftEndpoints);
@@ -17186,6 +17740,182 @@
           updateEndpointTriggerText();
         }
         endpointDraftEndpoints = null;
+        return changed || otherSitesChanged;
+      }
+
+      // #102: the endpoint picker gets one tab per selected site. The primary site's tab is
+      // the picker as before; the other tabs keep their own options and draft here.
+      function endpointPickerTabsActive() {
+        return !!routeModeDirection && getActiveSiteIds().length >= 2;
+      }
+      function getSiteEndpointTabKeys(state) {
+        return state.optionsAll.map(getEndpointOptionKey).filter(function(key) { return !!key; });
+      }
+      function openSiteEndpointTab(siteId) {
+        var primary = String(selectedSiteId || '');
+        endpointPickerSiteTab = String(siteId || '') === primary ? '' : String(siteId || '');
+        var direction = routeModeDirection;
+        if (endpointPickerSiteTab && !siteEndpointTabState[endpointPickerSiteTab]) {
+          var tabSiteId = endpointPickerSiteTab;
+          var state = { status: 'loading', optionsAll: [], draft: new Set(), initial: new Set(), direction: direction };
+          siteEndpointTabState[tabSiteId] = state;
+          if (!siteHasDayType(tabSiteId, selectedDayType)) {
+            state.status = 'no_service';
+          } else {
+            getEndpointOptionsPayload(tabSiteId, selectedDayType)
+              .then(function(payload) {
+                var raw = direction === 'depart'
+                  ? (payload && payload.depart_terminus_options || [])
+                  : (payload && payload.arrive_start_options || []);
+                state.optionsAll = raw.map(mapEndpointOption).filter(function(item) {
+                  return getEndpointOptionKey(item).length > 0 || item.endpoint_name.length > 0;
+                });
+                var keys = getSiteEndpointTabKeys(state);
+                var chosen = getSiteEndpointSelectionForSearch(tabSiteId, direction);
+                var selected = new Set();
+                if (chosen) {
+                  chosen.forEach(function(name) { if (keys.indexOf(name) >= 0) selected.add(name); });
+                }
+                if (!chosen) keys.forEach(function(key) { selected.add(key); });
+                state.draft = selected;
+                state.initial = cloneStringSet(selected);
+                state.status = state.optionsAll.length > 0 ? 'ready' : 'no_service';
+              })
+              .catch(function() { state.status = 'error'; })
+              .then(function() {
+                if (siteEndpointTabState[tabSiteId] === state && endpointPickerSiteTab === tabSiteId) {
+                  renderEndpointPickerList();
+                }
+              });
+          }
+        }
+        renderEndpointPickerList();
+      }
+      function renderEndpointPickerSiteTabs() {
+        if (!endpointPickerSiteTabs) return;
+        var active = endpointPickerTabsActive();
+        endpointPickerSiteTabs.hidden = !active;
+        endpointPickerSiteTabs.innerHTML = '';
+        if (!active) { endpointPickerSiteTab = ''; return; }
+        var primary = String(selectedSiteId || '');
+        getActiveSiteIds().forEach(function(siteId) {
+          var selected = (endpointPickerSiteTab || primary) === siteId;
+          var tab = document.createElement('button');
+          tab.type = 'button';
+          tab.className = 'endpoint-picker-site-tab' + (selected ? ' selected' : '') +
+            (siteHasDayType(siteId, selectedDayType) ? '' : ' no-service');
+          tab.setAttribute('role', 'tab');
+          tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+          tab.textContent = shortSiteName(getSiteNameById(siteId));
+          tab.addEventListener('click', function() { openSiteEndpointTab(siteId); });
+          endpointPickerSiteTabs.appendChild(tab);
+        });
+      }
+      function renderSiteEndpointTabList(siteId) {
+        var state = siteEndpointTabState[siteId];
+        endpointPickerList.innerHTML = '';
+        var message = '';
+        if (!state || state.status === 'loading') message = '정류장을 불러오는 중...';
+        else if (state.status === 'no_service') message = '이 요일에는 운행하는 노선이 없어요';
+        else if (state.status === 'error') message = '정류장을 불러오지 못했습니다.';
+        if (message) {
+          var messageEl = document.createElement('div');
+          messageEl.className = 'endpoint-picker-empty';
+          messageEl.textContent = message;
+          endpointPickerList.appendChild(messageEl);
+          return;
+        }
+        var keys = getSiteEndpointTabKeys(state);
+        var allSelected = keys.length > 0 && keys.every(function(key) { return state.draft.has(key); });
+        var listHeader = document.createElement('div');
+        listHeader.className = 'endpoint-picker-list-header';
+        var allBtn = document.createElement('button');
+        allBtn.type = 'button';
+        allBtn.className = 'endpoint-picker-all-toggle' + (allSelected ? ' selected' : '');
+        allBtn.textContent = '전체 선택';
+        allBtn.addEventListener('click', function() {
+          state.draft = allSelected ? new Set() : new Set(keys);
+          renderEndpointPickerList();
+        });
+        listHeader.appendChild(allBtn);
+        var countLabel = document.createElement('span');
+        countLabel.className = 'endpoint-picker-list-count-label';
+        countLabel.textContent = '노선 수';
+        listHeader.appendChild(countLabel);
+        endpointPickerList.appendChild(listHeader);
+
+        var keywordNorm = normalizeEndpointSearchText(endpointSearchKeyword);
+        var choseongKeyword = String(endpointSearchKeyword || '').replace(/\s+/g, '');
+        var useChoseong = isChoseongOnlyKeyword(choseongKeyword);
+        var visible = !keywordNorm ? state.optionsAll : state.optionsAll.filter(function(opt) {
+          if (String(opt._search_text || '').indexOf(keywordNorm) !== -1) return true;
+          return useChoseong && String(opt._search_choseong || '').indexOf(choseongKeyword) !== -1;
+        });
+        if (visible.length === 0) {
+          var emptyEl = document.createElement('div');
+          emptyEl.className = 'endpoint-picker-empty';
+          emptyEl.textContent = '키워드에 일치하는 옵션이 없습니다.';
+          endpointPickerList.appendChild(emptyEl);
+          return;
+        }
+        var lastSectionName = null;
+        visible.forEach(function(opt) {
+          var sectionName = String(opt.endpoint_section_name || '').trim();
+          if (sectionName !== lastSectionName) {
+            lastSectionName = sectionName;
+            var sectionHeader = document.createElement('div');
+            sectionHeader.className = 'endpoint-picker-section-header';
+            sectionHeader.innerHTML =
+              '<span class="endpoint-picker-section-title">' + escapeHtml(sectionName || '사업장 외') + '</span>' +
+              '<span class="endpoint-picker-section-divider"></span>';
+            endpointPickerList.appendChild(sectionHeader);
+          }
+          var optionKey = getEndpointOptionKey(opt);
+          var selected = state.draft.has(optionKey);
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'endpoint-picker-item' + (selected ? ' selected' : '');
+          btn.setAttribute('role', 'option');
+          btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+          btn.innerHTML =
+            '<span class="endpoint-item-main">' +
+              '<span class="endpoint-item-check">v</span>' +
+              '<span class="endpoint-item-label">' + getEndpointOptionLabelHtml(opt) + '</span>' +
+            '</span>' +
+            '<span class="endpoint-item-meta">' + (opt.route_count || 0) + '</span>';
+          btn.addEventListener('click', function() {
+            if (state.draft.has(optionKey)) state.draft.delete(optionKey);
+            else if (optionKey) state.draft.add(optionKey);
+            renderEndpointPickerList();
+          });
+          endpointPickerList.appendChild(btn);
+        });
+      }
+      // Stores the changed choices of the other sites' tabs. True when any changed.
+      function applySiteEndpointTabDrafts() {
+        var changed = false;
+        Object.keys(siteEndpointTabState).forEach(function(siteId) {
+          var state = siteEndpointTabState[siteId];
+          if (!state || state.status !== 'ready' || areStringSetsEqual(state.draft, state.initial)) return;
+          var keys = getSiteEndpointTabKeys(state);
+          var names = keys.filter(function(key) { return state.draft.has(key); });
+          var all = names.length === keys.length;
+          var contextKey = getEndpointContextKeyForSite(siteId, state.direction);
+          endpointSelectionByContext[contextKey] = { selected: new Set(names), all: all };
+          writeSiteEndpointStore(contextKey, names, all);
+          if (authState.logged_in && selectedRouteKind === 'all') {
+            fetch(API_BASE + '/api/me/preferences/endpoint', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                site_id: siteId, day_type: selectedDayType, direction: state.direction, selected_endpoints: names
+              })
+            }).catch(function() {});
+          }
+          changed = true;
+        });
+        siteEndpointTabState = {};
+        endpointPickerSiteTab = '';
         return changed;
       }
 
@@ -17198,6 +17928,8 @@
           changed = applyEndpointPickerSelection();
         } else {
           endpointDraftEndpoints = null;
+          siteEndpointTabState = {};
+          endpointPickerSiteTab = '';
         }
 
         if (endpointPickerBackdrop) endpointPickerBackdrop.classList.remove('show');
@@ -17219,6 +17951,11 @@
 
       function renderEndpointPickerList() {
         if (!endpointPickerList) return;
+        renderEndpointPickerSiteTabs();
+        if (endpointPickerSiteTab) {
+          renderSiteEndpointTabList(endpointPickerSiteTab);
+          return;
+        }
         endpointPickerList.innerHTML = '';
         var activeSelection = endpointDraftEndpoints || selectedEndpoints;
 
@@ -17311,6 +18048,8 @@
         var kindLabel = getEndpointKindLabel(routeModeDirection);
         if (endpointPickerTitle) endpointPickerTitle.textContent = kindLabel + ' 선택';
         endpointDraftEndpoints = cloneStringSet(selectedEndpoints);
+        siteEndpointTabState = {};
+        endpointPickerSiteTab = '';
         if (endpointPickerSearchInput) endpointPickerSearchInput.value = endpointSearchKeyword;
         renderEndpointPickerList();
 
@@ -17339,6 +18078,9 @@
         var placeText = routeModePlaceName || '선택한 위치';
         if (routeTopPlaceLabel && document.activeElement !== routeTopPlaceLabel) routeTopPlaceLabel.value = placeText;
         if (routeBottomPlaceLabel && document.activeElement !== routeBottomPlaceLabel) routeBottomPlaceLabel.value = placeText;
+        var placeIsStop = !!(lastPlace && lastPlace._stop);
+        if (routeTopPlaceLabel) routeTopPlaceLabel.classList.toggle('is-stop-place', placeIsStop);
+        if (routeBottomPlaceLabel) routeBottomPlaceLabel.classList.toggle('is-stop-place', placeIsStop);
         updateEndpointTriggerText();
 
         if (routeModeDirection === 'depart') {
@@ -17597,6 +18339,21 @@
         if (!container) return;
         container.style.removeProperty('--site-tab-width');
         container.style.removeProperty('--departure-tab-width');
+        // #102: with several sites the tab keeps one width (the longest site name);
+        // only the name part is shortened, "외 n개" always shows. Mobile is fixed by flex.
+        if (multiSiteEnabled() && !isMobile() && siteSelect && siteSelect.options && siteSelect.options.length > 0) {
+          var siteTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
+          var longestSiteText = 0;
+          for (var siteIndex = 0; siteTextEl && siteIndex < siteSelect.options.length; siteIndex++) {
+            longestSiteText = Math.max(longestSiteText, measureNodeTextWidth(siteTextEl, siteSelect.options[siteIndex].text));
+          }
+          if (longestSiteText > 0) {
+            container.style.setProperty(
+              '--site-tab-width',
+              Math.min(240, Math.ceil(longestSiteText + getTriggerChromeWidth(siteSelectTrigger, 18))) + 'px'
+            );
+          }
+        }
         if (isMobile()) {
           fitDepartureTrigger();
         } else {
@@ -18110,6 +18867,7 @@
       }
       function refreshLastShuttleResult(opts) {
         opts = opts || {};
+        if (mapStops.active) refreshMapStops();
         if (!lastPlace || !lastShuttleType) return false;
         if (!opts.loadingTitle) opts.loadingTitle = '새 조건으로 노선을 다시 찾는 중입니다.';
         if (!opts.loadingMessage) opts.loadingMessage = '변경한 요일, 시간, 선택 옵션을 적용해 최신 노선을 확인하고 있습니다.';
@@ -18292,11 +19050,91 @@
       // 사업장 요일 목록과 공휴일 자료 수신 후 초기 선택을 확정한다.
       selectedDayType = detectDayType();
 
+      function multiSiteEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!flags.multi_site;
+      }
+      // The sites a search covers, primary first. The stored list counts only while it
+      // contains the current site: opening a shared route, a favorite or a recent search of
+      // another site shows that one site without rewriting the stored list.
+      function getActiveSiteIds() {
+        var primary = String(selectedSiteId || '').trim();
+        if (!multiSiteEnabled() || !Array.isArray(selectedSiteIds) || selectedSiteIds.indexOf(primary) < 0) {
+          return [primary];
+        }
+        var ids = [primary];
+        selectedSiteIds.forEach(function(raw) {
+          var id = String(raw || '').trim();
+          if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
+        });
+        return ids;
+      }
+      // Phase 1: only the ordinary (depart-at, direct) search covers several sites.
+      function isMultiSiteSearch(timeBasis) {
+        return getActiveSiteIds().length >= 2 &&
+          normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) !== 'arrive_by' &&
+          !selectedShuttleTransferSearch && !selectedTransitSearch;
+      }
+      function siteHasDayType(siteId, dayType) {
+        var list = siteDayTypesById[String(siteId || '')];
+        return !Array.isArray(list) || list.indexOf(String(dayType || '')) >= 0;
+      }
+      function shortSiteName(name) {
+        var text = String(name || '').trim();
+        var match = text.match(/^삼성전자\((.+)\)$/);
+        if (match) return match[1];
+        return text.replace(/^삼성(?=[^전])/, '') || text;
+      }
+      function readStoredSiteIds() {
+        try {
+          var raw = JSON.parse(localStorage.getItem('sg_site_ids') || '[]');
+          return Array.isArray(raw) ? raw.map(function(id) { return String(id || '').trim(); }) : [];
+        } catch (e) { return []; }
+      }
+      function restoreSelectedSiteIds() {
+        var preferred = authState && authState.logged_in && authState.preferences &&
+          Array.isArray(authState.preferences.selected_site_ids)
+          ? authState.preferences.selected_site_ids.map(function(id) { return String(id || '').trim(); })
+          : [];
+        var ids = preferred.length > 0 ? preferred : readStoredSiteIds();
+        ids = ids.filter(function(id, index) { return id && ids.indexOf(id) === index && siteOptionExists(id); });
+        var primary = String(selectedSiteId || '').trim();
+        selectedSiteIds = ids.indexOf(primary) >= 0 ? ids : [primary];
+        updateSiteTriggerText();
+      }
+      function applySiteIdList(ids, opts) {
+        opts = opts || {};
+        ids = (ids || []).filter(function(id, index) { return id && ids.indexOf(id) === index && siteOptionExists(id); });
+        if (!ids.length) return Promise.resolve(false);
+        var before = getActiveSiteIds().join(',');
+        var primaryChanged = ids[0] !== String(selectedSiteId || '').trim();
+        selectedSiteIds = ids.slice();
+        siteSelectionTouchedByUser = true;
+        try { localStorage.setItem('sg_site_ids', JSON.stringify(selectedSiteIds)); } catch (e) {}
+        if (opts.persist && authState.logged_in) {
+          fetch(API_BASE + '/api/me/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_site_id: ids[0], selected_site_ids: selectedSiteIds })
+          }).catch(function() {});
+        }
+        if (primaryChanged) return applySiteSelection(ids[0], { persistPreference: false });
+        updateSiteTriggerText();
+        if (getActiveSiteIds().join(',') !== before) refreshLastShuttleResult();
+        return Promise.resolve(true);
+      }
       function updateSiteTriggerText() {
         if (!siteSelectTrigger || !siteSelect) return;
         var opt = siteSelect.options[siteSelect.selectedIndex];
         var siteTriggerTextEl = siteSelectTrigger.querySelector('.site-trigger-text');
-        if (siteTriggerTextEl) siteTriggerTextEl.textContent = opt ? opt.text : '';
+        var moreEl = siteSelectTrigger.querySelector('.site-trigger-more');
+        var extra = getActiveSiteIds().length - 1;
+        // With several sites the name part is the short name, so it stays readable when cut.
+        if (siteTriggerTextEl) siteTriggerTextEl.textContent = opt ? (extra > 0 ? shortSiteName(opt.text) : opt.text) : '';
+        if (moreEl) moreEl.textContent = extra > 0 ? '외 ' + extra + '개' : '';
+        siteSelectTrigger.title = extra > 0
+          ? getActiveSiteIds().map(getSiteNameById).join(', ')
+          : '사업장 선택';
         syncHeaderTabWidth();
       }
       function siteOptionExists(siteId) {
@@ -18370,12 +19208,15 @@
         }
         var preferredSiteId = getPreferredSiteIdFromAuthState();
         if (!preferredSiteId || preferredSiteId === selectedSiteId || !siteOptionExists(preferredSiteId)) {
+          restoreSelectedSiteIds();
           return Promise.resolve(false);
         }
-        return applySiteSelection(preferredSiteId, {
+        var applied = applySiteSelection(preferredSiteId, {
           persistPreference: false,
           refreshResults: false
         });
+        restoreSelectedSiteIds();
+        return applied;
       }
       function setSiteSelectorEnabled(enabled) {
         if (!siteSelectTrigger) return;
@@ -18413,6 +19254,20 @@
         if (!sitePickerBackdrop || !sitePickerModal || !sitePickerList) return;
         if (siteSelectTrigger && siteSelectTrigger.disabled) return;
         var trigger = siteSelectTrigger;
+        var multi = multiSiteEnabled();
+        if (sitePickerToolbar) sitePickerToolbar.hidden = !multi;
+        if (sitePickerFooter) sitePickerFooter.hidden = !multi;
+        sitePickerModal.classList.toggle('multi', multi);
+        if (multi) {
+          sitePickerDraftIds = getActiveSiteIds();
+          renderSitePickerMultiList();
+          sitePickerBackdrop.classList.add('show');
+          sitePickerModal.classList.add('show');
+          positionSitePickerModal();
+          requestAnimationFrame(positionSitePickerModal);
+          if (trigger) trigger.setAttribute('aria-expanded', 'true');
+          return;
+        }
         sitePickerList.innerHTML = '';
         var options = siteSelect ? siteSelect.options : [];
         var selectedValue = siteSelect ? siteSelect.value : '';
@@ -18442,7 +19297,94 @@
         requestAnimationFrame(positionSitePickerModal);
         if (trigger) trigger.setAttribute('aria-expanded', 'true');
       }
+      // #102: check several sites, then "적용". The first one is the primary site; a checked
+      // row can be made primary with its "대표로" button.
+      function renderSitePickerMultiList() {
+        if (!sitePickerList) return;
+        var options = siteSelect ? siteSelect.options : [];
+        var draft = sitePickerDraftIds || [];
+        var scrollTop = sitePickerList.scrollTop;
+        sitePickerList.innerHTML = '';
+        sitePickerList.setAttribute('aria-multiselectable', 'true');
+        Array.prototype.forEach.call(options, function(opt) {
+          var value = String(opt.value || '');
+          var index = draft.indexOf(value);
+          var row = document.createElement('div');
+          row.className = 'site-picker-item multi' + (index >= 0 ? ' selected' : '');
+          row.setAttribute('role', 'option');
+          row.setAttribute('aria-selected', index >= 0 ? 'true' : 'false');
+          row.setAttribute('data-value', value);
+          row.tabIndex = 0;
+          var check = document.createElement('span');
+          check.className = 'site-picker-check';
+          check.setAttribute('aria-hidden', 'true');
+          check.textContent = '✓';
+          var nameEl = document.createElement('span');
+          nameEl.className = 'site-picker-item-name';
+          nameEl.textContent = opt.text;
+          row.appendChild(check);
+          row.appendChild(nameEl);
+          if (index >= 0 && draft.length >= 2) {
+            var primaryBtn = document.createElement('button');
+            primaryBtn.type = 'button';
+            primaryBtn.className = 'site-picker-primary' + (index === 0 ? ' is-primary' : '');
+            primaryBtn.textContent = index === 0 ? '대표' : '대표로';
+            primaryBtn.title = index === 0 ? '대표 사업장' : '대표 사업장으로 지정';
+            primaryBtn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              if (index === 0) return;
+              sitePickerDraftIds = [value].concat(draft.filter(function(id) { return id !== value; }));
+              renderSitePickerMultiList();
+            });
+            row.appendChild(primaryBtn);
+          }
+          var toggle = function() {
+            var next = draft.slice();
+            var at = next.indexOf(value);
+            if (at >= 0) next.splice(at, 1);
+            else next.push(value);
+            sitePickerDraftIds = next;
+            renderSitePickerMultiList();
+          };
+          row.addEventListener('click', toggle);
+          row.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          });
+          sitePickerList.appendChild(row);
+        });
+        sitePickerList.scrollTop = scrollTop;
+        var allSelected = options.length > 0 && draft.length === options.length;
+        if (sitePickerAllBtn) sitePickerAllBtn.classList.toggle('selected', allSelected);
+        if (sitePickerHint) {
+          sitePickerHint.textContent = draft.length === 0
+            ? '1곳 이상 선택해 주세요'
+            : draft.length >= 2 ? draft.length + '곳 선택 · 대표: ' + shortSiteName(getSiteNameById(draft[0])) : '';
+        }
+        if (sitePickerApplyBtn) sitePickerApplyBtn.disabled = draft.length === 0;
+      }
+      function toggleSitePickerSelectAll() {
+        var options = siteSelect ? siteSelect.options : [];
+        var draft = sitePickerDraftIds || [];
+        if (options.length > 0 && draft.length === options.length) {
+          sitePickerDraftIds = draft.slice(0, 1);
+        } else {
+          var next = draft.slice();
+          Array.prototype.forEach.call(options, function(opt) {
+            var value = String(opt.value || '');
+            if (value && next.indexOf(value) < 0) next.push(value);
+          });
+          sitePickerDraftIds = next;
+        }
+        renderSitePickerMultiList();
+      }
+      function applySitePickerDraft() {
+        var ids = (sitePickerDraftIds || []).slice();
+        if (!ids.length) return;
+        closeSitePickerModal();
+        applySiteIdList(ids, { persist: true });
+      }
       function closeSitePickerModal() {
+        sitePickerDraftIds = null;
         if (sitePickerBackdrop) sitePickerBackdrop.classList.remove('show');
         if (sitePickerModal) sitePickerModal.classList.remove('show');
         if (siteSelectTrigger) siteSelectTrigger.setAttribute('aria-expanded', 'false');
@@ -20231,6 +21173,7 @@
           scheduleCurrentLocationOverlayPositionRefresh();
         });
         kakao.maps.event.addListener(map, 'idle', function() {
+          if (mapStops.active) scheduleMapStopsRender(60);
           refreshBubbleOverlayPosition();
           refreshCurrentLocationOverlayPosition();
           refreshWalkTimeOverlayVisibility();
@@ -20432,9 +21375,11 @@
             } else {
               list.forEach(function(site) {
                 siteSelect.appendChild(new Option(site.site_name, String(site.site_id)));
+                if (Array.isArray(site.day_types)) siteDayTypesById[String(site.site_id)] = site.day_types.slice();
               });
             }
             setSelectedSiteValue(resolveInitialSiteId());
+            restoreSelectedSiteIds();
             siteListLoaded = true;
             setSiteSelectorEnabled(true);
             // v0.9.6 (P1-B): while the stored first-screen copy is answering, the day
@@ -20478,11 +21423,15 @@
 
       siteSelect.addEventListener('change', function() {
         siteSelectionTouchedByUser = true;
+        selectedSiteIds = [String(siteSelect.value || '')];
         applySiteSelection(siteSelect.value, {
           persistPreference: true
         });
       });
       if (siteSelectTrigger) siteSelectTrigger.addEventListener('click', openSitePickerModal);
+      if (sitePickerAllBtn) sitePickerAllBtn.addEventListener('click', toggleSitePickerSelectAll);
+      if (sitePickerApplyBtn) sitePickerApplyBtn.addEventListener('click', applySitePickerDraft);
+      window.addEventListener('sg:flags', function() { updateSiteTriggerText(); });
       if (sitePickerBackdrop) sitePickerBackdrop.addEventListener('click', closeSitePickerModal);
       if (sitePickerModal) sitePickerModal.addEventListener('click', function(e) { e.stopPropagation(); });
       bindMobilePullDownDismissModal({
@@ -20991,7 +21940,7 @@
         label.setAttribute('aria-label', placeName + ' 선택');
         var labelText = document.createElement('span');
         labelText.className = 'place-label-text';
-        labelText.textContent = getPlaceLabelDisplayName(placeName);
+        labelText.textContent = getPlaceLabelDisplayName((place && place._rank ? String(place._rank) + ' ' : '') + placeName);
         label.appendChild(labelText);
         anchor.appendChild(label);
 
@@ -21510,6 +22459,13 @@
         var el = document.createElement('div');
         el.className = 'pin-marker';
         el.setAttribute('data-index', index);
+        var rankedPlace = places[index];
+        if (rankedPlace && rankedPlace._rank) {
+          el.classList.add('rank-pin', rankTierClass(rankedPlace._rank));
+          var rankText = document.createElement('span');
+          rankText.textContent = String(rankedPlace._rank);
+          el.appendChild(rankText);
+        }
         el.addEventListener('mouseenter', function() {
           if (selectedPlaceIndex >= 0) return;
           clearHoverBubbleCloseTimer();
@@ -21701,6 +22657,309 @@
         deselectPlace();
         setMapDimmed(false);
       }
+
+      // ── #97: stops on the map ────────────────────────────────────────────
+      function mapStopsEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!flags.map_stops;
+      }
+      function syncMapStopsButton() {
+        if (!btnMapStops) return;
+        btnMapStops.hidden = !mapStopsEnabled();
+        btnMapStops.classList.toggle('active', mapStops.active);
+        btnMapStops.setAttribute('aria-pressed', mapStops.active ? 'true' : 'false');
+        btnMapStops.title = mapStops.active ? '정류장 숨기기' : '정류장 보기';
+        if (!mapStopsEnabled() && mapStops.active) exitMapStops({ redraw: true });
+      }
+      function showMapStopsNotice(text) {
+        if (!mapStopsNotice) return;
+        mapStopsNotice.textContent = text;
+        mapStopsNotice.classList.add('show');
+        clearTimeout(mapStops.noticeTimer);
+        mapStops.noticeTimer = setTimeout(function() { mapStopsNotice.classList.remove('show'); }, 3200);
+      }
+      // HH:MM on the service-day axis (04:00 = 240 ... 27:59), like the server.
+      function mapStopsReferenceMinute() {
+        var minute = departureTime.h * 60 + departureTime.m;
+        return minute < 240 ? minute + 1440 : minute;
+      }
+      function mapStopsListKey(siteId) {
+        return String(siteId || '') + '|' + String(selectedDayType || '');
+      }
+      // One request per selected site and day type; the answer is kept for the session and
+      // by the browser (catalog version in the URL), so moving the map asks nothing.
+      function loadMapStopLists() {
+        var tasks = [];
+        getActiveSiteIds().forEach(function(siteId) {
+          if (!siteHasDayType(siteId, selectedDayType)) return;
+          var key = mapStopsListKey(siteId);
+          if (mapStops.lists[key]) return;
+          if (!mapStops.pending[key]) {
+            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) +
+              '&day_type=' + encodeURIComponent(selectedDayType) + catalogVersionQuery();
+            mapStops.pending[key] = fetchJson(url)
+              .then(function(result) {
+                if (!result.ok) throw new Error('stops');
+                var keys = Object.keys(mapStops.lists);
+                if (keys.length >= 16) delete mapStops.lists[keys[0]];
+                mapStops.lists[key] = Array.isArray(result.data && result.data.stops) ? result.data.stops : [];
+              })
+              .finally(function() { delete mapStops.pending[key]; });
+          }
+          tasks.push(mapStops.pending[key]);
+        });
+        return Promise.all(tasks);
+      }
+      function clearMapStopOverlays() {
+        mapStops.overlays.forEach(function(overlay) { overlay.setMap(null); });
+        mapStops.overlays = [];
+      }
+      function scheduleMapStopsRender(delayMs) {
+        clearTimeout(mapStops.renderTimer);
+        mapStops.renderTimer = setTimeout(renderMapStops, Math.max(0, Number(delayMs) || 0));
+      }
+      function addMapStopOverlay(lat, lng, element, yAnchor, zIndex) {
+        var overlay = new kakao.maps.CustomOverlay({
+          position: new kakao.maps.LatLng(lat, lng), content: element, xAnchor: 0.5, yAnchor: yAnchor, zIndex: zIndex
+        });
+        overlay.setMap(map);
+        mapStops.overlays.push(overlay);
+      }
+      // Draws only what is inside the map area. More than MAP_STOPS_MAX_DOTS stops are
+      // grouped into counted cells that open on zooming in.
+      var MAP_STOPS_MAX_DOTS = 200;
+      var MAP_STOPS_CELL_PX = 64;
+      function renderMapStops() {
+        if (!mapStops.active || !map) return 0;
+        clearMapStopOverlays();
+        var bounds = map.getBounds();
+        var sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+        var south = sw.getLat(), west = sw.getLng(), north = ne.getLat(), east = ne.getLng();
+        var reference = mapStopsReferenceMinute();
+        var visible = [];
+        getActiveSiteIds().forEach(function(siteId) {
+          var rows = mapStops.lists[mapStopsListKey(siteId)];
+          if (!rows) return;
+          for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            if (row[1] < south || row[1] > north || row[2] < west || row[2] > east) continue;
+            if (row[4] < reference && row[5] < reference) continue;
+            visible.push({ siteId: siteId, row: row });
+          }
+        });
+        if (visible.length > MAP_STOPS_MAX_DOTS) {
+          var width = mapContainer.clientWidth || 1, height = mapContainer.clientHeight || 1;
+          var cellLng = (east - west) / (width / MAP_STOPS_CELL_PX);
+          var cellLat = (north - south) / (height / MAP_STOPS_CELL_PX);
+          var cells = {};
+          visible.forEach(function(item) {
+            var key = Math.floor(item.row[2] / cellLng) + ':' + Math.floor(item.row[1] / cellLat);
+            var cell = cells[key] || (cells[key] = { count: 0, lat: 0, lng: 0, first: item });
+            cell.count += 1; cell.lat += item.row[1]; cell.lng += item.row[2];
+          });
+          Object.keys(cells).forEach(function(key) {
+            var cell = cells[key];
+            if (cell.count === 1) { addMapStopDot(cell.first, reference, false); return; }
+            var lat = cell.lat / cell.count, lng = cell.lng / cell.count;
+            var el = document.createElement('div');
+            el.className = 'map-stop-cluster';
+            el.textContent = String(cell.count);
+            el.title = '정류장 ' + cell.count + '곳';
+            el.addEventListener('click', function(e) {
+              e.stopPropagation();
+              mapClickIgnore = true;
+              map.setLevel(Math.max(1, map.getLevel() - 2), { anchor: new kakao.maps.LatLng(lat, lng) });
+            });
+            addMapStopOverlay(lat, lng, el, 0.5, 3);
+          });
+          return visible.length;
+        }
+        var showNames = visible.length <= 30;
+        visible.forEach(function(item) { addMapStopDot(item, reference, showNames); });
+        return visible.length;
+      }
+      function addMapStopDot(item, reference, showName) {
+        var row = item.row;
+        var key = item.siteId + ':' + row[0];
+        var el = document.createElement('div');
+        el.className = 'map-stop-dot' + (row[4] < reference ? ' alight-only' : '') + (key === mapStops.selectedKey ? ' selected' : '');
+        el.title = row[3];
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          mapClickIgnore = true;
+          showMapStopBubble(item.siteId, row);
+        });
+        addMapStopOverlay(row[1], row[2], el, 0.5, 4);
+        if (showName) {
+          var nameEl = document.createElement('div');
+          nameEl.className = 'map-stop-name';
+          nameEl.textContent = row[3];
+          addMapStopOverlay(row[1], row[2], nameEl, -0.55, 2);
+        }
+      }
+      function refreshMapStops() {
+        if (!mapStops.active) return;
+        var seq = ++mapStops.loadSeq;
+        if (btnMapStops) btnMapStops.classList.add('loading');
+        loadMapStopLists()
+          .catch(function() {
+            if (seq === mapStops.loadSeq) showMapStopsNotice('정류장을 불러오지 못했습니다.');
+          })
+          .then(function() {
+            if (seq !== mapStops.loadSeq) return;
+            if (btnMapStops) btnMapStops.classList.remove('loading');
+            if (!mapStops.active) return;
+            var shown = renderMapStops();
+            var any = getActiveSiteIds().some(function(siteId) {
+              return (mapStops.lists[mapStopsListKey(siteId)] || []).length > 0;
+            });
+            if (!any) showMapStopsNotice('이 요일에는 운행하는 노선이 없어요.');
+            else if (!shown && normalizeRouteTimeBasis(selectedRouteTimeBasis) !== 'arrive_by') {
+              showMapStopsNotice('이 화면에는 ' + getDepartureTimeStr() + ' 이후 운행하는 정류장이 없어요. 지도를 옮기거나 축소해 보세요.');
+            }
+          });
+      }
+      function enterMapStops() {
+        if (!mapStopsEnabled() || !map || isSharedRouteMapActionSuppressed()) return;
+        mapStops.active = true;
+        mapStops.selectedKey = '';
+        // The drawn route, its bubbles and the live vehicles are put away while stops are shown.
+        closeBubble();
+        setMapDimmed(false);
+        clearShuttleOverlays();
+        hideShuttleErrorOverlay();
+        if (shuttleMessage) shuttleMessage.classList.remove('show');
+        syncMapStopsButton();
+        if (normalizeRouteTimeBasis(selectedRouteTimeBasis) === 'arrive_by') {
+          showMapStopsNotice('정류장 표시는 출발 시각 기준으로만 합니다.');
+        }
+        refreshMapStops();
+      }
+      function exitMapStops(opts) {
+        opts = opts || {};
+        if (!mapStops.active) return;
+        mapStops.active = false;
+        mapStops.loadSeq += 1;
+        mapStops.infoSeq += 1;
+        mapStops.selectedKey = '';
+        clearTimeout(mapStops.renderTimer);
+        clearMapStopOverlays();
+        if (bubbleOverlay && bubbleOverlay.querySelector('.stop-bubble')) closeBubble();
+        if (btnMapStops) btnMapStops.classList.remove('loading');
+        syncMapStopsButton();
+        if (opts.redraw === false) return;
+        // Back to the selected route card, without moving the map.
+        var options = Array.isArray(currentRouteOptions) ? currentRouteOptions : [];
+        var selected = null;
+        for (var i = 0; i < options.length; i++) {
+          if (isRouteOptionCurrentlySelected(options[i])) { selected = options[i]; break; }
+        }
+        if (!selected || !routeOptionsWrap || !routeOptionsWrap.classList.contains('show')) return;
+        var card = getLiveRouteCardForOption(selected);
+        if (isRouteOptionCurrentlyExpanded(selected)) {
+          drawRouteDetailOnMap(selected, currentPlaceName, !!currentIsDepart, selected.__detailHighlightTarget || null, false);
+        } else {
+          drawOptionOnMap(selected, currentPlaceName, !!currentIsDepart, card, { preserveViewport: true });
+        }
+      }
+      function toggleMapStops() {
+        if (mapStops.active) exitMapStops({ redraw: true });
+        else enterMapStops();
+      }
+      function formatMapStopRouteTime(route) {
+        var pass = escapeHtml(String(route.pass_time || ''));
+        if (route.frequent) return pass + ' <small>수시 운행</small>';
+        var departure = String(route.departure_time || '');
+        return pass + (departure && departure !== route.pass_time ? ' <small>(' + escapeHtml(departure) + ' 출발)</small>' : '');
+      }
+      // The bubble of a tapped stop: its routes after the chosen time (timetable times), and
+      // the same 출발/도착 search as a tapped map position, with the stop name as the place.
+      function showMapStopBubble(siteId, row) {
+        var place = normalizeRoutePlace({
+          place_name: row[3] || '정류장', address_name: '', y: row[1], x: row[2], _place_source: 'map'
+        }, { placeSource: 'map', placeName: row[3] || '정류장' });
+        if (!place) return;
+        place._stop = true;
+        blurActiveSearchInputs();
+        mapStops.selectedKey = siteId + ':' + row[0];
+        showBubbleWithPlace(place, row[1], row[2], false, null, 'manual');
+        scheduleMapStopsRender(0);
+        var box = bubbleOverlay && bubbleOverlay.querySelector('.bubble-box');
+        if (!box) return;
+        box.classList.add('stop-bubble');
+        var addr = box.querySelector('.bubble-addr');
+        if (addr) {
+          addr.textContent = '정류장' + (getActiveSiteIds().length >= 2 ? ' · ' + shortSiteName(getSiteNameById(siteId)) : '') +
+            ' · ' + getDepartureTimeStr() + ' 이후';
+        }
+        var list = document.createElement('div');
+        list.className = 'bubble-stop-routes';
+        list.innerHTML = '<div class="stop-route-empty">노선을 불러오는 중...</div>';
+        ['click', 'touchend', 'touchstart', 'touchmove', 'wheel', 'mousedown'].forEach(function(type) {
+          list.addEventListener(type, function(e) { e.stopPropagation(); }, { passive: true });
+        });
+        box.insertBefore(list, box.querySelector('.bubble-actions'));
+        refreshBubbleOverlayPosition();
+        var seq = ++mapStops.infoSeq;
+        var loaded = 0;
+        function loadPage(offset) {
+          var url = API_BASE + '/api/shuttle/stop-info?site_id=' + encodeURIComponent(siteId) +
+            '&day_type=' + encodeURIComponent(selectedDayType) + '&stop_id=' + encodeURIComponent(String(row[0])) +
+            '&time=' + encodeURIComponent(getDepartureTimeStr()) + (offset ? '&offset=' + offset : '');
+          return fetchJson(url).then(function(result) {
+            if (seq !== mapStops.infoSeq || !list.isConnected) return;
+            if (!result.ok) throw new Error('stop-info');
+            var data = result.data || {};
+            var routes = Array.isArray(data.routes) ? data.routes : [];
+            if (offset === 0) list.innerHTML = '';
+            var more = list.querySelector('.stop-route-more');
+            if (more) more.parentNode.removeChild(more);
+            if (offset === 0 && routes.length === 0) {
+              list.innerHTML = '<div class="stop-route-empty">' + getDepartureTimeStr() + ' 이후 지나는 노선이 없어요.</div>';
+            }
+            routes.forEach(function(route) {
+              var item = document.createElement('div');
+              item.className = 'stop-route-row';
+              item.innerHTML =
+                '<span class="stop-route-role' + (route.role === 'alight' ? ' alight' : '') + '">' +
+                  (route.role === 'alight' ? '하차' : '탑승') + '</span>' +
+                '<span class="stop-route-name" title="' + escapeAttr(String(route.route_name || '')) + '">' +
+                  escapeHtml(String(route.route_name || '')) + '</span>' +
+                '<span class="stop-route-time">' + formatMapStopRouteTime(route) + '</span>';
+              list.appendChild(item);
+            });
+            loaded += routes.length;
+            if (data.has_more) {
+              var button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'stop-route-more';
+              button.textContent = '더 보기 (' + loaded + '/' + Number(data.total || 0) + ')';
+              button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                button.disabled = true;
+                loadPage(loaded).catch(function() { button.disabled = false; });
+              });
+              list.appendChild(button);
+            }
+            refreshBubbleOverlayPosition();
+          });
+        }
+        loadPage(0).catch(function() {
+          if (seq !== mapStops.infoSeq || !list.isConnected) return;
+          list.innerHTML = '<div class="stop-route-empty">노선을 불러오지 못했습니다.</div>';
+          refreshBubbleOverlayPosition();
+        });
+      }
+      if (btnMapStops) {
+        btnMapStops.addEventListener('click', function(e) {
+          e.stopPropagation();
+          toggleMapStops();
+        });
+      }
+      window.addEventListener('sg:flags', syncMapStopsButton);
+      if (window.__SG_BOOT && window.__SG_BOOT.promise) window.__SG_BOOT.promise.then(syncMapStopsButton);
+      syncMapStopsButton();
 
       function getBubblePinTopOffset(hasPin) {
         if (!hasPin) return 0;
@@ -25203,8 +26462,14 @@
           var card = document.createElement('div');
           card.className = 'result-card';
           card.setAttribute('data-index', i);
+          var rankHtml = place._rank
+            ? '<span class="rank-chip ' + rankTierClass(place._rank) + '">' + escapeHtml(String(place._rank)) + '</span>'
+            : '';
+          var trendHtml = place._rank && place._rankTrend
+            ? '<span class="rank-trend ' + escapeHtml(place._rankTrend.className) + '">' + escapeHtml(place._rankTrend.label) + '</span>'
+            : '';
           card.innerHTML =
-            '<div class="name">' + escapeHtml(place.place_name || '') + '</div>' +
+            '<div class="name">' + rankHtml + escapeHtml(place.place_name || '') + trendHtml + '</div>' +
             '<div class="addr">' + escapeHtml(place.address_name || '') + '</div>' +
             '<div class="card-actions">' +
             '<button type="button" class="btn-depart">출발</button>' +
@@ -25281,11 +26546,30 @@
         });
       }
 
+      // The box can be closed for the search being viewed: it stays closed while the user
+      // switches cards or loads more, and comes back with the next new search.
+      var shuttleMessageDismissedSerial = -1;
       function showShuttleResult(html) {
         hideShuttleErrorOverlay();
-        shuttleMessage.innerHTML = html;
+        shuttleMessage.innerHTML = html +
+          '<button type="button" class="shuttle-message-close" aria-label="안내 닫기" title="닫기">×</button>';
+        shuttleMessage.classList.add('has-close');
         shuttleMessage.classList.remove('dimmed');
+        if (mapStops.active || shuttleMessageDismissedSerial === routeRequestSerial) {
+          shuttleMessage.classList.remove('show');
+          return;
+        }
         shuttleMessage.classList.add('show');
+      }
+      if (shuttleMessage) {
+        shuttleMessage.addEventListener('click', function(event) {
+          var target = event.target;
+          if (!target || typeof target.closest !== 'function' || !target.closest('.shuttle-message-close')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          shuttleMessageDismissedSerial = routeRequestSerial;
+          shuttleMessage.classList.remove('show');
+        });
       }
 
       function buildRouteModeMessageHtml(option, placeName, isDepart) {
@@ -26922,6 +28206,8 @@
       function renderOptionOnMap(option, placeName, isDepart, walkInfo, selectedCard, showWalkTimeBubble, opts) {
         opts = opts || {};
         var skipViewportFit = !!opts.skipViewportFit;
+        // #97: while the stops are shown the route is not drawn; it is drawn again on leaving.
+        if (mapStops.active) return;
         clearSearchOverlays();
         clearShuttleOverlays(!!selectedCard);
         scheduleLiveVehiclePositions(option, selectedCard, isDepart);
@@ -27126,6 +28412,7 @@
         if (node) node.hidden = !visible;
       }
       function drawRouteDetailOnMap(option, placeName, isDepart, highlightTarget, fitViewport) {
+        if (mapStops.active) return;
         activeOptionDrawToken += 1;
         clearSearchOverlays();
         clearShuttleOverlays(true);
@@ -33287,8 +34574,10 @@
         }).filter(function(value) { return value.length > 0; });
         var snapshot = {
           version: isTransfer ? 4 : 2,
-          site_id: String(selectedSiteId || ''),
-          site_name: selectedSiteOption ? String(selectedSiteOption.text || '') : '',
+          site_id: getRouteOptionSiteId(option),
+          site_name: isRouteOptionOfOtherSite(option)
+            ? getSiteNameById(getRouteOptionSiteId(option))
+            : (selectedSiteOption ? String(selectedSiteOption.text || '') : ''),
           available_day_types: availableDayTypes,
           day_type: String(selectedDayType || ''),
           time_basis: normalizeRouteTimeBasis(selectedRouteTimeBasis),
@@ -33300,8 +34589,10 @@
           place_source: String(currentPlaceSource || 'unknown'),
           route_search_mode: normalizeRouteSearchMode(currentRouteSearchModeUsed || activeRouteSearchMode),
           max_distance_km: normalizeRouteMaxDistanceKm(maxDistanceKm),
-          selected_endpoints: getSelectedEndpointNamesSorted(),
-          endpoint_options: getSelectedEndpointOptionSummaries(),
+          selected_endpoints: isRouteOptionOfOtherSite(option)
+            ? (getSiteEndpointSelectionForSearch(getRouteOptionSiteId(option), isDepart ? 'depart' : 'arrive') || [])
+            : getSelectedEndpointNamesSorted(),
+          endpoint_options: isRouteOptionOfOtherSite(option) ? [] : getSelectedEndpointOptionSummaries(),
           route_option: routeOption,
           detail_highlight_target: cloneJsonValue(option && option.__detailHighlightTarget || null)
         };
@@ -33354,8 +34645,10 @@
         var snapshot = {
           version: isTransfer ? 4 : 3,
           snapshot_kind: 'favorite',
-          site_id: String(selectedSiteId || ''),
-          site_name: selectedSiteOption ? String(selectedSiteOption.text || '') : '',
+          site_id: getRouteOptionSiteId(option),
+          site_name: isRouteOptionOfOtherSite(option)
+            ? getSiteNameById(getRouteOptionSiteId(option))
+            : (selectedSiteOption ? String(selectedSiteOption.text || '') : ''),
           available_day_types: availableDayTypes,
           day_type: String(selectedDayType || ''),
           time_basis: normalizeRouteTimeBasis(selectedRouteTimeBasis),
@@ -33368,8 +34661,10 @@
           place_source: String(currentPlaceSource || 'unknown'),
           route_search_mode: normalizeRouteSearchMode(currentRouteSearchModeUsed || activeRouteSearchMode),
           max_distance_km: normalizeRouteMaxDistanceKm(maxDistanceKm),
-          selected_endpoints: getSelectedEndpointNamesSorted(),
-          endpoint_options: getSelectedEndpointOptionSummaries(),
+          selected_endpoints: isRouteOptionOfOtherSite(option)
+            ? (getSiteEndpointSelectionForSearch(getRouteOptionSiteId(option), isDepart ? 'depart' : 'arrive') || [])
+            : getSelectedEndpointNamesSorted(),
+          endpoint_options: isRouteOptionOfOtherSite(option) ? [] : getSelectedEndpointOptionSummaries(),
           route_option: routeOption
         };
         if (isTransfer) {
@@ -33808,9 +35103,16 @@
         return value.toFixed(1);
       }
 
+      // v0.9.8 (#101, switch: recommended_search): "recommended" asks the server for the routes
+      // that reach the destination first. With the switch on it is also the mode for anyone who
+      // has not chosen one.
+      function recommendedSearchEnabled() {
+        return !!(window.__SG_FLAGS && window.__SG_FLAGS.recommended_search);
+      }
       function normalizeRouteSearchMode(value) {
         var mode = String(value || '').trim().toLowerCase();
-        return (mode === 'time') ? 'time' : 'distance';
+        if (mode === 'time' || mode === 'distance') return mode;
+        return recommendedSearchEnabled() ? 'recommended' : 'distance';
       }
 
       function normalizeArrivalByRouteSortMode(value) {
@@ -33821,15 +35123,19 @@
 
       function normalizeDepartureRouteSortMode(value, fallbackSearchMode) {
         var mode = String(value || '').trim().toLowerCase();
+        var searchMode = normalizeRouteSearchMode(fallbackSearchMode);
         if (mode === 'distance' || mode === 'walking' || mode === 'duration' || mode === 'departure') return mode;
+        // "recommended" is the server's own order, so it exists only for a recommended search.
+        if (mode === 'recommended' && searchMode === 'recommended') return 'recommended';
         if (mode === 'time') return 'duration';
-        return normalizeRouteSearchMode(fallbackSearchMode) === 'time' ? 'duration' : 'distance';
+        if (searchMode === 'recommended') return 'recommended';
+        return searchMode === 'time' ? 'duration' : 'distance';
       }
 
       function getEffectiveRouteSortMode(value, timeBasis) {
         return isArrivalByRouteTimeBasis(timeBasis)
           ? normalizeArrivalByRouteSortMode(value)
-          : normalizeDepartureRouteSortMode(value, activeRouteSearchMode);
+          : normalizeDepartureRouteSortMode(value, currentRouteSearchModeUsed || activeRouteSearchMode);
       }
 
       function normalizeRouteTimeBasis(value) {
@@ -33897,11 +35203,14 @@
       }
 
       function getRouteSearchModeLabel(mode) {
-        return normalizeRouteSearchMode(mode) === 'time' ? '시간 우선' : '거리 우선';
+        var normalized = normalizeRouteSearchMode(mode);
+        return normalized === 'time' ? '시간 우선' : (normalized === 'recommended' ? '추천' : '거리 우선');
       }
 
       function getRouteSearchModeHelpText(mode) {
-        return normalizeRouteSearchMode(mode) === 'time'
+        var normalized = normalizeRouteSearchMode(mode);
+        if (normalized === 'recommended') return '걷는 시간과 기다리는 시간까지 더해, 목적지에 가장 빨리 도착하는 노선을 먼저 찾습니다.';
+        return normalized === 'time'
           ? '반경 내 정류장을 지나는 노선 중 출발시각이 가장 가까운 노선을 먼저 찾습니다.'
           : '가까운 정류장 기준으로 검색합니다.';
       }
@@ -33933,6 +35242,10 @@
         var mode = normalizeRouteSearchMode(settingsDraftRouteSearchMode);
         if (settingsSearchModeDistanceBtn) settingsSearchModeDistanceBtn.classList.toggle('active', mode === 'distance');
         if (settingsSearchModeTimeBtn) settingsSearchModeTimeBtn.classList.toggle('active', mode === 'time');
+        if (settingsSearchModeRecommendedBtn) {
+          settingsSearchModeRecommendedBtn.hidden = !recommendedSearchEnabled();
+          settingsSearchModeRecommendedBtn.classList.toggle('active', mode === 'recommended');
+        }
         if (settingsSearchModeHelp) settingsSearchModeHelp.textContent = getRouteSearchModeHelpText(mode);
         if (settingsMaxDistanceSlider) settingsMaxDistanceSlider.value = String(settingsDraftMaxDistanceKm);
         if (settingsMaxDistanceValue) settingsMaxDistanceValue.textContent = formatMaxDistanceKm(settingsDraftMaxDistanceKm);
@@ -33949,7 +35262,7 @@
 
       function applyRouteSearchPreferences(preferences) {
         var prefs = preferences || {};
-        var nextMode = normalizeRouteSearchMode(prefs.route_search_mode || 'distance');
+        var nextMode = normalizeRouteSearchMode(prefs.route_search_mode);
         var nextDefaultMaxDistance = normalizeRouteMaxDistanceKm(
           prefs.route_max_distance_km != null ? prefs.route_max_distance_km : 3
         );
@@ -34191,6 +35504,22 @@
           url += '&selected_endpoints=';
         } else if (!isAllEndpointsSelected()) {
           url += '&selected_endpoints=' + encodeURIComponent(selectedNames.join(','));
+        }
+        // #102: one ordinary search over every selected site. site_id stays the primary one,
+        // so a server without the switch answers for that site as before.
+        if (isMultiSiteSearch(opts.timeBasis || selectedRouteTimeBasis)) {
+          var multiSiteIds = getActiveSiteIds();
+          var multiDirection = endpoint.indexOf('/depart/') >= 0 ? 'depart' : 'arrive';
+          var siteEndpointMap = {};
+          var hasSiteEndpoints = false;
+          multiSiteIds.forEach(function(siteId) {
+            var names = getSiteEndpointSelectionForSearch(siteId, multiDirection);
+            if (!names) return;
+            siteEndpointMap[siteId] = names;
+            hasSiteEndpoints = true;
+          });
+          url += '&site_ids=' + encodeURIComponent(multiSiteIds.join(','));
+          if (hasSiteEndpoints) url += '&site_endpoints=' + encodeURIComponent(JSON.stringify(siteEndpointMap));
         }
 
         if (excludeRouteIds) {
@@ -35199,8 +36528,26 @@
           }
           return sorted;
         }
-        var departureSortMode = normalizeDepartureRouteSortMode(mode, activeRouteSearchMode);
-        if (departureSortMode === 'duration') {
+        var departureSortMode = normalizeDepartureRouteSortMode(mode, currentRouteSearchModeUsed || activeRouteSearchMode);
+        if (departureSortMode === 'recommended') {
+          // The server scored each route by its arrival; keep that order as more cards load.
+          sorted.sort(function(a, b) {
+            var scoreA = a && a.recommend ? Number(a.recommend.score_min) : NaN;
+            var scoreB = b && b.recommend ? Number(b.recommend.score_min) : NaN;
+            if (isFinite(scoreA) !== isFinite(scoreB)) return isFinite(scoreA) ? -1 : 1;
+            if (isFinite(scoreA) && scoreA !== scoreB) return scoreA - scoreB;
+            var walkA = a && a.recommend ? Number(a.recommend.walk_min) : 0;
+            var walkB = b && b.recommend ? Number(b.recommend.walk_min) : 0;
+            if (walkA !== walkB) return walkA - walkB;
+            var distanceA = Number(a && a.distance_m) || 0;
+            var distanceB = Number(b && b.distance_m) || 0;
+            if (distanceA !== distanceB) return distanceA - distanceB;
+            var ta = getOptionDisplayDepartureTime(a);
+            var tb = getOptionDisplayDepartureTime(b);
+            if (ta !== tb) return ta.localeCompare(tb);
+            return String(a && a.route_name || '').localeCompare(String(b && b.route_name || ''));
+          });
+        } else if (departureSortMode === 'duration') {
           sorted.sort(function(a, b) {
             var durationA = getRouteOptionTotalDurationMinutes(a);
             var durationB = getRouteOptionTotalDurationMinutes(b);
@@ -35232,9 +36579,10 @@
         var departureBtn = document.getElementById('sortByDeparture');
         var walkingBtn = document.getElementById('sortByWalking');
         var isArrivalBy = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed);
+        var recommendedSearch = !isArrivalBy && normalizeRouteSearchMode(currentRouteSearchModeUsed) === 'recommended';
         if (recommendedBtn) {
-          recommendedBtn.style.display = isArrivalBy ? '' : 'none';
-          recommendedBtn.classList.toggle('active', isArrivalBy && currentSortMode === 'recommended');
+          recommendedBtn.style.display = (isArrivalBy || recommendedSearch) ? '' : 'none';
+          recommendedBtn.classList.toggle('active', (isArrivalBy || recommendedSearch) && currentSortMode === 'recommended');
         }
         if (distanceBtn) {
           distanceBtn.textContent = '거리순';
@@ -35338,6 +36686,10 @@
         if (isShuttleRouteType(option && option.route_type)) {
           htmlParts.push('<span class="route-shuttle-badge">셔틀</span>');
         }
+        // #102: only a search over several sites names the site of each route.
+        if (option && option.site_name && !isShuttleTransferOption(option)) {
+          htmlParts.push('<span class="route-site-chip">' + escapeHtml(shortSiteName(option.site_name)) + '</span>');
+        }
         htmlParts.push('<span class="route-name-text">' + routeName + '</span>');
         if (option && option.__arrivalByEstimated) {
           htmlParts.push('<span class="route-estimated-badge" title="OTP 실측 없이 시각표 + 도보 추정으로 계산된 후보">추정</span>');
@@ -35394,6 +36746,7 @@
 
       function scheduleLiveVehiclePositions(option, card, isDepart, selectionOptions) {
         clearTimeout(liveVehicleTimer);
+        if (mapStops.active) return;
         if (!liveVehicleController || !option || !card) return;
         liveVehicleTimer = setTimeout(function() {
           if (!card.isConnected || !card.classList.contains('selected')) return;
@@ -36119,6 +37472,7 @@
         });
         syncRouteLoadMoreButton();
         maybePrependActiveRouteSearchStatusBanner();
+        maybePrependMultiSiteNotice();
         var firstCard = routeOptionsWrap.querySelector('.route-option-card.selected');
         var selectedOption = options[selectedIndex] || options[0];
         if (selectedOption) {
@@ -36145,7 +37499,7 @@
 
       function loadMoreRoutes(btn) {
         if (!currentRouteOptions || !lastPlace) return Promise.resolve();
-        if (selectedEndpoints.size === 0) {
+        if (selectedEndpoints.size === 0 && !isMultiSiteSearch(currentRouteTimeBasisUsed)) {
           if (btn) {
             btn.textContent = '선택된 옵션 없음';
             btn.disabled = true;
@@ -36417,6 +37771,31 @@
         };
       }
 
+      // #102: says which sites a search with several sites selected did not cover.
+      function maybePrependMultiSiteNotice() {
+        if (!routeOptionsWrap) return;
+        var old = routeOptionsWrap.querySelector('.route-multi-site-notice');
+        if (old && old.parentNode) old.parentNode.removeChild(old);
+        if (sharedRouteState.active || favoriteRouteState.active) return;
+        var siteIds = getActiveSiteIds();
+        if (siteIds.length < 2) return;
+        var text = '';
+        if (!isMultiSiteSearch(currentRouteTimeBasisUsed)) {
+          text = '이 검색은 ' + getSiteNameById(siteIds[0]) + '만 찾습니다.';
+        } else if (Array.isArray(currentRouteSearchSites)) {
+          var noService = currentRouteSearchSites
+            .filter(function(site) { return site && site.status === 'no_service'; })
+            .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
+          if (noService.length > 0) text = noService.join(', ') + ': 이 요일에는 운행하는 노선이 없어요.';
+        }
+        if (!text) return;
+        var notice = document.createElement('div');
+        notice.className = 'route-multi-site-notice';
+        notice.setAttribute('role', 'note');
+        notice.textContent = text;
+        routeOptionsWrap.insertBefore(notice, routeOptionsWrap.firstChild);
+      }
+
       function maybePrependActiveRouteSearchStatusBanner() {
         if (!routeOptionsWrap || !routeOptionsWrap.classList.contains('show')) return;
         if (
@@ -36608,6 +37987,7 @@
           emptyMsg.textContent = noRouteMsg;
           routeOptionsWrap.appendChild(emptyMsg);
           maybePrependActiveRouteSearchStatusBanner();
+          maybePrependMultiSiteNotice();
           if (normalizeRouteTimeBasis(timeBasis || currentRouteTimeBasisUsed) !== 'arrive_by') {
             showShuttleError(noRouteMsg);
           }
@@ -36774,6 +38154,9 @@
         if (!sameTransitSearchContext) {
           selectedTransitModePolicy = TRANSIT_MODE_POLICY_RECOMMENDED;
         }
+        // #97: a search for another place leaves the stops view; re-running the same search
+        // (time, day or site changed) keeps it and only the stops are refreshed.
+        if (mapStops.active && !sameTransitSearchContext) exitMapStops({ redraw: false });
         placeSearchRequestSerial += 1;
         if (sharedRouteState.active) {
           deactivateSharedRouteView();
@@ -36811,6 +38194,7 @@
           activeCombinedSearchCoordinator.dispose();
         }
         var requestId = ++routeRequestSerial;
+        currentRouteSearchSites = null;
         currentShuttleTransferOptions = [];
         currentShuttleTransferSessionId = '';
         currentShuttleTransferHasMore = false;
@@ -36842,7 +38226,7 @@
         ensureEndpointOptionsLoaded(direction)
           .then(function() {
             if (requestId !== routeRequestSerial) return null;
-            if (selectedEndpoints.size === 0) {
+            if (selectedEndpoints.size === 0 && !isMultiSiteSearch(timeBasis)) {
               if (searchCoordinator) {
                 searchCoordinator.updateDirect({ status: 'complete', count: 0, hasMore: false });
                 if (searchCoordinator.transferEnabled) {
@@ -36942,6 +38326,7 @@
                 if (typeof data.walk_otp_enabled === 'boolean') {
                   walkOtpEnabled = data.walk_otp_enabled;
                 }
+                currentRouteSearchSites = Array.isArray(data.sites) ? data.sites : null;
                 options._searchMode = normalizeRouteSearchMode(data.search_mode || activeRouteSearchMode);
                 return enrichDepartureRouteOptionsWithTransit(options, name, isDepart, {
                   timeBasis: timeBasis,
@@ -42420,6 +43805,27 @@
           settingsDraftRouteSearchMode = 'time';
           syncSettingsModalUi();
         });
+      }
+      if (settingsSearchModeRecommendedBtn) {
+        settingsSearchModeRecommendedBtn.addEventListener('click', function() {
+          settingsDraftRouteSearchMode = 'recommended';
+          syncSettingsModalUi();
+        });
+      }
+      // The switch arrives with the bootstrap response. Anyone without a stored choice
+      // (signed out, or never chose) moves to the recommended mode then.
+      function applyRecommendedSearchDefault() {
+        if (!recommendedSearchEnabled()) return;
+        var chosen = authState && authState.logged_in && authState.preferences && authState.preferences.route_search_mode;
+        if (chosen && chosen !== 'recommended') return;
+        if (sharedRouteContextLock.active && sharedRouteState.active) return;
+        defaultRouteSearchMode = 'recommended';
+        activeRouteSearchMode = 'recommended';
+        syncSettingsModalUi();
+      }
+      window.addEventListener('sg:flags', applyRecommendedSearchDefault);
+      if (window.__SG_BOOT && window.__SG_BOOT.promise) {
+        window.__SG_BOOT.promise.then(applyRecommendedSearchDefault);
       }
       if (settingsMaxDistanceSlider) {
         var handleSettingsMaxDistanceInput = function() {
