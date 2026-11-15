@@ -2044,7 +2044,7 @@
       display: flex;
       gap: 6px;
       overflow-x: auto;
-      padding: 8px 16px 4px;
+      padding: 10px 16px 0;
       scrollbar-width: none;
       -webkit-overflow-scrolling: touch;
     }
@@ -5780,18 +5780,18 @@
       .btn-map-stops { width: 44px; height: 44px; }
       .btn-map-stops img { width: 22px; height: 22px; }
     }
+    /* The same stop pin as on a drawn route. The tip of the image is at 50% / 93.5%. */
     .map-stop-dot {
-      width: 14px;
-      height: 14px;
-      box-sizing: border-box;
-      border-radius: 50%;
-      background: #1428A0;
-      border: 2px solid #fff;
-      box-shadow: 0 1px 4px rgba(0,0,0,.35);
+      width: 30px;
+      height: 30px;
+      background: url('/images/stop_icon.png') center/contain no-repeat;
       cursor: pointer;
+      transform-origin: 50% 93.5%;
+      transition: transform .12s ease;
     }
-    .map-stop-dot.alight-only { background: #c2410c; }
-    .map-stop-dot.selected { width: 20px; height: 20px; border-width: 3px; }
+    /* Drop-off only (nothing left to board after the chosen time): the same pin in red. */
+    .map-stop-dot.alight-only { filter: hue-rotate(135deg) saturate(1.5); }
+    .map-stop-dot.selected { transform: scale(1.4); }
     .map-stop-cluster {
       min-width: 30px;
       height: 30px;
@@ -6849,6 +6849,20 @@
     }
     .route-option-card .route-time-point-icon.arrive {
       background-image: url('/images/arrive_icon.png');
+    }
+    /* #97: the stop is also the start or the destination (no walk): two pins, slightly overlapped. */
+    .route-option-card .route-time-point-icon.start.with-stop,
+    .route-option-card .route-time-point-icon.stop.with-arrive {
+      width: 28px;
+      margin: 0 -5px;
+      background-size: 18px 18px, 18px 18px;
+      background-position: 10px 0, 0 0;
+    }
+    .route-option-card .route-time-point-icon.start.with-stop {
+      background-image: url('/images/stop_icon.png'), url('/images/start_icon.png');
+    }
+    .route-option-card .route-time-point-icon.stop.with-arrive {
+      background-image: url('/images/arrive_icon.png'), url('/images/stop_icon.png');
     }
     .route-option-card .route-timeline-point-time {
       width: 48px;
@@ -10865,6 +10879,7 @@
       <img src="/images/lucide-info.svg" alt="" aria-hidden="true" />
       <span>로그인하면 정류장 선택이 저장돼요. 우측 상단 ☰ 메뉴에서 로그인 해보세요.</span>
     </p>
+    <div class="endpoint-picker-site-tabs" id="endpointPickerSiteTabs" role="tablist" hidden></div>
     <div class="endpoint-picker-search-wrap">
       <input
         type="text"
@@ -10874,7 +10889,6 @@
         autocomplete="off"
       />
     </div>
-    <div class="endpoint-picker-site-tabs" id="endpointPickerSiteTabs" role="tablist" hidden></div>
     <div class="endpoint-picker-list" id="endpointPickerList" role="listbox"></div>
   </div>
 
@@ -11557,6 +11571,10 @@
       var currentSortMode = '';  // unset: the first search picks the order that matches its search mode
       var defaultRouteSearchMode = 'distance';
       var activeRouteSearchMode = 'distance';
+      // #101: set when "추천순" is picked from the sort menu of a search that used another
+      // mode. It lasts for that search (same place and direction) and does not change the
+      // user's default.
+      var routeSearchModeOverride = '';
       var currentRouteSearchModeUsed = 'distance';
       var ARRIVAL_BY_RECOMMENDED_WINDOW_MIN = 30;
       var ARRIVAL_BY_LATE_WINDOW_MIN = 10;
@@ -21840,13 +21858,26 @@
         return lines.join('\n');
       }
 
+      // #99: in the restaurant ranking a higher rank is drawn above a lower one, and the
+      // labels stay above the pins. Other place results keep their order (0 / 20).
+      function placePinZIndex(index, selected) {
+        var rank = Number(places[index] && places[index]._rank) || 0;
+        if (!rank) return selected ? 100 : 0;
+        return selected ? 400 : 200 - Math.min(100, rank);
+      }
+      function placeLabelZIndex(index, selected) {
+        var rank = Number(places[index] && places[index]._rank) || 0;
+        if (!rank) return selected ? 120 : 20;
+        return selected ? 420 : 320 - Math.min(100, rank);
+      }
+
       function syncPlaceLabelVisualState() {
         placeLabelEntries.forEach(function(entry) {
           if (!entry || !entry.element) return;
           var isSelected = entry.index === selectedPlaceIndex;
           entry.element.classList.toggle('selected', isSelected);
           if (entry.overlay && typeof entry.overlay.setZIndex === 'function') {
-            entry.overlay.setZIndex(isSelected ? 120 : 20);
+            entry.overlay.setZIndex(placeLabelZIndex(entry.index, isSelected));
           }
         });
       }
@@ -21991,7 +22022,7 @@
           xAnchor: 0,
           yAnchor: 0
         });
-        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(20);
+        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(placeLabelZIndex(index, false));
         overlay.setMap(map);
         placeLabelEntries.push({
           index: index,
@@ -22495,6 +22526,8 @@
           xAnchor: PLACE_PIN_TIP_X_ANCHOR,
           yAnchor: PLACE_PIN_TIP_Y_ANCHOR
         });
+        // #99: overlays stack in the order they are added, which put rank 37 above rank 1.
+        if (typeof overlay.setZIndex === 'function') overlay.setZIndex(placePinZIndex(index, false));
         overlay.setMap(map);
         overlays.push(overlay);
         markerElements.push(el);
@@ -22645,6 +22678,15 @@
           bubbleOverlay = null;
         }
         bubbleState = null;
+        // #97: the enlarged stop pin belongs to its bubble.
+        if (mapStops.selectedKey) {
+          mapStops.selectedKey = '';
+          if (mapContainer) {
+            mapContainer.querySelectorAll('.map-stop-dot.selected').forEach(function(el) {
+              el.classList.remove('selected');
+            });
+          }
+        }
       }
 
       function closeBubbleIfOutside(e) {
@@ -22789,12 +22831,13 @@
           mapClickIgnore = true;
           showMapStopBubble(item.siteId, row);
         });
-        addMapStopOverlay(row[1], row[2], el, 0.5, 4);
+        el.setAttribute('data-stop-key', key);
+        addMapStopOverlay(row[1], row[2], el, 0.935, key === mapStops.selectedKey ? 6 : 4);
         if (showName) {
           var nameEl = document.createElement('div');
           nameEl.className = 'map-stop-name';
           nameEl.textContent = row[3];
-          addMapStopOverlay(row[1], row[2], nameEl, -0.55, 2);
+          addMapStopOverlay(row[1], row[2], nameEl, -0.2, 2);
         }
       }
       function refreshMapStops() {
@@ -22881,8 +22924,9 @@
         if (!place) return;
         place._stop = true;
         blurActiveSearchInputs();
-        mapStops.selectedKey = siteId + ':' + row[0];
+        // showBubbleWithPlace closes the previous bubble first, which clears the old selection.
         showBubbleWithPlace(place, row[1], row[2], false, null, 'manual');
+        mapStops.selectedKey = siteId + ':' + row[0];
         scheduleMapStopsRender(0);
         var box = bubbleOverlay && bubbleOverlay.querySelector('.bubble-box');
         if (!box) return;
@@ -23311,7 +23355,7 @@
           m.classList.remove('hover');
         });
         overlays.forEach(function(o, i) {
-          o.setZIndex(i === index ? 100 : 0);
+          o.setZIndex(placePinZIndex(i, i === index));
         });
         resultsList.querySelectorAll('.result-card').forEach(function(c) {
           c.classList.remove('highlight');
@@ -23328,8 +23372,8 @@
         markerElements.forEach(function(m) {
           m.classList.remove('selected', 'hover');
         });
-        overlays.forEach(function(o) {
-          o.setZIndex(0);
+        overlays.forEach(function(o, i) {
+          o.setZIndex(placePinZIndex(i, false));
         });
         syncPlaceLabelVisualState();
         schedulePlaceLabelLayout();
@@ -24152,6 +24196,34 @@
       function formatRouteSegmentDuration(totalMinutes) {
         var value = Math.max(1, Math.round(Number(totalMinutes) || 0));
         return String(value) + '분';
+      }
+
+      // #97: the searched place is the boarding or drop-off stop itself (within 15 m), so
+      // there is no walk leg. The walk path has no route for such a pair, which used to
+      // leave the card without its total time.
+      var ROUTE_ZERO_WALK_MAX_M = 15;
+      function isRouteZeroWalkOption(option, isDepart) {
+        if (!option || isShuttleTransferOption(option)) return false;
+        var leg = getOptionWalkLegPositions(option.positions || [], isDepart);
+        if (!leg) return false;
+        var distanceM = haversineDistanceMeters(leg.fromPos, leg.toPos);
+        return isFinite(distanceM) && distanceM <= ROUTE_ZERO_WALK_MAX_M;
+      }
+      // The stop and the place become one row (both pins), and the walk leaves the timeline.
+      function collapseZeroWalkTimeline(data, isDepart) {
+        if (!data || !Array.isArray(data.points) || data.points.length !== 3) return data;
+        var points = data.points;
+        var stop = points[1];
+        var merged = {
+          icon: isDepart ? 'start' : 'stop',
+          icon_kind: isDepart ? 'with-stop' : 'with-arrive',
+          time: stop.time, name: stop.name, role: stop.role
+        };
+        data.points = isDepart ? [merged, points[2]] : [points[0], merged];
+        data.connectors = (data.connectors || []).filter(function(item) { return item && item.kind !== 'walk'; });
+        data.segments = (data.segments || []).filter(function(item) { return item && item.kind !== 'walk'; });
+        data.zero_walk = true;
+        return data;
       }
 
       function getWalkMinutesForSummary(walkInfo) {
@@ -25002,7 +25074,7 @@
         var busMinutes = estimateRouteBusDurationMinutes(routeStops, option, isDepart, resolvedStops);
         var routeLabel = String(option.route_name || '').trim() || '이동 노선';
         var displayPlaceName = getRouteDisplayPlaceName(placeName);
-        return {
+        return (isRouteZeroWalkOption(option, isDepart) ? collapseZeroWalkTimeline : function(data) { return data; })({
           has_eta: false,
           departure_time: getOptionDisplayDepartureTime(option),
           start_at: '',
@@ -25035,12 +25107,13 @@
                 { kind: 'bus', text: buildRouteShuttleConnectorText(routeLabel, '', shuttleStopMoveCount) },
                 { kind: 'walk', text: buildWalkConnectorText(option, isDepart, walkInfo) }
               ]
-        };
+        }, isDepart);
       }
 
       function buildRouteTimeSummaryData(option, placeName, isDepart, departureTime, detail, walkInfo) {
         var routeStops = Array.isArray(detail && detail.route_stops) ? detail.route_stops : [];
-        var walkMinutes = getWalkMinutesForSummary(walkInfo);
+        var zeroWalk = isRouteZeroWalkOption(option, isDepart);
+        var walkMinutes = zeroWalk ? 0 : getWalkMinutesForSummary(walkInfo);
         if (walkMinutes == null) return null;
 
         var resolvedStops = resolveRouteSummaryStops(routeStops, option, isDepart);
@@ -25063,7 +25136,7 @@
         var totalMinutes = walkMinutes + busMinutes;
         var displayPlaceName = getRouteDisplayPlaceName(placeName);
         var routeLabel = String(option && option.route_name || '').trim() || '이동 노선';
-        return {
+        return (zeroWalk ? collapseZeroWalkTimeline : function(data) { return data; })({
           has_eta: true,
           departure_time: String(detail && detail.selected_departure_time || departureTime || '').trim() || getOptionDisplayDepartureTime(option),
           start_at: startAt,
@@ -25096,7 +25169,7 @@
                 { kind: 'bus', text: buildBusConnectorText(routeLabel, busMinutes, shuttleStopMoveCount) },
                 { kind: 'walk', text: buildWalkConnectorText(option, isDepart, walkInfo) }
               ]
-        };
+        }, isDepart);
       }
 
       function buildRouteTimeSummaryHeadHtml(summary) {
@@ -26215,7 +26288,10 @@
             })();
         var summarySelection = routeDepartureSelections.get(option);
         var summaryRequest = routeRequestSerial, summarySite = selectedSiteId, summaryDay = selectedDayType, summaryDate = getTodayKstDateText();
-        var walkPromise = fetchWalkPathData(walkLeg.fromPos, walkLeg.toPos);
+        // No walk leg to look up when the place is the stop itself (#97).
+        var walkPromise = isRouteZeroWalkOption(option, isDepart)
+          ? Promise.resolve(null)
+          : fetchWalkPathData(walkLeg.fromPos, walkLeg.toPos);
         var pending = Promise.all([detailPromise, walkPromise])
           .then(function(values) {
             var detail = values[0] || null;
@@ -35452,7 +35528,7 @@
         ).trim();
         var omitTime = !!opts.omitTime;
         var searchMode = normalizeRouteSearchMode(
-          opts.searchMode != null ? opts.searchMode : activeRouteSearchMode
+          opts.searchMode != null ? opts.searchMode : (routeSearchModeOverride || activeRouteSearchMode)
         );
         var url = API_BASE + endpoint +
           '?site_id=' + selectedSiteId +
@@ -36581,7 +36657,9 @@
         var isArrivalBy = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed);
         var recommendedSearch = !isArrivalBy && normalizeRouteSearchMode(currentRouteSearchModeUsed) === 'recommended';
         if (recommendedBtn) {
-          recommendedBtn.style.display = (isArrivalBy || recommendedSearch) ? '' : 'none';
+          // Offered on every depart-at search once the switch is on, also to users whose
+          // default is another mode: picking it searches again in the recommended order.
+          recommendedBtn.style.display = (isArrivalBy || recommendedSearch || recommendedSearchEnabled()) ? '' : 'none';
           recommendedBtn.classList.toggle('active', (isArrivalBy || recommendedSearch) && currentSortMode === 'recommended');
         }
         if (distanceBtn) {
@@ -36648,6 +36726,25 @@
       }
 
       function applyRouteSortMode(mode) {
+        // The recommended order is the server's. A search that used another mode has no
+        // scores to sort by, so it is run again as a recommended search.
+        if (String(mode || '') === 'recommended' && recommendedSearchEnabled() &&
+            !isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed) &&
+            normalizeRouteSearchMode(currentRouteSearchModeUsed) !== 'recommended') {
+          closeRouteSortMenu(true);
+          routeSearchModeOverride = 'recommended';
+          currentSortMode = 'recommended';
+          var searching = refreshLastShuttleResult({
+            loadingTitle: '추천순으로 노선을 다시 찾는 중입니다.',
+            loadingMessage: '도착이 빠른 순서로 노선을 다시 확인하고 있습니다.'
+          });
+          if (searching === false) {
+            routeSearchModeOverride = '';
+            currentSortMode = getEffectiveRouteSortMode('', currentRouteTimeBasisUsed);
+            updateSortButtons();
+          }
+          return;
+        }
         var next = getEffectiveRouteSortMode(mode, currentRouteTimeBasisUsed);
         closeRouteSortMenu(true);
         if (currentSortMode === next) return;
@@ -37949,6 +38046,8 @@
         currentSortMode = isArrivalByRouteTimeBasis(currentRouteTimeBasisUsed)
           ? normalizeArrivalByRouteSortMode(currentSortMode)
           : normalizeDepartureRouteSortMode(currentSortMode, currentRouteSearchModeUsed);
+        // The menu was last drawn before this result named its search mode.
+        updateSortButtons();
         if (options.length > 0) {
           var hasPinnedOption = getCurrentRouteCanonicalOptions().some(function(item) {
             return Number(item && item.route_id) === Number(currentPinnedRouteId || 0);
@@ -38157,6 +38256,7 @@
         // #97: a search for another place leaves the stops view; re-running the same search
         // (time, day or site changed) keeps it and only the stops are refreshed.
         if (mapStops.active && !sameTransitSearchContext) exitMapStops({ redraw: false });
+        if (!sameTransitSearchContext) routeSearchModeOverride = '';
         placeSearchRequestSerial += 1;
         if (sharedRouteState.active) {
           deactivateSharedRouteView();
