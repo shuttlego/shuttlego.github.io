@@ -5757,6 +5757,8 @@
     }
     /* v0.9.8 (#97, switch: map_stops): every stop that still has service, on the map */
     .btn-map-stops[hidden] { display: none !important; }
+    /* zoom_live_overlays: the map SDK hides its overlay layer while it zooms; keep it shown. */
+    .sg-zoom-live { display: block !important; }
     .btn-map-stops {
       width: 48px;
       height: 48px;
@@ -21170,7 +21172,10 @@
           mapDragStartedAt = Date.now();
           markUserMapIntent('map-drag');
         });
+        kakao.maps.event.addListener(map, 'tilesloaded', armZoomLiveOverlays);
+        kakao.maps.event.addListener(map, 'zoom_start', beginZoomLiveOverlays);
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
+          endZoomLiveOverlays();
           updatePinScale();
           refreshBubbleOverlayPosition();
           scheduleCurrentLocationOverlayPositionRefresh();
@@ -21191,6 +21196,8 @@
           scheduleCurrentLocationOverlayPositionRefresh();
         });
         kakao.maps.event.addListener(map, 'idle', function() {
+          endZoomLiveOverlays();
+          armZoomLiveOverlays();
           if (mapStops.active) scheduleMapStopsRender(60);
           refreshBubbleOverlayPosition();
           refreshCurrentLocationOverlayPosition();
@@ -22700,6 +22707,149 @@
         setMapDimmed(false);
       }
 
+      // ── Overlays during a zoom (switch: zoom_live_overlays) ──────────────────────────────
+      // While it zooms, the map SDK hides its overlay layer (display: none): pins, labels,
+      // stops and buses vanish until the zoom ends (about 0.3 s with the wheel, the whole
+      // gesture with two fingers). Meanwhile it moves the tiles: a wheel step resizes the tile
+      // images, a pinch scales the whole tile layer and then resizes the images to settle.
+      // Here the layer stays shown and every overlay is moved each frame by what the tiles
+      // are doing: with a tile at T0 (width w0) before and at T (width w) now, a point that
+      // was at p on the screen belongs at T + (p - T0) * w / w0. Both are read from where one
+      // tile image is on the screen, so this follows whatever the SDK does, at its own
+      // timing. Overlays keep their size. If the SDK's layout is not the one expected,
+      // nothing is done and the SDK behaves as before.
+      var zoomLive = { running: false, pane: null, holder: null, tile: null, tile0: null, holder0: null, bubble: null,
+        observer: null, paneObserver: null, timer: null };
+      function zoomLiveOverlaysEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!flags.zoom_live_overlays;
+      }
+      function findMapOverlayPane() {
+        if (zoomLive.pane && zoomLive.pane.isConnected) return zoomLive.pane;
+        if (!mapContainer) return null;
+        // The overlay layer: a zero-height, full-width absolute box next to the tile layers.
+        var candidates = mapContainer.querySelectorAll('div');
+        for (var i = 0; i < candidates.length; i++) {
+          var style = candidates[i].style;
+          if (style.position === 'absolute' && style.width === '100%' && style.height === '0px' &&
+              candidates[i].parentElement && candidates[i].parentElement.querySelector(':scope > div > img')) {
+            zoomLive.pane = candidates[i];
+            return zoomLive.pane;
+          }
+        }
+        return null;
+      }
+      // The SDK hides the layer when a zoom begins (wheel step, double click, or the moment two
+      // fingers start to pinch, before any zoom event) and shows it when the zoom is over.
+      // Watching that is the one signal that covers every kind of zoom.
+      function armZoomLiveOverlays() {
+        if (!zoomLiveOverlaysEnabled()) return;
+        if (zoomLive.paneObserver && zoomLive.pane && zoomLive.pane.isConnected) return;
+        if (zoomLive.paneObserver) { zoomLive.paneObserver.disconnect(); zoomLive.paneObserver = null; }
+        var pane = findMapOverlayPane();
+        if (!pane) return;
+        try {
+          zoomLive.paneObserver = new MutationObserver(function() {
+            if (pane.style.display === 'none') beginZoomLiveOverlays();
+            else endZoomLiveOverlays();
+          });
+          zoomLive.paneObserver.observe(pane, { attributes: true, attributeFilter: ['style'] });
+        } catch (e) { zoomLive.paneObserver = null; }
+      }
+      function readZoomTileRect(img) {
+        var rect = img.isConnected ? img.getBoundingClientRect() : null;
+        return rect && rect.width > 0 ? { left: rect.left, top: rect.top, width: rect.width } : null;
+      }
+      function readZoomHolder(holder) {
+        var rect = holder.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, styleLeft: parseFloat(holder.style.left) || 0, styleTop: parseFloat(holder.style.top) || 0 };
+      }
+      function stepZoomLiveOverlays() {
+        if (!zoomLive.running) return;
+        var now = readZoomTileRect(zoomLive.tile), tile0 = zoomLive.tile0, holder0 = zoomLive.holder0;
+        if (!now) return;
+        var scale = now.width / tile0.width;
+        // The SDK also pans the box that holds the layers; the overlays ride along with it.
+        var shiftX = (parseFloat(zoomLive.holder.style.left) || 0) - holder0.styleLeft;
+        var shiftY = (parseFloat(zoomLive.holder.style.top) || 0) - holder0.styleTop;
+        // Read live: an overlay added or moved while the zoom lasts (a bus) is placed too.
+        var children = zoomLive.pane.children;
+        for (var n = 0; n < children.length; n++) {
+          var el = children[n], x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+          if (!isFinite(x) || !isFinite(y)) continue;
+          var px = holder0.left + x, py = holder0.top + y;
+          el.style.transform = 'translate(' + (now.left + (px - tile0.left) * scale - px - shiftX).toFixed(1) + 'px,' +
+            (now.top + (py - tile0.top) * scale - py - shiftY).toFixed(1) + 'px)';
+        }
+        // The bubble is our own element on the map box: it does not ride with the layers.
+        var bubble = zoomLive.bubble;
+        if (bubble && bubble.el.isConnected) {
+          bubble.el.style.transform = 'translate(' + (now.left + (bubble.x - tile0.left) * scale - bubble.x).toFixed(1) + 'px,' +
+            (now.top + (bubble.y - tile0.top) * scale - bubble.y).toFixed(1) + 'px)';
+        }
+        // Still zooming (a pinch lasts as long as the fingers stay): push the safety net back.
+        clearTimeout(zoomLive.timer);
+        zoomLive.timer = setTimeout(endZoomLiveOverlays, 8000);
+      }
+      function beginZoomLiveOverlays() {
+        if (!zoomLiveOverlaysEnabled() || zoomLive.running) return;
+        var pane = findMapOverlayPane();
+        var holder = pane && pane.parentElement;
+        if (!holder) return;
+        // A tile of the layer on top: the one the SDK animates.
+        var tile = null;
+        for (var i = 0; i < holder.children.length && !tile; i++) {
+          var layer = holder.children[i];
+          if (layer !== pane && layer.style.zIndex === '1') tile = layer.querySelector(':scope > img');
+        }
+        tile = tile || holder.querySelector(':scope > div > img');
+        var tile0 = tile && readZoomTileRect(tile);
+        if (!tile0) return;
+        var holder0 = readZoomHolder(holder);
+        // The point of the map the bubble belongs to, on the screen: its pin's, or the one it
+        // was last placed for.
+        var bubble = null;
+        if (bubbleOverlay && bubbleState) {
+          var pinEl = bubbleState.hasPin ? markerElements[Number(bubbleState.markerIndex)] : null;
+          var wrap = pinEl && pinEl.parentElement && pinEl.parentElement.parentElement === pane ? pinEl.parentElement : null;
+          var bx = wrap ? parseFloat(wrap.style.left) : NaN, by = wrap ? parseFloat(wrap.style.top) : NaN;
+          if (isFinite(bx) && isFinite(by)) {
+            bubble = { el: bubbleOverlay, x: holder0.left + bx, y: holder0.top + by };
+          } else if (bubbleState.point && mapContainer) {
+            var mapRect = mapContainer.getBoundingClientRect();
+            bubble = { el: bubbleOverlay, x: mapRect.left + bubbleState.point.x, y: mapRect.top + bubbleState.point.y };
+          }
+        }
+        zoomLive.running = true;
+        zoomLive.holder = holder; zoomLive.tile = tile; zoomLive.tile0 = tile0; zoomLive.holder0 = holder0; zoomLive.bubble = bubble;
+        pane.classList.add('sg-zoom-live');
+        // Runs right after the SDK moves the tiles, before that frame is painted, so the
+        // overlays never lag a frame behind the tiles.
+        try {
+          zoomLive.observer = new MutationObserver(stepZoomLiveOverlays);
+          [tile, tile.parentElement, holder].forEach(function(target) {
+            zoomLive.observer.observe(target, { attributes: true, attributeFilter: ['style'] });
+          });
+        } catch (e) { zoomLive.observer = null; }
+        // A zoom ends when the SDK shows its layer again; this is only a safety net.
+        clearTimeout(zoomLive.timer);
+        zoomLive.timer = setTimeout(endZoomLiveOverlays, 8000);
+      }
+      function endZoomLiveOverlays() {
+        if (!zoomLive.running) return;
+        zoomLive.running = false;
+        if (zoomLive.observer) { zoomLive.observer.disconnect(); zoomLive.observer = null; }
+        clearTimeout(zoomLive.timer);
+        // The SDK has written the final positions by now; our offsets go in the same frame.
+        if (zoomLive.pane) {
+          var children = zoomLive.pane.children;
+          for (var n = 0; n < children.length; n++) { if (children[n].style.transform) children[n].style.transform = ''; }
+          zoomLive.pane.classList.remove('sg-zoom-live');
+        }
+        if (zoomLive.bubble) zoomLive.bubble.el.style.transform = '';
+        zoomLive.bubble = null; zoomLive.tile = null; zoomLive.tile0 = null; zoomLive.holder0 = null;
+      }
+
       // ── #97: stops on the map ────────────────────────────────────────────
       function mapStopsEnabled() {
         var flags = window.__SG_FLAGS || {};
@@ -23037,6 +23187,7 @@
           var clickPt = proj.containerPointFromCoords(pos);
           clickX = clickPt.x;
           clickY = clickPt.y;
+          if (container === bubbleOverlay && bubbleState) bubbleState.point = { x: clickX, y: clickY };
         } else {
           clickX = mapContainer.clientWidth / 2;
           clickY = mapContainer.clientHeight / 2;
