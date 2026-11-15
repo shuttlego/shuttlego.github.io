@@ -41962,6 +41962,15 @@
         notice.__hideTimer = setTimeout(function() { notice.hidden = true; }, 4000);
       }
 
+      // The server answers with the service date its ETAs were calculated for: the date asked
+      // for, or the next day that day type runs (a weekday search on a weekend gets the coming
+      // Monday). Only an answer for an earlier date is stale.
+      function isEtaReferenceDateCurrent(answeredDate, askedDate) {
+        var answered = String(answeredDate || '').trim(), asked = String(askedDate || '').trim();
+        if (!answered || !asked) return true;
+        return /^\d{4}-\d{2}-\d{2}$/.test(answered) && answered >= asked;
+      }
+
       function canSelectRouteDeparture(option, departureTime) {
         if (!option || isShuttleTransferOption(option) || option.__favoriteSnapshotOnly) return false;
         if (!/^\d{2}:\d{2}$/.test(departureTime) ||
@@ -42126,7 +42135,7 @@
                 !Array.isArray(detail.route_stops) || !detail.route_stops.length ||
                 (!sharedRouteState.active && (String(detail.route_uuid || '') !== String(option.route_uuid || option.resolved_route_uuid || '') ||
                   Number(detail.route_id) !== Number(option.route_id) || String(detail.site_id) !== String(option.site_id || site))) ||
-                (detail.eta_reference_date && detail.eta_reference_date !== date)) {
+                !isEtaReferenceDateCurrent(detail.eta_reference_date, date)) {
               routeVariantDetailCache.delete(buildRouteVariantDetailCacheKey(option.route_id, day, departureTime, '', date));
               throw new Error('departure_mismatch');
             }
