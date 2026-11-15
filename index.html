@@ -23782,7 +23782,19 @@
             : '도보 연결';
           return formatDistance(option && option.distance_m) + ' · ' + arrivalMode;
         }
-        return formatDistance(option && option.distance_m) + ' · ' + timeStr + ' 노선';
+        return formatDistance(option && option.distance_m) + ' · ' + timeStr + ' 노선' + routeDepartedPassNote(option, timeStr);
+      }
+
+      // recommended_stop_time: the server offers a bus that already left its first stop while
+      // it is still ahead of the boarding stop. The card's time is the first-stop departure,
+      // which reads as a bus that is gone; say when it passes the stop the user boards at.
+      function routeDepartedPassNote(option, shownTime) {
+        var recommend = option && option.recommend;
+        var pass = recommend && recommend.departed === true ? String(recommend.board_pass_time || '').trim() : '';
+        if (!/^\d{1,2}:\d{2}$/.test(pass)) return '';
+        // Only for the departure the server judged, not one the user picked on the card.
+        if (String(option.board_time || '').trim() !== String(shownTime || '').trim()) return '';
+        return ' · 탑승 정류장 ' + pass + ' 통과';
       }
 
       function syncRouteCardMeta(card, option, isDepart) {
