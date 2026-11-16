@@ -2637,6 +2637,11 @@
       background: #111;
       color: #fff;
     }
+    .home-favorite-badge.sites {
+      border: 1px solid #c9ced6;
+      background: #fff;
+      color: #444;
+    }
     .home-favorite-badge.unavailable {
       background: #fff1f2;
       color: #b91c1c;
@@ -11496,9 +11501,14 @@
       // v0.9.8 (#102, switch: multi_site). The stored selection, primary first. It is used
       // only while it contains selectedSiteId; see getActiveSiteIds().
       var selectedSiteIds = [];
+      // The site list of a repeated multi-site search (a recent search or a shared link),
+      // primary first. It lasts until the user picks sites again and is never stored.
+      var contextSiteIds = null;
       var siteDayTypesById = {};
       var sitePickerDraftIds = null;
       var currentRouteSearchSites = null;
+      // Per-site statuses of the last multi-site transfer search (#102 phase 2), else null.
+      var currentTransferSearchSites = null;
       var endpointPickerSiteTab = '';
       var siteEndpointTabState = {};
       var selectedDayType = 'weekday';
@@ -15086,6 +15096,14 @@
           transferBadge.textContent = '환승';
           topLine.appendChild(transferBadge);
         }
+        var recentSiteIds = multiSiteEnabled() ? normalizeContextSiteIds(recent.site_ids, recent.site_id) : null;
+        if (recentSiteIds) {
+          var sitesBadge = document.createElement('span');
+          sitesBadge.className = 'home-favorite-badge sites';
+          sitesBadge.textContent = '사업장 ' + recentSiteIds.length + '곳';
+          sitesBadge.title = recentSiteIds.map(getSiteNameById).join(', ');
+          topLine.appendChild(sitesBadge);
+        }
         body.appendChild(topLine);
 
         row.appendChild(body);
@@ -17234,6 +17252,8 @@
             if (siteSelect && siteSelect.value !== siteId) siteSelect.value = siteId;
           }
           selectedSiteId = siteId;
+          // #102: a search that was made over several sites is repeated over the same sites.
+          contextSiteIds = normalizeContextSiteIds(resolvedContext.site_ids, siteId);
           updateSiteTriggerText();
         }
 
@@ -17323,6 +17343,7 @@
         var placeSource = String(recent.source || '').trim().toLowerCase() === 'map' ? 'map' : 'search';
         var context = {
           site_id: siteId,
+          site_ids: Array.isArray(recent.site_ids) ? recent.site_ids : null,
           day_type: dayType,
           direction: direction,
           time_basis: String(recent.time_basis || selectedRouteTimeBasis || 'depart_at'),
@@ -19079,21 +19100,50 @@
       // another site shows that one site without rewriting the stored list.
       function getActiveSiteIds() {
         var primary = String(selectedSiteId || '').trim();
-        if (!multiSiteEnabled() || !Array.isArray(selectedSiteIds) || selectedSiteIds.indexOf(primary) < 0) {
-          return [primary];
-        }
+        if (!multiSiteEnabled()) return [primary];
+        var listed = contextSiteIds && contextSiteIds[0] === primary ? contextSiteIds : selectedSiteIds;
+        if (!Array.isArray(listed) || listed.indexOf(primary) < 0) return [primary];
         var ids = [primary];
-        selectedSiteIds.forEach(function(raw) {
+        listed.forEach(function(raw) {
           var id = String(raw || '').trim();
           if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
         });
         return ids;
       }
-      // Phase 1: only the ordinary (depart-at, direct) search covers several sites.
+      // The sites a recent search or a shared link was made with: the primary site first and at
+      // least one more site this page knows. Anything else means "no list of its own".
+      function normalizeContextSiteIds(raw, primaryId) {
+        var primary = String(primaryId || '').trim();
+        if (!Array.isArray(raw) || !primary) return null;
+        var ids = [];
+        raw.forEach(function(value) {
+          var id = String(value || '').trim();
+          if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
+        });
+        return ids.length >= 2 && ids[0] === primary ? ids : null;
+      }
+      // Does the search about to run (or just run) cover every selected site? The ordinary
+      // (depart-at, direct) search always does; the others each have a switch (#102 phase 2).
       function isMultiSiteSearch(timeBasis) {
-        return getActiveSiteIds().length >= 2 &&
-          normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) !== 'arrive_by' &&
-          !selectedShuttleTransferSearch && !selectedTransitSearch;
+        if (getActiveSiteIds().length < 2) return false;
+        var flags = window.__SG_FLAGS || {};
+        var arriveBy = normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) === 'arrive_by';
+        // A search can combine parts (arrive-by with transfers, ...): all of them must be on.
+        if (arriveBy && !flags.multi_site_arrive_by) return false;
+        if (selectedShuttleTransferSearch && !flags.multi_site_transfer) return false;
+        if (selectedTransitSearch && !arriveBy && !selectedShuttleTransferSearch && !flags.multi_site_transit) return false;
+        return true;
+      }
+      // What a multi-site search sends besides site_id; null when the search covers one site.
+      function multiSiteRequestFields(direction, timeBasis) {
+        if (!isMultiSiteSearch(timeBasis)) return null;
+        var siteIds = getActiveSiteIds();
+        var endpoints = {};
+        siteIds.forEach(function(siteId) {
+          var names = getSiteEndpointSelectionForSearch(siteId, direction);
+          if (names) endpoints[siteId] = names;
+        });
+        return { site_ids: siteIds, site_endpoints: endpoints };
       }
       function siteHasDayType(siteId, dayType) {
         var list = siteDayTypesById[String(siteId || '')];
@@ -19128,6 +19178,7 @@
         if (!ids.length) return Promise.resolve(false);
         var before = getActiveSiteIds().join(',');
         var primaryChanged = ids[0] !== String(selectedSiteId || '').trim();
+        contextSiteIds = null;
         selectedSiteIds = ids.slice();
         siteSelectionTouchedByUser = true;
         try { localStorage.setItem('sg_site_ids', JSON.stringify(selectedSiteIds)); } catch (e) {}
@@ -21448,6 +21499,7 @@
 
       siteSelect.addEventListener('change', function() {
         siteSelectionTouchedByUser = true;
+        contextSiteIds = null;
         selectedSiteIds = [String(siteSelect.value || '')];
         applySiteSelection(siteSelect.value, {
           persistPreference: true
@@ -32220,6 +32272,10 @@
           signal: opts && opts.signal ? opts.signal : undefined
         }).then(function(resp) {
           return _parseArrivalSearchV2Response(resp, 'arrive-search create');
+        }).then(function(data) {
+          // #102 phase 2: per-site statuses of a multi-site arrive-by search (absent otherwise).
+          currentRouteSearchSites = data && Array.isArray(data.sites) ? data.sites : null;
+          return data;
         });
       }
 
@@ -32353,6 +32409,11 @@
           radius_steps_km: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
           exclude_route_ids: excludeRouteIds
         };
+        var multiSite = multiSiteRequestFields(payload.direction, 'arrive_by');
+        if (multiSite) {
+          payload.site_ids = multiSite.site_ids;
+          payload.site_endpoints = multiSite.site_endpoints;
+        }
         if (overrides.sessionId) payload.session_id = String(overrides.sessionId);
         return payload;
       }
@@ -34844,6 +34905,13 @@
               : selectedShuttleTransferMaxTransfers
           );
         }
+        if (multiSiteEnabled() && isMultiSiteSearch(snapshot.time_basis)) {
+          // #102: the sites this search covered, the shared route's site first, so that
+          // "search again" from the link covers the same sites.
+          snapshot.site_ids = [snapshot.site_id].concat(getActiveSiteIds().filter(function(id) {
+            return id !== snapshot.site_id;
+          }));
+        }
         var sharedVariantDetail = buildSharedVariantDetailSnapshot(option);
         if (sharedVariantDetail) snapshot.shared_variant_detail = stripPrivateSnapshotFields(sharedVariantDetail);
         var walkSnapshot = getSuccessfulWalkShareSnapshot(option, isDepart);
@@ -36148,6 +36216,11 @@
           include_transit: !!selectedTransitSearch,
           defer_display_extras: true
         };
+        var multiSite = multiSiteRequestFields(payload.direction, payload.time_basis);
+        if (multiSite) {
+          payload.site_ids = multiSite.site_ids;
+          payload.site_endpoints = multiSite.site_endpoints;
+        }
         if (params.sessionId) payload.session_id = String(params.sessionId);
         return payload;
       }
@@ -36173,6 +36246,7 @@
           body: JSON.stringify(buildShuttleTransferSearchPayload(params)),
           signal: params.signal || undefined
         }).then(parseShuttleTransferResponse).then(function(data) {
+          currentTransferSearchSites = Array.isArray(data.sites) ? data.sites : null;
           if (data.enabled === false) return data;
           var options = Array.isArray(data.options) ? data.options : [];
           applyRouteCollectorUpdatedAt(data, options);
@@ -38048,6 +38122,17 @@
             .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
           if (noService.length > 0) text = noService.join(', ') + ': 이 요일에는 운행하는 노선이 없어요.';
         }
+        if (isMultiSiteSearch(currentRouteTimeBasisUsed) && selectedShuttleTransferSearch &&
+            Array.isArray(currentTransferSearchSites)) {
+          // A transfer search covers only the first few selected sites (one router search each).
+          var notSearched = currentTransferSearchSites
+            .filter(function(site) { return site && site.status === 'not_searched'; })
+            .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
+          if (notSearched.length > 0) {
+            text += (text ? ' ' : '') + '환승 경로는 ' + (currentTransferSearchSites.length - notSearched.length) +
+              '개 사업장에서만 찾았어요. 제외: ' + notSearched.join(', ');
+          }
+        }
         if (!text) return;
         var notice = document.createElement('div');
         notice.className = 'route-multi-site-notice';
@@ -38458,6 +38543,7 @@
         }
         var requestId = ++routeRequestSerial;
         currentRouteSearchSites = null;
+        currentTransferSearchSites = null;
         currentShuttleTransferOptions = [];
         currentShuttleTransferSessionId = '';
         currentShuttleTransferHasMore = false;
