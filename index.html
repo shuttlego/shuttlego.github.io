@@ -2637,6 +2637,11 @@
       background: #111;
       color: #fff;
     }
+    .home-favorite-badge.sites {
+      border: 1px solid #c9ced6;
+      background: #fff;
+      color: #444;
+    }
     .home-favorite-badge.unavailable {
       background: #fff1f2;
       color: #b91c1c;
@@ -11496,6 +11501,9 @@
       // v0.9.8 (#102, switch: multi_site). The stored selection, primary first. It is used
       // only while it contains selectedSiteId; see getActiveSiteIds().
       var selectedSiteIds = [];
+      // The site list of a repeated multi-site search (a recent search or a shared link),
+      // primary first. It lasts until the user picks sites again and is never stored.
+      var contextSiteIds = null;
       var siteDayTypesById = {};
       var sitePickerDraftIds = null;
       var currentRouteSearchSites = null;
@@ -15086,6 +15094,14 @@
           transferBadge.textContent = '환승';
           topLine.appendChild(transferBadge);
         }
+        var recentSiteIds = multiSiteEnabled() ? normalizeContextSiteIds(recent.site_ids, recent.site_id) : null;
+        if (recentSiteIds) {
+          var sitesBadge = document.createElement('span');
+          sitesBadge.className = 'home-favorite-badge sites';
+          sitesBadge.textContent = '사업장 ' + recentSiteIds.length + '곳';
+          sitesBadge.title = recentSiteIds.map(getSiteNameById).join(', ');
+          topLine.appendChild(sitesBadge);
+        }
         body.appendChild(topLine);
 
         row.appendChild(body);
@@ -17234,6 +17250,8 @@
             if (siteSelect && siteSelect.value !== siteId) siteSelect.value = siteId;
           }
           selectedSiteId = siteId;
+          // #102: a search that was made over several sites is repeated over the same sites.
+          contextSiteIds = normalizeContextSiteIds(resolvedContext.site_ids, siteId);
           updateSiteTriggerText();
         }
 
@@ -17323,6 +17341,7 @@
         var placeSource = String(recent.source || '').trim().toLowerCase() === 'map' ? 'map' : 'search';
         var context = {
           site_id: siteId,
+          site_ids: Array.isArray(recent.site_ids) ? recent.site_ids : null,
           day_type: dayType,
           direction: direction,
           time_basis: String(recent.time_basis || selectedRouteTimeBasis || 'depart_at'),
@@ -19079,15 +19098,27 @@
       // another site shows that one site without rewriting the stored list.
       function getActiveSiteIds() {
         var primary = String(selectedSiteId || '').trim();
-        if (!multiSiteEnabled() || !Array.isArray(selectedSiteIds) || selectedSiteIds.indexOf(primary) < 0) {
-          return [primary];
-        }
+        if (!multiSiteEnabled()) return [primary];
+        var listed = contextSiteIds && contextSiteIds[0] === primary ? contextSiteIds : selectedSiteIds;
+        if (!Array.isArray(listed) || listed.indexOf(primary) < 0) return [primary];
         var ids = [primary];
-        selectedSiteIds.forEach(function(raw) {
+        listed.forEach(function(raw) {
           var id = String(raw || '').trim();
           if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
         });
         return ids;
+      }
+      // The sites a recent search or a shared link was made with: the primary site first and at
+      // least one more site this page knows. Anything else means "no list of its own".
+      function normalizeContextSiteIds(raw, primaryId) {
+        var primary = String(primaryId || '').trim();
+        if (!Array.isArray(raw) || !primary) return null;
+        var ids = [];
+        raw.forEach(function(value) {
+          var id = String(value || '').trim();
+          if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
+        });
+        return ids.length >= 2 && ids[0] === primary ? ids : null;
       }
       // Phase 1: only the ordinary (depart-at, direct) search covers several sites.
       function isMultiSiteSearch(timeBasis) {
@@ -19128,6 +19159,7 @@
         if (!ids.length) return Promise.resolve(false);
         var before = getActiveSiteIds().join(',');
         var primaryChanged = ids[0] !== String(selectedSiteId || '').trim();
+        contextSiteIds = null;
         selectedSiteIds = ids.slice();
         siteSelectionTouchedByUser = true;
         try { localStorage.setItem('sg_site_ids', JSON.stringify(selectedSiteIds)); } catch (e) {}
@@ -21448,6 +21480,7 @@
 
       siteSelect.addEventListener('change', function() {
         siteSelectionTouchedByUser = true;
+        contextSiteIds = null;
         selectedSiteIds = [String(siteSelect.value || '')];
         applySiteSelection(siteSelect.value, {
           persistPreference: true
@@ -34843,6 +34876,13 @@
               ? option.max_transfer_count
               : selectedShuttleTransferMaxTransfers
           );
+        }
+        if (multiSiteEnabled() && isMultiSiteSearch(snapshot.time_basis)) {
+          // #102: the sites this search covered, the shared route's site first, so that
+          // "search again" from the link covers the same sites.
+          snapshot.site_ids = [snapshot.site_id].concat(getActiveSiteIds().filter(function(id) {
+            return id !== snapshot.site_id;
+          }));
         }
         var sharedVariantDetail = buildSharedVariantDetailSnapshot(option);
         if (sharedVariantDetail) snapshot.shared_variant_detail = stripPrivateSnapshotFields(sharedVariantDetail);
