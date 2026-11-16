@@ -37020,8 +37020,9 @@
         if (isShuttleRouteType(option && option.route_type)) {
           htmlParts.push('<span class="route-shuttle-badge">셔틀</span>');
         }
-        // #102: only a search over several sites names the site of each route.
-        if (option && option.site_name && !isShuttleTransferOption(option)) {
+        // #102: only a search over several sites names the site of each route. A transfer
+        // route carries a site name only when the transfer search covered several sites.
+        if (option && option.site_name) {
           htmlParts.push('<span class="route-site-chip">' + escapeHtml(shortSiteName(option.site_name)) + '</span>');
         }
         htmlParts.push('<span class="route-name-text">' + routeName + '</span>');
