@@ -11507,6 +11507,8 @@
       var siteDayTypesById = {};
       var sitePickerDraftIds = null;
       var currentRouteSearchSites = null;
+      // Per-site statuses of the last multi-site transfer search (#102 phase 2), else null.
+      var currentTransferSearchSites = null;
       var endpointPickerSiteTab = '';
       var siteEndpointTabState = {};
       var selectedDayType = 'weekday';
@@ -19120,11 +19122,28 @@
         });
         return ids.length >= 2 && ids[0] === primary ? ids : null;
       }
-      // Phase 1: only the ordinary (depart-at, direct) search covers several sites.
+      // Does the search about to run (or just run) cover every selected site? The ordinary
+      // (depart-at, direct) search always does; the others each have a switch (#102 phase 2).
       function isMultiSiteSearch(timeBasis) {
-        return getActiveSiteIds().length >= 2 &&
-          normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) !== 'arrive_by' &&
-          !selectedShuttleTransferSearch && !selectedTransitSearch;
+        if (getActiveSiteIds().length < 2) return false;
+        var flags = window.__SG_FLAGS || {};
+        var arriveBy = normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) === 'arrive_by';
+        // A search can combine parts (arrive-by with transfers, ...): all of them must be on.
+        if (arriveBy && !flags.multi_site_arrive_by) return false;
+        if (selectedShuttleTransferSearch && !flags.multi_site_transfer) return false;
+        if (selectedTransitSearch && !arriveBy && !selectedShuttleTransferSearch && !flags.multi_site_transit) return false;
+        return true;
+      }
+      // What a multi-site search sends besides site_id; null when the search covers one site.
+      function multiSiteRequestFields(direction, timeBasis) {
+        if (!isMultiSiteSearch(timeBasis)) return null;
+        var siteIds = getActiveSiteIds();
+        var endpoints = {};
+        siteIds.forEach(function(siteId) {
+          var names = getSiteEndpointSelectionForSearch(siteId, direction);
+          if (names) endpoints[siteId] = names;
+        });
+        return { site_ids: siteIds, site_endpoints: endpoints };
       }
       function siteHasDayType(siteId, dayType) {
         var list = siteDayTypesById[String(siteId || '')];
@@ -32253,6 +32272,10 @@
           signal: opts && opts.signal ? opts.signal : undefined
         }).then(function(resp) {
           return _parseArrivalSearchV2Response(resp, 'arrive-search create');
+        }).then(function(data) {
+          // #102 phase 2: per-site statuses of a multi-site arrive-by search (absent otherwise).
+          currentRouteSearchSites = data && Array.isArray(data.sites) ? data.sites : null;
+          return data;
         });
       }
 
@@ -32386,6 +32409,11 @@
           radius_steps_km: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
           exclude_route_ids: excludeRouteIds
         };
+        var multiSite = multiSiteRequestFields(payload.direction, 'arrive_by');
+        if (multiSite) {
+          payload.site_ids = multiSite.site_ids;
+          payload.site_endpoints = multiSite.site_endpoints;
+        }
         if (overrides.sessionId) payload.session_id = String(overrides.sessionId);
         return payload;
       }
@@ -36188,6 +36216,11 @@
           include_transit: !!selectedTransitSearch,
           defer_display_extras: true
         };
+        var multiSite = multiSiteRequestFields(payload.direction, payload.time_basis);
+        if (multiSite) {
+          payload.site_ids = multiSite.site_ids;
+          payload.site_endpoints = multiSite.site_endpoints;
+        }
         if (params.sessionId) payload.session_id = String(params.sessionId);
         return payload;
       }
@@ -36213,6 +36246,7 @@
           body: JSON.stringify(buildShuttleTransferSearchPayload(params)),
           signal: params.signal || undefined
         }).then(parseShuttleTransferResponse).then(function(data) {
+          currentTransferSearchSites = Array.isArray(data.sites) ? data.sites : null;
           if (data.enabled === false) return data;
           var options = Array.isArray(data.options) ? data.options : [];
           applyRouteCollectorUpdatedAt(data, options);
@@ -38088,6 +38122,17 @@
             .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
           if (noService.length > 0) text = noService.join(', ') + ': 이 요일에는 운행하는 노선이 없어요.';
         }
+        if (isMultiSiteSearch(currentRouteTimeBasisUsed) && selectedShuttleTransferSearch &&
+            Array.isArray(currentTransferSearchSites)) {
+          // A transfer search covers only the first few selected sites (one router search each).
+          var notSearched = currentTransferSearchSites
+            .filter(function(site) { return site && site.status === 'not_searched'; })
+            .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
+          if (notSearched.length > 0) {
+            text += (text ? ' ' : '') + '환승 경로는 ' + (currentTransferSearchSites.length - notSearched.length) +
+              '개 사업장에서만 찾았어요. 제외: ' + notSearched.join(', ');
+          }
+        }
         if (!text) return;
         var notice = document.createElement('div');
         notice.className = 'route-multi-site-notice';
@@ -38498,6 +38543,7 @@
         }
         var requestId = ++routeRequestSerial;
         currentRouteSearchSites = null;
+        currentTransferSearchSites = null;
         currentShuttleTransferOptions = [];
         currentShuttleTransferSessionId = '';
         currentShuttleTransferHasMore = false;
