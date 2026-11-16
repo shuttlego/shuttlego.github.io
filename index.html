@@ -2637,6 +2637,11 @@
       background: #111;
       color: #fff;
     }
+    .home-favorite-badge.sites {
+      border: 1px solid #c9ced6;
+      background: #fff;
+      color: #444;
+    }
     .home-favorite-badge.unavailable {
       background: #fff1f2;
       color: #b91c1c;
@@ -5757,6 +5762,8 @@
     }
     /* v0.9.8 (#97, switch: map_stops): every stop that still has service, on the map */
     .btn-map-stops[hidden] { display: none !important; }
+    /* zoom_live_overlays: the map SDK hides its overlay layer while it zooms; keep it shown. */
+    .sg-zoom-live { display: block !important; }
     .btn-map-stops {
       width: 48px;
       height: 48px;
@@ -11494,9 +11501,14 @@
       // v0.9.8 (#102, switch: multi_site). The stored selection, primary first. It is used
       // only while it contains selectedSiteId; see getActiveSiteIds().
       var selectedSiteIds = [];
+      // The site list of a repeated multi-site search (a recent search or a shared link),
+      // primary first. It lasts until the user picks sites again and is never stored.
+      var contextSiteIds = null;
       var siteDayTypesById = {};
       var sitePickerDraftIds = null;
       var currentRouteSearchSites = null;
+      // Per-site statuses of the last multi-site transfer search (#102 phase 2), else null.
+      var currentTransferSearchSites = null;
       var endpointPickerSiteTab = '';
       var siteEndpointTabState = {};
       var selectedDayType = 'weekday';
@@ -15084,6 +15096,14 @@
           transferBadge.textContent = '환승';
           topLine.appendChild(transferBadge);
         }
+        var recentSiteIds = multiSiteEnabled() ? normalizeContextSiteIds(recent.site_ids, recent.site_id) : null;
+        if (recentSiteIds) {
+          var sitesBadge = document.createElement('span');
+          sitesBadge.className = 'home-favorite-badge sites';
+          sitesBadge.textContent = '사업장 ' + recentSiteIds.length + '곳';
+          sitesBadge.title = recentSiteIds.map(getSiteNameById).join(', ');
+          topLine.appendChild(sitesBadge);
+        }
         body.appendChild(topLine);
 
         row.appendChild(body);
@@ -17232,6 +17252,8 @@
             if (siteSelect && siteSelect.value !== siteId) siteSelect.value = siteId;
           }
           selectedSiteId = siteId;
+          // #102: a search that was made over several sites is repeated over the same sites.
+          contextSiteIds = normalizeContextSiteIds(resolvedContext.site_ids, siteId);
           updateSiteTriggerText();
         }
 
@@ -17321,6 +17343,7 @@
         var placeSource = String(recent.source || '').trim().toLowerCase() === 'map' ? 'map' : 'search';
         var context = {
           site_id: siteId,
+          site_ids: Array.isArray(recent.site_ids) ? recent.site_ids : null,
           day_type: dayType,
           direction: direction,
           time_basis: String(recent.time_basis || selectedRouteTimeBasis || 'depart_at'),
@@ -19077,21 +19100,50 @@
       // another site shows that one site without rewriting the stored list.
       function getActiveSiteIds() {
         var primary = String(selectedSiteId || '').trim();
-        if (!multiSiteEnabled() || !Array.isArray(selectedSiteIds) || selectedSiteIds.indexOf(primary) < 0) {
-          return [primary];
-        }
+        if (!multiSiteEnabled()) return [primary];
+        var listed = contextSiteIds && contextSiteIds[0] === primary ? contextSiteIds : selectedSiteIds;
+        if (!Array.isArray(listed) || listed.indexOf(primary) < 0) return [primary];
         var ids = [primary];
-        selectedSiteIds.forEach(function(raw) {
+        listed.forEach(function(raw) {
           var id = String(raw || '').trim();
           if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
         });
         return ids;
       }
-      // Phase 1: only the ordinary (depart-at, direct) search covers several sites.
+      // The sites a recent search or a shared link was made with: the primary site first and at
+      // least one more site this page knows. Anything else means "no list of its own".
+      function normalizeContextSiteIds(raw, primaryId) {
+        var primary = String(primaryId || '').trim();
+        if (!Array.isArray(raw) || !primary) return null;
+        var ids = [];
+        raw.forEach(function(value) {
+          var id = String(value || '').trim();
+          if (id && ids.indexOf(id) < 0 && siteOptionExists(id)) ids.push(id);
+        });
+        return ids.length >= 2 && ids[0] === primary ? ids : null;
+      }
+      // Does the search about to run (or just run) cover every selected site? The ordinary
+      // (depart-at, direct) search always does; the others each have a switch (#102 phase 2).
       function isMultiSiteSearch(timeBasis) {
-        return getActiveSiteIds().length >= 2 &&
-          normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) !== 'arrive_by' &&
-          !selectedShuttleTransferSearch && !selectedTransitSearch;
+        if (getActiveSiteIds().length < 2) return false;
+        var flags = window.__SG_FLAGS || {};
+        var arriveBy = normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) === 'arrive_by';
+        // A search can combine parts (arrive-by with transfers, ...): all of them must be on.
+        if (arriveBy && !flags.multi_site_arrive_by) return false;
+        if (selectedShuttleTransferSearch && !flags.multi_site_transfer) return false;
+        if (selectedTransitSearch && !arriveBy && !selectedShuttleTransferSearch && !flags.multi_site_transit) return false;
+        return true;
+      }
+      // What a multi-site search sends besides site_id; null when the search covers one site.
+      function multiSiteRequestFields(direction, timeBasis) {
+        if (!isMultiSiteSearch(timeBasis)) return null;
+        var siteIds = getActiveSiteIds();
+        var endpoints = {};
+        siteIds.forEach(function(siteId) {
+          var names = getSiteEndpointSelectionForSearch(siteId, direction);
+          if (names) endpoints[siteId] = names;
+        });
+        return { site_ids: siteIds, site_endpoints: endpoints };
       }
       function siteHasDayType(siteId, dayType) {
         var list = siteDayTypesById[String(siteId || '')];
@@ -19126,6 +19178,7 @@
         if (!ids.length) return Promise.resolve(false);
         var before = getActiveSiteIds().join(',');
         var primaryChanged = ids[0] !== String(selectedSiteId || '').trim();
+        contextSiteIds = null;
         selectedSiteIds = ids.slice();
         siteSelectionTouchedByUser = true;
         try { localStorage.setItem('sg_site_ids', JSON.stringify(selectedSiteIds)); } catch (e) {}
@@ -21170,7 +21223,10 @@
           mapDragStartedAt = Date.now();
           markUserMapIntent('map-drag');
         });
+        kakao.maps.event.addListener(map, 'tilesloaded', armZoomLiveOverlays);
+        kakao.maps.event.addListener(map, 'zoom_start', beginZoomLiveOverlays);
         kakao.maps.event.addListener(map, 'zoom_changed', function() {
+          endZoomLiveOverlays();
           updatePinScale();
           refreshBubbleOverlayPosition();
           scheduleCurrentLocationOverlayPositionRefresh();
@@ -21191,6 +21247,8 @@
           scheduleCurrentLocationOverlayPositionRefresh();
         });
         kakao.maps.event.addListener(map, 'idle', function() {
+          endZoomLiveOverlays();
+          armZoomLiveOverlays();
           if (mapStops.active) scheduleMapStopsRender(60);
           refreshBubbleOverlayPosition();
           refreshCurrentLocationOverlayPosition();
@@ -21441,6 +21499,7 @@
 
       siteSelect.addEventListener('change', function() {
         siteSelectionTouchedByUser = true;
+        contextSiteIds = null;
         selectedSiteIds = [String(siteSelect.value || '')];
         applySiteSelection(siteSelect.value, {
           persistPreference: true
@@ -22700,6 +22759,149 @@
         setMapDimmed(false);
       }
 
+      // ── Overlays during a zoom (switch: zoom_live_overlays) ──────────────────────────────
+      // While it zooms, the map SDK hides its overlay layer (display: none): pins, labels,
+      // stops and buses vanish until the zoom ends (about 0.3 s with the wheel, the whole
+      // gesture with two fingers). Meanwhile it moves the tiles: a wheel step resizes the tile
+      // images, a pinch scales the whole tile layer and then resizes the images to settle.
+      // Here the layer stays shown and every overlay is moved each frame by what the tiles
+      // are doing: with a tile at T0 (width w0) before and at T (width w) now, a point that
+      // was at p on the screen belongs at T + (p - T0) * w / w0. Both are read from where one
+      // tile image is on the screen, so this follows whatever the SDK does, at its own
+      // timing. Overlays keep their size. If the SDK's layout is not the one expected,
+      // nothing is done and the SDK behaves as before.
+      var zoomLive = { running: false, pane: null, holder: null, tile: null, tile0: null, holder0: null, bubble: null,
+        observer: null, paneObserver: null, timer: null };
+      function zoomLiveOverlaysEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!flags.zoom_live_overlays;
+      }
+      function findMapOverlayPane() {
+        if (zoomLive.pane && zoomLive.pane.isConnected) return zoomLive.pane;
+        if (!mapContainer) return null;
+        // The overlay layer: a zero-height, full-width absolute box next to the tile layers.
+        var candidates = mapContainer.querySelectorAll('div');
+        for (var i = 0; i < candidates.length; i++) {
+          var style = candidates[i].style;
+          if (style.position === 'absolute' && style.width === '100%' && style.height === '0px' &&
+              candidates[i].parentElement && candidates[i].parentElement.querySelector(':scope > div > img')) {
+            zoomLive.pane = candidates[i];
+            return zoomLive.pane;
+          }
+        }
+        return null;
+      }
+      // The SDK hides the layer when a zoom begins (wheel step, double click, or the moment two
+      // fingers start to pinch, before any zoom event) and shows it when the zoom is over.
+      // Watching that is the one signal that covers every kind of zoom.
+      function armZoomLiveOverlays() {
+        if (!zoomLiveOverlaysEnabled()) return;
+        if (zoomLive.paneObserver && zoomLive.pane && zoomLive.pane.isConnected) return;
+        if (zoomLive.paneObserver) { zoomLive.paneObserver.disconnect(); zoomLive.paneObserver = null; }
+        var pane = findMapOverlayPane();
+        if (!pane) return;
+        try {
+          zoomLive.paneObserver = new MutationObserver(function() {
+            if (pane.style.display === 'none') beginZoomLiveOverlays();
+            else endZoomLiveOverlays();
+          });
+          zoomLive.paneObserver.observe(pane, { attributes: true, attributeFilter: ['style'] });
+        } catch (e) { zoomLive.paneObserver = null; }
+      }
+      function readZoomTileRect(img) {
+        var rect = img.isConnected ? img.getBoundingClientRect() : null;
+        return rect && rect.width > 0 ? { left: rect.left, top: rect.top, width: rect.width } : null;
+      }
+      function readZoomHolder(holder) {
+        var rect = holder.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, styleLeft: parseFloat(holder.style.left) || 0, styleTop: parseFloat(holder.style.top) || 0 };
+      }
+      function stepZoomLiveOverlays() {
+        if (!zoomLive.running) return;
+        var now = readZoomTileRect(zoomLive.tile), tile0 = zoomLive.tile0, holder0 = zoomLive.holder0;
+        if (!now) return;
+        var scale = now.width / tile0.width;
+        // The SDK also pans the box that holds the layers; the overlays ride along with it.
+        var shiftX = (parseFloat(zoomLive.holder.style.left) || 0) - holder0.styleLeft;
+        var shiftY = (parseFloat(zoomLive.holder.style.top) || 0) - holder0.styleTop;
+        // Read live: an overlay added or moved while the zoom lasts (a bus) is placed too.
+        var children = zoomLive.pane.children;
+        for (var n = 0; n < children.length; n++) {
+          var el = children[n], x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+          if (!isFinite(x) || !isFinite(y)) continue;
+          var px = holder0.left + x, py = holder0.top + y;
+          el.style.transform = 'translate(' + (now.left + (px - tile0.left) * scale - px - shiftX).toFixed(1) + 'px,' +
+            (now.top + (py - tile0.top) * scale - py - shiftY).toFixed(1) + 'px)';
+        }
+        // The bubble is our own element on the map box: it does not ride with the layers.
+        var bubble = zoomLive.bubble;
+        if (bubble && bubble.el.isConnected) {
+          bubble.el.style.transform = 'translate(' + (now.left + (bubble.x - tile0.left) * scale - bubble.x).toFixed(1) + 'px,' +
+            (now.top + (bubble.y - tile0.top) * scale - bubble.y).toFixed(1) + 'px)';
+        }
+        // Still zooming (a pinch lasts as long as the fingers stay): push the safety net back.
+        clearTimeout(zoomLive.timer);
+        zoomLive.timer = setTimeout(endZoomLiveOverlays, 8000);
+      }
+      function beginZoomLiveOverlays() {
+        if (!zoomLiveOverlaysEnabled() || zoomLive.running) return;
+        var pane = findMapOverlayPane();
+        var holder = pane && pane.parentElement;
+        if (!holder) return;
+        // A tile of the layer on top: the one the SDK animates.
+        var tile = null;
+        for (var i = 0; i < holder.children.length && !tile; i++) {
+          var layer = holder.children[i];
+          if (layer !== pane && layer.style.zIndex === '1') tile = layer.querySelector(':scope > img');
+        }
+        tile = tile || holder.querySelector(':scope > div > img');
+        var tile0 = tile && readZoomTileRect(tile);
+        if (!tile0) return;
+        var holder0 = readZoomHolder(holder);
+        // The point of the map the bubble belongs to, on the screen: its pin's, or the one it
+        // was last placed for.
+        var bubble = null;
+        if (bubbleOverlay && bubbleState) {
+          var pinEl = bubbleState.hasPin ? markerElements[Number(bubbleState.markerIndex)] : null;
+          var wrap = pinEl && pinEl.parentElement && pinEl.parentElement.parentElement === pane ? pinEl.parentElement : null;
+          var bx = wrap ? parseFloat(wrap.style.left) : NaN, by = wrap ? parseFloat(wrap.style.top) : NaN;
+          if (isFinite(bx) && isFinite(by)) {
+            bubble = { el: bubbleOverlay, x: holder0.left + bx, y: holder0.top + by };
+          } else if (bubbleState.point && mapContainer) {
+            var mapRect = mapContainer.getBoundingClientRect();
+            bubble = { el: bubbleOverlay, x: mapRect.left + bubbleState.point.x, y: mapRect.top + bubbleState.point.y };
+          }
+        }
+        zoomLive.running = true;
+        zoomLive.holder = holder; zoomLive.tile = tile; zoomLive.tile0 = tile0; zoomLive.holder0 = holder0; zoomLive.bubble = bubble;
+        pane.classList.add('sg-zoom-live');
+        // Runs right after the SDK moves the tiles, before that frame is painted, so the
+        // overlays never lag a frame behind the tiles.
+        try {
+          zoomLive.observer = new MutationObserver(stepZoomLiveOverlays);
+          [tile, tile.parentElement, holder].forEach(function(target) {
+            zoomLive.observer.observe(target, { attributes: true, attributeFilter: ['style'] });
+          });
+        } catch (e) { zoomLive.observer = null; }
+        // A zoom ends when the SDK shows its layer again; this is only a safety net.
+        clearTimeout(zoomLive.timer);
+        zoomLive.timer = setTimeout(endZoomLiveOverlays, 8000);
+      }
+      function endZoomLiveOverlays() {
+        if (!zoomLive.running) return;
+        zoomLive.running = false;
+        if (zoomLive.observer) { zoomLive.observer.disconnect(); zoomLive.observer = null; }
+        clearTimeout(zoomLive.timer);
+        // The SDK has written the final positions by now; our offsets go in the same frame.
+        if (zoomLive.pane) {
+          var children = zoomLive.pane.children;
+          for (var n = 0; n < children.length; n++) { if (children[n].style.transform) children[n].style.transform = ''; }
+          zoomLive.pane.classList.remove('sg-zoom-live');
+        }
+        if (zoomLive.bubble) zoomLive.bubble.el.style.transform = '';
+        zoomLive.bubble = null; zoomLive.tile = null; zoomLive.tile0 = null; zoomLive.holder0 = null;
+      }
+
       // ── #97: stops on the map ────────────────────────────────────────────
       function mapStopsEnabled() {
         var flags = window.__SG_FLAGS || {};
@@ -23037,6 +23239,7 @@
           var clickPt = proj.containerPointFromCoords(pos);
           clickX = clickPt.x;
           clickY = clickPt.y;
+          if (container === bubbleOverlay && bubbleState) bubbleState.point = { x: clickX, y: clickY };
         } else {
           clickX = mapContainer.clientWidth / 2;
           clickY = mapContainer.clientHeight / 2;
@@ -23631,7 +23834,19 @@
             : '도보 연결';
           return formatDistance(option && option.distance_m) + ' · ' + arrivalMode;
         }
-        return formatDistance(option && option.distance_m) + ' · ' + timeStr + ' 노선';
+        return formatDistance(option && option.distance_m) + ' · ' + timeStr + ' 노선' + routeDepartedPassNote(option, timeStr);
+      }
+
+      // recommended_stop_time: the server offers a bus that already left its first stop while
+      // it is still ahead of the boarding stop. The card's time is the first-stop departure,
+      // which reads as a bus that is gone; say when it passes the stop the user boards at.
+      function routeDepartedPassNote(option, shownTime) {
+        var recommend = option && option.recommend;
+        var pass = recommend && recommend.departed === true ? String(recommend.board_pass_time || '').trim() : '';
+        if (!/^\d{1,2}:\d{2}$/.test(pass)) return '';
+        // Only for the departure the server judged, not one the user picked on the card.
+        if (String(option.board_time || '').trim() !== String(shownTime || '').trim()) return '';
+        return ' · 탑승 정류장 ' + pass + ' 통과';
       }
 
       function syncRouteCardMeta(card, option, isDepart) {
@@ -32057,6 +32272,10 @@
           signal: opts && opts.signal ? opts.signal : undefined
         }).then(function(resp) {
           return _parseArrivalSearchV2Response(resp, 'arrive-search create');
+        }).then(function(data) {
+          // #102 phase 2: per-site statuses of a multi-site arrive-by search (absent otherwise).
+          currentRouteSearchSites = data && Array.isArray(data.sites) ? data.sites : null;
+          return data;
         });
       }
 
@@ -32190,6 +32409,11 @@
           radius_steps_km: ARRIVAL_SEARCH_V2_RADIUS_STEPS_KM.slice(),
           exclude_route_ids: excludeRouteIds
         };
+        var multiSite = multiSiteRequestFields(payload.direction, 'arrive_by');
+        if (multiSite) {
+          payload.site_ids = multiSite.site_ids;
+          payload.site_endpoints = multiSite.site_endpoints;
+        }
         if (overrides.sessionId) payload.session_id = String(overrides.sessionId);
         return payload;
       }
@@ -34681,6 +34905,13 @@
               : selectedShuttleTransferMaxTransfers
           );
         }
+        if (multiSiteEnabled() && isMultiSiteSearch(snapshot.time_basis)) {
+          // #102: the sites this search covered, the shared route's site first, so that
+          // "search again" from the link covers the same sites.
+          snapshot.site_ids = [snapshot.site_id].concat(getActiveSiteIds().filter(function(id) {
+            return id !== snapshot.site_id;
+          }));
+        }
         var sharedVariantDetail = buildSharedVariantDetailSnapshot(option);
         if (sharedVariantDetail) snapshot.shared_variant_detail = stripPrivateSnapshotFields(sharedVariantDetail);
         var walkSnapshot = getSuccessfulWalkShareSnapshot(option, isDepart);
@@ -35985,6 +36216,11 @@
           include_transit: !!selectedTransitSearch,
           defer_display_extras: true
         };
+        var multiSite = multiSiteRequestFields(payload.direction, payload.time_basis);
+        if (multiSite) {
+          payload.site_ids = multiSite.site_ids;
+          payload.site_endpoints = multiSite.site_endpoints;
+        }
         if (params.sessionId) payload.session_id = String(params.sessionId);
         return payload;
       }
@@ -36010,6 +36246,7 @@
           body: JSON.stringify(buildShuttleTransferSearchPayload(params)),
           signal: params.signal || undefined
         }).then(parseShuttleTransferResponse).then(function(data) {
+          currentTransferSearchSites = Array.isArray(data.sites) ? data.sites : null;
           if (data.enabled === false) return data;
           var options = Array.isArray(data.options) ? data.options : [];
           applyRouteCollectorUpdatedAt(data, options);
@@ -37885,6 +38122,17 @@
             .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
           if (noService.length > 0) text = noService.join(', ') + ': 이 요일에는 운행하는 노선이 없어요.';
         }
+        if (isMultiSiteSearch(currentRouteTimeBasisUsed) && selectedShuttleTransferSearch &&
+            Array.isArray(currentTransferSearchSites)) {
+          // A transfer search covers only the first few selected sites (one router search each).
+          var notSearched = currentTransferSearchSites
+            .filter(function(site) { return site && site.status === 'not_searched'; })
+            .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
+          if (notSearched.length > 0) {
+            text += (text ? ' ' : '') + '환승 경로는 ' + (currentTransferSearchSites.length - notSearched.length) +
+              '개 사업장에서만 찾았어요. 제외: ' + notSearched.join(', ');
+          }
+        }
         if (!text) return;
         var notice = document.createElement('div');
         notice.className = 'route-multi-site-notice';
@@ -38295,6 +38543,7 @@
         }
         var requestId = ++routeRequestSerial;
         currentRouteSearchSites = null;
+        currentTransferSearchSites = null;
         currentShuttleTransferOptions = [];
         currentShuttleTransferSessionId = '';
         currentShuttleTransferHasMore = false;
@@ -39978,6 +40227,7 @@
         if (historyGuardInstalled || !routingEnabled() || getAppContext().platform === 'android') return;
         if (!window.history || typeof window.history.pushState !== 'function') return;
         historyGuardInstalled = true;
+        if (historyLayersEnabled()) { installHistoryLayers(); return; }
         try {
           var entryState = window.history.state || {};
           if (entryState.sgGuard && !entryState.sgRoot) {
@@ -40011,6 +40261,80 @@
           } else {
             window.history.back();
           }
+        });
+      }
+      // ── History layers (switch: history_layers) ─────────────────────────────────────────
+      // The guard above adds a history entry right after a Back press. Browsers treat that
+      // as a page trapping the Back button: Chrome skips every entry of a document that
+      // added one without a new user activation after a Back (history manipulation
+      // intervention), and Safari skips entries scripted without user interaction. The
+      // next Back then left the site.
+      //
+      // Here each open layer has its own entry, added while the user's action that opened
+      // it is still honoured, and a Back press only closes: nothing is added afterwards.
+      var historyOpenDepth = function() { return 0; };  // set by bindGenericLayerBack
+      var historyLayers = { installed: false, ignore: 0, holdPush: false };
+      function historyLayersEnabled() {
+        return !!(window.__SG_FLAGS && window.__SG_FLAGS.history_layers);
+      }
+      function historyStateDepth(state) {
+        if (!state) return 0;
+        if (typeof state.sgDepth === 'number' && state.sgDepth > 0) return Math.floor(state.sgDepth);
+        return state.sgGuard && !state.sgRoot ? 1 : 0;  // an entry the older guard left
+      }
+      // Makes the number of entries above the root equal to the number of open layers.
+      function syncHistoryLayers() {
+        // A step of our own is still on its way (history.go answers later with a popstate).
+        if (!historyLayers.installed || historyLayers.ignore > 0) return;
+        var have = historyStateDepth(window.history.state), open = historyOpenDepth();
+        if (open > have) {
+          // Never right after a Back press: wait for the user's next action.
+          if (historyLayers.holdPush) return;
+          for (var depth = have + 1; depth <= open; depth++) {
+            try { window.history.pushState({ sgDepth: depth }, ''); } catch (e) { return; }
+          }
+        } else if (open < have) {
+          // Layers were closed on the page itself: drop their entries. That pop closes nothing.
+          historyLayers.ignore += 1;
+          try { window.history.go(open - have); } catch (e) { historyLayers.ignore -= 1; }
+        }
+      }
+      function installHistoryLayers() {
+        historyLayers.installed = true;
+        // Loaded again on an entry of an earlier load (reload, tab restore): nothing is open now.
+        var stale = historyStateDepth(window.history.state);
+        if (stale > 0) {
+          historyLayers.ignore += 1;
+          try { window.history.go(-stale); } catch (e) { historyLayers.ignore -= 1; }
+        }
+        window.addEventListener('popstate', function(event) {
+          if (historyLayers.ignore > 0) { historyLayers.ignore -= 1; return; }
+          historyLayers.holdPush = true;
+          var target = historyStateDepth(event.state), open = historyOpenDepth(), closed = 0;
+          while (open > target && closed < 8) {
+            var handled = false;
+            try { handled = typeof window.shuttleGoBack === 'function' && window.shuttleGoBack() === true; } catch (e) {}
+            if (!handled) break;
+            closed += 1;
+            var next = historyOpenDepth();
+            if (next >= open) break;
+            open = next;
+          }
+          if (closed) { try { if (window.__sgTelemetry) window.__sgTelemetry.event('routing_back_closed'); } catch (e) {} }
+          // Forward onto the entry of a layer that is no longer open: step back to the screen.
+          if (target > open) {
+            historyLayers.ignore += 1;
+            try { window.history.go(open - target); } catch (e) { historyLayers.ignore -= 1; }
+          }
+        });
+        var onUserAction = function(event) {
+          if (event && event.isTrusted === false) return;
+          historyLayers.holdPush = false;
+          // Layers open right away, after an animation, or when a search answers.
+          [0, 350, 1500, 5000].forEach(function(delay) { setTimeout(syncHistoryLayers, delay); });
+        };
+        ['click', 'keydown', 'touchend'].forEach(function(name) {
+          document.addEventListener(name, onUserAction, true);
         });
       }
       function buildReturnSnapshot() {
@@ -40083,6 +40407,28 @@
           }
           return false;
         }
+        // history_layers: how many Back presses it takes to close everything that is open.
+        function panelDepth() {
+          var back = document.getElementById('btnBackFromRoutes');
+          var open = (back && back.style.display !== 'none' && shown(back)) || shown(document.getElementById('routeHeaderBackBtn'));
+          if (!open) return 0;
+          var routeView = !!(routeOptionsWrap && routeOptionsWrap.classList.contains('show'));
+          // Leaving a route view lands on the place results when there are any, else on home.
+          var depth = (routeView || !isPlaceSearchResultsState()) ? 1 + (places.length > 0 ? 1 : 0) : 1;
+          return depth + (activeTransitPickerState ? 1 : 0);
+        }
+        function openDepth() {
+          var depth = 0;
+          for (var i = 0; i < LAYERS.length; i++) {
+            var id = LAYERS[i][0], backdropId = LAYERS[i][1];
+            if (id === 'routeHeaderBackBtn' || id === 'btnBackFromRoutes') continue;
+            var button = id ? document.getElementById(id) : null;
+            var backdrop = backdropId ? document.getElementById(backdropId) : null;
+            if (backdrop ? shown(backdrop) : (button && shown(button))) depth += 1;
+          }
+          return depth + panelDepth();
+        }
+        historyOpenDepth = openDepth;
         function handleBack() {
           if (previous && typeof previous.handleBack === 'function' && previous.handleBack.apply(previous, arguments) === true) return true;
           if (typeof legacy === 'function' && legacy.apply(window, arguments) === true) return true;
