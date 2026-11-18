@@ -10,7 +10,7 @@
       // Client telemetry (errors + a few timings). Runs first so early errors are kept.
       // Sent with sendBeacon as text/plain (no CORS preflight). See client_telemetry.py.
       (function() {
-        var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, events: {}, calls: [], flags: null, sent: false, timer: null };
+        var T = window.__sgTelemetry = { route: 'home', errors: {}, errorCount: 0, timings: {}, sentTimings: {}, events: {}, calls: [], flags: null, sent: false, timer: null };
         var timingSample = Math.random() * 100;
         function api() { var env = window.__SHUTTLE_ENV; return env && env.API_BASE ? env.API_BASE : ''; }
         function flagOn(name, fallback) { return T.flags && (name in T.flags) ? T.flags[name] : fallback; }
@@ -59,10 +59,15 @@
         T.flush = function(final) {
           var base = api(); if (!base || !navigator.sendBeacon) return;
           var errs = Object.keys(T.errors).map(function(k) { return T.errors[k]; });
-          var sendTimings = final && !T.sent && timingSample < flagOn('telemetry_timing_percent', 10);
+          var inSample = timingSample < flagOn('telemetry_timing_percent', 10);
+          var sendTimings = final && !T.sent && inSample;
+          // A timing marked after the first report (a search or a route detail opened once the page
+          // had already been hidden) goes out once, on a later close.
+          var late = {}, hasLate = false;
+          if (final && T.sent && inSample) Object.keys(T.timings).forEach(function(k) { if (!T.sentTimings[k]) { late[k] = T.timings[k]; hasLate = true; } });
           var hasEvents = Object.keys(T.events).length > 0;
           var calls = final ? T.calls : [];
-          if (!errs.length && !sendTimings && !hasEvents && !calls.length) return;
+          if (!errs.length && !sendTimings && !hasLate && !hasEvents && !calls.length) return;
           var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
           if (sendTimings && nav) { T.mark('ttfb_ms', nav.responseStart); T.mark('dom_interactive_ms', nav.domInteractive); }
           if (sendTimings && performance.getEntriesByType) {
@@ -76,10 +81,11 @@
             else if (nav && (nav.transferSize === 0 || (nav.encodedBodySize > 0 && nav.transferSize < nav.encodedBodySize))) visit = 'repeat';
             else if (nav) visit = 'first';
           } catch (e) {}
-          var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', visit: visit, flags: flags, errors: errs, timings: sendTimings ? T.timings : {}, events: T.events };
+          var body = { v: 1, route: T.route, build: window.__SG_BUILD || 'src', visit: visit, flags: flags, errors: errs, timings: sendTimings ? T.timings : late, events: T.events };
           if (calls.length) body.calls = calls;
           try { navigator.sendBeacon(base + '/api/client-telemetry', new Blob([JSON.stringify(body)], { type: 'text/plain' })); } catch (e) {}
-          T.errors = {}; T.errorCount = 0; T.events = {}; if (sendTimings) T.sent = true;
+          T.errors = {}; T.errorCount = 0; T.events = {};
+          if (sendTimings || hasLate) { T.sent = true; Object.keys(body.timings).forEach(function(k) { T.sentTimings[k] = true; }); }
           if (calls.length) { T.calls = []; callCount = {}; }
         };
         window.addEventListener('error', function(e) {
@@ -36569,8 +36575,26 @@
         return merged;
       }
 
+      // "Basic search" timing: a route search by departure time with the shuttle transfer search
+      // off, from the start of the route search (the place is already chosen) to its first
+      // results. Unlike search_ms it leaves out the time the user spends picking a place.
+      function beginRouteSearchTiming(requestId, timeBasis, transferEnabled) {
+        try {
+          window.__sgRouteSearchTiming = { id: requestId, at: performance.now(), basic: timeBasis === 'depart_at' && !transferEnabled };
+        } catch (e) {}
+      }
+      function endRouteSearchTiming(activeRequestId) {
+        try {
+          var started = window.__sgRouteSearchTiming;
+          window.__sgRouteSearchTiming = null;
+          if (!started || !(started.at > 0) || started.id !== activeRequestId || !started.basic || !window.__sgTelemetry) return;
+          window.__sgTelemetry.mark('search_basic_ms', performance.now() - started.at);
+        } catch (e) {}
+      }
+
       function renderRouteOptions(options, placeName, isDepart, lastDepartureTime, preserveSheetState, emptyMessage, timeBasis, renderOpts) {
         try { if (window.__sgTelemetry) { window.__sgTelemetry.mark('first_result_ms'); window.__sgTelemetry.setRoute('results'); } } catch (e) {}
+        endRouteSearchTiming(routeRequestSerial);
         try {
           if (window.__sgTelemetry && window.__sgSearchStartedAt > 0) {
             window.__sgTelemetry.mark('search_ms', performance.now() - window.__sgSearchStartedAt);
@@ -36843,6 +36867,7 @@
         currentDirectRouteHasMore = false;
         currentShuttleTransferRequestId = selectedShuttleTransferSearch ? requestId : 0;
         var timeBasis = normalizeRouteTimeBasis(selectedRouteTimeBasis);
+        beginRouteSearchTiming(requestId, timeBasis, selectedShuttleTransferSearch);
         activeCombinedSearchCoordinator = createCombinedSearchCoordinator({
           requestId: requestId,
           timeBasis: timeBasis,
