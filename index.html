@@ -23003,8 +23003,8 @@
           var key = mapStopsListKey(siteId);
           if (mapStops.lists[key]) return;
           if (!mapStops.pending[key]) {
-            // kinds=1 only keeps a browser from answering with a copy of the list without the kind.
-            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) + '&kinds=1' + catalogVersionQuery();
+            // fields=kind only keeps a browser from answering with a copy of the list without the kind.
+            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) + '&fields=kind' + catalogVersionQuery();
             mapStops.pending[key] = fetchJson(url)
               .then(function(result) {
                 if (!result.ok) throw new Error('stops');
