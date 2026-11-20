@@ -35880,9 +35880,21 @@
         return normalized === 'time' ? '시간 우선' : (normalized === 'recommended' ? '추천' : '거리 우선');
       }
 
+      // Switch recommended_walk_limit_min: minutes of walking within which a stop counts as near
+      // in the recommended order (0 = no limit). The server applies it; the page only says so.
+      function recommendedWalkLimitMinutes() {
+        var value = Math.round(Number(window.__SG_FLAGS && window.__SG_FLAGS.recommended_walk_limit_min));
+        return isFinite(value) && value > 0 ? Math.min(value, 60) : 0;
+      }
+
       function getRouteSearchModeHelpText(mode) {
         var normalized = normalizeRouteSearchMode(mode);
-        if (normalized === 'recommended') return '걷는 시간과 기다리는 시간까지 더해, 목적지에 가장 빨리 도착하는 노선을 먼저 찾습니다.';
+        if (normalized === 'recommended') {
+          var walkLimit = recommendedWalkLimitMinutes();
+          return walkLimit > 0
+            ? '도보 ' + walkLimit + '분 이내 정류장의 노선 중에서, 목적지에 가장 빨리 도착하는 노선을 먼저 찾습니다.'
+            : '걷는 시간과 기다리는 시간까지 더해, 목적지에 가장 빨리 도착하는 노선을 먼저 찾습니다.';
+        }
         return normalized === 'time'
           ? '반경 내 정류장을 지나는 노선 중 출발시각이 가장 가까운 노선을 먼저 찾습니다.'
           : '가까운 정류장 기준으로 검색합니다.';
@@ -37215,10 +37227,15 @@
         var departureSortMode = normalizeDepartureRouteSortMode(mode, currentRouteSearchModeUsed || activeRouteSearchMode);
         if (departureSortMode === 'recommended') {
           // The server scored each route by its arrival; keep that order as more cards load.
+          // With a walk limit (recommended_walk_limit_min) the server marks the routes whose
+          // stop is farther than the limit; they follow the others.
           sorted.sort(function(a, b) {
             var scoreA = a && a.recommend ? Number(a.recommend.score_min) : NaN;
             var scoreB = b && b.recommend ? Number(b.recommend.score_min) : NaN;
             if (isFinite(scoreA) !== isFinite(scoreB)) return isFinite(scoreA) ? -1 : 1;
+            var overA = !!(a && a.recommend && a.recommend.walk_over_limit);
+            var overB = !!(b && b.recommend && b.recommend.walk_over_limit);
+            if (overA !== overB) return overA ? 1 : -1;
             if (isFinite(scoreA) && scoreA !== scoreB) return scoreA - scoreB;
             var walkA = a && a.recommend ? Number(a.recommend.walk_min) : 0;
             var walkB = b && b.recommend ? Number(b.recommend.walk_min) : 0;
