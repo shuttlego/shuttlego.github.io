@@ -5788,8 +5788,8 @@
       .btn-map-stops img { width: 22px; height: 22px; }
     }
     /* The same stop pin as on a drawn route, half as large again. The tip of the image is at
-       50% / 93.5%. The colour says what a bus does there: blue where it only drops off, red
-       where it only picks up, purple for both (the same colours as the 탑승/하차 marks). */
+       50% / 93.5%. The colour says what a bus does there: blue where it only picks up, orange
+       where it only drops off, half and half for both (the colours of the 탑승/하차 marks). */
     .map-stop-dot {
       width: 45px;
       height: 45px;
@@ -5798,8 +5798,8 @@
       transform-origin: 50% 93.5%;
       transition: transform .12s ease;
     }
-    .map-stop-dot.board { background-image: url('/images/stop_board_icon.png'); }
-    .map-stop-dot.both { background-image: url('/images/stop_both_icon.png'); }
+    .map-stop-dot.alight { background-image: url('/images/stop_alight_icon.png'); }
+    .map-stop-dot.both { background-image: url('/images/stop_board_alight_icon.png'); }
     .map-stop-dot.selected { transform: scale(1.4); }
     .map-stop-cluster {
       min-width: 30px;
@@ -5876,12 +5876,12 @@
       flex: 0 0 auto;
       padding: 1px 5px;
       border-radius: 4px;
-      background: #fdecec;
-      color: #b91c1c;
+      background: #eef2ff;
+      color: #1428A0;
       font-size: 10px;
       font-weight: 800;
     }
-    .bubble-stop-routes .stop-route-role.alight { background: #eef2ff; color: #1428A0; }
+    .bubble-stop-routes .stop-route-role.alight { background: #fff1e6; color: #c2410c; }
     .bubble-stop-routes .stop-route-name {
       flex: 1 1 auto;
       min-width: 0;
@@ -23092,7 +23092,7 @@
         var el = document.createElement('div');
         // An older server sends no kind: the pin stays blue.
         var kind = Number(row[4]) || 0;
-        el.className = 'map-stop-dot' + (kind === 1 ? ' board' : kind === 3 ? ' both' : '') +
+        el.className = 'map-stop-dot' + (kind === 2 ? ' alight' : kind === 3 ? ' both' : '') +
           (key === mapStops.selectedKey ? ' selected' : '');
         el.title = row[3] + (kind === 1 ? ' (탑승)' : kind === 2 ? ' (하차)' : kind === 3 ? ' (탑승·하차)' : '');
         el.addEventListener('click', function(e) {
