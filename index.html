@@ -5896,6 +5896,8 @@
     .bubble-stop-routes .stop-route-row.is-link:focus-visible { background: #f5f7ff; outline: none; }
     .bubble-stop-routes .stop-route-go { flex: 0 0 auto; color: #9ca3af; font-weight: 700; }
     .bubble-stop-days { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; }
+    /* No site line under the stop name: the day tabs keep their distance from the name. */
+    .stop-bubble-plain .bubble-stop-days { margin-top: 6px; }
     .bubble-stop-days .stop-day-tab {
       padding: 3px 8px;
       border: 1px solid #d1d5db;
@@ -23227,6 +23229,7 @@
           var stopSiteName = getActiveSiteIds().length >= 2 ? getSiteNameById(siteId) : '';
           addr.textContent = stopSiteName;
           addr.style.display = stopSiteName ? '' : 'none';
+          box.classList.toggle('stop-bubble-plain', !stopSiteName);
         }
         var tabs = document.createElement('div');
         tabs.className = 'bubble-stop-days';
