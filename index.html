@@ -2121,6 +2121,14 @@
       font-size: 12px;
       line-height: 1.45;
     }
+    /* multi_site_equal_sites: the notices about sites carry a warning sign and colour. The
+       colour alone does not carry the meaning; #b45309 is 5:1 on white and on #fffbeb. */
+    .route-multi-site-notice.warn { background: #fffbeb; color: #b45309; font-weight: 600; }
+    .site-notice-line { display: flex; align-items: flex-start; gap: 6px; }
+    .site-notice-line + .site-notice-line { margin-top: 4px; }
+    .site-notice-icon { flex: 0 0 auto; width: 14px; height: 14px; margin-top: 2px; }
+    .time-transfer-site-limit { display: block; margin-top: 4px; color: #b45309; font-size: 12px; font-weight: 600; line-height: 1.4; }
+    .time-transfer-site-limit[hidden] { display: none; }
     @media (max-width: 768px) {
       .site-picker-modal.multi { max-height: 72vh; }
     }
@@ -10892,6 +10900,7 @@
           <span class="time-transfer-option-text">
             <span class="time-transfer-option-title">셔틀 환승 경로도 함께 찾기 <span class="time-transfer-beta-badge">Beta</span></span>
             <span class="time-transfer-option-desc">두 개 이상의 셔틀을 이어 타는 후보를 추가로 확인합니다.</span>
+            <span class="time-transfer-site-limit" id="timeTransferSiteLimit" role="note" hidden></span>
           </span>
         </label>
         <div class="time-transfer-stepper-row" id="timeTransferStepperRow" hidden>
@@ -15170,7 +15179,9 @@
           transferBadge.textContent = '환승';
           topLine.appendChild(transferBadge);
         }
-        var recentSiteIds = multiSiteEnabled() ? normalizeContextSiteIds(recent.site_ids, recent.site_id) : null;
+        // multi_site_equal_sites: the list holds only searches of the selected sites and a tap
+        // searches with the selection, so a line says nothing about sites.
+        var recentSiteIds = multiSiteEnabled() && !equalSitesEnabled() ? normalizeContextSiteIds(recent.site_ids, recent.site_id) : null;
         if (recentSiteIds) {
           var sitesBadge = document.createElement('span');
           sitesBadge.className = 'home-favorite-badge sites';
@@ -15271,7 +15282,7 @@
           return;
         }
         if (button) { button.disabled = true; button.textContent = '불러오는 중…'; }
-        var url = API_BASE + '/api/home/restaurants?site_id=' + encodeURIComponent(siteId) +
+        var url = API_BASE + '/api/home/restaurants?site_id=' + encodeURIComponent(siteId) + homeSiteIdsQuery() +
           (version ? '&v=' + encodeURIComponent(version) : '');
         fetch(url, { credentials: 'include' })
           .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('restaurant list ' + r.status)); })
@@ -15325,7 +15336,8 @@
         var trend = document.createElement('div');
         trend.className = 'home-rank-trend ' + trendInfo.className;
         trend.textContent = trendInfo.label;
-        rankCluster.appendChild(trend);
+        // A ranking merged out of several sites has no "since yesterday": no trend mark.
+        if (!homeSiteIdsQuery()) rankCluster.appendChild(trend);
         row.appendChild(rankCluster);
 
         var body = document.createElement('div');
@@ -15498,7 +15510,7 @@
         recentFavoritesLoading = true;
         homePanelLoading = true;
         refreshIdleFavoritesPanelIfVisible();
-        return fetchJson(API_BASE + '/api/home?site_id=' + encodeURIComponent(String(selectedSiteId || '')))
+        return fetchJson(API_BASE + '/api/home?site_id=' + encodeURIComponent(String(selectedSiteId || '')) + homeSiteIdsQuery())
           .then(function(result) {
             if (requestId !== homeRequestSerial) return recentFavoriteItems;
             if (!result.ok) throw new Error(result.data && result.data.error || '홈 정보를 불러오지 못했습니다.');
@@ -17423,7 +17435,7 @@
         var placeSource = String(recent.source || '').trim().toLowerCase() === 'map' ? 'map' : 'search';
         var context = {
           site_id: siteId,
-          site_ids: Array.isArray(recent.site_ids) ? recent.site_ids : null,
+          site_ids: Array.isArray(recent.site_ids) && !equalSitesEnabled() ? recent.site_ids : null,
           day_type: dayType,
           direction: direction,
           time_basis: String(recent.time_basis || selectedRouteTimeBasis || 'depart_at'),
@@ -18868,6 +18880,7 @@
         });
         buildTimePickerWheels();
         pendingDayType = selectedDayType;
+        updateTransferSiteLimitNotice();
         pendingRouteTimeBasis = selectedRouteTimeBasis;
         pendingRouteKind = selectedRouteKind;
         pendingShuttleTransferSearch = !!selectedShuttleTransferSearch;
@@ -19181,6 +19194,7 @@
           });
         }
         pendingDayType = DAY_TYPE_OPTIONS[idx] ? DAY_TYPE_OPTIONS[idx].value : selectedDayType;
+        updateTransferSiteLimitNotice();
       }
       function scrollDayTypeToValue(value) {
         if (!dayTypeList || DAY_TYPE_OPTIONS.length === 0) return;
@@ -19190,6 +19204,7 @@
         DAY_TYPE_OPTIONS.forEach(function(opt, i) { if (opt.value === value) idx = i; });
         pendingDayType = DAY_TYPE_OPTIONS[idx].value;
         dayTypeList.scrollTop = idx * DAY_TYPE_ITEM_HEIGHT;
+        updateTransferSiteLimitNotice();
       }
 
       // 사업장 요일 목록과 공휴일 자료 수신 후 초기 선택을 확정한다.
@@ -19198,6 +19213,66 @@
       function multiSiteEnabled() {
         var flags = window.__SG_FLAGS || {};
         return !!flags.multi_site;
+      }
+      // No primary site (switch multi_site_equal_sites): the site picker is a plain checklist,
+      // the first checked site serves where one site is needed, and the home, the day list
+      // and the recent searches are about every selected site.
+      function equalSitesEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!(flags.multi_site && flags.multi_site_equal_sites);
+      }
+      // "&site_ids=…" for the home requests when they are about several sites, else ''.
+      function homeSiteIdsQuery() {
+        if (!equalSitesEnabled()) return '';
+        var ids = getActiveSiteIds();
+        return ids.length >= 2 ? '&site_ids=' + encodeURIComponent(ids.join(',')) : '';
+      }
+      // The day types of every selected site, the first site's first (multi_site_equal_sites).
+      // /api/sites already told each site's day types, so this asks nothing.
+      function unionDayTypesOfActiveSites(dayTypes) {
+        var values = (dayTypes || []).slice();
+        if (!equalSitesEnabled()) return values;
+        getActiveSiteIds().forEach(function(siteId) {
+          var list = siteDayTypesById[String(siteId || '')];
+          if (!Array.isArray(list)) return;
+          list.forEach(function(value) {
+            var dayType = String(value || '');
+            if (dayType && values.indexOf(dayType) < 0) values.push(dayType);
+          });
+        });
+        return values;
+      }
+      // The sites a transfer search covers on a day type, by the server's rule: the first
+      // N selected sites that have routes on that day (N: multi_site_transfer_max_sites).
+      function transferSearchSitesForDay(dayType) {
+        var flags = window.__SG_FLAGS || {};
+        var limit = Math.max(1, Math.min(14, Number(flags.multi_site_transfer_max_sites) || 3));
+        var running = getActiveSiteIds().filter(function(siteId) { return siteHasDayType(siteId, dayType); });
+        return { running: running, searched: running.slice(0, limit), limit: limit };
+      }
+      var SITE_NOTICE_ICON = '<svg class="site-notice-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<path fill="currentColor" fill-rule="evenodd" d="M12 2.5 1.5 21h21L12 2.5zM11 9h2v6h-2V9zm0 8h2v2h-2v-2z"/></svg>';
+      // A notice line with the warning sign in front (multi_site_equal_sites).
+      function siteNoticeLineHtml(text) {
+        return '<span class="site-notice-line">' + SITE_NOTICE_ICON + '<span>' + escapeHtml(String(text || '')) + '</span></span>';
+      }
+      // Under the transfer option of the day and time picker: which sites a transfer search
+      // covers on the day chosen there, when more sites than the limit run on that day. Shown
+      // before the option is turned on.
+      function updateTransferSiteLimitNotice() {
+        var el = document.getElementById('timeTransferSiteLimit');
+        if (!el) return;
+        var flags = window.__SG_FLAGS || {};
+        var plan = equalSitesEnabled() && flags.multi_site_transfer && getActiveSiteIds().length >= 2
+          ? transferSearchSitesForDay(pendingDayType || selectedDayType) : null;
+        if (!plan || plan.running.length <= plan.limit) {
+          el.hidden = true;
+          el.innerHTML = '';
+          return;
+        }
+        el.innerHTML = siteNoticeLineHtml('환승 경로는 사업장 ' + plan.searched.length + '곳에서만 찾아요: ' +
+          plan.searched.map(function(siteId) { return shortSiteName(getSiteNameById(siteId)); }).join(', '));
+        el.hidden = false;
       }
       // The sites a search covers, primary first. The stored list counts only while it
       // contains the current site: opening a shared route, a favorite or a recent search of
@@ -19298,6 +19373,11 @@
         updateSiteTriggerText();
         if (getActiveSiteIds().join(',') !== before) {
           if (mapStops.active) refreshMapStops();
+          if (equalSitesEnabled()) {
+            // The first site is the same, but the day list and the home are about every site.
+            refreshDayTypeOptionsForSite(selectedSiteId, { preserveDayType: selectedDayType });
+            loadRecentRouteFavorites().catch(function() {});
+          }
           refreshLastShuttleResult();
         }
         return Promise.resolve(true);
@@ -19504,7 +19584,8 @@
           nameEl.textContent = opt.text;
           row.appendChild(check);
           row.appendChild(nameEl);
-          if (index >= 0 && draft.length >= 2) {
+          // With multi_site_equal_sites there is no primary site: no badge, no "대표로" button.
+          if (index >= 0 && draft.length >= 2 && !equalSitesEnabled()) {
             var primaryBtn = document.createElement('button');
             primaryBtn.type = 'button';
             primaryBtn.className = 'site-picker-primary' + (index === 0 ? ' is-primary' : '');
@@ -19538,7 +19619,9 @@
         if (sitePickerHint) {
           sitePickerHint.textContent = draft.length === 0
             ? '1곳 이상 선택해 주세요'
-            : draft.length >= 2 ? draft.length + '곳 선택 · 대표: ' + shortSiteName(getSiteNameById(draft[0])) : '';
+            : draft.length >= 2
+              ? draft.length + '곳 선택' + (equalSitesEnabled() ? '' : ' · 대표: ' + shortSiteName(getSiteNameById(draft[0])))
+              : '';
         }
         if (sitePickerApplyBtn) sitePickerApplyBtn.disabled = draft.length === 0;
       }
@@ -19548,7 +19631,8 @@
         if (options.length > 0 && draft.length === options.length) {
           sitePickerDraftIds = draft.slice(0, 1);
         } else {
-          var next = draft.slice();
+          // multi_site_equal_sites: "전체 선택" puts the sites in the order of the list.
+          var next = equalSitesEnabled() ? [] : draft.slice();
           Array.prototype.forEach.call(options, function(opt) {
             var value = String(opt.value || '');
             if (value && next.indexOf(value) < 0) next.push(value);
@@ -21521,7 +21605,7 @@
           .then(function(data) {
             if (requestId !== dayTypeRequestSerial) return false;
             updateDayTypeCalendar(data.calendar);
-            var dayTypes = Array.isArray(data.day_types) ? data.day_types : [];
+            var dayTypes = unionDayTypesOfActiveSites(Array.isArray(data.day_types) ? data.day_types : []);
             var preserveDayType = String(opts.preserveDayType || '').trim() || getSharedRoutePreservedDayType(requestedSiteId);
             var autoSelect = initialDayTypeSelectionPending && !preserveDayType && !lastPlace &&
               !pendingSharedRouteToken && !sharedRouteState.active && !favoriteRouteState.active;
@@ -38503,14 +38587,14 @@
         if (sharedRouteState.active || favoriteRouteState.active || contextRouteFocus) return;
         var siteIds = getActiveSiteIds();
         if (siteIds.length < 2) return;
-        var text = '';
+        var messages = [];
         if (!isMultiSiteSearch(currentRouteTimeBasisUsed)) {
-          text = '이 검색은 ' + getSiteNameById(siteIds[0]) + '만 찾습니다.';
+          messages.push('이 검색은 ' + getSiteNameById(siteIds[0]) + '만 찾습니다.');
         } else if (Array.isArray(currentRouteSearchSites)) {
           var noService = currentRouteSearchSites
             .filter(function(site) { return site && site.status === 'no_service'; })
             .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
-          if (noService.length > 0) text = noService.join(', ') + ': 이 요일에는 운행하는 노선이 없어요.';
+          if (noService.length > 0) messages.push(noService.join(', ') + ': 이 요일에는 운행하는 노선이 없어요.');
         }
         if (isMultiSiteSearch(currentRouteTimeBasisUsed) && selectedShuttleTransferSearch &&
             Array.isArray(currentTransferSearchSites)) {
@@ -38518,16 +38602,28 @@
           var notSearched = currentTransferSearchSites
             .filter(function(site) { return site && site.status === 'not_searched'; })
             .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
-          if (notSearched.length > 0) {
-            text += (text ? ' ' : '') + '환승 경로는 ' + (currentTransferSearchSites.length - notSearched.length) +
-              '개 사업장에서만 찾았어요. 제외: ' + notSearched.join(', ');
+          if (notSearched.length > 0 && equalSitesEnabled()) {
+            // Says which sites were searched, not which were left out.
+            var searched = currentTransferSearchSites
+              .filter(function(site) { return site && (site.status === 'ok' || site.status === 'no_match'); })
+              .map(function(site) { return shortSiteName(getSiteNameById(site.site_id)); });
+            messages.push('환승 경로는 사업장 ' + searched.length + '곳에서만 찾았어요: ' + searched.join(', '));
+          } else if (notSearched.length > 0) {
+            messages.push('환승 경로는 ' + (currentTransferSearchSites.length - notSearched.length) +
+              '개 사업장에서만 찾았어요. 제외: ' + notSearched.join(', '));
           }
         }
-        if (!text) return;
+        if (!messages.length) return;
         var notice = document.createElement('div');
         notice.className = 'route-multi-site-notice';
         notice.setAttribute('role', 'note');
-        notice.textContent = text;
+        if (equalSitesEnabled()) {
+          // Each message on its own line, with the warning sign and colour.
+          notice.classList.add('warn');
+          notice.innerHTML = messages.map(siteNoticeLineHtml).join('');
+        } else {
+          notice.textContent = messages.join(' ');
+        }
         routeOptionsWrap.insertBefore(notice, routeOptionsWrap.firstChild);
       }
 
