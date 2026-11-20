@@ -5786,7 +5786,6 @@
     @media (max-width: 768px) {
       .btn-map-stops { width: 44px; height: 44px; }
       .btn-map-stops img { width: 22px; height: 22px; }
-      .map-stop-name { font-size: 12.5px; }
     }
     /* The same stop pin as on a drawn route, half as large again. The tip of the image is at
        50% / 93.5%. The colour says what a bus does there: blue where it only drops off, red
@@ -5831,6 +5830,9 @@
       text-overflow: ellipsis;
       pointer-events: none;
       box-shadow: 0 1px 2px rgba(0,0,0,.15);
+    }
+    @media (max-width: 768px) {
+      .map-stop-name { font-size: 12.5px; }
     }
     .map-stops-notice {
       position: absolute;
