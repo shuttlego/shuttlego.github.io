@@ -9553,6 +9553,9 @@
     .crowding-context, .crowding-change { margin-bottom: 12px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .crowding-description { display: none; flex-shrink: 0; margin: 0; padding: 14px 22px 0; color: #64748b; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
     .report-data-modal.crowding-detail .crowding-description { display: block; }
+    .crowding-note { margin: 0 0 10px; color: #64748b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .crowding-table + .crowding-note { margin: 10px 0 0; }
+    .crowding-carried-mark { margin-left: 1px; color: #64748b; }
     .crowding-day-heading { grid-column: 1 / -1; padding: 14px 0 6px; color: #64748b; font-size: 12px; font-weight: 400; }
     .report-data-modal.crowding-detail .report-data-body { overflow-x: auto; }
     .report-table-note {
@@ -40800,7 +40803,7 @@
           snapshot_unavailable: '공유 당시 계산에 사용된 상세 기록을 그대로 확인할 수 없습니다. 최신 검색에서 확인해 주세요.' };
         if (messages[data.state]) { reportDataBody.innerHTML = '<div class="report-empty-state">' + escapeHtml(messages[data.state]) + '</div>'; return; }
         var days = Array.isArray(data.days) ? data.days : [], context = data.context || {}, summary = data.summary;
-        var ids = new Set(), dates = new Set(), ratios = [], total = 0;
+        var ids = new Set(), dates = new Set(), ratios = [], total = 0, carriedCount = 0;
         var valid = !!data.context && ['available', 'stale'].includes(data.state) && days.length > 0 && days.length <= 10;
         valid = valid && days.every(function(day) {
           if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day.service_date) || dates.has(day.service_date) ||
@@ -40815,6 +40818,12 @@
                 (entry.plate_suffix && !/^[0-9]{4}$/.test(entry.plate_suffix)) ||
                 (entry.vehicle_number && (!/^(?:[가-힣]{2,4})?\d{2,3}[가-힣]\d{4}$/.test(entry.vehicle_number) || entry.vehicle_number.slice(-4) !== entry.plate_suffix)) ||
                 typeof entry.received_at !== 'string' || entry.received_at.length > 40 || !Number.isFinite(Date.parse(entry.received_at))) return false;
+            if (entry.carried_from_visit != null) {
+              // A record carried from an earlier stop of the same run (aggregation run_carry_forward_mean).
+              if (!Number.isInteger(entry.carried_from_visit) || entry.carried_from_visit < 0 || entry.carried_from_visit > 99 ||
+                  (entry.carried_from_stop_name != null && (typeof entry.carried_from_stop_name !== 'string' || entry.carried_from_stop_name.length > 80))) return false;
+              carriedCount += 1;
+            }
             var ratio = Math.min(100, entry.onboard_count * 100 / entry.capacity);
             if (entry.percentage !== Math.floor(ratio + .5)) return false;
             ids.add(entry.id); ratios.push(ratio); return true;
@@ -40824,19 +40833,35 @@
         if (data.state === 'available') valid = valid && !!summary && Number.isInteger(summary.percentage) && summary.percentage >= 0 && summary.percentage <= 100 && summary.day_count === days.length && summary.observed_vehicle_count === total &&
           (data.aggregation !== 'vehicle_record_mean' || summary.percentage === Math.floor(ratios.reduce(function(sum, ratio) { return sum + ratio; }, 0) / total + .5));
         else valid = valid && summary === null;
+        // run_carry_forward_mean: the stop's own mean covers its records and the carried ones; a stop
+        // below the previous stop shows the previous value and reports its own mean as own_percentage.
+        var ownPercentage = null;
+        if (valid && data.aggregation === 'run_carry_forward_mean' && data.state === 'available') {
+          var hasOwn = summary.own_percentage != null;
+          ownPercentage = hasOwn ? summary.own_percentage : summary.percentage;
+          valid = Number.isInteger(ownPercentage) && ownPercentage === Math.floor(ratios.reduce(function(sum, ratio) { return sum + ratio; }, 0) / total + .5) &&
+            (!hasOwn || summary.percentage > ownPercentage);
+          if (!hasOwn) ownPercentage = null;
+        } else if (data.aggregation !== 'run_carry_forward_mean' && carriedCount) valid = false;
         if (!valid) throw new Error('혼잡도 기록 형식이 올바르지 않습니다.');
-        var html = '<div class="crowding-table" role="table" aria-label="혼잡도 계산에 사용한 운행 기록" aria-colcount="4"><div class="report-table-head" role="row">' +
+        var notes = '';
+        if (ownPercentage !== null) notes += '<p class="crowding-note">이 정류장의 기록 평균은 ' + escapeHtml(ownPercentage) + '%입니다. 앞 정류장보다 낮아 앞 정류장 값에 맞춰 ' + escapeHtml(summary.percentage) + '%로 표시합니다.</p>';
+        var html = notes + '<div class="crowding-table" role="table" aria-label="혼잡도 계산에 사용한 운행 기록" aria-colcount="4"><div class="report-table-head" role="row">' +
           ['운행일', '탑승 / 정원', '비율', '차량'].map(function(label) { return '<div class="report-table-cell" role="columnheader">' + label + '</div>'; }).join('') + '</div>';
         days.forEach(function(day) {
           day.entries.forEach(function(entry) {
             var vehicle = entry.plate_suffix ? escapeHtml(entry.plate_suffix) : '정보 없음';
             if (entry.vehicle_number) vehicle = '<button type="button" class="crowding-vehicle eta-system-tooltip-trigger" data-eta-tooltip="' + escapeAttr('차량번호: ' + entry.vehicle_number) + '" aria-label="' + escapeAttr('차량 ' + entry.plate_suffix + ' 번호 확인') + '">' + vehicle + '</button>';
-            html += '<div class="report-table-row crowding-entry" role="row"><div class="report-table-cell" role="cell" aria-label="' + escapeAttr(day.service_date) + '">' + escapeHtml(crowdingDateLabel(day.service_date)) + '</div>' +
+            var carried = entry.carried_from_visit != null;
+            var carriedLabel = carried ? '앞 정류장' + (entry.carried_from_stop_name ? '(' + entry.carried_from_stop_name + ')' : '') + ' 기록 이어 씀' : '';
+            html += '<div class="report-table-row crowding-entry' + (carried ? ' crowding-carried" title="' + escapeAttr(carriedLabel) : '') + '" role="row"><div class="report-table-cell" role="cell" aria-label="' + escapeAttr(day.service_date) + '">' + escapeHtml(crowdingDateLabel(day.service_date)) + '</div>' +
               '<div class="report-table-cell" role="cell">' + escapeHtml(entry.onboard_count) + ' / ' + escapeHtml(entry.capacity) + ' 명</div>' +
-              '<div class="report-table-cell" role="cell">' + escapeHtml(entry.percentage) + '%</div><div class="report-table-cell" role="cell">' + vehicle + '</div></div>';
+              '<div class="report-table-cell" role="cell"' + (carried ? ' aria-label="' + escapeAttr(entry.percentage + '%, ' + carriedLabel) + '"' : '') + '>' + escapeHtml(entry.percentage) + '%' + (carried ? '<span class="crowding-carried-mark" aria-hidden="true">*</span>' : '') + '</div><div class="report-table-cell" role="cell">' + vehicle + '</div></div>';
           });
         });
-        reportDataBody.innerHTML = html + '</div>'; bindEtaDetailTooltipTriggers();
+        html += '</div>';
+        if (carriedCount) html += '<p class="crowding-note">* 이 정류장에서 기록되지 않아 앞 정류장 기록을 이어 쓴 운행입니다.</p>';
+        reportDataBody.innerHTML = html; bindEtaDetailTooltipTriggers();
       }
 
       document.addEventListener('keydown', function(event) {
