@@ -5777,27 +5777,31 @@
       justify-content: center;
       transition: background .15s, box-shadow .15s;
     }
-    .btn-map-stops img { width: 24px; height: 24px; object-fit: contain; display: block; }
+    /* A plain pin in the colour of the icons below it: its outline while the stops are hidden,
+       filled white on blue while they show. */
+    .btn-map-stops svg { width: 24px; height: 24px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+    .btn-map-stops.active svg { fill: currentColor; }
     .btn-map-stops:hover { background: #f5f5f5; box-shadow: 0 2px 12px rgba(0,0,0,.2); }
-    .btn-map-stops.active { background: #1428A0; }
-    .btn-map-stops.active img { filter: brightness(0) invert(1); }
+    .btn-map-stops.active { background: #1428A0; color: #fff; }
     .btn-map-stops.loading { opacity: .6; }
     .btn-map-stops.shared-route-hidden { display: none !important; }
     @media (max-width: 768px) {
       .btn-map-stops { width: 44px; height: 44px; }
-      .btn-map-stops img { width: 22px; height: 22px; }
+      .btn-map-stops svg { width: 22px; height: 22px; }
     }
-    /* The same stop pin as on a drawn route. The tip of the image is at 50% / 93.5%. */
+    /* The same stop pin as on a drawn route, half as large again. The tip of the image is at
+       50% / 93.5%. The colour says what a bus does there: blue where it only picks up, orange
+       where it only drops off, half and half for both (the colours of the 탑승/하차 marks). */
     .map-stop-dot {
-      width: 30px;
-      height: 30px;
+      width: 45px;
+      height: 45px;
       background: url('/images/stop_icon.png') center/contain no-repeat;
       cursor: pointer;
       transform-origin: 50% 93.5%;
       transition: transform .12s ease;
     }
-    /* Drop-off only (nothing left to board after the chosen time): the same pin in red. */
-    .map-stop-dot.alight-only { filter: hue-rotate(135deg) saturate(1.5); }
+    .map-stop-dot.alight { background-image: url('/images/stop_alight_icon.png'); }
+    .map-stop-dot.both { background-image: url('/images/stop_board_alight_icon.png'); }
     .map-stop-dot.selected { transform: scale(1.4); }
     .map-stop-cluster {
       min-width: 30px;
@@ -5816,18 +5820,21 @@
       cursor: pointer;
     }
     .map-stop-name {
-      max-width: 120px;
+      max-width: 140px;
       padding: 1px 5px;
       border-radius: 4px;
       background: rgba(255,255,255,.92);
       color: #1f2937;
-      font-size: 11px;
+      font-size: 12.96px;  /* as .place-label */
       font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       pointer-events: none;
       box-shadow: 0 1px 2px rgba(0,0,0,.15);
+    }
+    @media (max-width: 768px) {
+      .map-stop-name { font-size: 12.5px; }
     }
     .map-stops-notice {
       position: absolute;
@@ -5886,6 +5893,29 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .bubble-stop-routes .stop-route-row.is-link { cursor: pointer; }
+    .bubble-stop-routes .stop-route-row.is-link:hover,
+    .bubble-stop-routes .stop-route-row.is-link:focus-visible { background: #f5f7ff; outline: none; }
+    .bubble-stop-routes .stop-route-go { flex: 0 0 auto; color: #9ca3af; font-weight: 700; }
+    .bubble-stop-days { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; }
+    /* No site line under the stop name: the day tabs are as far below the name as they are
+       below the site line when it shows (its margin-bottom). */
+    .stop-bubble-plain .bubble-stop-days { margin-top: 10px; }
+    .bubble-stop-days .stop-day-tab {
+      padding: 3px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 999px;
+      background: #fff;
+      color: #374151;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .bubble-stop-days .stop-day-tab.active { border-color: #1428A0; background: #1428A0; color: #fff; }
+    /* #97: the result of one route opened from a stop has nothing to sort or widen. */
+    body.sg-route-focus #routeSortBar { display: none !important; }
     .bubble-stop-routes .stop-route-time { flex: 0 0 auto; color: #374151; font-weight: 700; white-space: nowrap; }
     .bubble-stop-routes .stop-route-time small { color: #6b7280; font-weight: 500; }
     .bubble-stop-routes .stop-route-empty { padding: 8px 0; color: #6b7280; font-size: 12px; }
@@ -11232,7 +11262,9 @@
           <button type="button" class="btn-arrival-report" id="btnArrivalReport">도착 시간 제보하기</button>
           <div class="map-side-actions">
             <button type="button" class="btn-map-stops" id="btnMapStops" title="정류장 보기" aria-label="정류장 보기" aria-pressed="false" hidden>
-              <img src="/images/stop_icon.png" alt="" />
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2C7.58 2 4 5.5 4 9.82c0 5.36 6.3 11.02 7.33 11.92a1 1 0 0 0 1.34 0C13.7 20.84 20 15.18 20 9.82 20 5.5 16.42 2 12 2z"/>
+              </svg>
             </button>
             <button type="button" class="btn-rank-floating" id="btnMapLeaderboard" title="랭킹">
               <img src="/images/rank_icon.png" alt="" />
@@ -11314,11 +11346,16 @@
       var btnMapLeaderboard = document.getElementById('btnMapLeaderboard');
       var btnMapStops = document.getElementById('btnMapStops');
       var mapStopsNotice = document.getElementById('mapStopsNotice');
-      // v0.9.8 (#97, switch: map_stops). lists: "site|day" -> rows [id, lat, lng, name, boardLast, alightLast].
+      // #97 (switch: map_stops). lists: site -> rows [id, lat, lng, name, kind], every stop of
+      // the site (kind: 1 pick-up, 2 drop-off, 3 both). bubble: the stop whose bubble is open.
       var mapStops = {
         active: false, lists: {}, pending: {}, overlays: [], renderTimer: null, noticeTimer: null,
-        selectedKey: '', infoSeq: 0, loadSeq: 0
+        selectedKey: '', infoSeq: 0, loadSeq: 0, bubble: null
       };
+      // One entry per result opened from a stop bubble (a route row or 출발/도착), oldest first:
+      // the stop, the day tab, the map area and the search that was on screen under the stops.
+      // The last entry belongs to the result on screen. See currentMapStopReturn.
+      var mapStopReturns = [];
       var btnLocation = document.getElementById('btnLocation');
       var siteSelect = document.getElementById('siteSelect');
       var siteSelectTrigger = document.getElementById('siteSelectTrigger');
@@ -11504,6 +11541,10 @@
       // The site list of a repeated multi-site search (a recent search or a shared link),
       // primary first. It lasts until the user picks sites again and is never stored.
       var contextSiteIds = null;
+      // #97 (switch: map_stop_route_search): the result of one route, opened from a route row
+      // of a stop bubble. While it is set, the day, time and search options above are that
+      // route's; `saved` keeps the user's own, put back on leaving. Never stored.
+      var contextRouteFocus = null;
       var siteDayTypesById = {};
       var sitePickerDraftIds = null;
       var currentRouteSearchSites = null;
@@ -12539,6 +12580,7 @@
         if (btnMapLeaderboard) btnMapLeaderboard.classList.toggle('shared-route-hidden', hideForSharedRoute);
         if (btnMapStops) btnMapStops.classList.toggle('shared-route-hidden', hideForSharedRoute);
         if (hideForSharedRoute && mapStops.active) exitMapStops({ redraw: false });
+        if (hideForSharedRoute) endRouteFocus();
         updateArrivalReportButtonVisibility();
       }
 
@@ -16956,6 +16998,11 @@
       }
 
       function buildEndpointTriggerSummaryHtml() {
+        if (contextRouteFocus) {
+          // #97: the result of one route does not use the endpoint selection; name its site.
+          return '<span class="endpoint-trigger-name">' +
+            escapeHtml(shortSiteName(getSiteNameById(contextRouteFocus.siteId))) + '</span>';
+        }
         var summary = getEndpointTriggerSummaryParts();
         var head = String(summary && summary.head || '').trim();
         var extra = String(summary && summary.extra || '').trim();
@@ -17227,6 +17274,7 @@
       }
 
       function applyResolvedRouteSearchContext(context, endpointState) {
+        endRouteFocus();
         var resolvedContext = context || {};
         var siteId = String(resolvedContext.site_id || selectedSiteId || '').trim();
         var dayType = String(resolvedContext.day_type || selectedDayType || 'weekday').trim() || 'weekday';
@@ -17466,6 +17514,7 @@
 
       function beginFavoriteRouteView() {
         if (mapStops.active) exitMapStops({ redraw: false });
+        endRouteFocus();
         if (activeCombinedSearchCoordinator && typeof activeCombinedSearchCoordinator.dispose === 'function') {
           activeCombinedSearchCoordinator.dispose();
         }
@@ -18186,6 +18235,7 @@
           requestAnimationFrame(syncHeaderTabWidth);
           return;
         }
+        endRouteFocus();
         routeModeDirection = null;
         routeModePlaceName = '';
         routeLabelTriggeredDetailState = null;
@@ -18793,6 +18843,13 @@
         pendingShuttleTransferMaxTransfers = normalizeShuttleTransferMaxTransfers(
           selectedShuttleTransferMaxTransfers
         );
+        if (contextRouteFocus) {
+          // The day and time shown are the route's; the options are the user's own.
+          pendingRouteTimeBasis = contextRouteFocus.saved.timeBasis;
+          pendingRouteKind = contextRouteFocus.saved.routeKind;
+          pendingShuttleTransferSearch = !!contextRouteFocus.saved.transfer;
+          pendingTransitSearch = !!contextRouteFocus.saved.transit;
+        }
         buildDayTypeWheel();
         syncTimeBasisPickerUi();
         var triggerEl = departureTrigger;
@@ -18877,6 +18934,21 @@
         updateTimePickerSelectedClasses();
         var h = timePickerDraftTime.h;
         var m = timePickerDraftTime.m;
+        var leftRouteFocus = false;
+        if (contextRouteFocus) {
+          // #97: confirming without a change keeps the one-route result. A change leaves it
+          // with the values just chosen: the search is run again from the stop as usual.
+          var focusSaved = contextRouteFocus.saved;
+          var changedInFocus = h !== departureTime.h || m !== departureTime.m || pendingDayType !== selectedDayType ||
+            normalizeRouteTimeBasis(pendingRouteTimeBasis) !== normalizeRouteTimeBasis(focusSaved.timeBasis) ||
+            normalizeRouteKind(pendingRouteKind) !== normalizeRouteKind(focusSaved.routeKind) ||
+            !!pendingShuttleTransferSearch !== !!focusSaved.transfer || !!pendingTransitSearch !== !!focusSaved.transit ||
+            (!!pendingShuttleTransferSearch && normalizeShuttleTransferMaxTransfers(pendingShuttleTransferMaxTransfers) !==
+              normalizeShuttleTransferMaxTransfers(selectedShuttleTransferMaxTransfers));
+          if (!changedInFocus) { closeTimePickerModal(); return; }
+          endRouteFocus({ keepDayTime: true });
+          leftRouteFocus = true;
+        }
         var timeChanged = (h !== departureTime.h || m !== departureTime.m);
         departureTime.h = h;
         departureTime.m = m;
@@ -18902,13 +18974,13 @@
         closeTimePickerModal();
         updateDepartureTriggerText();
         // 실제 검색 조건이 바뀐 경우에만 노선을 다시 검색한다.
+        if (leftRouteFocus) timeChanged = true;
         if (timeChanged || dayChanged || kindChanged || basisChanged || transferChanged || transferMaxChanged || transitChanged) {
           refreshLastShuttleResult();
         }
       }
       function refreshLastShuttleResult(opts) {
         opts = opts || {};
-        if (mapStops.active) refreshMapStops();
         if (!lastPlace || !lastShuttleType) return false;
         if (!opts.loadingTitle) opts.loadingTitle = '새 조건으로 노선을 다시 찾는 중입니다.';
         if (!opts.loadingMessage) opts.loadingMessage = '변경한 요일, 시간, 선택 옵션을 적용해 최신 노선을 확인하고 있습니다.';
@@ -19125,6 +19197,7 @@
       // Does the search about to run (or just run) cover every selected site? The ordinary
       // (depart-at, direct) search always does; the others each have a switch (#102 phase 2).
       function isMultiSiteSearch(timeBasis) {
+        if (contextRouteFocus) return false;
         if (getActiveSiteIds().length < 2) return false;
         var flags = window.__SG_FLAGS || {};
         var arriveBy = normalizeRouteTimeBasis(timeBasis || selectedRouteTimeBasis) === 'arrive_by';
@@ -19191,7 +19264,10 @@
         }
         if (primaryChanged) return applySiteSelection(ids[0], { persistPreference: false });
         updateSiteTriggerText();
-        if (getActiveSiteIds().join(',') !== before) refreshLastShuttleResult();
+        if (getActiveSiteIds().join(',') !== before) {
+          if (mapStops.active) refreshMapStops();
+          refreshLastShuttleResult();
+        }
         return Promise.resolve(true);
       }
       function updateSiteTriggerText() {
@@ -19262,6 +19338,7 @@
         }
         return refreshDayTypeOptionsForSite(selectedSiteId).then(function(applied) {
           var refreshedRoute = false;
+          if (mapStops.active) refreshMapStops();
           if (applied !== false && opts.refreshResults !== false) {
             refreshedRoute = refreshLastShuttleResult() !== false;
           }
@@ -22738,6 +22815,7 @@
         }
         bubbleState = null;
         // #97: the enlarged stop pin belongs to its bubble.
+        mapStops.bubble = null;
         if (mapStops.selectedKey) {
           mapStops.selectedKey = '';
           if (mapContainer) {
@@ -22922,25 +23000,20 @@
         clearTimeout(mapStops.noticeTimer);
         mapStops.noticeTimer = setTimeout(function() { mapStopsNotice.classList.remove('show'); }, 3200);
       }
-      // HH:MM on the service-day axis (04:00 = 240 ... 27:59), like the server.
-      function mapStopsReferenceMinute() {
-        var minute = departureTime.h * 60 + departureTime.m;
-        return minute < 240 ? minute + 1440 : minute;
-      }
       function mapStopsListKey(siteId) {
-        return String(siteId || '') + '|' + String(selectedDayType || '');
+        return String(siteId || '');
       }
-      // One request per selected site and day type; the answer is kept for the session and
-      // by the browser (catalog version in the URL), so moving the map asks nothing.
+      // One request per selected site: every stop of the site, whatever the day and time. The
+      // answer is kept for the session and by the browser (catalog version in the URL), so
+      // moving the map or changing the day and time asks nothing.
       function loadMapStopLists() {
         var tasks = [];
         getActiveSiteIds().forEach(function(siteId) {
-          if (!siteHasDayType(siteId, selectedDayType)) return;
           var key = mapStopsListKey(siteId);
           if (mapStops.lists[key]) return;
           if (!mapStops.pending[key]) {
-            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) +
-              '&day_type=' + encodeURIComponent(selectedDayType) + catalogVersionQuery();
+            // fields=kind only keeps a browser from answering with a copy of the list without the kind.
+            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) + '&fields=kind' + catalogVersionQuery();
             mapStops.pending[key] = fetchJson(url)
               .then(function(result) {
                 if (!result.ok) throw new Error('stops');
@@ -22979,7 +23052,6 @@
         var bounds = map.getBounds();
         var sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
         var south = sw.getLat(), west = sw.getLng(), north = ne.getLat(), east = ne.getLng();
-        var reference = mapStopsReferenceMinute();
         var visible = [];
         getActiveSiteIds().forEach(function(siteId) {
           var rows = mapStops.lists[mapStopsListKey(siteId)];
@@ -22987,7 +23059,6 @@
           for (var i = 0; i < rows.length; i++) {
             var row = rows[i];
             if (row[1] < south || row[1] > north || row[2] < west || row[2] > east) continue;
-            if (row[4] < reference && row[5] < reference) continue;
             visible.push({ siteId: siteId, row: row });
           }
         });
@@ -23003,7 +23074,7 @@
           });
           Object.keys(cells).forEach(function(key) {
             var cell = cells[key];
-            if (cell.count === 1) { addMapStopDot(cell.first, reference, false); return; }
+            if (cell.count === 1) { addMapStopDot(cell.first, false); return; }
             var lat = cell.lat / cell.count, lng = cell.lng / cell.count;
             var el = document.createElement('div');
             el.className = 'map-stop-cluster';
@@ -23019,15 +23090,18 @@
           return visible.length;
         }
         var showNames = visible.length <= 30;
-        visible.forEach(function(item) { addMapStopDot(item, reference, showNames); });
+        visible.forEach(function(item) { addMapStopDot(item, showNames); });
         return visible.length;
       }
-      function addMapStopDot(item, reference, showName) {
+      function addMapStopDot(item, showName) {
         var row = item.row;
         var key = item.siteId + ':' + row[0];
         var el = document.createElement('div');
-        el.className = 'map-stop-dot' + (row[4] < reference ? ' alight-only' : '') + (key === mapStops.selectedKey ? ' selected' : '');
-        el.title = row[3];
+        // An older server sends no kind: the pin stays blue.
+        var kind = Number(row[4]) || 0;
+        el.className = 'map-stop-dot' + (kind === 2 ? ' alight' : kind === 3 ? ' both' : '') +
+          (key === mapStops.selectedKey ? ' selected' : '');
+        el.title = row[3] + (kind === 1 ? ' (탑승)' : kind === 2 ? ' (하차)' : kind === 3 ? ' (탑승·하차)' : '');
         el.addEventListener('click', function(e) {
           e.stopPropagation();
           mapClickIgnore = true;
@@ -23058,10 +23132,8 @@
             var any = getActiveSiteIds().some(function(siteId) {
               return (mapStops.lists[mapStopsListKey(siteId)] || []).length > 0;
             });
-            if (!any) showMapStopsNotice('이 요일에는 운행하는 노선이 없어요.');
-            else if (!shown && normalizeRouteTimeBasis(selectedRouteTimeBasis) !== 'arrive_by') {
-              showMapStopsNotice('이 화면에는 ' + getDepartureTimeStr() + ' 이후 운행하는 정류장이 없어요. 지도를 옮기거나 축소해 보세요.');
-            }
+            if (!any) showMapStopsNotice('선택한 사업장에 정류장이 없어요.');
+            else if (!shown) showMapStopsNotice('이 화면에는 정류장이 없어요. 지도를 옮기거나 축소해 보세요.');
           });
       }
       function enterMapStops() {
@@ -23075,9 +23147,6 @@
         hideShuttleErrorOverlay();
         if (shuttleMessage) shuttleMessage.classList.remove('show');
         syncMapStopsButton();
-        if (normalizeRouteTimeBasis(selectedRouteTimeBasis) === 'arrive_by') {
-          showMapStopsNotice('정류장 표시는 출발 시각 기준으로만 합니다.');
-        }
         refreshMapStops();
       }
       function exitMapStops(opts) {
@@ -23111,69 +23180,151 @@
         if (mapStops.active) exitMapStops({ redraw: true });
         else enterMapStops();
       }
+      // The whole day of a route at the stop: one pass, the first and last of several, or a
+      // frequent-service span. An older server sends one time only.
       function formatMapStopRouteTime(route) {
-        var pass = escapeHtml(String(route.pass_time || ''));
-        if (route.frequent) return pass + ' <small>수시 운행</small>';
-        var departure = String(route.departure_time || '');
-        return pass + (departure && departure !== route.pass_time ? ' <small>(' + escapeHtml(departure) + ' 출발)</small>' : '');
+        var first = escapeHtml(String(route.first_pass || route.pass_time || ''));
+        if (route.last_pass == null) {
+          if (route.frequent) return first + ' <small>수시 운행</small>';
+          var departure = String(route.departure_time || '');
+          return first + (departure && departure !== route.pass_time ? ' <small>(' + escapeHtml(departure) + ' 출발)</small>' : '');
+        }
+        var last = escapeHtml(String(route.last_pass || ''));
+        var span = last && last !== first ? first + '–' + last : first;
+        if (route.ranged) return span + ' <small>수시</small>';
+        var runs = Number(route.runs) || 0;
+        return runs > 1 ? span + ' <small>· ' + runs + '회</small>' : first;
       }
-      // The bubble of a tapped stop: its routes after the chosen time (timetable times), and
-      // the same 출발/도착 search as a tapped map position, with the stop name as the place.
-      function showMapStopBubble(siteId, row) {
+      function mapStopDayLabel(dayType) {
+        var label = DAY_TYPE_LABEL_MAP[dayType] || dayType || '평일';
+        return dayType === 'familyday' ? (DAY_TYPE_SHORT_MAP[dayType] || label) : label;
+      }
+      function mapStopRouteSearchEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!(flags.map_stops && flags.map_stop_route_search);
+      }
+      function makeMapStopPlace(row) {
         var place = normalizeRoutePlace({
           place_name: row[3] || '정류장', address_name: '', y: row[1], x: row[2], _place_source: 'map'
         }, { placeSource: 'map', placeName: row[3] || '정류장' });
+        if (place) place._stop = true;
+        return place;
+      }
+      // The bubble of a tapped stop: its routes per day type, each with its whole day
+      // (timetable times), and the same 출발/도착 search as a tapped map position, with the
+      // stop name as the place. The day tabs change neither the day above nor the map.
+      function showMapStopBubble(siteId, row, opts) {
+        opts = opts || {};
+        var place = makeMapStopPlace(row);
         if (!place) return;
-        place._stop = true;
         blurActiveSearchInputs();
         // showBubbleWithPlace closes the previous bubble first, which clears the old selection.
         showBubbleWithPlace(place, row[1], row[2], false, null, 'manual');
         mapStops.selectedKey = siteId + ':' + row[0];
+        var shownStop = mapStops.bubble = { siteId: siteId, row: row, dayType: '' };
         scheduleMapStopsRender(0);
         var box = bubbleOverlay && bubbleOverlay.querySelector('.bubble-box');
         if (!box) return;
         box.classList.add('stop-bubble');
         var addr = box.querySelector('.bubble-addr');
         if (addr) {
-          addr.textContent = '정류장' + (getActiveSiteIds().length >= 2 ? ' · ' + shortSiteName(getSiteNameById(siteId)) : '') +
-            ' · ' + getDepartureTimeStr() + ' 이후';
+          // Under the stop name: the stop's site, by its whole name, when several sites are selected.
+          var stopSiteName = getActiveSiteIds().length >= 2 ? getSiteNameById(siteId) : '';
+          addr.textContent = stopSiteName;
+          addr.style.display = stopSiteName ? '' : 'none';
+          box.classList.toggle('stop-bubble-plain', !stopSiteName);
         }
+        var tabs = document.createElement('div');
+        tabs.className = 'bubble-stop-days';
         var list = document.createElement('div');
         list.className = 'bubble-stop-routes';
         list.innerHTML = '<div class="stop-route-empty">노선을 불러오는 중...</div>';
-        ['click', 'touchend', 'touchstart', 'touchmove', 'wheel', 'mousedown'].forEach(function(type) {
-          list.addEventListener(type, function(e) { e.stopPropagation(); }, { passive: true });
+        [tabs, list].forEach(function(el) {
+          ['click', 'touchend', 'touchstart', 'touchmove', 'wheel', 'mousedown'].forEach(function(type) {
+            el.addEventListener(type, function(e) { e.stopPropagation(); }, { passive: true });
+          });
         });
+        box.insertBefore(tabs, box.querySelector('.bubble-actions'));
         box.insertBefore(list, box.querySelector('.bubble-actions'));
         refreshBubbleOverlayPosition();
-        var seq = ++mapStops.infoSeq;
+        var canOpenRoute = mapStopRouteSearchEnabled();
+        var dayType = String(opts.dayType || selectedDayType || 'weekday');
+        var dayTypes = null;
+        var seq = 0;
         var loaded = 0;
-        function loadPage(offset) {
+        function renderTabs() {
+          var shown = dayTypes && dayTypes.length ? dayTypes : [dayType];
+          shownStop.dayType = dayType;
+          tabs.innerHTML = '';
+          shown.forEach(function(value) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'stop-day-tab' + (value === dayType ? ' active' : '');
+            button.setAttribute('aria-pressed', value === dayType ? 'true' : 'false');
+            button.setAttribute('data-day-type', value);
+            button.textContent = mapStopDayLabel(value);
+            button.addEventListener('click', function(e) {
+              e.stopPropagation();
+              e.preventDefault();
+              if (value === dayType) return;
+              dayType = value;
+              renderTabs();
+              list.innerHTML = '<div class="stop-route-empty">노선을 불러오는 중...</div>';
+              loadDay(false);
+            });
+            tabs.appendChild(button);
+          });
+        }
+        function addRouteRow(route) {
+          var item = document.createElement('div');
+          var opens = canOpenRoute && Number(route.route_id) > 0 && /^\d{1,2}:\d{2}/.test(String(route.departure_time || ''));
+          item.className = 'stop-route-row' + (opens ? ' is-link' : '');
+          item.innerHTML =
+            '<span class="stop-route-role' + (route.role === 'alight' ? ' alight' : '') + '">' +
+              (route.role === 'alight' ? '하차' : '탑승') + '</span>' +
+            '<span class="stop-route-name" title="' + escapeAttr(String(route.route_name || '')) + '">' +
+              escapeHtml(String(route.route_name || '')) + '</span>' +
+            '<span class="stop-route-time">' + formatMapStopRouteTime(route) + '</span>' +
+            (opens ? '<span class="stop-route-go" aria-hidden="true">›</span>' : '');
+          if (opens) {
+            var rowDayType = dayType;
+            var open = function(e) {
+              e.stopPropagation();
+              e.preventDefault();
+              openMapStopRoute(siteId, row, route, rowDayType);
+            };
+            item.setAttribute('role', 'button');
+            item.setAttribute('tabindex', '0');
+            item.setAttribute('data-route-id', String(route.route_id));
+            item.addEventListener('click', open);
+            item.addEventListener('keydown', function(e) { if (e.key === 'Enter' || e.key === ' ') open(e); });
+          }
+          list.appendChild(item);
+        }
+        function loadPage(offset, anyDay) {
+          var mine = seq;
           var url = API_BASE + '/api/shuttle/stop-info?site_id=' + encodeURIComponent(siteId) +
-            '&day_type=' + encodeURIComponent(selectedDayType) + '&stop_id=' + encodeURIComponent(String(row[0])) +
-            '&time=' + encodeURIComponent(getDepartureTimeStr()) + (offset ? '&offset=' + offset : '');
+            '&day_type=' + encodeURIComponent(dayType) + '&stop_id=' + encodeURIComponent(String(row[0])) +
+            (anyDay ? '&any_day=1' : '') + (offset ? '&offset=' + offset : '') + catalogVersionQuery();
           return fetchJson(url).then(function(result) {
-            if (seq !== mapStops.infoSeq || !list.isConnected) return;
+            if (mine !== seq || infoSeq !== mapStops.infoSeq || !list.isConnected) return;
             if (!result.ok) throw new Error('stop-info');
             var data = result.data || {};
             var routes = Array.isArray(data.routes) ? data.routes : [];
-            if (offset === 0) list.innerHTML = '';
+            if (offset === 0) {
+              // The server says which day types the stop has routes on, and which one it used
+              // when the day above has none.
+              if (Array.isArray(data.day_types) && data.day_types.length) dayTypes = data.day_types.map(String);
+              if (data.day_type && (!dayTypes || dayTypes.indexOf(String(data.day_type)) >= 0)) dayType = String(data.day_type);
+              renderTabs();
+              list.innerHTML = '';
+            }
             var more = list.querySelector('.stop-route-more');
             if (more) more.parentNode.removeChild(more);
             if (offset === 0 && routes.length === 0) {
-              list.innerHTML = '<div class="stop-route-empty">' + getDepartureTimeStr() + ' 이후 지나는 노선이 없어요.</div>';
+              list.innerHTML = '<div class="stop-route-empty">' + escapeHtml(mapStopDayLabel(dayType)) + '에는 지나는 노선이 없어요.</div>';
             }
-            routes.forEach(function(route) {
-              var item = document.createElement('div');
-              item.className = 'stop-route-row';
-              item.innerHTML =
-                '<span class="stop-route-role' + (route.role === 'alight' ? ' alight' : '') + '">' +
-                  (route.role === 'alight' ? '하차' : '탑승') + '</span>' +
-                '<span class="stop-route-name" title="' + escapeAttr(String(route.route_name || '')) + '">' +
-                  escapeHtml(String(route.route_name || '')) + '</span>' +
-                '<span class="stop-route-time">' + formatMapStopRouteTime(route) + '</span>';
-              list.appendChild(item);
-            });
+            routes.forEach(addRouteRow);
             loaded += routes.length;
             if (data.has_more) {
               var button = document.createElement('button');
@@ -23184,18 +23335,199 @@
                 e.stopPropagation();
                 e.preventDefault();
                 button.disabled = true;
-                loadPage(loaded).catch(function() { button.disabled = false; });
+                loadPage(loaded, false).catch(function() { button.disabled = false; });
               });
               list.appendChild(button);
             }
             refreshBubbleOverlayPosition();
           });
         }
-        loadPage(0).catch(function() {
-          if (seq !== mapStops.infoSeq || !list.isConnected) return;
-          list.innerHTML = '<div class="stop-route-empty">노선을 불러오지 못했습니다.</div>';
-          refreshBubbleOverlayPosition();
+        var infoSeq = ++mapStops.infoSeq;
+        function loadDay(anyDay) {
+          seq += 1;
+          loaded = 0;
+          var mine = seq;
+          loadPage(0, anyDay).catch(function() {
+            if (mine !== seq || infoSeq !== mapStops.infoSeq || !list.isConnected) return;
+            list.innerHTML = '<div class="stop-route-empty">노선을 불러오지 못했습니다.</div>';
+            refreshBubbleOverlayPosition();
+          });
+        }
+        renderTabs();
+        loadDay(!opts.dayType);
+      }
+
+      // ── #97: the result of one route, opened from a route row of a stop bubble ──────────
+      // Sets the day and time above to the route's (the day of the tab; the time the first
+      // bus passes the stop, or leaves the site for a drop-off row) and turns off what a
+      // one-route result does not use. Everything is put back by endRouteFocus.
+      function beginRouteFocus(siteId, row, route, dayType) {
+        endRouteFocus();
+        var isDepart = route.role !== 'alight';
+        // The search is asked for the route's first departure: every sort order then finds the
+        // first bus of the day, whatever the stop's offset from the first stop.
+        var firstDeparture = /^(\d{1,2}):(\d{2})/.exec(String(route.departure_time || ''));
+        var shown = /^(\d{1,2}):(\d{2})$/.exec(String(isDepart ? (route.first_pass || route.pass_time || '') : '')) || firstDeparture;
+        if (!firstDeparture || !(Number(route.route_id) > 0)) return null;
+        var focus = {
+          routeId: Number(route.route_id), siteId: String(siteId), dayType: String(dayType || selectedDayType),
+          requestTime: pad2(Number(firstDeparture[1])) + ':' + firstDeparture[2],
+          stop: { siteId: String(siteId), row: row }, route: route,
+          saved: {
+            dayType: selectedDayType,
+            dayTypeValues: DAY_TYPE_OPTIONS.map(function(option) { return option.value; }),
+            initialDayPending: initialDayTypeSelectionPending,
+            h: departureTime.h, m: departureTime.m,
+            timeBasis: selectedRouteTimeBasis, routeKind: selectedRouteKind,
+            transfer: !!selectedShuttleTransferSearch, transit: !!selectedTransitSearch,
+            searchSource: currentSearchSource
+          }
+        };
+        contextRouteFocus = focus;
+        ensureContextDayTypeSelected(focus.dayType);
+        departureTime.h = Math.max(0, Math.min(23, Number(shown[1]) || 0));
+        departureTime.m = Math.max(0, Math.min(59, Number(shown[2]) || 0));
+        selectedRouteTimeBasis = 'depart_at';
+        selectedRouteKind = 'all';
+        selectedShuttleTransferSearch = false;
+        selectedTransitSearch = false;
+        document.body.classList.add('sg-route-focus');
+        updateDepartureTriggerText();
+        return focus;
+      }
+      // Leaves the one-route result: the user's own search options return, and the day and
+      // time too unless the user just chose them (opts.keepDayTime). Returns what was left.
+      function endRouteFocus(opts) {
+        var focus = contextRouteFocus;
+        if (!focus) return null;
+        contextRouteFocus = null;
+        document.body.classList.remove('sg-route-focus');
+        var saved = focus.saved;
+        selectedRouteTimeBasis = saved.timeBasis;
+        selectedRouteKind = saved.routeKind;
+        selectedShuttleTransferSearch = saved.transfer;
+        selectedTransitSearch = saved.transit;
+        currentSearchSource = saved.searchSource;
+        if (!(opts && opts.keepDayTime)) {
+          departureTime.h = saved.h;
+          departureTime.m = saved.m;
+          selectedDayType = saved.dayType;
+          pendingDayType = saved.dayType;
+          initialDayTypeSelectionPending = saved.initialDayPending;
+          applyAvailableDayTypes(saved.dayTypeValues, { preserveDayType: saved.dayType });
+        }
+        updateDepartureTriggerText();
+        return focus;
+      }
+      function openMapStopRoute(siteId, row, route, dayType) {
+        if (!mapStopRouteSearchEnabled()) return;
+        var place = makeMapStopPlace(row);
+        if (!place) return;
+        var returnPoint = captureMapStopReturn();   // before the result under the stops is left
+        var focus = beginRouteFocus(siteId, row, route, dayType);
+        if (!focus) return;
+        runRouteSearchWithPlace(place, route.role === 'alight' ? 'arrive' : 'depart', {
+          routeFocus: focus, placeSource: 'map', searchSource: 'map_stop_route', mapStopReturn: returnPoint
         });
+      }
+
+      // ── #97: Back from a search started in a stop bubble ────────────────────────────────
+      // Back undoes one step at a time: the result returns to the stops with that bubble open
+      // (and to the result that was under the stops, asked again), then the bubble closes,
+      // then the stops go, and so on down mapStopReturns.
+      function mapStopBubbleOpen() {
+        return !!(mapStops.active && mapStops.bubble && bubbleOverlay && bubbleOverlay.querySelector('.stop-bubble'));
+      }
+      // What Back from a search started in the open stop bubble returns to. null without one.
+      function captureMapStopReturn() {
+        if (!mapStopBubbleOpen() || !map) return null;
+        var under = null;
+        if (lastPlace && lastShuttleType && routeOptionsWrap && routeOptionsWrap.classList.contains('show') &&
+            !sharedRouteState.active && !favoriteRouteState.active && !activeTransitPickerState) {
+          var focus = contextRouteFocus;
+          under = {
+            place: lastPlace, direction: lastShuttleType, placeSource: currentPlaceSource, searchSource: currentSearchSource,
+            focus: focus ? { siteId: focus.stop.siteId, row: focus.stop.row, route: focus.route, dayType: focus.dayType } : null
+          };
+        }
+        return {
+          stop: { siteId: mapStops.bubble.siteId, row: mapStops.bubble.row }, dayType: mapStops.bubble.dayType,
+          view: { center: map.getCenter(), level: map.getLevel() }, under: under, owner: null
+        };
+      }
+      // The options of a search started with 출발/도착 of the open bubble: a stop bubble is remembered.
+      function mapStopSearchOptions() {
+        var returnPoint = captureMapStopReturn();
+        return returnPoint ? { mapStopReturn: returnPoint } : undefined;
+      }
+      // The entry of the result on screen. A result of another place or direction, a shared or a
+      // favorite route was not opened from a stop bubble: the entries are forgotten.
+      function currentMapStopReturn() {
+        var top = mapStopReturns[mapStopReturns.length - 1];
+        if (!top) return null;
+        var lat = Number(lastPlace && (lastPlace.y != null ? lastPlace.y : lastPlace.lat));
+        var lng = Number(lastPlace && (lastPlace.x != null ? lastPlace.x : lastPlace.lng));
+        if (!top.owner || !lastPlace || !mapStopsEnabled() || sharedRouteState.active || favoriteRouteState.active ||
+            String(lastShuttleType || '') !== top.owner.direction ||
+            !(Math.abs(lat - top.owner.lat) < 0.000001) || !(Math.abs(lng - top.owner.lng) < 0.000001)) {
+          mapStopReturns = [];
+          return null;
+        }
+        return top;
+      }
+      // A search started in a stop bubble remembers the bubble for Back; any other search of
+      // another place or direction forgets the remembered ones (the same search asked again,
+      // with another time, day or site, keeps them).
+      function noteMapStopReturnForSearch(opts, sameSearch, lat, lng, direction) {
+        if (opts.mapStopReturn) {
+          opts.mapStopReturn.owner = { lat: lat, lng: lng, direction: String(direction || '') };
+          mapStopReturns.push(opts.mapStopReturn);
+          if (mapStopReturns.length > 10) mapStopReturns.shift();
+        } else if (!sameSearch && !opts.keepMapStopReturns) {
+          mapStopReturns = [];
+        }
+      }
+      // Leaving the result on screen: its entry, taken off the stack.
+      function takeMapStopReturn() {
+        var entry = currentMapStopReturn();
+        if (entry) mapStopReturns.pop();
+        return entry;
+      }
+      // How many Back presses the remembered bubbles add to the one that leaves the result on
+      // screen: each returns to the stops with the bubble open (two layers), and to the result
+      // under them when there was one.
+      function mapStopReturnDepth() {
+        if (!currentMapStopReturn()) return 0;
+        return 3 * mapStopReturns.length - 1 + (mapStopReturns[0].under ? 1 : 0);
+      }
+      // Back from the result of an entry: the result that was under the stops is asked again
+      // (it still has its own entry below), then the stops, the map area and the bubble return.
+      function restoreMapStopReturn(entry) {
+        if (!entry || !entry.stop || !map || !mapStopsEnabled()) return;
+        var under = entry.under;
+        if (under && under.place) {
+          var opts = { placeSource: under.placeSource, searchSource: under.searchSource, keepMapStopReturns: true };
+          if (under.focus) {
+            opts.routeFocus = mapStopRouteSearchEnabled()
+              ? beginRouteFocus(under.focus.siteId, under.focus.row, under.focus.route, under.focus.dayType) : null;
+            opts.placeSource = 'map';
+            opts.searchSource = 'map_stop_route';
+          }
+          if (!under.focus || opts.routeFocus) runRouteSearchWithPlace(under.place, under.direction, opts);
+        }
+        if (entry.view) {
+          map.setLevel(entry.view.level);
+          map.setCenter(entry.view.center);
+        }
+        if (!mapStops.active) enterMapStops();
+        if (mapStops.active) showMapStopBubble(entry.stop.siteId, entry.stop.row, { dayType: entry.dayType });
+      }
+      // Back with the stops showing: the open stop bubble closes first, then the stops go.
+      function closeMapStopsLayer() {
+        if (!mapStops.active) return false;
+        if (mapStopBubbleOpen()) closeBubble();
+        else exitMapStops({ redraw: true });
+        return true;
       }
       if (btnMapStops) {
         btnMapStops.addEventListener('click', function(e) {
@@ -23480,14 +23812,16 @@
         box.querySelector('.btn-depart').addEventListener('click', function(e) {
           e.stopPropagation();
           e.preventDefault();
+          var departOptions = mapStopSearchOptions();   // #97: read before the bubble closes
           closeBubble();
-          runDepartWithPlace(place);
+          runDepartWithPlace(place, departOptions);
         });
         box.querySelector('.btn-arrive').addEventListener('click', function(e) {
           e.stopPropagation();
           e.preventDefault();
+          var arriveOptions = mapStopSearchOptions();
           closeBubble();
-          runArriveWithPlace(place);
+          runArriveWithPlace(place, arriveOptions);
         });
         if (!isMobile() && source === 'hover') {
           box.addEventListener('mouseenter', function() {
@@ -35754,15 +36088,17 @@
         if (normalizedSource !== 'search' && normalizedSource !== 'map') normalizedSource = 'unknown';
         var searchSource = String(opts.searchSource || currentSearchSource || 'manual_search').trim().toLowerCase() || 'manual_search';
         var clientActionId = String(opts.clientActionId || createClientActionId()).trim();
+        // #97: a one-route search asks that route's site for the route's first departure.
+        var routeFocus = contextRouteFocus;
         var timeText = String(
-          opts.timeOverride != null ? opts.timeOverride : getDepartureTimeStr()
+          opts.timeOverride != null ? opts.timeOverride : (routeFocus ? routeFocus.requestTime : getDepartureTimeStr())
         ).trim();
         var omitTime = !!opts.omitTime;
         var searchMode = normalizeRouteSearchMode(
           opts.searchMode != null ? opts.searchMode : (routeSearchModeOverride || activeRouteSearchMode)
         );
         var url = API_BASE + endpoint +
-          '?site_id=' + selectedSiteId +
+          '?site_id=' + (routeFocus ? encodeURIComponent(routeFocus.siteId) : selectedSiteId) +
           '&lat=' + lat + '&lng=' + lng +
           '&place_name=' + encodeURIComponent(placeName) +
           '&place_source=' + encodeURIComponent(normalizedSource) +
@@ -35807,7 +36143,10 @@
         }
 
         var selectedNames = getSelectedEndpointNamesSorted();
-        if (selectedNames.length === 0) {
+        if (routeFocus) {
+          // Every endpoint counts; the server leaves the search out of the history.
+          url += '&only_route_id=' + encodeURIComponent(String(routeFocus.routeId));
+        } else if (selectedNames.length === 0) {
           url += '&selected_endpoints=';
         } else if (!isAllEndpointsSelected()) {
           url += '&selected_endpoints=' + encodeURIComponent(selectedNames.join(','));
@@ -38111,7 +38450,8 @@
         if (!routeOptionsWrap) return;
         var old = routeOptionsWrap.querySelector('.route-multi-site-notice');
         if (old && old.parentNode) old.parentNode.removeChild(old);
-        if (sharedRouteState.active || favoriteRouteState.active) return;
+        // #97: the result of one route of a stop is about that route's site, nothing else.
+        if (sharedRouteState.active || favoriteRouteState.active || contextRouteFocus) return;
         var siteIds = getActiveSiteIds();
         if (siteIds.length < 2) return;
         var text = '';
@@ -38396,6 +38736,7 @@
       }
 
       function goBackFromPlaceResults() {
+        mapStopReturns = [];
         placeSearchRequestSerial += 1;
         clearPendingSharedRouteUrl();
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
@@ -38432,6 +38773,8 @@
         } else {
           clearPendingSharedRouteUrl();
         }
+        // #97: back from a result opened in a stop bubble returns to that stop's bubble.
+        var mapStopReturn = takeMapStopReturn();
         routeRequestSerial += 1;
         closeEndpointPickerModal({ applySelection: false, refreshOnApply: false });
         lastPlace = null;
@@ -38457,6 +38800,7 @@
         } else {
           refreshIdleFavoritesPanelIfVisible();
         }
+        restoreMapStopReturn(mapStopReturn);
       }
 
       function runDepart(placeIndex) {
@@ -38487,6 +38831,10 @@
         });
         if (!normalizedPlace) return;
         place = normalizedPlace;
+        // #97: any search but the one-route search itself first leaves a one-route result, so
+        // it runs with the user's own day, time and options.
+        var routeFocus = opts.routeFocus && opts.routeFocus === contextRouteFocus ? contextRouteFocus : null;
+        if (!routeFocus) endRouteFocus();
         var previousPlaceLat = Number(lastPlace && (lastPlace.y != null ? lastPlace.y : lastPlace.lat));
         var previousPlaceLng = Number(lastPlace && (lastPlace.x != null ? lastPlace.x : lastPlace.lng));
         var nextPlaceLat = Number(place.y != null ? place.y : place.lat);
@@ -38502,9 +38850,10 @@
         if (!sameTransitSearchContext) {
           selectedTransitModePolicy = TRANSIT_MODE_POLICY_RECOMMENDED;
         }
-        // #97: a search for another place leaves the stops view; re-running the same search
-        // (time, day or site changed) keeps it and only the stops are refreshed.
-        if (mapStops.active && !sameTransitSearchContext) exitMapStops({ redraw: false });
+        noteMapStopReturnForSearch(opts, sameTransitSearchContext, nextPlaceLat, nextPlaceLng, direction);
+        // #97: a search for another place, for one route of a stop or from a stop bubble leaves
+        // the stops view; re-running the same search (time, day or site changed) keeps it.
+        if (mapStops.active && (!sameTransitSearchContext || routeFocus || opts.mapStopReturn)) exitMapStops({ redraw: false });
         if (!sameTransitSearchContext) routeSearchModeOverride = '';
         placeSearchRequestSerial += 1;
         if (sharedRouteState.active) {
@@ -38573,10 +38922,11 @@
           placeholderText: ''
         });
 
-        ensureEndpointOptionsLoaded(direction)
+        // A one-route search does not use the endpoint selection, so it does not wait on it.
+        (routeFocus ? ensureEndpointOptionsLoaded(direction).catch(function() { return null; }) : ensureEndpointOptionsLoaded(direction))
           .then(function() {
             if (requestId !== routeRequestSerial) return null;
-            if (selectedEndpoints.size === 0 && !isMultiSiteSearch(timeBasis)) {
+            if (selectedEndpoints.size === 0 && !isMultiSiteSearch(timeBasis) && !routeFocus) {
               if (searchCoordinator) {
                 searchCoordinator.updateDirect({ status: 'complete', count: 0, hasMore: false });
                 if (searchCoordinator.transferEnabled) {
@@ -38677,6 +39027,14 @@
                   walkOtpEnabled = data.walk_otp_enabled;
                 }
                 currentRouteSearchSites = Array.isArray(data.sites) ? data.sites : null;
+                if (routeFocus && routeFocus.siteId !== String(selectedSiteId || '')) {
+                  // The route of another selected site belongs to that site, as in a multi-site search.
+                  options.forEach(function(option) {
+                    if (!option || option.site_id) return;
+                    option.site_id = routeFocus.siteId;
+                    option.site_name = getSiteNameById(routeFocus.siteId);
+                  });
+                }
                 options._searchMode = normalizeRouteSearchMode(data.search_mode || activeRouteSearchMode);
                 return enrichDepartureRouteOptionsWithTransit(options, name, isDepart, {
                   timeBasis: timeBasis,
@@ -40400,6 +40758,8 @@
         ];
         function closeTopLayer() {
           for (var i = 0; i < LAYERS.length; i++) {
+            // #97: the stops on the map (and an open stop bubble) are above the result panel.
+            if (LAYERS[i][0] === 'routeHeaderBackBtn' && closeMapStopsLayer()) return true;
             var button = LAYERS[i][0] ? document.getElementById(LAYERS[i][0]) : null;
             var backdrop = LAYERS[i][1] ? document.getElementById(LAYERS[i][1]) : null;
             if (backdrop && !shown(backdrop)) continue;
@@ -40412,11 +40772,17 @@
         function panelDepth() {
           var back = document.getElementById('btnBackFromRoutes');
           var open = (back && back.style.display !== 'none' && shown(back)) || shown(document.getElementById('routeHeaderBackBtn'));
-          if (!open) return 0;
-          var routeView = !!(routeOptionsWrap && routeOptionsWrap.classList.contains('show'));
+          // #97: a result opened from a stop bubble counts from the tap, before its panel shows.
+          var returns = mapStopReturnDepth();
+          if (!open && !returns) return 0;
+          var routeView = returns > 0 || !!(routeOptionsWrap && routeOptionsWrap.classList.contains('show'));
           // Leaving a route view lands on the place results when there are any, else on home.
           var depth = (routeView || !isPlaceSearchResultsState()) ? 1 + (places.length > 0 ? 1 : 0) : 1;
-          return depth + (activeTransitPickerState ? 1 : 0);
+          return depth + returns + (activeTransitPickerState ? 1 : 0);
+        }
+        // #97: the stops on the map are one layer, an open stop bubble one more.
+        function mapStopsDepth() {
+          return mapStops.active ? 1 + (mapStopBubbleOpen() ? 1 : 0) : 0;
         }
         function openDepth() {
           var depth = 0;
@@ -40427,7 +40793,7 @@
             var backdrop = backdropId ? document.getElementById(backdropId) : null;
             if (backdrop ? shown(backdrop) : (button && shown(button))) depth += 1;
           }
-          return depth + panelDepth();
+          return depth + panelDepth() + mapStopsDepth();
         }
         historyOpenDepth = openDepth;
         function handleBack() {
