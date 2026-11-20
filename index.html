@@ -9053,6 +9053,23 @@
       transform: none;
       box-shadow: 0 8px 18px rgba(43, 89, 214, 0.12);
     }
+    /* multi_site_report_sites: one button per site in the first step of a report. */
+    .report-site-choice {
+      display: block;
+      width: 100%;
+      margin: 0 0 8px;
+      padding: 14px 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: #fff;
+      color: #0f172a;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      text-align: left;
+      cursor: pointer;
+    }
+    .report-site-choice:hover, .report-site-choice:focus-visible { background: #f5f7ff; border-color: #1428A0; outline: none; }
     .report-empty-state {
       padding: 22px 16px;
       border-radius: 18px;
@@ -12033,6 +12050,10 @@
         clientLat: null,
         clientLng: null,
         recentPreference: null,
+        // multi_site_report_sites: the site the report is for ('' = the first selected site)
+        // and, when several selected sites have stops nearby, their answers to choose from.
+        siteId: '',
+        siteChoices: null,
         allowRecentFastForward: true,
         historyApplied: false,
         usedFallbackRadius: false,
@@ -12625,7 +12646,17 @@
         updateArrivalReportButtonVisibility();
       }
 
+      // multi_site_report_sites: a report can be for any selected site.
+      function reportSitesEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!(flags.multi_site && flags.multi_site_report_sites);
+      }
+      // The site the open report is for.
+      function arrivalReportSiteId() {
+        return String(arrivalReportState.siteId || selectedSiteId || '');
+      }
       function getArrivalReportPromptText(step) {
+        if (step === 'sites') return '어느 사업장의 셔틀을 제보하시나요?';
         if (step === 'routes') return '어떤 노선을 제보하시나요?';
         if (step === 'times') return '언제 출발한 노선인가요?';
         return '어느 정류장에서 제보하시나요?';
@@ -12746,6 +12777,8 @@
 
       function resetArrivalReportState() {
         arrivalReportState.loading = false;
+        arrivalReportState.siteId = '';
+        arrivalReportState.siteChoices = null;
         arrivalReportState.step = 'stops';
         arrivalReportState.stops = [];
         arrivalReportState.selectedStopIndex = -1;
@@ -12848,7 +12881,7 @@
       function setArrivalReportRecentPreference(rawValue) {
         var preference = normalizeArrivalReportRecentPreference(rawValue);
         if (preference) {
-          if (preference.site_id && preference.site_id !== selectedSiteId) {
+          if (preference.site_id && preference.site_id !== arrivalReportSiteId()) {
             preference = null;
           }
         }
@@ -41555,7 +41588,8 @@
         arrivalReportCandidateList.classList.add('stop-mode');
         if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('stops');
         setArrivalReportPrimaryButtonLabel('다음');
-        setArrivalReportSecondaryButtonLabel('닫기');
+        // With the site step in front, the second button goes back to it.
+        setArrivalReportSecondaryButtonLabel(arrivalReportState.siteChoices ? '이전' : '닫기');
         setArrivalReportPrimaryButtonVisible(arrivalReportState.stops.length > 0);
         arrivalReportCandidateList.innerHTML = '';
         if (!arrivalReportState.stops.length) {
@@ -41909,7 +41943,7 @@
           : '&route_id=' + encodeURIComponent(String(routeId));
         return fetchJson(
           API_BASE + '/api/reports/route-schedule' +
-          '?site_id=' + encodeURIComponent(selectedSiteId) +
+          '?site_id=' + encodeURIComponent(arrivalReportSiteId()) +
           '&day_type=' + encodeURIComponent(cacheKey) +
           '&stop_ids=' + encodeURIComponent(stopIds.join(',')) +
           '&now_time=' + encodeURIComponent(getEffectiveCurrentTimeStr()) +
@@ -42104,7 +42138,7 @@
         renderArrivalReportCandidates();
         return fetchJson(
           API_BASE + '/api/reports/candidate-routes' +
-          '?site_id=' + encodeURIComponent(selectedSiteId) +
+          '?site_id=' + encodeURIComponent(arrivalReportSiteId()) +
           '&stop_ids=' + encodeURIComponent(stopIds.join(',')) +
           '&now_time=' + encodeURIComponent(arrivalReportState.routeRequestTime || getEffectiveCurrentTimeStr()) +
           '&scope=all&q=' + encodeURIComponent(cleanQuery)
@@ -42204,7 +42238,7 @@
         var stopQuery = 'stop_ids=' + encodeURIComponent(stopIds.join(','));
         return fetchJson(
           API_BASE + '/api/reports/candidate-routes' +
-          '?site_id=' + encodeURIComponent(selectedSiteId) +
+          '?site_id=' + encodeURIComponent(arrivalReportSiteId()) +
           '&' + stopQuery +
           '&now_time=' + encodeURIComponent(routeRequestTime)
         )
@@ -42295,6 +42329,8 @@
             return fetchJson(
               API_BASE + '/api/reports/nearby-stops' +
               '?site_id=' + encodeURIComponent(selectedSiteId) +
+              (reportSitesEnabled() && getActiveSiteIds().length >= 2
+                ? '&site_ids=' + encodeURIComponent(getActiveSiteIds().join(',')) : '') +
               '&lat=' + encodeURIComponent(String(pos.lat)) +
               '&lng=' + encodeURIComponent(String(pos.lng))
             );
@@ -42302,32 +42338,25 @@
           .then(function(result) {
             arrivalReportState.loading = false;
             if (!result.ok) throw new Error(result.data.error || '정류장 후보를 불러오지 못했습니다.');
-            var stops = Array.isArray(result.data.stops) ? result.data.stops : [];
-            var recentPreference = setArrivalReportRecentPreference(result.data.recent_preference);
-            arrivalReportState.stops = stops;
-            arrivalReportState.stopCount = stops.length;
-            arrivalReportState.usedFallbackRadius = !!result.data.used_fallback_radius;
-            arrivalReportState.radiusM = Number(result.data.radius_m || 150);
-            if (stops.length === 1) {
-              arrivalReportState.selectedStopIndex = 0;
-              arrivalReportState.selectedStop = stops[0];
-              return openArrivalReportRoutesForSelectedStop();
+            // multi_site_report_sites: the selected sites that have stops near the reporter.
+            var bySite = reportSitesEnabled() && Array.isArray(result.data.by_site)
+              ? result.data.by_site.filter(function(entry) {
+                  return entry && entry.site_id && Array.isArray(entry.stops) && entry.stops.length > 0;
+                })
+              : [];
+            if (bySite.length >= 2) {
+              // Several: ask which, unless the reporter's recent report settles it.
+              arrivalReportState.siteChoices = bySite;
+              var recentSiteId = String(result.data.recent_site_id || '');
+              for (var i = 0; i < bySite.length && arrivalReportState.allowRecentFastForward; i++) {
+                if (recentSiteId && String(bySite[i].site_id) === recentSiteId) return chooseArrivalReportSite(bySite[i]);
+              }
+              renderArrivalReportSites();
+              return;
             }
-            var recentStopIndex = findArrivalReportRecentStopIndex(stops, recentPreference);
-            if (recentStopIndex >= 0) {
-              arrivalReportState.selectedStopIndex = recentStopIndex;
-              arrivalReportState.selectedStop = stops[recentStopIndex];
-              return openArrivalReportRoutesForSelectedStop();
-            }
-            var preferredStopIndex = Number(result.data.preferred_stop_index);
-            if (isFinite(preferredStopIndex) && preferredStopIndex >= 0 && preferredStopIndex < stops.length) {
-              arrivalReportState.selectedStopIndex = preferredStopIndex;
-              arrivalReportState.selectedStop = stops[preferredStopIndex];
-              return openArrivalReportRoutesForSelectedStop();
-            }
-            arrivalReportState.selectedStopIndex = stops.length > 0 ? 0 : -1;
-            arrivalReportState.selectedStop = stops.length > 0 ? stops[0] : null;
-            renderArrivalReportStops();
+            // One: that site, whichever was checked first. None: the first site's answer, as before.
+            if (bySite.length === 1) return chooseArrivalReportSite(bySite[0]);
+            return applyArrivalReportNearbyStops(result.data);
           })
           .catch(function(err) {
             arrivalReportState.loading = false;
@@ -42336,6 +42365,79 @@
               arrivalReportCandidateList.innerHTML = '<div class="report-empty-state">제보 후보를 준비하지 못했습니다.</div>';
             }
           });
+      }
+
+      // The stops near the reporter at the report's site: goes on to the routes when the stop
+      // is settled (the only one, the recently reported one), else shows the stops.
+      function applyArrivalReportNearbyStops(data) {
+        var stops = Array.isArray(data.stops) ? data.stops : [];
+        var recentPreference = setArrivalReportRecentPreference(data.recent_preference);
+        arrivalReportState.stops = stops;
+        arrivalReportState.stopCount = stops.length;
+        arrivalReportState.usedFallbackRadius = !!data.used_fallback_radius;
+        arrivalReportState.radiusM = Number(data.radius_m || 150);
+        arrivalReportState.selectedIndex = -1;
+        if (stops.length === 1) {
+          arrivalReportState.selectedStopIndex = 0;
+          arrivalReportState.selectedStop = stops[0];
+          return openArrivalReportRoutesForSelectedStop();
+        }
+        var recentStopIndex = findArrivalReportRecentStopIndex(stops, recentPreference);
+        if (recentStopIndex >= 0) {
+          arrivalReportState.selectedStopIndex = recentStopIndex;
+          arrivalReportState.selectedStop = stops[recentStopIndex];
+          return openArrivalReportRoutesForSelectedStop();
+        }
+        var preferredStopIndex = Number(data.preferred_stop_index);
+        if (isFinite(preferredStopIndex) && preferredStopIndex >= 0 && preferredStopIndex < stops.length) {
+          arrivalReportState.selectedStopIndex = preferredStopIndex;
+          arrivalReportState.selectedStop = stops[preferredStopIndex];
+          return openArrivalReportRoutesForSelectedStop();
+        }
+        arrivalReportState.selectedStopIndex = stops.length > 0 ? 0 : -1;
+        arrivalReportState.selectedStop = stops.length > 0 ? stops[0] : null;
+        renderArrivalReportStops();
+      }
+      // multi_site_report_sites: the report is for this site from here on.
+      function chooseArrivalReportSite(entry) {
+        arrivalReportState.siteId = String(entry.site_id || '');
+        return applyArrivalReportNearbyStops(entry);
+      }
+      // multi_site_report_sites: the first step when several selected sites have stops near
+      // the reporter. One button per site, by its whole name.
+      function renderArrivalReportSites() {
+        if (!arrivalReportCandidateList) return;
+        arrivalReportState.step = 'sites';
+        arrivalReportState.siteId = '';
+        arrivalReportState.selectedStopIndex = -1;
+        arrivalReportState.selectedStop = null;
+        arrivalReportState.selectedIndex = -1;
+        if (arrivalReportModal) arrivalReportModal.classList.remove('stop-step', 'route-step');
+        setArrivalReportSearchVisible(false);
+        showArrivalReportStopMap(false);
+        arrivalReportCandidateList.classList.remove('stop-mode');
+        if (arrivalReportTitle) arrivalReportTitle.textContent = getArrivalReportPromptText('sites');
+        setArrivalReportHintText('');
+        setArrivalReportPrimaryButtonVisible(false);
+        setArrivalReportSecondaryButtonLabel('닫기');
+        arrivalReportCandidateList.innerHTML = '';
+        (arrivalReportState.siteChoices || []).forEach(function(entry) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'report-site-choice';
+          button.setAttribute('data-site-id', String(entry.site_id));
+          button.textContent = String(entry.site_name || getSiteNameById(entry.site_id));
+          button.addEventListener('click', function() {
+            // The reporter chose: what the recent report says about the stop may still skip ahead.
+            var pending = chooseArrivalReportSite(entry);
+            if (pending && typeof pending.catch === 'function') {
+              pending.catch(function(err) {
+                setArrivalReportHintText(String((err && err.message) || '제보 후보를 준비하지 못했습니다.'));
+              });
+            }
+          });
+          arrivalReportCandidateList.appendChild(button);
+        });
       }
 
       function getArrivalReportAllowedTimeOptions(baseDate) {
@@ -42621,6 +42723,12 @@
           renderArrivalReportStops();
           return;
         }
+        if (arrivalReportState.step === 'stops' && arrivalReportState.siteChoices) {
+          // multi_site_report_sites: back to the choice of site, with no skipping ahead.
+          arrivalReportState.allowRecentFastForward = false;
+          renderArrivalReportSites();
+          return;
+        }
         closeArrivalReportModal();
       }
 
@@ -42654,7 +42762,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            site_id: selectedSiteId,
+            site_id: arrivalReportSiteId(),
             day_type: reportDayType,
             route_id: arrivalReportPendingTarget.route_id,
             stop_id: arrivalReportPendingTarget.stop_id,
