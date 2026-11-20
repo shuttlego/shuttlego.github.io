@@ -19415,6 +19415,13 @@
         }
         var preferredSiteId = getPreferredSiteIdFromAuthState();
         if (siteOptionExists(preferredSiteId)) return preferredSiteId;
+        // multi_site_equal_sites: the first checked site of the selection kept on this device
+        // comes first again after a reload (a signed-in user's is in the preferences above).
+        // Without this the page starts from its default site and the order is lost.
+        if (equalSitesEnabled()) {
+          var storedSiteIds = readStoredSiteIds();
+          if (storedSiteIds.length >= 2 && siteOptionExists(storedSiteIds[0])) return storedSiteIds[0];
+        }
         if (siteOptionExists(selectedSiteId)) return selectedSiteId;
         if (siteOptionExists('0000011')) return '0000011';
         if (siteSelect && siteSelect.options && siteSelect.options.length > 0) {
