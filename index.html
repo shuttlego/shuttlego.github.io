@@ -21602,6 +21602,16 @@
           if (typeof pinMarker.click === 'function') pinMarker.click();
           return;
         }
+        // #97: a stop pin or a group of stops (switch map_stops) — hand the tap to its click handler.
+        // Without this the tap fell through to the end of this function and opened the
+        // "선택한 위치" bubble of the tapped point instead of the stop.
+        var mapStopNode = touchTarget && touchTarget.closest('.map-stop-dot, .map-stop-cluster');
+        if (mapStopNode) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          if (typeof mapStopNode.click === 'function') mapStopNode.click();
+          return;
+        }
         var restoredFromRouteDetail = restoreRouteOptionMapFromLabelTriggeredDetail();
         var collapsedExpandedRouteDetail = false;
         if (!restoredFromRouteDetail) {
