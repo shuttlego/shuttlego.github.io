@@ -5804,6 +5804,10 @@
     .btn-map-stops[hidden] { display: none !important; }
     /* zoom_live_overlays: the map SDK hides its overlay layer while it zooms; keep it shown. */
     .sg-zoom-live { display: block !important; }
+    /* zoom_live_overlays: while it zooms the SDK stretches the drawing of its lines with the
+       tiles, so a route line grew thick during a zoom-in (thin during a zoom-out) and jumped
+       back when the zoom ended. Its width now stays the same on the screen all along. */
+    #map.sg-live-lines svg path { vector-effect: non-scaling-stroke; }
     .btn-map-stops {
       width: 48px;
       height: 48px;
@@ -5827,6 +5831,10 @@
     .btn-map-stops:hover { background: #f5f5f5; box-shadow: 0 2px 12px rgba(0,0,0,.2); }
     .btn-map-stops.active { background: #1428A0; color: #fff; }
     .btn-map-stops.loading { opacity: .6; }
+    /* The tip for the stops button: the map buttons are in a box under the tip's dim layer.
+       While the tip points at one of them the box is lifted and the other buttons are darkened. */
+    .map-controls:has(.notice-spotlight-target) { z-index: 115; }
+    .map-controls:has(.notice-spotlight-target) button:not(.notice-spotlight-target) { filter: brightness(0.38); }
     .btn-map-stops.shared-route-hidden { display: none !important; }
     @media (max-width: 768px) {
       .btn-map-stops { width: 44px; height: 44px; }
@@ -11837,10 +11845,15 @@
       };
       var ONBOARDING_GUIDE_STORAGE_KEY = 'shuttle_go_onboarding_v1_done';
       var ROUTE_ONBOARDING_GUIDE_STORAGE_KEY = 'shuttle_go_route_onboarding_v1_done';
+      // #97: the tip for the stops button, once per browser; a visitor who finished the first
+      // guide before the button existed sees this one tip alone.
+      var MAP_STOPS_TIP_STORAGE_KEY = 'shuttle_go_map_stops_tip_v1_done';
       var ROUTE_ONBOARDING_ELIGIBLE_STORAGE_KEY = 'shuttle_go_route_onboarding_v1_eligible';
       var onboardingGuideState = {
         active: false,
-        stepIndex: 0
+        stepIndex: 0,
+        steps: null,          // the steps of the guide on screen, fixed when it starts
+        withStopsTip: false   // whether they include the stops button tip
       };
       var routeOnboardingGuideState = {
         active: false,
@@ -16794,6 +16807,9 @@
 
       function setSheetState(state) {
         if (!resultsPanel) return;
+        // What a drag of the sheet leaves when it did not end: a fixed height that would hide the state.
+        if (resultsPanel.style.height) resultsPanel.style.height = '';
+        resultsPanel.classList.remove('sheet-dragging');
         if (state && state !== 'sheet-peek') cancelSharedRoutePanelAttention(false);
         var prevState = '';
         if (resultsPanel.classList.contains('sheet-peek')) prevState = 'sheet-peek';
@@ -20953,14 +20969,14 @@
       function setGuideSpotlightMessage(step, stepIndex, stepCount) {
         if (!step) return;
         if (noticeSpotlightTitle) {
-          noticeSpotlightTitle.textContent = String(stepIndex + 1) + '/' + String(stepCount) + ' ' + String(step.title || '');
+          noticeSpotlightTitle.textContent = (stepCount > 1 ? String(stepIndex + 1) + '/' + String(stepCount) + ' ' : '') + String(step.title || '');
         }
         if (noticeSpotlightBody) {
           noticeSpotlightBody.textContent = String(step.body || '');
         }
         if (noticeSpotlightDismissBtn) noticeSpotlightDismissBtn.textContent = '닫기';
         if (noticeSpotlightOpenBtn) {
-          noticeSpotlightOpenBtn.textContent = (stepIndex >= stepCount - 1) ? '시작하기' : '다음';
+          noticeSpotlightOpenBtn.textContent = (stepIndex >= stepCount - 1) ? (stepCount > 1 ? '시작하기' : '확인') : '다음';
         }
         if (noticeSpotlightCloseBtn) noticeSpotlightCloseBtn.setAttribute('aria-label', '사용 방법 안내 닫기');
       }
@@ -21200,8 +21216,15 @@
 
       function markOnboardingGuideDone() {
         try {
-          if (window.localStorage) window.localStorage.setItem(ONBOARDING_GUIDE_STORAGE_KEY, '1');
+          if (window.localStorage) {
+            window.localStorage.setItem(ONBOARDING_GUIDE_STORAGE_KEY, '1');
+            // The stops tip counts as shown only when the guide that just ended had it.
+            if (onboardingGuideState.withStopsTip) window.localStorage.setItem(MAP_STOPS_TIP_STORAGE_KEY, '1');
+          }
         } catch (e) {}
+        onboardingGuideState.active = false;
+        onboardingGuideState.steps = null;
+        onboardingGuideState.withStopsTip = false;
       }
 
       function isRouteOnboardingGuideDone() {
@@ -21242,8 +21265,22 @@
         }
       }
 
+      function isMapStopsTipDone() {
+        try {
+          return window.localStorage && window.localStorage.getItem(MAP_STOPS_TIP_STORAGE_KEY) === '1';
+        } catch (e) {
+          return true;
+        }
+      }
+      // The stops button is on screen (switch map_stops) and its tip has not been shown here.
+      function mapStopsTipPending() {
+        return !!(btnMapStops && !btnMapStops.hidden && isVisibleSpotlightTarget(btnMapStops) && !isMapStopsTipDone());
+      }
+      // The steps still to show: the first guide for a new visitor, then the stops button; for a
+      // visitor who finished the first guide before, the stops button alone.
       function getOnboardingGuideSteps() {
-        return [
+        if (onboardingGuideState.active && onboardingGuideState.steps) return onboardingGuideState.steps;
+        var steps = isOnboardingGuideDone() ? [] : [
           {
             target: siteSelectTrigger,
             title: '사업장을 선택하세요',
@@ -21260,6 +21297,15 @@
             body: '출발지나 도착지 근처 장소를 검색하세요. 가까운 정류장과 노선을 보여드릴게요.'
           }
         ];
+        if (mapStopsTipPending()) {
+          steps.push({
+            target: btnMapStops,
+            stopsTip: true,
+            title: '지도에서 정류장을 확인해보세요',
+            body: '이 버튼을 누르면 선택한 사업장의 셔틀 정류장이 지도에 나타나요. 정류장을 누르면 그곳을 지나는 노선을 볼 수 있어요.'
+          });
+        }
+        return steps;
       }
 
       function getOnboardingGuideTarget(stepIndex) {
@@ -21269,7 +21315,7 @@
       }
 
       function shouldShowOnboardingGuide() {
-        if (isOnboardingGuideDone()) return false;
+        if (getOnboardingGuideSteps().length === 0) return false;
         if (pendingSharedRouteToken || sharedRouteState.active || favoriteRouteState.active) return false;
         if (lastPlace || activeTransitPickerState) return false;
         if (searchInput && String(searchInput.value || '').trim()) return false;
@@ -21294,6 +21340,11 @@
         var target = step && step.target;
         if (!isVisibleSpotlightTarget(target)) return;
         markRouteOnboardingGuideEligible();
+        if (!onboardingGuideState.active) {
+          // The steps are fixed for this run: the stops button may appear or go while it shows.
+          onboardingGuideState.steps = steps;
+          onboardingGuideState.withStopsTip = steps.some(function(item) { return !!item.stopsTip; });
+        }
         onboardingGuideState.active = true;
         onboardingGuideState.stepIndex = index;
         noticeSpotlightState.mode = 'onboarding';
@@ -23166,6 +23217,7 @@
       // fingers start to pinch, before any zoom event) and shows it when the zoom is over.
       // Watching that is the one signal that covers every kind of zoom.
       function armZoomLiveOverlays() {
+        if (mapContainer && mapContainer.classList) mapContainer.classList.toggle('sg-live-lines', zoomLiveOverlaysEnabled());
         if (!zoomLiveOverlaysEnabled()) return;
         if (zoomLive.paneObserver && zoomLive.pane && zoomLive.pane.isConnected) return;
         if (zoomLive.paneObserver) { zoomLive.paneObserver.disconnect(); zoomLive.paneObserver = null; }
@@ -23641,7 +23693,11 @@
         mapStops.infoSeq += 1;
         var view = mapStopSheet.view;
         mapStopSheet.view = null;
-        if (opts && opts.restore) setSheetState(mapStopSheet.prevState || 'sheet-peek');
+        // Over home the sheet always goes back down: home has nothing to show half open, whatever
+        // height it happened to have. Over a place list or a result it returns to the height it had.
+        var homeUnder = !!(resultsPanel && resultsPanel.classList.contains('home-panel'));
+        if (homeUnder && !(opts && opts.view)) setSheetState('sheet-peek');
+        else if (opts && opts.restore) setSheetState(mapStopSheet.prevState || 'sheet-peek');
         if (opts && (opts.restore || opts.view) && view && map &&
             !(mapDragStartedAt > mapStopSheet.pannedAt) && map.getLevel() === view.level) {
           map.setCenter(view.center);
@@ -24018,6 +24074,10 @@
         });
       }
       window.addEventListener('sg:flags', syncMapStopsButton);
+      // The stops button shows once the switches arrive: its tip may be due then.
+      window.addEventListener('sg:flags', function() {
+        if (mapStopsTipPending() && !noticeSpotlightState.visible) maybeShowOnboardingGuide();
+      });
       if (window.__SG_BOOT && window.__SG_BOOT.promise) window.__SG_BOOT.promise.then(syncMapStopsButton);
       syncMapStopsButton();
 
@@ -40423,6 +40483,13 @@
           if (!e.changedTouches.length) return;
           onEnd(e.changedTouches[0].clientY);
         }, { passive: true });
+        // The system can take a touch over (an edge swipe for Back that starts on the sheet's
+        // header): the page gets touchcancel and no touchend. Without this the drag never ended:
+        // the sheet kept the fixed height of the drag and no height class, so it stayed where it
+        // was whatever state it was given afterwards.
+        sheetDragArea.addEventListener('touchcancel', function() {
+          onEnd(startY);
+        }, { passive: true });
 
         var sheetDragActive = false;
         sheetDragArea.addEventListener('mousedown', function(e) {
@@ -41306,7 +41373,8 @@
         // history_layers: how many Back presses it takes to close everything that is open.
         function panelDepth() {
           var back = document.getElementById('btnBackFromRoutes');
-          var open = (back && back.style.display !== 'none' && shown(back)) || shown(document.getElementById('routeHeaderBackBtn'));
+          // #97: the stop sheet hides the panel's title row; the place list or result under it is still open.
+          var open = (back && back.style.display !== 'none' && (shown(back) || mapStopSheet.open)) || shown(document.getElementById('routeHeaderBackBtn'));
           // #97: a result opened from a stop bubble counts from the tap, before its panel shows.
           var returns = mapStopReturnDepth();
           if (!open && !returns) return 0;
