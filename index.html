@@ -5945,6 +5945,79 @@
       font-size: 11px;
       font-weight: 500;
     }
+    /* How many routes the day has, at the end of the day tabs: the list shows only a few rows. */
+    .bubble-stop-days .stop-route-count {
+      margin-left: auto;
+      align-self: center;
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    /* More rows below the visible ones: the last visible row fades out, until the list is scrolled to its end. */
+    .bubble-stop-routes.more-below {
+      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 30px), transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 calc(100% - 30px), transparent 100%);
+    }
+    /* #97 (switch: map_stop_sheet): on a phone a stop's routes are in the bottom sheet, not in a
+       bubble on the map. The sheet's own content stays under it and returns when it closes. */
+    .map-stop-sheet-head[hidden], .map-stop-sheet[hidden] { display: none !important; }
+    .results-panel.stop-sheet .panel-title-row,
+    .results-panel.stop-sheet .results-list-wrap { display: none !important; }
+    .map-stop-sheet-head { display: flex; align-items: flex-start; gap: 8px; padding: 0 12px 8px 16px; }
+    .map-stop-sheet-title { flex: 1 1 auto; min-width: 0; }
+    .map-stop-sheet-name {
+      color: #111827;
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .map-stop-sheet-site { margin-top: 1px; color: #666; font-size: 12px; line-height: 1.3; }
+    .map-stop-sheet-site:empty { display: none; }
+    .map-stop-sheet-close {
+      flex: 0 0 auto;
+      width: 32px;
+      height: 32px;
+      margin-top: -5px;
+      padding: 6px;
+      border: none;
+      border-radius: 50%;
+      background: none;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .map-stop-sheet-close svg { width: 20px; height: 20px; display: block; }
+    .map-stop-sheet {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 0 16px calc(env(safe-area-inset-bottom) + 12px);
+    }
+    .map-stop-sheet .bubble-stop-days { flex: 0 0 auto; margin: 0 0 8px; }
+    .map-stop-sheet .bubble-stop-days .stop-day-tab { padding: 5px 11px; font-size: 13px; }
+    .map-stop-sheet .bubble-stop-days .stop-route-count { font-size: 12px; }
+    .map-stop-sheet .bubble-stop-routes { flex: 1 1 auto; min-height: 0; max-height: none; margin: 0 0 10px; }
+    .map-stop-sheet .bubble-stop-routes .stop-route-row { padding: 10px 0; font-size: 14px; }
+    .map-stop-sheet .bubble-stop-routes .stop-route-role { font-size: 11px; }
+    .map-stop-sheet .bubble-stop-routes .stop-route-name .stop-route-platform { font-size: 12px; }
+    .map-stop-sheet .bubble-stop-routes .stop-route-empty { font-size: 14px; }
+    .map-stop-sheet-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+    .map-stop-sheet-actions button {
+      flex: 1;
+      height: 42px;
+      border: none;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .map-stop-sheet-actions .btn-depart { background: #e3f2fd; color: #1565c0; }
+    .map-stop-sheet-actions .btn-arrive { background: #e8f5e9; color: #2e7d32; }
     .bubble-stop-routes .stop-route-row.is-link { cursor: pointer; }
     .bubble-stop-routes .stop-route-row.is-link:hover,
     .bubble-stop-routes .stop-route-row.is-link:focus-visible { background: #f5f7ff; outline: none; }
@@ -11289,6 +11362,15 @@
           <div class="panel-title" id="panelTitle">검색 결과</div>
           <button type="button" class="btn-back-from-routes" id="btnBackFromRoutes" style="display: none;">뒤로 가기</button>
         </div>
+        <div class="map-stop-sheet-head" id="mapStopSheetHead" hidden>
+          <div class="map-stop-sheet-title">
+            <div class="map-stop-sheet-name" id="mapStopSheetName"></div>
+            <div class="map-stop-sheet-site" id="mapStopSheetSite"></div>
+          </div>
+          <button type="button" class="map-stop-sheet-close" id="mapStopSheetClose" title="닫기" aria-label="닫기">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
       </div>
       <div class="results-list-wrap">
         <div class="results-placeholder" id="resultsPlaceholder">검색어를 입력한 뒤 검색하면 여기에 표시됩니다.</div>
@@ -11315,6 +11397,7 @@
         </div>
         <div class="route-options-wrap" id="routeOptionsWrap"></div>
       </div>
+      <div class="map-stop-sheet" id="mapStopSheet" hidden></div>
     </div>
     <div class="map-wrap">
       <div id="map"></div>
@@ -11429,6 +11512,15 @@
         active: false, lists: {}, pending: {}, overlays: [], renderTimer: null, noticeTimer: null,
         selectedKey: '', infoSeq: 0, loadSeq: 0, bubble: null
       };
+      // #97 (switch: map_stop_sheet): the stop shown in the bottom sheet on a phone. prevState is
+      // the sheet's height before it opened; view is the map area before the map was moved to
+      // bring the stop above the sheet (null when it was not moved), pannedAt when it was moved.
+      var mapStopSheet = { open: false, switching: false, prevState: '', view: null, pannedAt: 0, settleTimer: null };
+      var mapStopSheetEl = document.getElementById('mapStopSheet');
+      var mapStopSheetHead = document.getElementById('mapStopSheetHead');
+      var mapStopSheetName = document.getElementById('mapStopSheetName');
+      var mapStopSheetSite = document.getElementById('mapStopSheetSite');
+      var mapStopSheetClose = document.getElementById('mapStopSheetClose');
       // One entry per result opened from a stop bubble (a route row or 출발/도착), oldest first:
       // the stop, the day tab, the map area and the search that was on screen under the stops.
       // The last entry belongs to the result on screen. See currentMapStopReturn.
@@ -21530,6 +21622,10 @@
             if (mapDraggedRecently) {
               return;
             }
+            if (mapStopSheet.open) {
+              dismissMapStopInfo();
+              return;
+            }
             var restoredFromRouteDetail = restoreRouteOptionMapFromLabelTriggeredDetail();
             var collapsedExpandedRouteDetail = false;
             if (!restoredFromRouteDetail) {
@@ -21619,6 +21715,13 @@
           e.preventDefault();
           mapClickIgnore = true;
           if (typeof mapStopNode.click === 'function') mapStopNode.click();
+          return;
+        }
+        // #97: the stop sheet is open — a tap on the empty map closes it, as it closes a bubble.
+        if (mapStopSheet.open) {
+          e.preventDefault();
+          mapClickIgnore = true;
+          dismissMapStopInfo();
           return;
         }
         var restoredFromRouteDetail = restoreRouteOptionMapFromLabelTriggeredDetail();
@@ -23001,6 +23104,9 @@
           bubbleOverlay = null;
         }
         bubbleState = null;
+        // #97: a flow that closes the bubble (a search, another bubble) leaves the stop sheet too;
+        // the user's own closing goes through dismissMapStopInfo, which also puts the sheet back.
+        if (mapStopSheet.open && !mapStopSheet.switching) closeMapStopSheet();
         // #97: the enlarged stop pin belongs to its bubble.
         mapStops.bubble = null;
         if (mapStops.selectedKey) {
@@ -23353,6 +23459,7 @@
         mapStops.selectedKey = '';
         clearTimeout(mapStops.renderTimer);
         clearMapStopOverlays();
+        if (mapStopSheet.open) dismissMapStopInfo();
         if (bubbleOverlay && bubbleOverlay.querySelector('.stop-bubble')) closeBubble();
         if (btnMapStops) btnMapStops.classList.remove('loading');
         syncMapStopsButton();
@@ -23440,6 +23547,119 @@
           : makeMapStopPlace(row);
         return own ? { place: own, direction: route.role === 'alight' ? 'arrive' : 'depart' } : null;
       }
+      // ── #97 (switch: map_stop_sheet): on a phone the stop is shown in the bottom sheet ───────
+      // A bubble on the map is cut by the sheet and the buttons on a small screen. The sheet
+      // rises to half the screen with the stop's name, day tabs, routes and 출발/도착; what the
+      // sheet held (home, places, a result) stays under it and returns when it closes.
+      function mapStopSheetEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!(flags.map_stops && flags.map_stop_sheet && isMobile() && resultsPanel && mapStopSheetEl && mapStopSheetHead);
+      }
+      function currentSheetState() {
+        if (!resultsPanel) return '';
+        return resultsPanel.classList.contains('sheet-full') ? 'sheet-full'
+          : resultsPanel.classList.contains('sheet-half') ? 'sheet-half' : 'sheet-peek';
+      }
+      // Brings the stop into the part of the map left above the sheet, only when it is not there
+      // already (tapping one pin after another must not move the map each time). The map area
+      // before the first move is kept, to return to when the sheet is closed.
+      function settleMapStopAboveSheet(row) {
+        if (!mapStopSheet.open || !map || !mapContainer || !resultsPanel) return;
+        var projection = map.getProjection();
+        if (!projection || typeof projection.containerPointFromCoords !== 'function') return;
+        var mapRect = mapContainer.getBoundingClientRect();
+        var visibleHeight = Math.min(mapRect.bottom, resultsPanel.getBoundingClientRect().top) - mapRect.top;
+        if (!(visibleHeight > 120) || !(mapRect.width > 120)) return;
+        var point = projection.containerPointFromCoords(new kakao.maps.LatLng(row[1], row[2]));
+        // The pin is 45px tall above its point and its name is under it.
+        if (point.x >= 36 && point.x <= mapRect.width - 36 && point.y >= 64 && point.y <= visibleHeight - 30) return;
+        if (!mapStopSheet.view) mapStopSheet.view = { center: map.getCenter(), level: map.getLevel() };
+        map.panBy(Math.round(point.x - mapRect.width / 2), Math.round(point.y - (visibleHeight / 2 + 18)));
+        mapStopSheet.pannedAt = Date.now();
+      }
+      function showMapStopSheet(siteId, row, opts, place) {
+        // Another bubble on the map goes; the sheet itself stays when one pin is tapped after another.
+        mapStopSheet.switching = true;
+        closeBubble();
+        mapStopSheet.switching = false;
+        mapStops.selectedKey = siteId + ':' + row[0];
+        var shownStop = mapStops.bubble = { siteId: siteId, row: row, dayType: '' };
+        scheduleMapStopsRender(0);
+        if (!mapStopSheet.open) {
+          // Coming back from a result opened here (opts.sheet): the height and map area of before.
+          mapStopSheet.prevState = opts.sheet ? opts.sheet.prevState : currentSheetState();
+          mapStopSheet.view = opts.sheet ? opts.sheet.view : null;
+          mapStopSheet.pannedAt = Date.now();
+        }
+        mapStopSheet.open = true;
+        mapStopSheetName.textContent = String(row[3] || '정류장');
+        // Under the name: the stop's site, by its whole name, when several sites are selected.
+        mapStopSheetSite.textContent = getActiveSiteIds().length >= 2 ? getSiteNameById(siteId) : '';
+        mapStopSheetEl.innerHTML = '';
+        var tabs = document.createElement('div');
+        tabs.className = 'bubble-stop-days';
+        var list = document.createElement('div');
+        list.className = 'bubble-stop-routes';
+        list.innerHTML = '<div class="stop-route-empty">노선을 불러오는 중...</div>';
+        var actions = document.createElement('div');
+        actions.className = 'map-stop-sheet-actions';
+        actions.innerHTML = '<button type="button" class="btn-depart">출발</button><button type="button" class="btn-arrive">도착</button>';
+        actions.querySelector('.btn-depart').addEventListener('click', function() {
+          var departOptions = mapStopSearchOptions();   // read before the sheet closes
+          closeBubble();
+          runDepartWithPlace(place, departOptions);
+        });
+        actions.querySelector('.btn-arrive').addEventListener('click', function() {
+          var arriveOptions = mapStopSearchOptions();
+          closeBubble();
+          runArriveWithPlace(place, arriveOptions);
+        });
+        mapStopSheetEl.appendChild(tabs);
+        mapStopSheetEl.appendChild(list);
+        mapStopSheetEl.appendChild(actions);
+        mapStopSheetHead.hidden = false;
+        mapStopSheetEl.hidden = false;
+        resultsPanel.classList.add('stop-sheet');
+        var rising = currentSheetState() !== 'sheet-half';
+        setSheetState('sheet-half');
+        clearTimeout(mapStopSheet.settleTimer);
+        // The sheet takes a quarter of a second to reach its height.
+        mapStopSheet.settleTimer = setTimeout(function() { settleMapStopAboveSheet(row); }, rising ? 320 : 0);
+        mountMapStopRoutes(siteId, row, opts, shownStop, tabs, list, function() {});
+      }
+      // Hides the stop sheet. With opts.restore (the user closed it: its x, a tap on the map, Back,
+      // the stops button) the sheet returns to the height it had, and the map to where it was
+      // unless the user moved it meanwhile. With opts.view only the map returns (the user dragged
+      // the sheet down: it stays down). Without either another flow is taking the sheet over.
+      function closeMapStopSheet(opts) {
+        if (!mapStopSheet.open) return false;
+        mapStopSheet.open = false;
+        clearTimeout(mapStopSheet.settleTimer);
+        if (resultsPanel) resultsPanel.classList.remove('stop-sheet');
+        if (mapStopSheetHead) mapStopSheetHead.hidden = true;
+        if (mapStopSheetEl) { mapStopSheetEl.hidden = true; mapStopSheetEl.innerHTML = ''; }
+        mapStops.infoSeq += 1;
+        var view = mapStopSheet.view;
+        mapStopSheet.view = null;
+        if (opts && opts.restore) setSheetState(mapStopSheet.prevState || 'sheet-peek');
+        if (opts && (opts.restore || opts.view) && view && map &&
+            !(mapDragStartedAt > mapStopSheet.pannedAt) && map.getLevel() === view.level) {
+          map.setCenter(view.center);
+        }
+        return true;
+      }
+      // The user closes the stop on screen, sheet or bubble.
+      function dismissMapStopInfo() {
+        closeMapStopSheet({ restore: true });
+        closeBubble();
+      }
+      if (mapStopSheetClose) {
+        mapStopSheetClose.addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          dismissMapStopInfo();
+        });
+      }
       // The bubble of a tapped stop: its routes per day type, each with its whole day
       // (timetable times), and the same 출발/도착 search as a tapped map position, with the
       // stop name as the place. The day tabs change neither the day above nor the map.
@@ -23448,6 +23668,7 @@
         var place = makeMapStopPlace(row);
         if (!place) return;
         blurActiveSearchInputs();
+        if (mapStopSheetEnabled()) { showMapStopSheet(siteId, row, opts, place); return; }
         // showBubbleWithPlace closes the previous bubble first, which clears the old selection.
         showBubbleWithPlace(place, row[1], row[2], false, null, 'manual');
         mapStops.selectedKey = siteId + ':' + row[0];
@@ -23477,9 +23698,16 @@
         box.insertBefore(tabs, box.querySelector('.bubble-actions'));
         box.insertBefore(list, box.querySelector('.bubble-actions'));
         refreshBubbleOverlayPosition();
+        mountMapStopRoutes(siteId, row, opts, shownStop, tabs, list, refreshBubbleOverlayPosition);
+      }
+
+      // The day tabs and the route list of a stop, in a bubble (tabs and list sit in the bubble
+      // box) or in the bottom sheet. relayout is called when their height changes.
+      function mountMapStopRoutes(siteId, row, opts, shownStop, tabs, list, relayout) {
         var canOpenRoute = mapStopRouteSearchEnabled();
         var dayType = String(opts.dayType || selectedDayType || 'weekday');
         var dayTypes = null;
+        var total = null;
         var seq = 0;
         var loaded = 0;
         function renderTabs() {
@@ -23498,13 +23726,26 @@
               e.preventDefault();
               if (value === dayType) return;
               dayType = value;
+              total = null;
               renderTabs();
               list.innerHTML = '<div class="stop-route-empty">노선을 불러오는 중...</div>';
               loadDay(false);
             });
             tabs.appendChild(button);
           });
+          // How many routes the day has: the list shows only a few of them at a time.
+          if (total != null) {
+            var count = document.createElement('span');
+            count.className = 'stop-route-count';
+            count.textContent = total + '개';
+            tabs.appendChild(count);
+          }
         }
+        // More rows under the visible ones: the list fades at its bottom edge until it is scrolled to the end.
+        function syncMoreBelow() {
+          list.classList.toggle('more-below', list.scrollHeight - list.scrollTop - list.clientHeight > 4);
+        }
+        list.addEventListener('scroll', syncMoreBelow, { passive: true });
         function addRouteRow(route) {
           var item = document.createElement('div');
           var opens = canOpenRoute && Number(route.route_id) > 0 && /^\d{1,2}:\d{2}/.test(String(route.departure_time || '')) &&
@@ -23550,6 +23791,7 @@
               // when the day above has none.
               if (Array.isArray(data.day_types) && data.day_types.length) dayTypes = data.day_types.map(String);
               if (data.day_type && (!dayTypes || dayTypes.indexOf(String(data.day_type)) >= 0)) dayType = String(data.day_type);
+              total = Number(data.total) || 0;
               renderTabs();
               list.innerHTML = '';
             }
@@ -23573,7 +23815,8 @@
               });
               list.appendChild(button);
             }
-            refreshBubbleOverlayPosition();
+            relayout();
+            syncMoreBelow();
           });
         }
         var infoSeq = ++mapStops.infoSeq;
@@ -23584,7 +23827,7 @@
           loadPage(0, anyDay).catch(function() {
             if (mine !== seq || infoSeq !== mapStops.infoSeq || !list.isConnected) return;
             list.innerHTML = '<div class="stop-route-empty">노선을 불러오지 못했습니다.</div>';
-            refreshBubbleOverlayPosition();
+            relayout();
           });
         }
         renderTabs();
@@ -23661,6 +23904,7 @@
         var returnPoint = captureMapStopReturn();   // before the result under the stops is left
         var focus = beginRouteFocus(siteId, row, route, dayType);
         if (!focus) return;
+        if (mapStopSheet.open) closeBubble();
         runRouteSearchWithPlace(target.place, target.direction, {
           routeFocus: focus, placeSource: 'map', searchSource: 'map_stop_route', mapStopReturn: returnPoint
         });
@@ -23671,7 +23915,8 @@
       // (and to the result that was under the stops, asked again), then the bubble closes,
       // then the stops go, and so on down mapStopReturns.
       function mapStopBubbleOpen() {
-        return !!(mapStops.active && mapStops.bubble && bubbleOverlay && bubbleOverlay.querySelector('.stop-bubble'));
+        return !!(mapStops.active && mapStops.bubble &&
+          (mapStopSheet.open || (bubbleOverlay && bubbleOverlay.querySelector('.stop-bubble'))));
       }
       // What Back from a search started in the open stop bubble returns to. null without one.
       function captureMapStopReturn() {
@@ -23687,7 +23932,9 @@
         }
         return {
           stop: { siteId: mapStops.bubble.siteId, row: mapStops.bubble.row }, dayType: mapStops.bubble.dayType,
-          view: { center: map.getCenter(), level: map.getLevel() }, under: under, owner: null
+          view: { center: map.getCenter(), level: map.getLevel() }, under: under, owner: null,
+          // The stop sheet (a phone): the height and map area to return to when it is closed later.
+          sheet: mapStopSheet.open ? { prevState: mapStopSheet.prevState, view: mapStopSheet.view } : null
         };
       }
       // The options of a search started with 출발/도착 of the open bubble: a stop bubble is remembered.
@@ -23755,12 +24002,12 @@
           map.setCenter(entry.view.center);
         }
         if (!mapStops.active) enterMapStops();
-        if (mapStops.active) showMapStopBubble(entry.stop.siteId, entry.stop.row, { dayType: entry.dayType });
+        if (mapStops.active) showMapStopBubble(entry.stop.siteId, entry.stop.row, { dayType: entry.dayType, sheet: entry.sheet });
       }
       // Back with the stops showing: the open stop bubble closes first, then the stops go.
       function closeMapStopsLayer() {
         if (!mapStops.active) return false;
-        if (mapStopBubbleOpen()) closeBubble();
+        if (mapStopBubbleOpen()) dismissMapStopInfo();
         else exitMapStops({ redraw: true });
         return true;
       }
@@ -40105,6 +40352,11 @@
         function setStateIndex(i) {
           resultsPanel.classList.remove('sheet-dragging');
           resultsPanel.style.height = '';
+          // #97: the stop sheet dragged down is closed; what the sheet held is back, at its smallest.
+          if (i === 0 && mapStopSheet.open) {
+            closeMapStopSheet({ view: true });
+            closeBubble();
+          }
           if (i === 0 && isMobile() && selectedPlaceIndex >= 0) {
             var selectedIndex = selectedPlaceIndex;
             setSheetState(states[i]);
