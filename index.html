@@ -4460,6 +4460,8 @@
     .issue-status-badge {
       display: inline-flex;
       align-items: center;
+      gap: 3px;
+      vertical-align: middle;
       border-radius: 999px;
       padding: 3px 8px;
       font-size: 11px;
@@ -4468,12 +4470,17 @@
       letter-spacing: .2px;
     }
     .issue-status-badge.open {
+      background: #eceff1;
+      color: #455a64;
+    }
+    .issue-status-badge.closed {
       background: #e8f5e9;
       color: #2e7d32;
     }
-    .issue-status-badge.closed {
-      background: #eceff1;
-      color: #455a64;
+    .issue-status-icon {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
     }
     .issue-status-badge.notice {
       background: #fff3bf;
@@ -4527,6 +4534,42 @@
       line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+    .issue-card-reply {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-left: 3px solid #93c5fd;
+      border-radius: 6px;
+      background: #f3f7ff;
+    }
+    .issue-card-reply-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 3px;
+      font-size: 11px;
+      line-height: 1.3;
+    }
+    .issue-card-reply-label {
+      font-weight: 800;
+      color: #1d4ed8;
+    }
+    .issue-card-reply-date {
+      color: #8a94a6;
+      white-space: nowrap;
+    }
+    .issue-card-reply-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #374151;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      overflow: hidden;
     }
     .issue-card-footer {
       margin-top: 10px;
@@ -4741,31 +4784,52 @@
       word-break: break-word;
       overflow-wrap: anywhere;
     }
-    .issue-detail-body > :first-child { margin-top: 0; }
-    .issue-detail-body > :last-child { margin-bottom: 0; }
-    .issue-detail-body p {
+    .issue-md > :first-child { margin-top: 0; }
+    .issue-md > :last-child { margin-bottom: 0; }
+    .issue-md p {
       margin: 0 0 10px;
     }
-    .issue-detail-body h1,
-    .issue-detail-body h2,
-    .issue-detail-body h3 {
+    .issue-md h1,
+    .issue-md h2,
+    .issue-md h3,
+    .issue-md h4,
+    .issue-md h5,
+    .issue-md h6 {
       margin: 14px 0 8px;
       color: #1f2937;
       line-height: 1.35;
       font-weight: 800;
     }
-    .issue-detail-body h1 { font-size: 18px; }
-    .issue-detail-body h2 { font-size: 16px; }
-    .issue-detail-body h3 { font-size: 15px; }
-    .issue-detail-body ul,
-    .issue-detail-body ol {
+    .issue-md h1 { font-size: 18px; }
+    .issue-md h2 { font-size: 16px; }
+    .issue-md h3 { font-size: 15px; }
+    .issue-md h4 { font-size: 14px; }
+    .issue-md h5 { font-size: 13px; }
+    .issue-md h6 { font-size: 13px; color: #6b7280; }
+    .issue-md ul,
+    .issue-md ol {
       margin: 0 0 10px 18px;
       padding: 0;
     }
-    .issue-detail-body li {
+    .issue-md li > ul,
+    .issue-md li > ol {
+      margin-bottom: 0;
+    }
+    .issue-md li {
       margin: 3px 0;
     }
-    .issue-detail-body blockquote {
+    .issue-md li > p {
+      margin-bottom: 6px;
+    }
+    .issue-md ul.issue-task-list {
+      list-style: none;
+      margin-left: 2px;
+    }
+    .issue-task-checkbox {
+      margin: 0 4px 0 0;
+      vertical-align: -1px;
+    }
+    .issue-md blockquote {
       margin: 0 0 10px;
       padding: 8px 10px;
       border-left: 3px solid #cbd5e1;
@@ -4773,10 +4837,87 @@
       color: #475569;
       border-radius: 6px;
     }
-    .issue-detail-body hr {
+    .issue-md blockquote > :last-child { margin-bottom: 0; }
+    .issue-md blockquote.issue-alert { border-left-color: #60a5fa; }
+    .issue-md blockquote.issue-alert-tip { border-left-color: #34d399; }
+    .issue-md blockquote.issue-alert-important { border-left-color: #a78bfa; }
+    .issue-md blockquote.issue-alert-warning { border-left-color: #fbbf24; }
+    .issue-md blockquote.issue-alert-caution { border-left-color: #f87171; }
+    .issue-md .issue-alert-title {
+      margin: 0 0 4px;
+      font-weight: 800;
+      color: #334155;
+    }
+    .issue-md hr {
       border: 0;
       border-top: 1px solid #e5e7eb;
       margin: 12px 0;
+    }
+    .issue-md img {
+      max-width: 100% !important;
+    }
+    .issue-md a > .issue-body-image {
+      display: inline-block;
+    }
+    .issue-md kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      padding: 1px 5px;
+      border: 1px solid #d1d5db;
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      background: #f9fafb;
+      color: #111827;
+    }
+    .issue-md mark {
+      background: #fef08a;
+      color: inherit;
+      padding: 0 2px;
+      border-radius: 3px;
+    }
+    .issue-table-wrap {
+      margin: 0 0 10px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .issue-table {
+      border-collapse: collapse;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .issue-table th,
+    .issue-table td {
+      border: 1px solid #e5e7eb;
+      padding: 5px 9px;
+      text-align: left;
+      vertical-align: top;
+      /* Korean breaks between any two letters by default, which squeezes a wide table into
+         one-letter columns. Break at spaces only and let the table scroll inside its box. */
+      word-break: keep-all;
+      overflow-wrap: normal;
+    }
+    .issue-table th {
+      background: #f3f4f6;
+      font-weight: 800;
+      color: #1f2937;
+      white-space: nowrap;
+    }
+    .issue-table .issue-td-center { text-align: center; }
+    .issue-table .issue-td-right { text-align: right; }
+    .issue-details {
+      margin: 0 0 10px;
+      padding: 6px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .issue-details > summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    .issue-details[open] > summary {
+      margin-bottom: 8px;
     }
     .issue-inline-code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -4899,10 +5040,21 @@
     }
     .issue-comment-body {
       font-size: 13px;
-      line-height: 1.45;
-      white-space: pre-wrap;
+      line-height: 1.5;
+      white-space: normal;
       color: #444;
       word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .issue-comment-body.issue-md p,
+    .issue-comment-body.issue-md ul,
+    .issue-comment-body.issue-md ol,
+    .issue-comment-body.issue-md blockquote,
+    .issue-comment-body.issue-md .issue-code-block {
+      margin-bottom: 6px;
+    }
+    .issue-comment-body.issue-md > :last-child {
+      margin-bottom: 0;
     }
     .issue-comment-nickname-row {
       margin-bottom: 8px;
@@ -11215,9 +11367,9 @@
       <section class="issue-view show" id="issueListView" aria-label="이슈 목록">
         <div class="issue-list-controls">
           <select class="issue-state-filter" id="issueStateFilter" aria-label="이슈 상태 필터">
-            <option value="open" selected>Open</option>
-            <option value="all">전체</option>
-            <option value="closed">Closed</option>
+            <option value="all" selected>전체</option>
+            <option value="open">Open</option>
+            <option value="closed">Resolved</option>
           </select>
         </div>
         <div class="issue-list" id="issueList"></div>
@@ -11827,7 +11979,7 @@
       var ISSUE_PAGE_SIZE = 10;
       var issueCurrentPage = 1;
       var issueHasNextPage = false;
-      var issueCurrentState = 'open';
+      var issueCurrentState = 'all';
       var issueCurrentView = 'list';
       var noticeCurrentPage = 1;
       var noticeHasNextPage = false;
@@ -20030,10 +20182,8 @@
         if (!styleText) return '';
         var allowedProps = {
           'width': true,
-          'min-width': true,
           'max-width': true,
           'height': true,
-          'min-height': true,
           'max-height': true,
           'display': true,
           'margin': true,
@@ -20053,9 +20203,11 @@
           if (sep <= 0) return;
           var prop = String(rule.slice(0, sep) || '').trim().toLowerCase();
           var value = String(rule.slice(sep + 1) || '').trim();
-          if (!prop || !value || !allowedProps[prop]) return;
+          if (!prop || !value || !Object.prototype.hasOwnProperty.call(allowedProps, prop)) return;
           if (/url\s*\(|expression\s*\(|javascript:|data:/i.test(value)) return;
           if (!/^[a-z0-9#.,()%\s_\/+\-]+$/i.test(value)) return;
+          // A margin is a plain non-negative length: an image must not be moved over other content.
+          if (prop.indexOf('margin') === 0 && !/^(?:(?:auto|0|\d{1,4}(?:\.\d{1,3})?(?:px|em|rem|%))(?:\s+|$)){1,4}$/i.test(value)) return;
           safeRules.push(prop + ': ' + value);
         });
         return safeRules.join('; ');
@@ -20065,242 +20217,573 @@
         return String(text || '').replace(/<[^>]+>/g, '').trim();
       }
 
-      function renderIssueInlineMarkdown(text) {
-        var escaped = escapeHtml(text);
-        var codeTokens = [];
-        escaped = escaped.replace(/`([^`\n]+)`/g, function(match, codeText) {
-          var token = '@@ISSUECODE' + codeTokens.length + '@@';
-          codeTokens.push({
-            token: token,
-            html: '<code class="issue-inline-code">' + String(codeText || '') + '</code>',
-          });
-          return token;
-        });
-        escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-        escaped = escaped.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
-        escaped = escaped.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-        escaped = escaped.replace(/_([^_\n]+)_/g, '<em>$1</em>');
-        escaped = escaped.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
-        escaped = escaped.replace(/(https?:\/\/[^\s<]+)/gi, function(match) {
-          var safeUrl = sanitizeIssueExternalUrl(match);
-          if (!safeUrl) return match;
-          return '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(match) + '</a>';
-        });
-        codeTokens.forEach(function(item) {
-          escaped = escaped.split(item.token).join(item.html);
-        });
-        return escaped;
+      // ---- Issue / notice / comment text: GitHub-flavoured markdown ----
+      // Safe by construction: user text is always escaped and only the tags built here are
+      // emitted. A finished HTML fragment is kept out of the later passes as a private-use
+      // placeholder ( <index> ); those two characters are removed from the input
+      // first, so the input cannot forge one.
+      var ISSUE_MD_MAX_SOURCE_CHARS = 100000;
+      var ISSUE_MD_MAX_INLINE_CHARS = 20000;
+      var ISSUE_MD_MAX_DEPTH = 8;
+      var ISSUE_MD_INLINE_TAGS = {
+        b: 'strong', strong: 'strong', i: 'em', em: 'em', u: 'u', s: 'del', del: 'del', strike: 'del',
+        ins: 'ins', sub: 'sub', sup: 'sup', kbd: 'kbd', mark: 'mark', code: 'code', small: 'small'
+      };
+      var ISSUE_MD_ALERT_TITLES = { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' };
+
+      function issueMdEscape(text) {
+        return String(text == null ? '' : text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
       }
 
-      function renderIssueBodyHtml(text) {
-        var source = String(text || '').replace(/\r\n?/g, '\n');
-        if (!source.trim()) return '-';
-        var tokenItems = [];
+      function issueMdEscapeText(text) {
+        // Running text keeps character references (&amp; &nbsp; &#39; ...) the way GitHub does.
+        return issueMdEscape(text).replace(/&amp;(#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});/g, '&$1;');
+      }
 
-        function issueTokenize(html) {
-          var token = '__ISSUE_TOKEN_' + tokenItems.length + '__';
-          tokenItems.push({ token: token, html: String(html || '') });
-          return token;
+      function issueMdToken(ctx, html) {
+        ctx.tokens.push(String(html == null ? '' : html));
+        return '' + (ctx.tokens.length - 1) + '';
+      }
+
+      function issueMdResolveTokens(ctx, html) {
+        var out = String(html || '');
+        for (var pass = 0; pass < 12 && out.indexOf('') >= 0; pass++) {
+          out = out.replace(/(\d+)/g, function(match, index) {
+            var value = ctx.tokens[Number(index)];
+            return value == null ? '' : value;
+          });
+        }
+        return out.replace(/[]/g, '');
+      }
+
+      function sanitizeIssueLinkUrl(rawUrl) {
+        var value = String(rawUrl || '').trim();
+        if (!value || /[]/.test(value)) return '';
+        if (/^mailto:[^\s<>"'`]+@[^\s<>"'`]+$/i.test(value)) return value;
+        if (!/^https?:\/\//i.test(value)) return '';
+        return sanitizeIssueExternalUrl(value);
+      }
+
+      function buildIssueLinkHtml(rawUrl, labelHtml) {
+        var safeUrl = sanitizeIssueLinkUrl(rawUrl);
+        if (!safeUrl) return '';
+        return '<a class="issue-external-link" href="' + issueMdEscape(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
+          String(labelHtml || '') + '</a>';
+      }
+
+      function buildIssueImageHtml(rawUrl, alt, extraAttrs) {
+        var value = String(rawUrl || '').trim();
+        if (!/^https?:\/\//i.test(value) || /[]/.test(value)) return '';
+        var imageSrc = buildIssueImageSrc(value);
+        if (!imageSrc) return '';
+        var safeAlt = String(alt || '').replace(/\d+/g, '');
+        return '<img class="issue-body-image" src="' + issueMdEscape(imageSrc) + '" alt="' + issueMdEscape(safeAlt) + '" loading="lazy"' +
+          String(extraAttrs || '') + ' />';
+      }
+
+      function buildIssueImageHtmlFromTag(tag) {
+        var extraAttrs = '';
+        var width = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'width'));
+        var height = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'height'));
+        var style = sanitizeIssueImageStyle(extractIssueHtmlAttribute(tag, 'style'));
+        if (width) extraAttrs += ' width="' + issueMdEscape(width) + '"';
+        if (height) extraAttrs += ' height="' + issueMdEscape(height) + '"';
+        if (style) extraAttrs += ' style="' + issueMdEscape(style) + '"';
+        return buildIssueImageHtml(
+          extractIssueHtmlAttribute(tag, 'src').replace(/&amp;/g, '&'),
+          extractIssueHtmlAttribute(tag, 'alt'),
+          extraAttrs
+        );
+      }
+
+      function issueMdInline(text, ctx, inLink) {
+        var s = String(text || '');
+        if (!s) return '';
+        if (s.length > ISSUE_MD_MAX_INLINE_CHARS) {
+          return issueMdEscapeText(s).replace(/\n/g, '<br>');
+        }
+        // A trailing backslash or trailing spaces only mark a line break; every newline is one here.
+        s = s.replace(/(?: +|\\)\n/g, '\n');
+
+        // `code` and ``co`de``
+        s = s.replace(/(^|[^`])(`+)(?!`)([\s\S]*?[^`])\2(?!`)/g, function(match, lead, ticks, code) {
+          var content = String(code).replace(/\n/g, ' ');
+          if (content.length > 2 && content.charAt(0) === ' ' && content.charAt(content.length - 1) === ' ' && /[^ ]/.test(content)) {
+            content = content.slice(1, -1);
+          }
+          return lead + issueMdToken(ctx, '<code class="issue-inline-code">' + issueMdEscape(content) + '</code>');
+        });
+
+        // \* \_ \# ... are literal characters
+        s = s.replace(/\\([!-\/:-@\[-`{-~])/g, function(match, ch) {
+          return issueMdToken(ctx, issueMdEscape(ch));
+        });
+
+        // Images: <img ...> and ![alt](url "title")
+        s = s.replace(/<img\b[^<>]*>/gi, function(tag) {
+          return issueMdToken(ctx, buildIssueImageHtmlFromTag(tag));
+        });
+        s = s.replace(/!\[([^\[\]]*)\]\(\s*<?([^\s<>()]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g, function(match, alt, rawUrl) {
+          var imageHtml = buildIssueImageHtml(rawUrl, alt);
+          return imageHtml ? issueMdToken(ctx, imageHtml) : match;
+        });
+
+        if (!inLink) {
+          // <a href="...">label</a>
+          s = s.replace(/<a\b[^<>]*>([\s\S]*?)<\/a\s*>/gi, function(match, labelRaw) {
+            var openTag = match.slice(0, match.indexOf('>') + 1);
+            var href = extractIssueHtmlAttribute(openTag, 'href').replace(/&amp;/g, '&');
+            var label = stripIssueHtmlTags(labelRaw);
+            var labelHtml = issueMdInline(label || href, ctx, true);
+            return issueMdToken(ctx, buildIssueLinkHtml(href, labelHtml) || issueMdInline(label, ctx, true));
+          });
+          // [label](url "title"); the label may hold an image
+          s = s.replace(/\[((?:[^\[\]]|\[[^\[\]]*\])+)\]\(\s*<?([^\s<>()]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g, function(match, label, rawUrl) {
+            if (!sanitizeIssueLinkUrl(rawUrl)) return match;
+            return issueMdToken(ctx, buildIssueLinkHtml(rawUrl, issueMdInline(label, ctx, true)));
+          });
+          // <https://...> and <someone@example.com>
+          s = s.replace(/<(https?:\/\/[^\s<>]+)>/gi, function(match, rawUrl) {
+            var linkHtml = buildIssueLinkHtml(rawUrl, issueMdEscapeText(rawUrl));
+            return linkHtml ? issueMdToken(ctx, linkHtml) : match;
+          });
+          s = s.replace(/<([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})>/g, function(match, address) {
+            var mailHtml = buildIssueLinkHtml('mailto:' + address, issueMdEscapeText(address));
+            return mailHtml ? issueMdToken(ctx, mailHtml) : match;
+          });
         }
 
-        source = source.replace(/```(?:[a-z0-9_-]+)?\n([\s\S]*?)```/gi, function(match, codeBody) {
-          var safeCode = escapeHtml(String(codeBody || '').replace(/\n+$/, ''));
-          return issueTokenize('<pre class="issue-code-block"><code>' + safeCode + '</code></pre>');
-        });
-
-        source = source.replace(/<img\b[^>]*>/gi, function(tag) {
-          var rawUrl = extractIssueHtmlAttribute(tag, 'src');
-          var imageSrc = buildIssueImageSrc(rawUrl);
-          if (!imageSrc) return '';
-          var alt = extractIssueHtmlAttribute(tag, 'alt');
-          var width = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'width'));
-          var height = sanitizeIssueImageDimension(extractIssueHtmlAttribute(tag, 'height'));
-          var style = sanitizeIssueImageStyle(extractIssueHtmlAttribute(tag, 'style'));
-          var extraAttrs = '';
-          if (width) extraAttrs += ' width="' + escapeAttr(width) + '"';
-          if (height) extraAttrs += ' height="' + escapeAttr(height) + '"';
-          if (style) extraAttrs += ' style="' + escapeAttr(style) + '"';
-          return issueTokenize(
-            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy"' + extraAttrs + ' />'
-          );
-        });
-
-        source = source.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+(?:\?[^)\s]*)?)\)/gi, function(match, alt, rawUrl) {
-          var imageSrc = buildIssueImageSrc(rawUrl);
-          if (!imageSrc) return match;
-          return issueTokenize(
-            '<img class="issue-body-image" src="' + escapeAttr(imageSrc) + '" alt="' + escapeAttr(String(alt || '')) + '" loading="lazy" />'
-          );
-        });
-
-        source = source.replace(/<a\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi, function(match, href1, href2, href3, labelRaw) {
-          var rawUrl = href1 || href2 || href3 || '';
-          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
-          if (!safeUrl) return stripIssueHtmlTags(labelRaw);
-          var label = stripIssueHtmlTags(labelRaw) || safeUrl;
-          return issueTokenize(
-            '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
-              escapeHtml(label) +
-            '</a>'
-          );
-        });
-
-        source = source.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, function(match, label, rawUrl) {
-          var safeUrl = sanitizeIssueExternalUrl(rawUrl);
-          if (!safeUrl) return match;
-          return issueTokenize(
-            '<a class="issue-external-link" href="' + escapeAttr(safeUrl) + '" target="_blank" rel="noopener noreferrer">' +
-              escapeHtml(String(label || safeUrl)) +
-            '</a>'
-          );
-        });
-
-        var lines = source.split('\n');
-        var html = [];
-        var listStack = [];
-        function closeListItemAt(depth) {
-          if (depth < 0 || depth >= listStack.length) return;
-          if (!listStack[depth].liOpen) return;
-          html.push('</li>');
-          listStack[depth].liOpen = false;
+        // Inline HTML GitHub also accepts: <br> and balanced pairs of a few formatting tags.
+        // A pair is required so that an unclosed tag cannot restyle the rest of the page.
+        s = s.replace(/<br\s*\/?>/gi, function() { return issueMdToken(ctx, '<br>'); });
+        for (var pass = 0; pass < 6; pass++) {
+          var replacedPair = false;
+          s = s.replace(/<(b|strong|i|em|u|s|del|strike|ins|sub|sup|kbd|mark|code|small)(?:\s[^<>]*)?>([\s\S]*?)<\/\1\s*>/gi, function(match, name, inner) {
+            var mapped = ISSUE_MD_INLINE_TAGS[String(name).toLowerCase()];
+            replacedPair = true;
+            return issueMdToken(ctx, '<' + mapped + '>') + inner + issueMdToken(ctx, '</' + mapped + '>');
+          });
+          if (!replacedPair) break;
         }
-        function closeLists() {
-          while (listStack.length > 0) {
-            var depth = listStack.length - 1;
-            closeListItemAt(depth);
-            html.push('</' + listStack[depth].type + '>');
-            listStack.pop();
-          }
-        }
-        function appendToCurrentListItem(contentHtml, prependBreak) {
-          if (!listStack.length) return false;
-          var depth = listStack.length - 1;
-          if (!listStack[depth].liOpen) {
-            html.push('<li>');
-            listStack[depth].liOpen = true;
-          }
-          html.push((prependBreak ? '<br>' : '') + String(contentHtml || ''));
-          return true;
-        }
-        function startListItem(depth, type, contentHtml) {
-          var parsedDepth = Number(depth);
-          if (!isFinite(parsedDepth)) parsedDepth = 0;
-          var targetDepth = Math.max(0, Math.floor(parsedDepth));
-          var listType = (type === 'ol') ? 'ol' : 'ul';
-          if (targetDepth > listStack.length) {
-            targetDepth = listStack.length;
-          }
 
-          while (listStack.length - 1 > targetDepth) {
-            var closeDepth = listStack.length - 1;
-            closeListItemAt(closeDepth);
-            html.push('</' + listStack[closeDepth].type + '>');
-            listStack.pop();
-          }
-
-          if (listStack.length - 1 === targetDepth && listStack.length > 0) {
-            closeListItemAt(targetDepth);
-            if (listStack[targetDepth].type !== listType) {
-              html.push('</' + listStack[targetDepth].type + '>');
-              listStack.pop();
+        // Bare URLs
+        if (!inLink) {
+          s = s.replace(/(^|[^A-Za-z0-9_\/])((?:https?:\/\/|www\.[A-Za-z0-9-]+\.)[^\s<>]+)/gi, function(match, lead, rawUrl) {
+            var cut = rawUrl.length;
+            while (cut > 0) {
+              var ch = rawUrl.charAt(cut - 1);
+              if ('.,:;!?\'"*_~'.indexOf(ch) >= 0) { cut--; continue; }
+              if (ch === ')') {
+                var head = rawUrl.slice(0, cut);
+                if (head.split(')').length > head.split('(').length) { cut--; continue; }
+              }
+              break;
             }
-          }
+            var url = rawUrl.slice(0, cut);
+            var href = /^www\./i.test(url) ? ('http://' + url) : url;
+            var urlHtml = buildIssueLinkHtml(href, issueMdEscapeText(url));
+            return urlHtml ? (lead + issueMdToken(ctx, urlHtml) + rawUrl.slice(cut)) : match;
+          });
+        }
 
-          while (listStack.length > 0 && (listStack.length - 1 < targetDepth)) {
-            var parentDepth = listStack.length - 1;
-            if (parentDepth >= 0 && !listStack[parentDepth].liOpen) {
-              html.push('<li>');
-              listStack[parentDepth].liOpen = true;
+        // Everything still here is plain text.
+        s = issueMdEscapeText(s);
+
+        // Emphasis. "_" needs a word boundary on both sides (snake_case stays as typed); a single
+        // "~" is left alone on purpose: "10~20분, 30~40분" must not be struck through.
+        s = s.replace(/\*\*\*(?=[^\s*])([^*]*?[^\s*])\*\*\*/g, '<strong><em>$1</em></strong>');
+        s = s.replace(/\*\*(?=[^\s*])((?:[^*]|\*(?!\*))*?[^\s*])\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/(^|[^A-Za-z0-9_\u0080-\uDFFF豈-￿])__(?=[^\s_])([^_]*?[^\s_])__(?![A-Za-z0-9_\u0080-\uDFFF豈-￿])/g, '$1<strong>$2</strong>');
+        s = s.replace(/\*(?=[^\s*])([^*]*?[^\s*])\*/g, '<em>$1</em>');
+        s = s.replace(/(^|[^A-Za-z0-9_\u0080-\uDFFF豈-￿])_(?=[^\s_])([^_]*?[^\s_])_(?![A-Za-z0-9_\u0080-\uDFFF豈-￿])/g, '$1<em>$2</em>');
+        s = s.replace(/~~(?=[^\s~])([^~]*?[^\s~])~~/g, '<del>$1</del>');
+        return s.replace(/\n/g, '<br>');
+      }
+
+      function renderIssueInlineMarkdown(text) {
+        var ctx = { tokens: [] };
+        return issueMdResolveTokens(ctx, issueMdInline(String(text || '').replace(/[\u0000]/g, ''), ctx, false));
+      }
+
+      function issueMdIsBlank(line) {
+        return !/\S/.test(String(line || ''));
+      }
+
+      function issueMdIndentOf(line) {
+        var match = /^ */.exec(String(line || ''));
+        return match ? match[0].length : 0;
+      }
+
+      function issueMdFenceOpen(line, anyIndent) {
+        var match = (anyIndent ? /^( *)(`{3,}|~{3,})[ \t]*([^`]*)$/ : /^( {0,3})(`{3,}|~{3,})[ \t]*([^`]*)$/).exec(String(line || ''));
+        return match ? { indent: match[1].length, ch: match[2].charAt(0), len: match[2].length } : null;
+      }
+
+      function issueMdFenceCloses(fence, line, anyIndent) {
+        var match = (anyIndent ? /^ *(`{3,}|~{3,})[ \t]*$/ : /^ {0,3}(`{3,}|~{3,})[ \t]*$/).exec(String(line || ''));
+        return !!(match && match[1].charAt(0) === fence.ch && match[1].length >= fence.len);
+      }
+
+      function issueMdIsHr(line) {
+        return /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(String(line || ''));
+      }
+
+      function issueMdHeading(line) {
+        var match = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*$/.exec(String(line || ''));
+        if (!match) return null;
+        var text = match[2].replace(/[ \t]+#+$/, '').replace(/^#+$/, '');
+        return text ? { level: match[1].length, text: text } : null;
+      }
+
+      function issueMdListStart(line) {
+        var match = /^( *)([-*+]|\d{1,9}[.)])( +)(\S.*)$/.exec(String(line || ''));
+        if (!match) return null;
+        var ordered = /\d/.test(match[2].charAt(0));
+        var wide = match[3].length > 4;
+        return {
+          indent: match[1].length,
+          ordered: ordered,
+          marker: ordered ? match[2].charAt(match[2].length - 1) : match[2],
+          start: ordered ? parseInt(match[2], 10) : 1,
+          contentIndent: match[1].length + match[2].length + (wide ? 1 : match[3].length),
+          text: (wide ? match[3].slice(1) : '') + match[4]
+        };
+      }
+
+      function issueMdTableCells(line) {
+        var row = String(line || '').trim();
+        if (row.charAt(0) === '|') row = row.slice(1);
+        if (row.charAt(row.length - 1) === '|' && row.charAt(row.length - 2) !== '\\') row = row.slice(0, -1);
+        var cells = [];
+        var cell = '';
+        for (var i = 0; i < row.length; i++) {
+          var ch = row.charAt(i);
+          if (ch === '\\' && row.charAt(i + 1) === '|') { cell += '|'; i++; continue; }
+          if (ch === '|') { cells.push(cell.trim()); cell = ''; continue; }
+          cell += ch;
+        }
+        cells.push(cell.trim());
+        return cells;
+      }
+
+      function issueMdTableAligns(line) {
+        var row = String(line || '');
+        if (row.indexOf('|') < 0) return null;
+        if (!/^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/.test(row)) return null;
+        return issueMdTableCells(row).map(function(cell) {
+          var left = cell.charAt(0) === ':';
+          var right = cell.charAt(cell.length - 1) === ':';
+          return (left && right) ? 'center' : (right ? 'right' : (left ? 'left' : ''));
+        });
+      }
+
+      function issueMdTableStartsAt(lines, index) {
+        if (index + 1 >= lines.length || String(lines[index] || '').indexOf('|') < 0) return null;
+        var aligns = issueMdTableAligns(lines[index + 1]);
+        if (!aligns) return null;
+        var head = issueMdTableCells(lines[index]);
+        return head.length === aligns.length ? { head: head, aligns: aligns } : null;
+      }
+
+      // A line that ends a paragraph even with no blank line before it.
+      function issueMdStartsBlock(line) {
+        if (issueMdFenceOpen(line) || issueMdIsHr(line) || issueMdHeading(line)) return true;
+        if (/^ {0,3}>/.test(line)) return true;
+        if (/^\s*<\/?details\b/i.test(line)) return true;
+        var item = issueMdListStart(line);
+        return !!(item && (!item.ordered || item.start === 1));
+      }
+
+      function issueMdList(lines, startIndex, ctx, depth) {
+        var first = issueMdListStart(lines[startIndex]);
+        var total = lines.length;
+        var i = startIndex + 1;
+        var items = [];
+        var loose = false;
+        var hasTask = false;
+        var current = { lines: [first.text], indent: first.indent, contentIndent: first.contentIndent };
+
+        while (i < total) {
+          var line = lines[i];
+          if (issueMdIsBlank(line)) {
+            var next = i + 1;
+            while (next < total && issueMdIsBlank(lines[next])) next++;
+            if (next >= total) { i = next; break; }
+            var nextStart = issueMdListStart(lines[next]);
+            var nextIndent = issueMdIndentOf(lines[next]);
+            if (nextIndent >= current.contentIndent || (nextStart && nextStart.indent >= current.indent + 2)) {
+              // The blank line is inside the item.
+              if (!nextStart) loose = true;
+              current.lines.push('');
+              i = next;
+              continue;
             }
-            var nextListType = (listStack.length === targetDepth) ? listType : 'ul';
-            html.push('<' + nextListType + '>');
-            listStack.push({ type: nextListType, liOpen: false });
+            if (nextStart && nextStart.ordered === first.ordered && nextStart.marker === first.marker) {
+              loose = true;
+              i = next;
+              continue;
+            }
+            i = next;
+            break;
+          }
+          var start = issueMdListStart(line);
+          var indent = issueMdIndentOf(line);
+          if (start && indent < current.indent + 2) {
+            if (start.ordered !== first.ordered || start.marker !== first.marker) break;
+            items.push(current);
+            current = { lines: [start.text], indent: start.indent, contentIndent: start.contentIndent };
+            i++;
+            continue;
+          }
+          if (indent >= current.contentIndent) {
+            current.lines.push(line.slice(current.contentIndent));
+            i++;
+            continue;
+          }
+          if (start) {
+            // A nested item indented less than the text above it (two spaces under "1. ").
+            current.lines.push(line.slice(indent));
+            i++;
+            continue;
+          }
+          var last = current.lines[current.lines.length - 1];
+          if (!issueMdIsBlank(last) && !issueMdStartsBlock(line) && !issueMdTableStartsAt(lines, i)) {
+            current.lines.push(line.replace(/^ +/, ''));
+            i++;
+            continue;
+          }
+          break;
+        }
+        items.push(current);
+
+        var itemsHtml = items.map(function(item) {
+          var task = /^\[([ xX])\][ \t]+/.exec(item.lines[0] || '');
+          var box = '';
+          if (task) {
+            hasTask = true;
+            item.lines[0] = item.lines[0].slice(task[0].length);
+            box = '<input type="checkbox" class="issue-task-checkbox" disabled' + (task[1] === ' ' ? '' : ' checked') + '> ';
+          }
+          var inner = issueMdBlocks(item.lines, ctx, depth + 1, !loose);
+          if (box) inner = (inner.indexOf('<p>') === 0) ? ('<p>' + box + inner.slice(3)) : (box + inner);
+          return '<li' + (task ? ' class="issue-task-item"' : '') + '>' + inner + '</li>';
+        }).join('');
+        var tag = first.ordered ? 'ol' : 'ul';
+        var attrs = (first.ordered && first.start !== 1) ? (' start="' + Number(first.start) + '"') : '';
+        if (hasTask) attrs += ' class="issue-task-list"';
+        return { html: '<' + tag + attrs + '>' + itemsHtml + '</' + tag + '>', next: i };
+      }
+
+      function issueMdBlocks(lines, ctx, depth, tight) {
+        var out = [];
+        var lastWasText = false;
+        var total = lines.length;
+        var i = 0;
+        function push(html, isText) {
+          if (isText && lastWasText) out.push('<br>');
+          out.push(html);
+          lastWasText = !!isText;
+        }
+        function pushParagraph(text) {
+          var inlineHtml = issueMdInline(text, ctx, false);
+          if (tight) push(inlineHtml, true);
+          else push('<p>' + inlineHtml + '</p>', false);
+        }
+        if (depth > ISSUE_MD_MAX_DEPTH) {
+          pushParagraph(lines.join('\n').trim());
+          return out.join('');
+        }
+
+        while (i < total) {
+          var line = lines[i];
+          if (issueMdIsBlank(line)) { i++; continue; }
+
+          // ``` code ```
+          var fence = issueMdFenceOpen(line);
+          if (fence) {
+            var code = [];
+            i++;
+            while (i < total && !issueMdFenceCloses(fence, lines[i])) {
+              code.push(lines[i].slice(Math.min(fence.indent, issueMdIndentOf(lines[i]))));
+              i++;
+            }
+            i++;
+            push('<pre class="issue-code-block"><code>' + issueMdEscape(code.join('\n')) + '</code></pre>', false);
+            continue;
           }
 
-          if (!listStack.length || listStack[listStack.length - 1].type !== listType) {
-            html.push('<' + listType + '>');
-            listStack.push({ type: listType, liOpen: false });
+          // <details><summary>...</summary> ... </details>
+          if (/^\s*<details\b[^<>]*>/i.test(line)) {
+            var openCount = 0;
+            var detailLines = [];
+            var j = i;
+            for (; j < total; j++) {
+              openCount += (lines[j].match(/<details\b[^<>]*>/gi) || []).length;
+              openCount -= (lines[j].match(/<\/details\s*>/gi) || []).length;
+              detailLines.push(lines[j]);
+              if (openCount <= 0) break;
+            }
+            var detailText = detailLines.join('\n').replace(/^\s*<details\b[^<>]*>/i, '');
+            if (openCount <= 0) detailText = detailText.replace(/<\/details\s*>[^\n]*$/i, '');
+            var summaryHtml = '';
+            detailText = detailText.replace(/^\s*<summary\b[^<>]*>([\s\S]*?)<\/summary\s*>/i, function(match, summaryText) {
+              summaryHtml = issueMdInline(String(summaryText || '').trim(), ctx, false);
+              return '';
+            });
+            push('<details class="issue-details"><summary>' + (summaryHtml || '자세히 보기') + '</summary>' +
+              issueMdBlocks(detailText.split('\n'), ctx, depth + 1, false) + '</details>', false);
+            i = j + 1;
+            continue;
           }
 
-          var depthNow = listStack.length - 1;
-          html.push('<li>' + String(contentHtml || ''));
-          listStack[depthNow].liOpen = true;
-        }
-        function getListDepthFromIndent(rawIndent) {
-          var spaces = String(rawIndent || '').replace(/\t/g, '  ').length;
-          return Math.floor(Math.max(0, spaces) / 2);
-        }
+          var heading = issueMdHeading(line);
+          if (heading) {
+            push('<h' + heading.level + '>' + issueMdInline(heading.text, ctx, false) + '</h' + heading.level + '>', false);
+            i++;
+            continue;
+          }
 
-        lines.forEach(function(line) {
-          var rawLine = String(line || '');
-          var trimmed = rawLine.trim();
-          var match = null;
-          if (!trimmed) {
-            if (listStack.length) {
-              appendToCurrentListItem('', true);
+          if (issueMdIsHr(line)) {
+            push('<hr>', false);
+            i++;
+            continue;
+          }
+
+          // > quote, and > [!NOTE] alerts
+          if (/^ {0,3}>/.test(line)) {
+            var quote = [];
+            while (i < total && /^ {0,3}>/.test(lines[i])) {
+              quote.push(lines[i].replace(/^ {0,3}> ?/, ''));
+              i++;
+            }
+            var alert = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*$/i.exec(quote[0] || '');
+            if (alert) {
+              var kind = alert[1].toLowerCase();
+              push('<blockquote class="issue-alert issue-alert-' + kind + '"><p class="issue-alert-title">' + ISSUE_MD_ALERT_TITLES[kind] + '</p>' +
+                issueMdBlocks(quote.slice(1), ctx, depth + 1, false) + '</blockquote>', false);
             } else {
-              closeLists();
+              push('<blockquote>' + issueMdBlocks(quote, ctx, depth + 1, false) + '</blockquote>', false);
             }
-            return;
+            continue;
           }
-          if (/^__ISSUE_TOKEN_\d+__$/.test(trimmed)) {
-            if (!appendToCurrentListItem(trimmed, true)) {
-              closeLists();
-              html.push(trimmed);
+
+          // | a | b | tables
+          var table = issueMdTableStartsAt(lines, i);
+          if (table) {
+            var rows = [];
+            i += 2;
+            while (i < total && !issueMdIsBlank(lines[i]) && !issueMdStartsBlock(lines[i])) {
+              rows.push(issueMdTableCells(lines[i]));
+              i++;
             }
+            var cellHtml = function(tagName, text, index) {
+              var align = table.aligns[index];
+              return '<' + tagName + (align ? ' class="issue-td-' + align + '"' : '') + '>' + issueMdInline(text || '', ctx, false) + '</' + tagName + '>';
+            };
+            var tableHtml = '<div class="issue-table-wrap"><table class="issue-table"><thead><tr>' +
+              table.head.map(function(text, index) { return cellHtml('th', text, index); }).join('') + '</tr></thead>';
+            if (rows.length) {
+              tableHtml += '<tbody>' + rows.map(function(cells) {
+                return '<tr>' + table.head.map(function(unused, index) { return cellHtml('td', cells[index], index); }).join('') + '</tr>';
+              }).join('') + '</tbody>';
+            }
+            push(tableHtml + '</table></div>', false);
+            continue;
+          }
+
+          if (issueMdListStart(line)) {
+            var list = issueMdList(lines, i, ctx, depth);
+            push(list.html, false);
+            i = list.next;
+            continue;
+          }
+
+          // Paragraph; "===" / "---" right under it makes it a heading (as on GitHub).
+          var paragraph = [line.trim()];
+          var setext = 0;
+          i++;
+          while (i < total && !issueMdIsBlank(lines[i])) {
+            if (/^ {0,3}=+[ \t]*$/.test(lines[i])) { setext = 1; i++; break; }
+            if (/^ {0,3}-+[ \t]*$/.test(lines[i])) { setext = 2; i++; break; }
+            if (issueMdStartsBlock(lines[i]) || issueMdTableStartsAt(lines, i)) break;
+            paragraph.push(lines[i].trim());
+            i++;
+          }
+          if (setext) push('<h' + setext + '>' + issueMdInline(paragraph.join('\n'), ctx, false) + '</h' + setext + '>', false);
+          else pushParagraph(paragraph.join('\n'));
+        }
+        return out.join('');
+      }
+
+      // <!-- comments --> are hidden, except inside ``` code ```.
+      function issueMdStripComments(lines) {
+        var out = [];
+        var chunk = [];
+        var fence = null;
+        function flush() {
+          if (!chunk.length) return;
+          var text = chunk.join('\n');
+          if (text.indexOf('<!--') >= 0) text = text.replace(/<!--[\s\S]*?-->/g, '');
+          out = out.concat(text.split('\n'));
+          chunk = [];
+        }
+        lines.forEach(function(line) {
+          if (fence) {
+            out.push(line);
+            if (issueMdFenceCloses(fence, line, true)) fence = null;
             return;
           }
-          if (/^-{3,}$/.test(trimmed)) {
-            closeLists();
-            html.push('<hr>');
+          var opened = issueMdFenceOpen(line, true);
+          if (opened) {
+            flush();
+            fence = opened;
+            out.push(line);
             return;
           }
-          match = trimmed.match(/^###\s+(.+)$/);
-          if (match) {
-            closeLists();
-            html.push('<h3>' + renderIssueInlineMarkdown(match[1]) + '</h3>');
-            return;
-          }
-          match = trimmed.match(/^##\s+(.+)$/);
-          if (match) {
-            closeLists();
-            html.push('<h2>' + renderIssueInlineMarkdown(match[1]) + '</h2>');
-            return;
-          }
-          match = trimmed.match(/^#\s+(.+)$/);
-          if (match) {
-            closeLists();
-            html.push('<h1>' + renderIssueInlineMarkdown(match[1]) + '</h1>');
-            return;
-          }
-          match = trimmed.match(/^>\s+(.+)$/);
-          if (match) {
-            closeLists();
-            html.push('<blockquote>' + renderIssueInlineMarkdown(match[1]) + '</blockquote>');
-            return;
-          }
-          match = rawLine.match(/^(\s*)\d+\.\s+(.+)$/);
-          if (match) {
-            startListItem(getListDepthFromIndent(match[1]), 'ol', renderIssueInlineMarkdown(match[2]));
-            return;
-          }
-          match = rawLine.match(/^(\s*)[-*+]\s+(.+)$/);
-          if (match) {
-            startListItem(getListDepthFromIndent(match[1]), 'ul', renderIssueInlineMarkdown(match[2]));
-            return;
-          }
-          if (appendToCurrentListItem(renderIssueInlineMarkdown(trimmed), true)) {
-            return;
-          }
-          closeLists();
-          html.push('<p>' + renderIssueInlineMarkdown(trimmed) + '</p>');
+          chunk.push(line);
         });
-        closeLists();
-        html = html.join('');
-        tokenItems.forEach(function(item) {
-          html = html.split(item.token).join(item.html);
+        flush();
+        return out;
+      }
+
+      // Body of an issue, a notice or a comment -> HTML.
+      function renderIssueBodyHtml(text) {
+        var source = String(text || '').replace(/\r\n?/g, '\n').replace(/[\u0000]/g, '');
+        if (!source.trim()) return '-';
+        if (source.length > ISSUE_MD_MAX_SOURCE_CHARS) {
+          return '<p>' + issueMdEscape(source).replace(/\n/g, '<br>') + '</p>';
+        }
+        var ctx = { tokens: [] };
+        var lines = issueMdStripComments(source.split('\n')).map(function(line) {
+          return line
+            .replace(/^[ \t]+/, function(space) { return space.replace(/\t/g, '    '); })
+            .replace(/[ \t]+$/, '');
         });
-        return html || '<p>-</p>';
+        return issueMdResolveTokens(ctx, issueMdBlocks(lines, ctx, 0, false)) || '<p>-</p>';
+      }
+
+      // Markdown -> plain text for list previews (the markup characters are not shown).
+      function issueMarkdownToPlainText(text) {
+        var s = String(text || '').replace(/\r\n?/g, '\n');
+        s = s.replace(/<!--[\s\S]*?-->/g, ' ');
+        s = s.replace(/^[ \t]*(?:```|~~~).*$/gm, '');
+        s = s.replace(/<img\b[^<>]*>/gi, ' [사진] ');
+        s = s.replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, ' [사진] ');
+        s = s.replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, '$1');
+        s = s.replace(/<(https?:\/\/[^>\s]+)>/gi, '$1');
+        s = s.replace(/<\/?[a-zA-Z][^<>\n]*>/g, ' ');
+        s = s.replace(/^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/gm, '');
+        s = s.replace(/^[ \t]*\|.*$/gm, function(row) { return row.replace(/\|/g, ' '); });
+        s = s.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '');
+        s = s.replace(/^[ \t]{0,3}(?:>[ \t]?)+(?:\[![A-Za-z]+\][ \t]*)?/gm, '');
+        s = s.replace(/\*\*|__|~~|`/g, '');
+        s = s.replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n');
+        return s.trim();
       }
 
       function setIssueView(view) {
@@ -20355,6 +20838,33 @@
         }
       }
 
+      // OPEN (grey) / RESOLVED (green, with a check) / 공지
+      function buildIssueStatusBadgeHtml(issue) {
+        if (issue && issue.is_notice) return '<span class="issue-status-badge notice">공지</span>';
+        var resolved = String((issue && issue.state) || 'open').toLowerCase() === 'closed';
+        if (!resolved) return '<span class="issue-status-badge open">OPEN</span>';
+        return '<span class="issue-status-badge closed">' +
+          '<svg class="issue-status-icon" viewBox="0 0 16 16" aria-hidden="true">' +
+            '<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"></circle>' +
+            '<path d="M5.1 8.2l2 2 3.8-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>' +
+          '</svg>RESOLVED</span>';
+      }
+
+      // The owner's last comment on a resolved thread, as sent with the list (plain text, already cut).
+      function buildIssueOwnerReplyHtml(issue) {
+        var reply = issue && issue.owner_reply;
+        var replyText = reply ? String(reply.text || '').trim() : '';
+        if (!replyText) return '';
+        var replyDate = reply.created_at ? formatIssueDate(reply.created_at) : '';
+        return '<div class="issue-card-reply">' +
+          '<div class="issue-card-reply-head">' +
+            '<span class="issue-card-reply-label">셔틀Go 답변</span>' +
+            (replyDate && replyDate !== '-' ? ('<span class="issue-card-reply-date">' + escapeHtml(replyDate) + '</span>') : '') +
+          '</div>' +
+          '<div class="issue-card-reply-text">' + escapeHtml(replyText) + '</div>' +
+        '</div>';
+      }
+
       function renderIssueList(issues) {
         if (!issueListEl) return;
         issueListEl.innerHTML = '';
@@ -20367,9 +20877,6 @@
           var issueId = String(issue.id || issue.local_issue_id || issue.github_issue_number || issue.number || '').trim();
           var githubIssueNumber = Number(issue.github_issue_number || issue.number || 0);
           var isNotice = !!issue.is_notice;
-          var status = (issue.state || 'open').toLowerCase();
-          var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
-          var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
           var issueNumberHtml = (!isNotice && githubIssueNumber > 0)
             ? ('<span class="issue-card-number">#' + githubIssueNumber + '</span>')
             : '';
@@ -20378,7 +20885,7 @@
           var issueAuthorHtml = issueDisplayName
             ? ('<span class="' + issueAuthorClass + '" title="' + escapeHtml(issueDisplayName) + '">' + escapeHtml(issueDisplayName) + '</span>')
             : '';
-          var bodyPreview = (issue.body || '').trim();
+          var bodyPreview = issueMarkdownToPlainText(issue.body || '');
           if (bodyPreview.length > 180) bodyPreview = bodyPreview.slice(0, 180) + '...';
           var likeHtml = buildIssueLikeButtonHtml(issueId, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
           var card = document.createElement('article');
@@ -20389,8 +20896,7 @@
           card.setAttribute('aria-label', '이슈 상세 보기');
           card.innerHTML =
             '<div class="issue-card-top">' +
-              '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
-              issueNumberHtml + '</div>' +
+              '<div>' + buildIssueStatusBadgeHtml(issue) + issueNumberHtml + '</div>' +
               '<div>' + formatIssueDate(issue.created_at) + '</div>' +
             '</div>' +
             '<div class="issue-card-title-row">' +
@@ -20398,6 +20904,7 @@
               issueAuthorHtml +
             '</div>' +
             '<div class="issue-card-body">' + (bodyPreview ? escapeHtml(bodyPreview).replace(/\n/g, '<br>') : '-') + '</div>' +
+            buildIssueOwnerReplyHtml(issue) +
             '<div class="issue-card-footer">' +
               '<div class="issue-card-meta">' +
                 likeHtml +
@@ -20509,9 +21016,6 @@
         var githubIssueNumber = Number(issue.github_issue_number || issue.number || 0);
         var isNotice = !!issue.is_notice;
         var issueCanDelete = !!issue.can_delete;
-        var status = (issue.state || 'open').toLowerCase();
-        var statusClass = isNotice ? 'notice' : (status === 'closed' ? 'closed' : 'open');
-        var statusLabel = isNotice ? '공지' : (status === 'closed' ? 'CLOSED' : 'OPEN');
         var issueNumberHtml = (!isNotice && githubIssueNumber > 0)
           ? ('<span class="issue-card-number">#' + githubIssueNumber + '</span>')
           : '';
@@ -20575,7 +21079,7 @@
                   '<span class="issue-comment-meta-main">' + metaParts.join('') + '</span>' +
                   commentDeleteHtml +
                 '</div>' +
-                '<div class="issue-comment-body">' + escapeHtml(comment.body || '').replace(/\n/g, '<br>') + '</div>' +
+                '<div class="issue-comment-body issue-md">' + renderIssueBodyHtml(comment.body || '') + '</div>' +
               '</div>'
             );
           }).join('');
@@ -20583,7 +21087,7 @@
         var likeHtml = buildIssueLikeButtonHtml(issueId, !!issue.liked_by_me, normalizeIssueLikeCount(issue.like_count || 0));
         return '' +
           '<div class="issue-card-top">' +
-            '<div><span class="issue-status-badge ' + statusClass + '">' + statusLabel + '</span>' + issueNumberHtml + '</div>' +
+            '<div>' + buildIssueStatusBadgeHtml(issue) + issueNumberHtml + '</div>' +
             '<div>' + formatIssueDate(issue.created_at) + '</div>' +
           '</div>' +
           '<div class="issue-detail-title-row">' +
@@ -20591,7 +21095,7 @@
             headerActionsHtml +
           '</div>' +
           '<div class="issue-like-summary"><span class="issue-card-meta">' + likeHtml + '<span>댓글 ' + normalizeIssueLikeCount(comments.length) + '개</span></span></div>' +
-          '<div class="issue-detail-body">' + renderIssueBodyHtml(issue.body || '') + '</div>' +
+          '<div class="issue-detail-body issue-md">' + renderIssueBodyHtml(issue.body || '') + '</div>' +
           '<div class="issue-comments-title">댓글 ' + comments.length + '개</div>' +
           '<div class="issue-comments-list">' + commentsHtml + '</div>' +
           '<div class="issue-comment-compose">' +
@@ -20871,7 +21375,7 @@
         if (!issueModalBackdrop || !issueModal) return;
         closeNoticeModal();
         issueCurrentPage = 1;
-        issueCurrentState = issueStateFilter ? issueStateFilter.value : 'open';
+        issueCurrentState = issueStateFilter ? issueStateFilter.value : 'all';
         setIssueView('list');
         issueModalBackdrop.classList.add('show');
         issueModal.classList.add('show');
