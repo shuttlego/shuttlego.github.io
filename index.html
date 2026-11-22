@@ -5687,6 +5687,8 @@
       flex-direction: column;
       padding: 8px 0;
     }
+    /* The "더보기" list of the sites just left, while the new sites' list is on its way. */
+    .results-list.is-refreshing { opacity: 0.45; pointer-events: none; }
     .place-search-loading-card {
       margin: 8px 14px 0;
       padding: 16px;
@@ -15382,6 +15384,10 @@
       // ranking holds; the whole list (up to 100) is fetched only when "더보기" is pressed and
       // kept for the snapshot's day.
       var homeRestaurantMoreCache = { key: '', items: null };
+      // The "더보기" list now on the panel: the place array it drew (places is that array while
+      // the list is the one shown or the one under a route result), the sites it is about and
+      // its snapshot date. The list follows the site selection: see refreshHomeRestaurantMoreForSites.
+      var homeRestaurantMoreShown = { list: null, siteKey: '', version: '', serial: 0 };
       function homeRestaurantRankingHasMore() {
         var ranking = homeRestaurantRanking || {};
         return Number(ranking.total_count || 0) > 5 && Array.isArray(ranking.items) && ranking.items.length > 0;
@@ -15390,7 +15396,8 @@
         var value = Math.max(1, Math.floor(Number(rank) || 1));
         return 'rank-tier-' + String(Math.min(9, Math.floor((value - 1) / 10)));
       }
-      function showHomeRestaurantRankingPlaces(items, titleText) {
+      function showHomeRestaurantRankingPlaces(items, titleText, opts) {
+        opts = opts || {};
         var list = [];
         (items || []).forEach(function(item) {
           var lat = Number(item && item.lat);
@@ -15421,12 +15428,91 @@
         if (!list.length) return false;
         currentSearchSource = 'restaurant_rank';
         places = list;
+        homeRestaurantMoreShown.list = list;
+        homeRestaurantMoreShown.siteKey = String(opts.siteKey || '');
+        homeRestaurantMoreShown.version = String(opts.version || '');
         clearSearchOverlays();
         list.forEach(function(place, index) { addMarker(parseFloat(place.y), parseFloat(place.x), index); });
         fitBounds();
         renderResults(places);
         setResultsPanelTitle(String(titleText || '삼성인의 인기 맛집'));
-        if (isMobile()) setSheetState('sheet-half');
+        // A list redrawn for another site selection keeps the height the user left the sheet at.
+        if (isMobile() && !opts.keepSheet) setSheetState('sheet-half');
+        return true;
+      }
+      // The selected sites have no ranking (or the list could not be read): the panel stays the
+      // "더보기" list, empty, so the next site change fills it again and Back still leads home.
+      function showHomeRestaurantMoreEmpty(titleText, message, siteKey) {
+        currentSearchSource = 'restaurant_rank';
+        places = [];
+        homeRestaurantMoreShown.list = places;
+        homeRestaurantMoreShown.siteKey = String(siteKey || '');
+        homeRestaurantMoreShown.version = '';
+        clearSearchOverlays();
+        renderResults(places);
+        var note = document.createElement('div');
+        note.className = 'home-favorites-empty';
+        note.textContent = String(message || '');
+        resultsList.appendChild(note);
+        setResultsPanelTitle(String(titleText || '삼성인의 인기 맛집'));
+      }
+      function homeRestaurantMoreSiteKey() {
+        return String(selectedSiteId || '').trim() + homeSiteIdsQuery();
+      }
+      // Called wherever the site selection may have changed (and when the user comes back to the
+      // list from a route result). While the "더보기" list is the one on the panel and it is about
+      // other sites than the selected ones, the list of the selected sites replaces it. One
+      // request, sent next to the home request (not after it); nothing is asked otherwise.
+      function refreshHomeRestaurantMoreForSites() {
+        var shown = homeRestaurantMoreShown;
+        if (!shown.list) return false;
+        if (places !== shown.list) { shown.list = null; return false; }
+        if (resultsPanelState !== 'places') return false;
+        // Under a route result: left as it is until the user comes back to it.
+        if (routeOptionsWrap && routeOptionsWrap.classList.contains('show')) return false;
+        var siteId = String(selectedSiteId || '').trim();
+        var siteKey = homeRestaurantMoreSiteKey();
+        if (!siteId || siteKey === shown.siteKey) return false;
+        var list = shown.list;
+        var serial = ++shown.serial;
+        // The snapshots of every site are built by one daily run, so the date of the list on the
+        // panel is almost always the new one's too; when it is not, the answer is simply not cached.
+        var version = shown.version;
+        var stillShown = function() {
+          return serial === shown.serial && places === list && resultsPanelState === 'places' &&
+            !(routeOptionsWrap && routeOptionsWrap.classList.contains('show')) &&
+            homeRestaurantMoreSiteKey() === siteKey;
+        };
+        var busy = function(on) { if (resultsList && resultsList.classList) resultsList.classList.toggle('is-refreshing', on); };
+        var cacheKey = siteKey + '|' + version;
+        if (version && homeRestaurantMoreCache.key === cacheKey && homeRestaurantMoreCache.items) {
+          busy(false);
+          showHomeRestaurantRankingPlaces(homeRestaurantMoreCache.items, homeRestaurantMoreCache.title,
+            { siteKey: siteKey, version: version, keepSheet: true });
+          return true;
+        }
+        shown.siteKey = siteKey;   // asked once for this selection, whatever the answer
+        busy(true);
+        var url = API_BASE + '/api/home/restaurants?site_id=' + encodeURIComponent(siteId) + homeSiteIdsQuery() +
+          (version ? '&v=' + encodeURIComponent(version) : '');
+        fetch(url, { credentials: 'include' })
+          .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('restaurant list ' + r.status)); })
+          .then(function(data) {
+            var items = Array.isArray(data && data.items) ? data.items : [];
+            var title = String((data && data.title) || '삼성인의 인기 맛집');
+            var answered = String((data && data.snapshot_date) || '');
+            if (items.length) homeRestaurantMoreCache = { key: siteKey + '|' + answered, items: items, title: title };
+            if (serial === shown.serial) busy(false);
+            if (!stillShown()) return;
+            if (!items.length || !showHomeRestaurantRankingPlaces(items, title, { siteKey: siteKey, version: answered, keepSheet: true })) {
+              showHomeRestaurantMoreEmpty(title, '선택한 사업장에는 아직 인기 맛집 순위가 없습니다.', siteKey);
+            }
+          })
+          .catch(function() {
+            if (serial === shown.serial) busy(false);
+            if (!stillShown()) return;
+            showHomeRestaurantMoreEmpty('', '인기 맛집 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.', siteKey);
+          });
         return true;
       }
       function openHomeRestaurantRankingMore(button) {
@@ -15435,9 +15521,10 @@
         var version = String(ranking.snapshot_date || '').trim();
         if (!siteId) return;
         // The list of several sites is another list than the first site's own (multi_site_equal_sites).
-        var key = siteId + homeSiteIdsQuery() + '|' + version;
+        var siteKey = siteId + homeSiteIdsQuery();
+        var key = siteKey + '|' + version;
         if (homeRestaurantMoreCache.key === key && homeRestaurantMoreCache.items) {
-          showHomeRestaurantRankingPlaces(homeRestaurantMoreCache.items, ranking.title);
+          showHomeRestaurantRankingPlaces(homeRestaurantMoreCache.items, ranking.title, { siteKey: siteKey, version: version });
           return;
         }
         if (button) { button.disabled = true; button.textContent = '불러오는 중…'; }
@@ -15448,10 +15535,11 @@
           .then(function(data) {
             var items = Array.isArray(data && data.items) ? data.items : [];
             if (!items.length) throw new Error('empty restaurant list');
-            homeRestaurantMoreCache = { key: key, items: items };
+            var title = (data && data.title) || ranking.title;
+            homeRestaurantMoreCache = { key: key, items: items, title: title };
             // Show it only if the user is still on the home panel that asked for it.
             if (!button || !button.isConnected) return;
-            showHomeRestaurantRankingPlaces(items, (data && data.title) || ranking.title);
+            showHomeRestaurantRankingPlaces(items, title, { siteKey: siteKey, version: version });
           })
           .catch(function() {
             if (button && button.isConnected) { button.disabled = false; button.textContent = '더보기'; }
@@ -15699,6 +15787,7 @@
             recentFavoritesLoading = false;
             homePanelLoading = false;
             refreshIdleFavoritesPanelIfVisible();
+            refreshHomeRestaurantMoreForSites();
           });
       }
 
@@ -19535,6 +19624,7 @@
         updateSiteTriggerText();
         if (getActiveSiteIds().join(',') !== before) {
           if (mapStops.active) refreshMapStops();
+          refreshHomeRestaurantMoreForSites();
           if (equalSitesEnabled()) {
             // The first site is the same, but the day list and the home are about every site.
             refreshDayTypeOptionsForSite(selectedSiteId, { preserveDayType: selectedDayType });
@@ -19617,6 +19707,8 @@
         if (!changed && opts.forceRefreshDayTypes !== true) {
           return Promise.resolve(false);
         }
+        // After the caller has settled the list of selected sites (it may do so right after this call).
+        if (changed) Promise.resolve().then(refreshHomeRestaurantMoreForSites);
         return refreshDayTypeOptionsForSite(selectedSiteId).then(function(applied) {
           var refreshedRoute = false;
           if (mapStops.active) refreshMapStops();
@@ -39386,6 +39478,8 @@
           setResultsBackButtonVisible(true);
           resultsList.style.display = 'flex';
           resultsPlaceholder.style.display = 'none';
+          // The sites may have changed while the route result was over the "더보기" list.
+          refreshHomeRestaurantMoreForSites();
         } else {
           refreshIdleFavoritesPanelIfVisible();
         }
