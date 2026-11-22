@@ -5936,6 +5936,15 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    /* The stop of a row in a group of stops inside the site ("17번홈"), under the route name. */
+    .bubble-stop-routes .stop-route-name .stop-route-platform {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: 500;
+    }
     .bubble-stop-routes .stop-route-row.is-link { cursor: pointer; }
     .bubble-stop-routes .stop-route-row.is-link:hover,
     .bubble-stop-routes .stop-route-row.is-link:focus-visible { background: #f5f7ff; outline: none; }
@@ -23178,8 +23187,14 @@
         clearTimeout(mapStops.noticeTimer);
         mapStops.noticeTimer = setTimeout(function() { mapStopsNotice.classList.remove('show'); }, 3200);
       }
+      // #97 (switch: map_stop_site_points): the list also has the stops inside the site, one row
+      // per endpoint group: [stop_id, lat, lng, name, kind, [member stop ids]].
+      function mapStopSitePointsEnabled() {
+        var flags = window.__SG_FLAGS || {};
+        return !!(flags.map_stops && flags.map_stop_site_points);
+      }
       function mapStopsListKey(siteId) {
-        return String(siteId || '');
+        return String(siteId || '') + (mapStopSitePointsEnabled() ? '|site' : '');
       }
       // One request per selected site: every stop of the site, whatever the day and time. The
       // answer is kept for the session and by the browser (catalog version in the URL), so
@@ -23190,8 +23205,10 @@
           var key = mapStopsListKey(siteId);
           if (mapStops.lists[key]) return;
           if (!mapStops.pending[key]) {
-            // fields=kind only keeps a browser from answering with a copy of the list without the kind.
-            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) + '&fields=kind' + catalogVersionQuery();
+            // fields=kind only keeps a browser from answering with a copy of the list without the kind;
+            // ",site" asks for the stops inside the site as well.
+            var url = API_BASE + '/api/shuttle/stops?site_id=' + encodeURIComponent(siteId) + '&fields=kind' +
+              (mapStopSitePointsEnabled() ? ',site' : '') + catalogVersionQuery();
             mapStops.pending[key] = fetchJson(url)
               .then(function(result) {
                 if (!result.ok) throw new Error('stops');
@@ -23388,6 +23405,41 @@
         if (place) place._stop = true;
         return place;
       }
+      // A group of stops inside the site (row[5]: its stop ids) lists the routes of all its stops;
+      // each row says which stop: "17번홈" for "중앙문승차장 17번홈", else the stop's name.
+      function mapStopPlatformLabel(row, route) {
+        if (!Array.isArray(row[5])) return '';
+        var name = String(route.stop_name || '').trim();
+        if (!name) return '';
+        var parts = String(row[3] || '').split(' · ');
+        if (parts.length === 1 && name === parts[0]) return '';
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i] && name.length > parts[i].length && name.indexOf(parts[i]) === 0) {
+            var rest = name.slice(parts[i].length).replace(/^[\s(]+|[)\s]+$/g, '');
+            if (rest) return rest;
+          }
+        }
+        return name;
+      }
+      // What a route row searches: from the stop to the site (a boarding row) or from the site to
+      // the stop (a leaving row). A row of a stop inside the site (at_site) has no place of its
+      // own, so the other end of the route is the place: a route from the site is searched to its
+      // last stop, a route to the site from its first stop.
+      function mapStopRouteTarget(row, route) {
+        if (route.at_site) {
+          var lat = Number(route.far_lat), lng = Number(route.far_lng);
+          if (!isFinite(lat) || !isFinite(lng) || !lat || !lng) return null;
+          var place = makeMapStopPlace([0, lat, lng, String(route.far_name || row[3] || '')]);
+          return place ? { place: place, direction: route.role === 'alight' ? 'depart' : 'arrive' } : null;
+        }
+        // A row of a group is searched from its own stop, not from the middle of the group: a few
+        // metres of walking would miss the bus of that minute.
+        var stopLat = Number(route.stop_lat), stopLng = Number(route.stop_lng);
+        var own = Array.isArray(row[5]) && isFinite(stopLat) && isFinite(stopLng) && stopLat && stopLng
+          ? makeMapStopPlace([Number(route.stop_id) || 0, stopLat, stopLng, String(route.stop_name || row[3] || '')])
+          : makeMapStopPlace(row);
+        return own ? { place: own, direction: route.role === 'alight' ? 'arrive' : 'depart' } : null;
+      }
       // The bubble of a tapped stop: its routes per day type, each with its whole day
       // (timetable times), and the same 출발/도착 search as a tapped map position, with the
       // stop name as the place. The day tabs change neither the day above nor the map.
@@ -23455,13 +23507,16 @@
         }
         function addRouteRow(route) {
           var item = document.createElement('div');
-          var opens = canOpenRoute && Number(route.route_id) > 0 && /^\d{1,2}:\d{2}/.test(String(route.departure_time || ''));
+          var opens = canOpenRoute && Number(route.route_id) > 0 && /^\d{1,2}:\d{2}/.test(String(route.departure_time || '')) &&
+            !!mapStopRouteTarget(row, route);
+          var platform = mapStopPlatformLabel(row, route);
           item.className = 'stop-route-row' + (opens ? ' is-link' : '');
           item.innerHTML =
             '<span class="stop-route-role' + (route.role === 'alight' ? ' alight' : '') + '">' +
               (route.role === 'alight' ? '하차' : '탑승') + '</span>' +
             '<span class="stop-route-name" title="' + escapeAttr(String(route.route_name || '')) + '">' +
-              escapeHtml(String(route.route_name || '')) + '</span>' +
+              escapeHtml(String(route.route_name || '')) +
+              (platform ? '<small class="stop-route-platform">' + escapeHtml(platform) + '</small>' : '') + '</span>' +
             '<span class="stop-route-time">' + formatMapStopRouteTime(route) + '</span>' +
             (opens ? '<span class="stop-route-go" aria-hidden="true">›</span>' : '');
           if (opens) {
@@ -23483,6 +23538,7 @@
           var mine = seq;
           var url = API_BASE + '/api/shuttle/stop-info?site_id=' + encodeURIComponent(siteId) +
             '&day_type=' + encodeURIComponent(dayType) + '&stop_id=' + encodeURIComponent(String(row[0])) +
+            (mapStopSitePointsEnabled() ? '&site=1' + (Array.isArray(row[5]) ? '&stop_ids=' + row[5].join(',') : '') : '') +
             (anyDay ? '&any_day=1' : '') + (offset ? '&offset=' + offset : '') + catalogVersionQuery();
           return fetchJson(url).then(function(result) {
             if (mine !== seq || infoSeq !== mapStops.infoSeq || !list.isConnected) return;
@@ -23541,7 +23597,8 @@
       // one-route result does not use. Everything is put back by endRouteFocus.
       function beginRouteFocus(siteId, row, route, dayType) {
         endRouteFocus();
-        var isDepart = route.role !== 'alight';
+        // A row of a stop inside the site shows the route's first departure, like a leaving row.
+        var isDepart = route.role !== 'alight' && !route.at_site;
         // The search is asked for the route's first departure: every sort order then finds the
         // first bus of the day, whatever the stop's offset from the first stop.
         var firstDeparture = /^(\d{1,2}):(\d{2})/.exec(String(route.departure_time || ''));
@@ -23599,12 +23656,12 @@
       }
       function openMapStopRoute(siteId, row, route, dayType) {
         if (!mapStopRouteSearchEnabled()) return;
-        var place = makeMapStopPlace(row);
-        if (!place) return;
+        var target = mapStopRouteTarget(row, route);
+        if (!target) return;
         var returnPoint = captureMapStopReturn();   // before the result under the stops is left
         var focus = beginRouteFocus(siteId, row, route, dayType);
         if (!focus) return;
-        runRouteSearchWithPlace(place, route.role === 'alight' ? 'arrive' : 'depart', {
+        runRouteSearchWithPlace(target.place, target.direction, {
           routeFocus: focus, placeSource: 'map', searchSource: 'map_stop_route', mapStopReturn: returnPoint
         });
       }
