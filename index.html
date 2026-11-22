@@ -15290,7 +15290,8 @@
           }, { placeSource: 'search', placeName: name });
           if (!place) return;
           place._rank = Math.max(1, Math.floor(Number(item.rank) || list.length + 1));
-          place._rankTrend = getHomeRestaurantTrendInfo(item);
+          // A ranking merged out of several sites has no "since yesterday": no trend mark.
+          place._rankTrend = homeSiteIdsQuery() ? null : getHomeRestaurantTrendInfo(item);
           list.push(place);
         });
         if (!list.length) return false;
@@ -15309,7 +15310,8 @@
         var siteId = String(ranking.site_id || selectedSiteId || '').trim();
         var version = String(ranking.snapshot_date || '').trim();
         if (!siteId) return;
-        var key = siteId + '|' + version;
+        // The list of several sites is another list than the first site's own (multi_site_equal_sites).
+        var key = siteId + homeSiteIdsQuery() + '|' + version;
         if (homeRestaurantMoreCache.key === key && homeRestaurantMoreCache.items) {
           showHomeRestaurantRankingPlaces(homeRestaurantMoreCache.items, ranking.title);
           return;
