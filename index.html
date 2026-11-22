@@ -12063,6 +12063,8 @@
       var homeRestaurantRanking = null;
       var homePanelLoading = false;
       var homeRequestSerial = 0;
+      // The sites the last home request was about (null before the first request).
+      var homeRequestedSiteKey = null;
       var routePlaceAliasByCoordinateKey = {};
       var recentFavoritesLoading = false;
       var routeFavoritesModal = null;
@@ -15608,7 +15610,9 @@
         resultsList.appendChild(note);
         setResultsPanelTitle(String(titleText || '삼성인의 인기 맛집'));
       }
-      function homeRestaurantMoreSiteKey() {
+      // The sites the home (and its "더보기" list) is about: the first site and, with several
+      // equal sites, the whole selection.
+      function homeSiteKey() {
         return String(selectedSiteId || '').trim() + homeSiteIdsQuery();
       }
       // Called wherever the site selection may have changed (and when the user comes back to the
@@ -15623,7 +15627,7 @@
         // Under a route result: left as it is until the user comes back to it.
         if (routeOptionsWrap && routeOptionsWrap.classList.contains('show')) return false;
         var siteId = String(selectedSiteId || '').trim();
-        var siteKey = homeRestaurantMoreSiteKey();
+        var siteKey = homeSiteKey();
         if (!siteId || siteKey === shown.siteKey) return false;
         var list = shown.list;
         var serial = ++shown.serial;
@@ -15633,7 +15637,7 @@
         var stillShown = function() {
           return serial === shown.serial && places === list && resultsPanelState === 'places' &&
             !(routeOptionsWrap && routeOptionsWrap.classList.contains('show')) &&
-            homeRestaurantMoreSiteKey() === siteKey;
+            homeSiteKey() === siteKey;
         };
         var busy = function(on) { if (resultsList && resultsList.classList) resultsList.classList.toggle('is-refreshing', on); };
         var cacheKey = siteKey + '|' + version;
@@ -15808,6 +15812,11 @@
 
       function renderRecentFavoritesHomePanel() {
         if (!resultsList || !resultsPlaceholder || !panelTitle) return;
+        // The home is about the selected sites. A selection changed while another view was on
+        // the panel (a route result, a shared route) did not reload it: caught up here, with one
+        // request, when the home comes back. The request marks the home as loading, so what
+        // is drawn below is the loading card, not the other sites' home.
+        if (homeRequestedSiteKey !== null && homeRequestedSiteKey !== homeSiteKey()) loadRecentRouteFavorites();
         setResultsPanelTitle('홈', { home: true });
         resultsPlaceholder.style.display = 'none';
         resultsList.style.display = 'flex';
@@ -15906,6 +15915,7 @@
 
       function loadRecentRouteFavorites() {
         var requestId = ++homeRequestSerial;
+        homeRequestedSiteKey = homeSiteKey();
         recentFavoritesLoading = true;
         homePanelLoading = true;
         refreshIdleFavoritesPanelIfVisible();
