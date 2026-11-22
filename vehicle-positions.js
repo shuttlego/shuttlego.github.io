@@ -42,6 +42,13 @@
       transport:precise ? Math.max(0,duration-processing) : duration,
       precise:precise,uncertain:supplied && !precise || receipt.epoch!==begin.epoch};
   }
+  // live_push: a streamed position is aged from the moment its event arrived, not from the
+  // later poll that reads it out of the stream cache (which made ages look up to 3 s younger).
+  function streamReference(data, sample) {
+    var precise = finiteNumber(data.read_processing_ms) && data.read_processing_ms >= 0 &&
+      typeof data.age_reference_at === 'string' && isFinite(Date.parse(data.age_reference_at));
+    return {mono:sample.mono,wall:sample.wall,epoch:sample.epoch,transport:0,precise:precise,uncertain:!precise};
+  }
   function ageBounds(vehicle, reference, sample, occupancy) {
     var prefix = occupancy ? 'occupancy' : 'gps', ms = vehicle[prefix+'_age_ms'], seconds = vehicle[prefix+'_age_seconds'];
     var precise = reference && reference.precise && finiteNumber(ms) && ms >= 0;
@@ -120,6 +127,16 @@
       if (!(bucket >= 0 && bucket < 100)) { bucket = Math.floor(Math.random() * 100); lsSet('sg_device_bucket', String(bucket)); }
       return bucket;
     }
+    function pushOn() { return !!((global.__SG_FLAGS || {}).live_push); }
+    // live_push: draw a streamed change now instead of at the entry's next 3 s poll tick.
+    function livePushed(caps) {
+      entries.forEach(function(entry) {
+        if (!entry.watch || caps.indexOf(entry.watch.capability) < 0) return;
+        if (entry.pending || !(entry.nextPollAt > 0)) return;
+        entry.nextPollAt = 0; poll(entry, entry.pollToken);
+      });
+      armPollTimer();
+    }
     function liveWanted() {
       var percent = Number((global.__SG_FLAGS || {}).live_stream_percent || 0);
       if (!(percent > 0) || !config || !config.batch_reads) return false;
@@ -158,7 +175,7 @@
       arm();
       fetch(options.apiBase + '/api/vehicle-positions/live', {method:'POST', credentials:'include', signal:ctrl.signal,
         headers:jsonHeaders(caps[0], {'Accept':'text/event-stream'}),
-        body:JSON.stringify({capabilities:caps})
+        body:JSON.stringify(pushOn() ? {capabilities:caps, push:true} : {capabilities:caps})
       }).then(function(response) {
         if (live.ctrl !== ctrl) return;
         if (response.status === 404 || response.status === 503) { liveEvent('live_unavailable_' + response.status); liveStop(); return; }
@@ -182,10 +199,11 @@
               try { data = JSON.parse(block.slice(newline + 7)); } catch (e) { continue; }
               if (name === 'positions' && Array.isArray(data.items) && data.items.length === live.caps.length) {
                 if (!live.healthy) { live.healthy = true; clearTimeout(live.firstTimer); liveEvent('live_stream_ok'); }
-                var at = Date.now();
+                var at = Date.now(), sample = pushOn() ? timeSample() : null;
                 data.items.forEach(function(item, index) {
-                  live.cache[live.caps[index]] = {status:item.status, data:item.data || {}, at:at};
+                  live.cache[live.caps[index]] = {status:item.status, data:item.data || {}, at:at, sample:sample};
                 });
+                if (sample) livePushed(live.caps);
               } else if (name === 'end') {
                 liveStop();
               }
@@ -258,7 +276,9 @@
         liveEnsure(caps.slice(0, 3));
         var cached = live.healthy && live.cache[watch.capability];
         if (cached) {
-          return Promise.resolve(new Response(JSON.stringify(cached.data), {status:cached.status, headers:{'Content-Type':'application/json'}}));
+          var response = new Response(JSON.stringify(cached.data), {status:cached.status, headers:{'Content-Type':'application/json'}});
+          if (cached.sample && pushOn()) response.__liveSample = cached.sample;
+          return Promise.resolve(response);
         }
       }
       if (!config.batch_reads) return gpsFetch(options.apiBase + '/api/vehicle-positions', {credentials:'include',signal:signal,headers:headers});
@@ -783,6 +803,10 @@
       if (!keepTargets) { targets = []; idlePaused = false; lastActivity = null; lastActivityWall = null; }
       syncToggle();
     }
+    function positionStaleMs() {
+      var seconds = Number(config && config.stale_after_seconds);
+      return isFinite(seconds) && seconds >= 60 && seconds <= 150 ? seconds * 1000 : 60000;
+    }
     function derivePresentation(sample) {
       var now=sample.wall, nextExpiry=Infinity;
       var seenVehicles = {}, uniqueVehicles = [], states = new Map();
@@ -798,17 +822,25 @@
         (display && display.vehicles || []).forEach(function(vehicle) {
           var observed = new Date(vehicle.observed_at).getTime();
           var bounds = ageBounds(vehicle,vehicle.__ageReference || reference,sample), age = bounds.upper;
-          var uncertain = bounds.uncertain || bounds.lower<=60000 && age>60000;
+          // Two limits: a live ETA needs a fix of 60 s or newer; the position itself is shown as
+          // current up to the server's stale_after_seconds (60 unless the server says otherwise).
+          var staleMs = positionStaleMs();
+          var uncertain = bounds.uncertain || bounds.lower<=staleMs && age>staleMs;
+          var etaUncertain = bounds.uncertain || bounds.lower<=60000 && age>60000;
           var etaKey = predictionKey(entry,display,vehicle);
-          if (age>60000 || uncertain) { if (entry.predictions) delete entry.predictions[etaKey]; }
+          if (age>60000 || etaUncertain) { if (entry.predictions) delete entry.predictions[etaKey]; }
           if (!isFinite(observed) || !isFinite(age) || age > 180000) return;
           nextExpiry = Math.min(nextExpiry, now + 180001 - age);
           // Location expiry is independent of optional ETA/occupancy fields.
           if (!idlePaused && age <= 60000) nextExpiry = Math.min(nextExpiry, now + 60001 - age);
           if (!idlePaused && !bounds.uncertain && bounds.lower<=60000 && age>60000)
             nextExpiry=Math.min(nextExpiry,now+60001-bounds.lower);
+          if (staleMs !== 60000 && !idlePaused) {
+            if (age <= staleMs) nextExpiry = Math.min(nextExpiry, now + staleMs + 1 - age);
+            else if (!bounds.uncertain && bounds.lower<=staleMs) nextExpiry = Math.min(nextExpiry, now + staleMs + 1 - bounds.lower);
+          }
           var selected = vehicle.departure_time===(entry.previewDeparture || entry.target.context.departure_time);
-          var eta = !liveEtaDisabled && !handedOff && !previewing && selected && !idlePaused && !uncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
+          var eta = !liveEtaDisabled && !handedOff && !previewing && selected && !idlePaused && !etaUncertain && age <= 60000 ? vehicle.live_eta : null, held = false;
           if (eta) {
             var currentEtaAt=Date.parse(eta.eta_at);
             if (!isFinite(currentEtaAt) || currentEtaAt<=now) eta=null;
@@ -819,13 +851,13 @@
             var rememberedAge = memory.age + Math.max(0,sample.mono-memory.at,sample.wall-memory.wall);
             var etaAt = new Date(memory.eta.eta_at).getTime();
             var temporary = etaTemporary(vehicle);
-            if (!idlePaused && selected && !uncertain && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
+            if (!idlePaused && selected && !etaUncertain && age<=60000 && temporary && rememberedAge<etaRetentionMs && etaAt>now) {
               eta = memory.eta; held = true;
               nextExpiry = Math.min(nextExpiry,now+etaRetentionMs-rememberedAge,etaAt);
             }
           }
           vehicle = Object.assign({}, vehicle, {live_eta:eta,eta_retained:held,selected_trip:selected,
-            display_stale: idlePaused || uncertain || age > 60000 || vehicle.position_state === 'stale', display_uncertain:uncertain,
+            display_stale: idlePaused || uncertain || age > staleMs || vehicle.position_state === 'stale', display_uncertain:uncertain,
             __bounds:bounds});
           var occupancy = vehicle.occupancy;
           if (occupancy) {
@@ -1212,11 +1244,11 @@
         if (entry.handoff && watch.route_revision!==entry.handoff.data.route_revision) { entry.handoff=null; renderMap(); }
         entry.renewAt = Date.now() + 100000; entry.watchActiveUntil = Date.now() + 40000; entry.etag = ''; return watch;
       }) : Promise.resolve(entry.watch);
-      function acceptRead(data, begin, etag) {
+      function acceptRead(data, begin, etag, streamSample) {
           if (data && data.enabled === false) throw new Error('disabled');
           if (!data || !Array.isArray(data.vehicles) || !['available','loading','empty','unavailable','budget_paused','usage_unknown'].includes(data.state)) throw new Error('temporary');
           var receipt=timeSample(); entry.getMs=Math.max(0,receipt.mono-begin.mono);
-          responseReference=readReference(data,begin,receipt);
+          responseReference=streamSample ? streamReference(data,streamSample) : readReference(data,begin,receipt);
           // v0.9.6 (P1-G): from opening the position view to its first position read.
           if (!entry.firstReadMarked && entry.openedAt != null) {
             entry.firstReadMarked = true;
@@ -1237,7 +1269,8 @@
           if (!r || token !== generation) return;
           if (r.status === 304) { if (!entry.data) throw new Error('temporary'); entry.watchActiveUntil = Date.now() + 40000; return entry.data; }
           if (!r.ok) { var error = new Error(r.status === 409 ? 'scope_changed' : 'temporary'); error.retryAfter = retryAfter(r); throw error; }
-          return r.json().then(function(data) { return acceptRead(data,getBegin,r.headers.get('ETag')); });
+          var streamSample = r.__liveSample;
+          return r.json().then(function(data) { return acceptRead(data,getBegin,r.headers.get('ETag'),streamSample); });
         });
       }).then(function(data) {
         if (!data || token !== generation || document.hidden || suspended || idlePaused) return;
