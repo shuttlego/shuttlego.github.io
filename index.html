@@ -22705,13 +22705,13 @@
       if (accountMenuTermsBtn) {
         accountMenuTermsBtn.addEventListener('click', function() {
           closeAccountMenu();
-          window.location.href = '/terms';
+          leavePageTo('/terms');
         });
       }
       if (accountMenuPrivacyBtn) {
         accountMenuPrivacyBtn.addEventListener('click', function() {
           closeAccountMenu();
-          window.location.href = '/privacy';
+          leavePageTo('/privacy');
         });
       }
       if (accountMenuLogoutBtn) {
@@ -41842,7 +41842,7 @@
       // Here each open layer has its own entry, added while the user's action that opened
       // it is still honoured, and a Back press only closes: nothing is added afterwards.
       var historyOpenDepth = function() { return 0; };  // set by bindGenericLayerBack
-      var historyLayers = { installed: false, ignore: 0, holdPush: false };
+      var historyLayers = { installed: false, ignore: 0, holdPush: false, leaving: false };
       function historyLayersEnabled() {
         return !!(window.__SG_FLAGS && window.__SG_FLAGS.history_layers);
       }
@@ -41854,7 +41854,7 @@
       // Makes the number of entries above the root equal to the number of open layers.
       function syncHistoryLayers() {
         // A step of our own is still on its way (history.go answers later with a popstate).
-        if (!historyLayers.installed || historyLayers.ignore > 0) return;
+        if (!historyLayers.installed || historyLayers.ignore > 0 || historyLayers.leaving) return;
         var have = historyStateDepth(window.history.state), open = historyOpenDepth();
         if (open > have) {
           // Never right after a Back press: wait for the user's next action.
@@ -41868,8 +41868,33 @@
           try { window.history.go(open - have); } catch (e) { historyLayers.ignore -= 1; }
         }
       }
+      // Leaves the page for another one of the site (the menu's terms and privacy pages).
+      // The action that leaves usually closes a layer first, and dropping that layer's entry
+      // (history.go) after the navigation has started cancels the navigation. So the entry
+      // is dropped first and the page leaves once that step has landed.
+      function leavePageTo(url) {
+        var left = false;
+        var leave = function() {
+          if (left) return;
+          left = true;
+          historyLayers.leaving = true;  // no history step may follow the navigation
+          window.location.href = url;
+        };
+        if (!historyLayers.installed) { leave(); return; }
+        syncHistoryLayers();
+        if (historyLayers.ignore <= 0) { leave(); return; }
+        var onPop = function() {
+          if (historyLayers.ignore > 0) return;  // an earlier step of ours; ours is still coming
+          window.removeEventListener('popstate', onPop);
+          setTimeout(leave, 0);
+        };
+        window.addEventListener('popstate', onPop);
+        setTimeout(function() { window.removeEventListener('popstate', onPop); leave(); }, 800);  // no answer: leave anyway
+      }
       function installHistoryLayers() {
         historyLayers.installed = true;
+        // Back from the page we left for (restored from the back/forward cache): sync again.
+        window.addEventListener('pageshow', function() { historyLayers.leaving = false; });
         // Loaded again on an entry of an earlier load (reload, tab restore): nothing is open now.
         var stale = historyStateDepth(window.history.state);
         if (stale > 0) {
